@@ -22,9 +22,9 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: oklch(0.19 0.012 80);
-    --surface: oklch(0.23 0.012 80);
-    --surface-2: oklch(0.27 0.014 75);
+    --bg: oklch(0.1 0.008 80);
+    --surface: oklch(0.15 0.01 80);
+    --surface-2: oklch(0.19 0.012 75);
     --border: oklch(0.97 0.008 80 / 0.1);
     --border-strong: oklch(0.97 0.008 80 / 0.2);
     --ink: oklch(0.95 0.006 80);
@@ -44,9 +44,9 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: oklch(0.19 0.012 80);
-  --surface: oklch(0.23 0.012 80);
-  --surface-2: oklch(0.27 0.014 75);
+  --bg: oklch(0.1 0.008 80);
+  --surface: oklch(0.15 0.01 80);
+  --surface-2: oklch(0.19 0.012 75);
   --border: oklch(0.97 0.008 80 / 0.1);
   --border-strong: oklch(0.97 0.008 80 / 0.2);
   --ink: oklch(0.95 0.006 80);
