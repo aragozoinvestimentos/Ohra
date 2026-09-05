@@ -68,3 +68,5 @@ As taxas da Shopee e do Mercado Livre mudam de tempos em tempos. Elas estão
 centralizadas em `src/lib/calc.js` (`SHOPEE_TIERS`, `ML_CATEGORY_PCT`,
 `ML_FEE_TIERS`) — atualize os valores lá, faça commit e a Vercel republica
 sozinha.
+
+<!-- trigger fresh Vercel build to pick up Supabase env vars -->
