@@ -51,3 +51,46 @@ export function calcCanal({ imposto, comissaoPct, taxaFixa, custosFixosPct, lucr
   const lucroEm = (p) => (p > 0 ? p * (1 - totalPct) - taxaFixa - custoTotal : null);
   return { custoTotal, totalPct, markup, preco, lucro, margem, faixaOk, lucroEm };
 }
+
+// Anúncio patrocinado (Shopee Ads / Mercado Ads): o preço no anúncio não muda,
+// só o lucro daquela venda específica cai pelo % investido em Ads sobre o preço.
+export function aplicarAds(resultadoCanal, adsPct) {
+  const pct = adsPct || 0;
+  const custoAds = resultadoCanal.preco * pct;
+  const lucroComAds = resultadoCanal.lucro - custoAds;
+  const margemComAds = resultadoCanal.preco > 0 ? lucroComAds / resultadoCanal.preco : null;
+  return { custoAds, lucroComAds, margemComAds };
+}
+
+// Testa as faixas da Shopee em ordem e fica com a primeira que "fecha"
+// (preço calculado cai dentro da própria faixa usada pra calcular).
+export function resolverFaixaShopee(base) {
+  for (const tier of SHOPEE_TIERS) {
+    const resultado = calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max });
+    if (resultado.faixaOk) return { tier, resultado };
+  }
+  const tier = SHOPEE_TIERS[SHOPEE_TIERS.length - 1];
+  return { tier, resultado: calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
+}
+
+// Mesma ideia para o Mercado Livre, dada a categoria escolhida.
+export function resolverFaixaML(categoria, base) {
+  const comissaoPct = ML_CATEGORY_PCT[categoria] ?? 0.13;
+  for (const tier of ML_FEE_TIERS) {
+    const resultado = calcCanal({ ...base, comissaoPct, taxaFixa: tier.fixo, min: tier.min, max: tier.max });
+    if (resultado.faixaOk) return { tier, resultado };
+  }
+  const tier = ML_FEE_TIERS[ML_FEE_TIERS.length - 1];
+  return { tier, resultado: calcCanal({ ...base, comissaoPct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
+}
+
+// Canal customizado (Site Próprio, TikTok Shop etc.): comissão/taxa fixas, sem faixas.
+export function calcCanalCustom(canal, base) {
+  return calcCanal({
+    ...base,
+    comissaoPct: canal.comissao_pct || 0,
+    taxaFixa: canal.taxa_fixa || 0,
+    min: null,
+    max: null,
+  });
+}

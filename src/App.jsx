@@ -2,17 +2,24 @@ import { useRef, useState } from "react";
 import logo from "./assets/logo.png";
 import CustoProducao from "./components/CustoProducao.jsx";
 import PrecificacaoCanal from "./components/PrecificacaoCanal.jsx";
+import Comparativo from "./components/Comparativo.jsx";
+import Cadastros from "./components/Cadastros.jsx";
+import Organizacao from "./components/Organizacao.jsx";
 import Historico from "./components/Historico.jsx";
 
 const TABS = [
   { key: "producao", label: "Custo de Produção" },
   { key: "canal", label: "Precificação por Canal" },
+  { key: "comparativo", label: "Comparativo" },
+  { key: "cadastros", label: "Cadastros" },
+  { key: "organizacao", label: "Organização" },
   { key: "historico", label: "Histórico" },
 ];
 
 export default function App() {
   const [tab, setTab] = useState("producao");
   const [custoRecebido, setCustoRecebido] = useState(null);
+  const [produtoRecebido, setProdutoRecebido] = useState(null);
   const [toast, setToast] = useState({ msg: "", show: false });
   const toastTimer = useRef(null);
 
@@ -26,6 +33,12 @@ export default function App() {
     setCustoRecebido((prev) => ({ value: total, seq: (prev?.seq || 0) + 1 }));
     setTab("canal");
     showToast("Custo levado para a Precificação por Canal");
+  }
+
+  function salvarComoProduto({ custo, materialNome }) {
+    setProdutoRecebido((prev) => ({ custo, materialNome, seq: (prev?.seq || 0) + 1 }));
+    setTab("cadastros");
+    showToast("Custo levado para o cadastro de Produtos");
   }
 
   return (
@@ -47,11 +60,23 @@ export default function App() {
       </nav>
 
       <section className={`view ${tab === "producao" ? "active" : ""}`}>
-        <CustoProducao onUsarCusto={usarCusto} />
+        <CustoProducao onUsarCusto={usarCusto} onSalvarProduto={salvarComoProduto} />
       </section>
 
       <section className={`view ${tab === "canal" ? "active" : ""}`}>
         <PrecificacaoCanal custoRecebido={custoRecebido} onToast={showToast} />
+      </section>
+
+      <section className={`view ${tab === "comparativo" ? "active" : ""}`}>
+        <Comparativo />
+      </section>
+
+      <section className={`view ${tab === "cadastros" ? "active" : ""}`}>
+        <Cadastros produtoRecebido={produtoRecebido} onToast={showToast} />
+      </section>
+
+      <section className={`view ${tab === "organizacao" ? "active" : ""}`}>
+        <Organizacao onToast={showToast} />
       </section>
 
       <section className={`view ${tab === "historico" ? "active" : ""}`}>

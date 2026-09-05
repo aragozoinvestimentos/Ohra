@@ -5,6 +5,8 @@ import { supabase } from "../lib/supabaseClient.js";
 export default function Historico({ onToast }) {
   const [produtos, setProdutos] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  const [editandoId, setEditandoId] = useState(null);
+  const [nomeEditado, setNomeEditado] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -15,13 +17,18 @@ export default function Historico({ onToast }) {
     let ativo = true;
 
     async function carregar() {
-      const { data, error } = await supabase
-        .from("produtos")
-        .select("*")
-        .order("criado_em", { ascending: false });
-      if (!ativo) return;
-      if (!error) setProdutos(data || []);
-      setCarregando(false);
+      try {
+        const { data, error } = await supabase
+          .from("produtos")
+          .select("*")
+          .order("criado_em", { ascending: false });
+        if (!ativo) return;
+        if (!error) setProdutos(data || []);
+      } catch {
+        // falha de rede — mantém o que já estava carregado
+      } finally {
+        if (ativo) setCarregando(false);
+      }
     }
     carregar();
 
@@ -44,6 +51,26 @@ export default function Historico({ onToast }) {
       return;
     }
     setProdutos((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  function iniciarEdicao(p) {
+    setEditandoId(p.id);
+    setNomeEditado(p.nome || "");
+  }
+
+  async function salvarNome(id) {
+    const nome = nomeEditado.trim();
+    if (!nome) {
+      onToast("O nome não pode ficar vazio");
+      return;
+    }
+    const { error } = await supabase.from("produtos").update({ nome }).eq("id", id);
+    if (error) {
+      onToast("Não foi possível salvar — tente de novo");
+      return;
+    }
+    setProdutos((prev) => prev.map((p) => (p.id === id ? { ...p, nome } : p)));
+    setEditandoId(null);
   }
 
   return (
@@ -73,12 +100,30 @@ export default function Historico({ onToast }) {
             <tbody>
               {produtos.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.nome || "—"}</td>
+                  <td>
+                    {editandoId === p.id ? (
+                      <input
+                        type="text"
+                        autoFocus
+                        value={nomeEditado}
+                        onChange={(e) => setNomeEditado(e.target.value)}
+                        onBlur={() => salvarNome(p.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") e.target.blur();
+                          if (e.key === "Escape") setEditandoId(null);
+                        }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : (
+                      p.nome || "—"
+                    )}
+                  </td>
                   <td>{p.canal || "—"}</td>
                   <td className="num">{BRL(p.custo)}</td>
                   <td className="num">{BRL(p.preco)}</td>
                   <td className="num">{PCT(p.margem)}</td>
-                  <td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <button className="del" title="Editar nome" onClick={() => iniciarEdicao(p)}>✎</button>
                     <button className="del" title="Excluir" onClick={() => excluir(p.id)}>×</button>
                   </td>
                 </tr>

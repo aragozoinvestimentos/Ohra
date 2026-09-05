@@ -1,13 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FILAMENTOS, calcProducao } from "../lib/calc.js";
 import { BRL } from "../lib/format.js";
+import { supabase } from "../lib/supabaseClient.js";
+
+const STORAGE_KEY = "ohra:custo-producao:v2";
 
 const DEFAULTS = {
   comprimento: 5,
   diametro: 1.75,
   densidade: 1.24,
   tempo: 35,
-  filamentoIdx: FILAMENTOS.length - 1, // PLA (seu custo real)
+  materialNome: "PLA (seu custo real)",
   kwh: 1.05,
   consumo: 350,
   falhasPct: 10,
@@ -20,25 +23,67 @@ const DEFAULTS = {
   markupRapido: 100,
 };
 
-export default function CustoProducao({ onUsarCusto }) {
-  const [f, setF] = useState(DEFAULTS);
+function loadInitial() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+  } catch {
+    // localStorage indisponível — segue com os padrões
+  }
+  return DEFAULTS;
+}
+
+const FALLBACK_MATERIAIS = FILAMENTOS.map((f) => ({ id: f.nome, nome: f.nome, preco_kg: f.preco }));
+
+export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
+  const [f, setF] = useState(loadInitial);
+  const [materiais, setMateriais] = useState(FALLBACK_MATERIAIS);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(f));
+    } catch {
+      // sem problema, só não lembra da próxima vez
+    }
+  }, [f]);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let ativo = true;
+    async function carregar() {
+      const { data, error } = await supabase.from("materiais").select("*").order("nome", { ascending: true });
+      if (!ativo || error || !data || data.length === 0) return;
+      setMateriais(data);
+    }
+    carregar();
+    const canal = supabase
+      .channel("materiais-custo-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "materiais" }, carregar)
+      .subscribe();
+    return () => {
+      ativo = false;
+      supabase.removeChannel(canal);
+    };
+  }, []);
 
   const set = (key) => (e) => {
     const v = e.target.value;
     setF((prev) => ({ ...prev, [key]: v === "" ? "" : parseFloat(v) }));
   };
-  const setIdx = (key) => (e) => setF((prev) => ({ ...prev, [key]: parseInt(e.target.value, 10) }));
+  const setStr = (key) => (e) => setF((prev) => ({ ...prev, [key]: e.target.value }));
 
   const n = (v) => (isFinite(v) ? v : 0);
 
+  const materialSelecionado =
+    materiais.find((m) => m.nome === f.materialNome) || materiais[materiais.length - 1] || FALLBACK_MATERIAIS[0];
+
   const resultado = useMemo(() => {
-    const filamento = FILAMENTOS[f.filamentoIdx] || FILAMENTOS[FILAMENTOS.length - 1];
     return calcProducao({
       comprimento: n(f.comprimento),
       diametro: n(f.diametro),
       densidade: n(f.densidade),
       tempo: n(f.tempo),
-      precoKg: filamento.preco,
+      precoKg: materialSelecionado?.preco_kg ?? 0,
       kwh: n(f.kwh),
       consumo: n(f.consumo),
       falhasPct: n(f.falhasPct) / 100,
@@ -50,7 +95,8 @@ export default function CustoProducao({ onUsarCusto }) {
       modelagem: n(f.modelagem),
       markupRapido: n(f.markupRapido) / 100,
     });
-  }, [f]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f, materialSelecionado]);
 
   return (
     <div className="grid2">
@@ -79,14 +125,19 @@ export default function CustoProducao({ onUsarCusto }) {
           </div>
           <div className="field">
             <label>Filamento</label>
-            <select value={f.filamentoIdx} onChange={setIdx("filamentoIdx")}>
-              {FILAMENTOS.map((it, i) => (
-                <option key={it.nome} value={i}>
-                  {it.nome} — R${it.preco.toFixed(2)}/kg
+            <select value={materialSelecionado?.nome || ""} onChange={setStr("materialNome")}>
+              {materiais.map((m) => (
+                <option key={m.id} value={m.nome}>
+                  {m.nome} — R${Number(m.preco_kg).toFixed(2)}/kg
                 </option>
               ))}
             </select>
           </div>
+          {supabase && (
+            <div className="hint" style={{ marginBottom: 0 }}>
+              Lista puxada da aba Materiais — cadastre ou atualize preços por lá.
+            </div>
+          )}
         </div>
 
         <div className="panel">
@@ -173,6 +224,13 @@ export default function CustoProducao({ onUsarCusto }) {
             onClick={() => onUsarCusto(resultado.total)}
           >
             Usar este custo na Precificação por Canal →
+          </button>
+          <button
+            className="btn"
+            style={{ marginTop: 8, width: "100%" }}
+            onClick={() => onSalvarProduto({ custo: resultado.total, materialNome: materialSelecionado?.nome || "" })}
+          >
+            Salvar como Produto →
           </button>
         </div>
       </div>
