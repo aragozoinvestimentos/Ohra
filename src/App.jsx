@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import logo from "./assets/logo.png";
 import CustoProducao from "./components/CustoProducao.jsx";
 import PrecificacaoCanal from "./components/PrecificacaoCanal.jsx";
@@ -6,6 +6,18 @@ import Comparativo from "./components/Comparativo.jsx";
 import Cadastros from "./components/Cadastros.jsx";
 import Organizacao from "./components/Organizacao.jsx";
 import Historico from "./components/Historico.jsx";
+
+const THEME_KEY = "ohra:theme";
+
+function loadTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {
+    // sem problema, usa o padrão
+  }
+  return "light";
+}
 
 const TABS = [
   { key: "producao", label: "Custo de Produção" },
@@ -21,7 +33,21 @@ export default function App() {
   const [custoRecebido, setCustoRecebido] = useState(null);
   const [produtoRecebido, setProdutoRecebido] = useState(null);
   const [toast, setToast] = useState({ msg: "", show: false });
+  const [tema, setTema] = useState(loadTheme);
   const toastTimer = useRef(null);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", tema);
+    try {
+      localStorage.setItem(THEME_KEY, tema);
+    } catch {
+      // sem problema, só não lembra da próxima vez
+    }
+  }, [tema]);
+
+  function alternarTema() {
+    setTema((t) => (t === "dark" ? "light" : "dark"));
+  }
 
   function showToast(msg) {
     setToast({ msg, show: true });
@@ -49,6 +75,9 @@ export default function App() {
           <div className="word">OHRA</div>
           <div className="tagline">Precificador — custo de produção e preço por canal</div>
         </div>
+        <button className="btn theme-toggle" onClick={alternarTema} title="Trocar tema">
+          {tema === "dark" ? "☀️ Tema claro" : "🌙 Tema escuro"}
+        </button>
       </header>
 
       <nav className="tabs">

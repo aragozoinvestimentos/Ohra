@@ -20,9 +20,8 @@
   --logo-filter: none;
   color-scheme: light;
 }
-/* Tema escuro automático (por preferência do sistema) desativado a pedido —
-   o app fica sempre no tema claro. Os tokens de dark mode continuam abaixo,
-   prontos caso um botão de alternância seja adicionado no futuro. */
+/* O tema não muda mais sozinho pelo sistema — só pelo botão no cabeçalho,
+   que aplica data-theme="dark" na tag <html>. Padrão é sempre claro. */
 :root[data-theme="dark"] {
   --bg: oklch(0.1 0.008 80);
   --surface: oklch(0.15 0.01 80);
@@ -68,6 +67,7 @@ header.top { display: flex; align-items: center; gap: 16px; padding-bottom: 20px
 header.top img { height: 44px; width: auto; filter: var(--logo-filter); flex-shrink: 0; }
 header.top .word { font-family: 'Jost', sans-serif; font-weight: 500; font-size: 22px; letter-spacing: 0.08em; }
 header.top .tagline { color: var(--ink-soft); font-size: 13px; margin-top: 2px; }
+header.top .theme-toggle { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
 
 nav.tabs { display: flex; gap: 4px; margin-bottom: 28px; border-bottom: 1px solid var(--border); overflow-x: auto; }
 nav.tabs button {
