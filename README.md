@@ -70,3 +70,4 @@ centralizadas em `src/lib/calc.js` (`SHOPEE_TIERS`, `ML_CATEGORY_PCT`,
 sozinha.
 
 <!-- trigger fresh Vercel build to pick up Supabase env vars -->
+<!-- rebuild 1788638343 -->
