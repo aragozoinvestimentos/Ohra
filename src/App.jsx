@@ -19,11 +19,14 @@ function loadTheme() {
   return "light";
 }
 
+// Ordem segue a etapa do fluxo: cadastra os dados-base primeiro, depois
+// calcula custo, depois preço por canal, compara os canais, organiza a
+// produção e por fim consulta o histórico do que já foi calculado.
 const TABS = [
+  { key: "cadastros", label: "Cadastros" },
   { key: "producao", label: "Custo de Produção" },
   { key: "canal", label: "Precificação por Canal" },
   { key: "comparativo", label: "Comparativo" },
-  { key: "cadastros", label: "Cadastros" },
   { key: "organizacao", label: "Organização" },
   { key: "historico", label: "Histórico" },
 ];
@@ -88,6 +91,10 @@ export default function App() {
         ))}
       </nav>
 
+      <section className={`view ${tab === "cadastros" ? "active" : ""}`}>
+        <Cadastros produtoRecebido={produtoRecebido} onToast={showToast} />
+      </section>
+
       <section className={`view ${tab === "producao" ? "active" : ""}`}>
         <CustoProducao onUsarCusto={usarCusto} onSalvarProduto={salvarComoProduto} />
       </section>
@@ -98,10 +105,6 @@ export default function App() {
 
       <section className={`view ${tab === "comparativo" ? "active" : ""}`}>
         <Comparativo />
-      </section>
-
-      <section className={`view ${tab === "cadastros" ? "active" : ""}`}>
-        <Cadastros produtoRecebido={produtoRecebido} onToast={showToast} />
       </section>
 
       <section className={`view ${tab === "organizacao" ? "active" : ""}`}>
