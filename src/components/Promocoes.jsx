@@ -276,6 +276,11 @@ export default function Promocoes() {
               <div className="kv"><span className="k">Preço</span><span className="v">{BRL(normal.preco)}</span></div>
               <div className="kv"><span className="k">Lucro</span><span className="v">{BRL(normal.lucro)}</span></div>
               <div className="kv"><span className="k">Margem</span><span className="v">{PCT(normal.margem)}</span></div>
+              {canal?.tipo !== "custom" && normal.faixaOk === false && (
+                <div className="hint" style={{ marginTop: 10, marginBottom: 0, color: "var(--bad)" }}>
+                  O preço calculado não confere com a faixa de comissão desse canal — o custo informado está baixo demais pra fechar a conta de forma consistente. Ajuste o custo/frete antes de confiar nesses números.
+                </div>
+              )}
             </div>
           )}
         </div>

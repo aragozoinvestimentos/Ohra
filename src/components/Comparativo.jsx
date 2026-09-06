@@ -104,15 +104,24 @@ export default function Comparativo() {
     });
   }, [canais, lucratividade, custoProduto, frete, embalagem, mlCategoria]);
 
-  // Combinação de taxas impossível (comissão + imposto + custos fixos +
-  // lucratividade >= 100%) deixa lucro/preço como null — nunca vence a
-  // comparação de "melhor canal".
+  // Uma linha só concorre a "melhor canal" se o preço calculado realmente
+  // fechar dentro da própria faixa de comissão usada pra calculá-lo (Shopee/
+  // ML têm comissão e taxa fixa diferentes por faixa de preço — se nenhuma
+  // faixa fechar, resolverFaixaShopee/resolverFaixaML caem no último tier
+  // testado mesmo sem ele valer, o que pode gerar um preço/lucro artificial,
+  // às vezes R$0,00, tipicamente quando o custo do produto está zerado ou
+  // muito baixo pra aquele canal). Combinação de taxas impossível (comissão +
+  // imposto + custos fixos + lucratividade >= 100%) também deixa lucro/preço
+  // como null — nem uma coisa nem outra pode vencer a comparação.
+  const confiavel = (l) => l.canal.tipo === "custom" || l.resultado.faixaOk !== false;
   const melhorOrganico = linhas.reduce(
-    (best, l) => (l.resultado.lucro != null && (!best || l.resultado.lucro > best.resultado.lucro) ? l : best),
+    (best, l) =>
+      confiavel(l) && l.resultado.lucro != null && (!best || l.resultado.lucro > best.resultado.lucro) ? l : best,
     null
   );
   const melhorComAds = linhas.reduce(
-    (best, l) => (l.resultado.preco != null && (!best || l.ads.lucroComAds > best.ads.lucroComAds) ? l : best),
+    (best, l) =>
+      confiavel(l) && l.resultado.preco != null && (!best || l.ads.lucroComAds > best.ads.lucroComAds) ? l : best,
     null
   );
 
@@ -192,6 +201,8 @@ export default function Comparativo() {
             <div className="empty">Carregando…</div>
           ) : linhas.length === 0 ? (
             <div className="empty">Nenhum canal cadastrado ainda — vá em Cadastros → Canais.</div>
+          ) : custoProduto <= 0 ? (
+            <div className="empty">Escolha um produto cadastrado ou informe um custo de produção pra comparar os canais.</div>
           ) : (
             <div className="table-wrap">
               <table>
@@ -206,23 +217,35 @@ export default function Comparativo() {
                   </tr>
                 </thead>
                 <tbody>
-                  {linhas.map(({ canal, resultado, ads }) => (
-                    <tr key={canal.id}>
-                      <td>
-                        {canal.nome}
-                        {melhorOrganico?.canal.id === canal.id && <span className="badge good" style={{ marginLeft: 6 }}>melhor orgânico</span>}
-                        {melhorComAds?.canal.id === canal.id && canal.ads_pct > 0 && <span className="badge good" style={{ marginLeft: 6 }}>melhor c/ Ads</span>}
-                      </td>
-                      <td className="num">{BRL(resultado.preco)}</td>
-                      <td className="num">{BRL(resultado.lucro)}</td>
-                      <td className="num">
-                        {PCT(resultado.margem)}
-                        <Termometro valor={resultado.margem} meta={(parseFloat(lucratividade) || 0) / 100} compact />
-                      </td>
-                      <td className="num">{canal.ads_pct > 0 ? BRL(ads.lucroComAds) : "—"}</td>
-                      <td className="num">{canal.ads_pct > 0 ? PCT(ads.margemComAds) : "—"}</td>
-                    </tr>
-                  ))}
+                  {linhas.map(({ canal, resultado, ads }) => {
+                    const inconsistente = canal.tipo !== "custom" && resultado.faixaOk === false;
+                    return (
+                      <tr key={canal.id}>
+                        <td>
+                          {canal.nome}
+                          {melhorOrganico?.canal.id === canal.id && <span className="badge good" style={{ marginLeft: 6 }}>melhor orgânico</span>}
+                          {melhorComAds?.canal.id === canal.id && canal.ads_pct > 0 && <span className="badge good" style={{ marginLeft: 6 }}>melhor c/ Ads</span>}
+                          {inconsistente && (
+                            <span
+                              className="badge bad"
+                              style={{ marginLeft: 6 }}
+                              title="O preço calculado não confere com a faixa de comissão usada — o custo informado é baixo demais pra esse canal fechar a conta de forma consistente. Ajuste o custo/frete ou confira manualmente na aba Precificação por Canal."
+                            >
+                              faixa não confere
+                            </span>
+                          )}
+                        </td>
+                        <td className="num">{BRL(resultado.preco)}</td>
+                        <td className="num">{BRL(resultado.lucro)}</td>
+                        <td className="num">
+                          {PCT(resultado.margem)}
+                          <Termometro valor={resultado.margem} meta={(parseFloat(lucratividade) || 0) / 100} compact />
+                        </td>
+                        <td className="num">{canal.ads_pct > 0 ? BRL(ads.lucroComAds) : "—"}</td>
+                        <td className="num">{canal.ads_pct > 0 ? PCT(ads.margemComAds) : "—"}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
