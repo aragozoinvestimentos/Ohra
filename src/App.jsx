@@ -4,6 +4,7 @@ import CustoProducao from "./components/CustoProducao.jsx";
 import PrecificacaoCanal from "./components/PrecificacaoCanal.jsx";
 import Comparativo from "./components/Comparativo.jsx";
 import Cadastros from "./components/Cadastros.jsx";
+import Orcamento from "./components/Orcamento.jsx";
 import Organizacao from "./components/Organizacao.jsx";
 import Historico from "./components/Historico.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
@@ -28,6 +29,7 @@ const TABS = [
   { key: "producao", label: "Custo de Produção", icon: "🧮" },
   { key: "canal", label: "Precificação por Canal", icon: "🏷️" },
   { key: "comparativo", label: "Comparativo", icon: "📊" },
+  { key: "orcamento", label: "Orçamento", icon: "🧾" },
   { key: "organizacao", label: "Organização", icon: "📋" },
   { key: "historico", label: "Histórico", icon: "🕘" },
 ];
@@ -131,6 +133,10 @@ export default function App() {
 
         <section className={`view ${tab === "comparativo" ? "active" : ""}`}>
           <Comparativo />
+        </section>
+
+        <section className={`view ${tab === "orcamento" ? "active" : ""}`}>
+          <Orcamento onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "organizacao" ? "active" : ""}`}>
