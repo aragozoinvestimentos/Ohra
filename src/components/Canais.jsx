@@ -7,7 +7,12 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
 
-const TIPO_LABEL = { shopee: "Shopee (faixas oficiais)", ml: "Mercado Livre (faixas oficiais)", custom: "Canal próprio" };
+const TIPO_LABEL = {
+  shopee: "Shopee (faixas oficiais)",
+  ml: "Mercado Livre (faixas oficiais)",
+  tiktok: "TikTok Shop (faixas oficiais)",
+  custom: "Canal próprio",
+};
 
 // Componente fora do Canais() de propósito: se ficasse dentro, seria recriado
 // a cada tecla digitada e o input perderia o foco a cada caractere.
@@ -131,6 +136,21 @@ export default function Canais({ onToast }) {
     if (error) onToast("Não foi possível excluir — tente de novo");
   }
 
+  const temTiktok = canais.some((c) => c.tipo === "tiktok");
+
+  async function adicionarTiktok() {
+    const { error } = await supabase.from("canais").insert({
+      nome: "TikTok Shop",
+      tipo: "tiktok",
+      ...(lojaId ? { loja_id: lojaId } : {}),
+    });
+    if (error) {
+      onToast("Não foi possível adicionar — tente de novo");
+      return;
+    }
+    onToast("TikTok Shop adicionado");
+  }
+
   if (!supabase) {
     return (
       <div className="panel">
@@ -193,7 +213,7 @@ export default function Canais({ onToast }) {
                       <CampoEditavel canal={c} campo="ads_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
                     </td>
                     <td>
-                      {c.tipo === "custom" && (
+                      {(c.tipo === "custom" || c.tipo === "tiktok") && (
                         <button className="del" title="Excluir" onClick={() => setExcluirAlvo(c)}>×</button>
                       )}
                     </td>
@@ -204,8 +224,13 @@ export default function Canais({ onToast }) {
           </div>
         )}
         <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-          Shopee e Mercado Livre continuam usando as faixas oficiais de comissão/taxa (calculadas na hora). Imposto e custos fixos agora são por canal — o Comparativo usa automaticamente o valor daqui. O % de Ads é o que você costuma investir em anúncio patrocinado nesse canal.
+          Shopee, Mercado Livre e TikTok Shop usam as faixas oficiais de comissão/taxa (calculadas na hora). Imposto e custos fixos agora são por canal — o Comparativo usa automaticamente o valor daqui. O % de Ads é o que você costuma investir em anúncio patrocinado nesse canal.
         </div>
+        {!temTiktok && (
+          <button className="btn" style={{ marginTop: 12 }} onClick={adicionarTiktok}>
+            + Adicionar TikTok Shop (faixas oficiais)
+          </button>
+        )}
       </div>
 
       <div className="panel">

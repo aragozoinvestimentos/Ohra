@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ML_CATEGORY_PCT, calcCanal, calcCanalCustom, resolverFaixaML, resolverFaixaShopee } from "../lib/calc.js";
-import { BRL, PCT } from "../lib/format.js";
+import { ML_CATEGORY_PCT, calcCanal, calcCanalCustom, resolverFaixaML, resolverFaixaShopee, resolverFaixaTikTok } from "../lib/calc.js";
+import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Termometro from "./Termometro.jsx";
@@ -96,15 +96,15 @@ export default function Promocoes() {
 
   useEffect(() => {
     if (!produto) return;
-    setFrete(produto.frete_padrao || 0);
-    setEmbalagem(produto.embalagem_padrao || 0);
+    setFrete(arredondarPreco(produto.frete_padrao || 0));
+    setEmbalagem(arredondarPreco(produto.embalagem_padrao || 0));
   }, [produtoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const n = (v) => {
     const x = Number(v);
     return isFinite(x) ? x : 0;
   };
-  const custoProduto = produto ? Number(produto.custo_producao) || 0 : parseFloat(custoManual) || 0;
+  const custoProduto = produto ? arredondarPreco(Number(produto.custo_producao) || 0) : parseFloat(custoManual) || 0;
 
   // Resolve preço normal (sem promoção) pelo canal escolhido, e guarda as
   // taxas efetivas (comissão/taxa fixa) pra reaproveitar nos cálculos de
@@ -130,6 +130,10 @@ export default function Promocoes() {
     if (canal.tipo === "ml") {
       const r = resolverFaixaML(mlCategoria, base);
       return { normal: r.resultado, feeInfo: { comissaoPct: ML_CATEGORY_PCT[mlCategoria] ?? 0.13, taxaFixa: r.tier.fixo } };
+    }
+    if (canal.tipo === "tiktok") {
+      const r = resolverFaixaTikTok(base);
+      return { normal: r.resultado, feeInfo: { comissaoPct: r.tier.pct, taxaFixa: r.tier.fixo } };
     }
     return { normal: calcCanalCustom(canal, base), feeInfo: { comissaoPct: canal.comissao_pct || 0, taxaFixa: canal.taxa_fixa || 0 } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -262,6 +266,11 @@ export default function Promocoes() {
                     <input type="number" step="0.01" value={embalagem} onChange={(e) => setEmbalagem(e.target.value)} />
                   </div>
                 </div>
+                {produto && (
+                  <div className="hint" style={{ marginTop: -8 }}>
+                    Preenchido automaticamente com a embalagem já cadastrada nesse produto — não precisa somar de novo.
+                  </div>
+                )}
                 <div className="field" style={{ marginBottom: 0 }}>
                   <label>Lucratividade líquida desejada (%)</label>
                   <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />

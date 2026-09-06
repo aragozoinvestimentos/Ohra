@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BRL } from "../lib/format.js";
+import { BRL, arredondarPreco } from "../lib/format.js";
 import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -113,7 +113,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
     setForm({
       ...VAZIO,
       material_nome: produtoRecebido.materialNome || "",
-      custo_producao: produtoRecebido.custo,
+      custo_producao: arredondarPreco(produtoRecebido.custo),
       producao_detalhe: produtoRecebido.detalhe || null,
     });
     // Nada aparece como "alterado" logo depois de trazer da Custo de
@@ -191,9 +191,9 @@ export default function Produtos({ produtoRecebido, onToast }) {
     const payload = {
       nome,
       material_nome: form.material_nome.trim() || null,
-      custo_producao: resultadoDetalhe ? resultadoDetalhe.total : parseFloat(form.custo_producao) || 0,
-      frete_padrao: parseFloat(form.frete_padrao) || 0,
-      embalagem_padrao: usaReceitaEmbalagem ? custoEmbalagemReceita : parseFloat(form.embalagem_padrao) || 0,
+      custo_producao: arredondarPreco(resultadoDetalhe ? resultadoDetalhe.total : parseFloat(form.custo_producao) || 0),
+      frete_padrao: arredondarPreco(parseFloat(form.frete_padrao) || 0),
+      embalagem_padrao: arredondarPreco(usaReceitaEmbalagem ? custoEmbalagemReceita : parseFloat(form.embalagem_padrao) || 0),
       observacao: form.observacao.trim() || null,
       producao_detalhe: form.producao_detalhe || null,
       atualizado_em: new Date().toISOString(),
@@ -249,9 +249,9 @@ export default function Produtos({ produtoRecebido, onToast }) {
     setForm({
       nome: p.nome,
       material_nome: p.material_nome || "",
-      custo_producao: p.custo_producao,
-      frete_padrao: p.frete_padrao,
-      embalagem_padrao: p.embalagem_padrao,
+      custo_producao: arredondarPreco(p.custo_producao),
+      frete_padrao: arredondarPreco(p.frete_padrao),
+      embalagem_padrao: arredondarPreco(p.embalagem_padrao),
       observacao: p.observacao || "",
       embalagemItens: itens,
       producao_detalhe: p.producao_detalhe || null,

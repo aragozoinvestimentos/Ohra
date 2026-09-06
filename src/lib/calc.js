@@ -25,6 +25,13 @@ export const ML_FEE_TIERS = [
   { label: "A partir de R$79,00 (frete grátis obrigatório)", min: 79, max: 9999999, fixo: 0.0 },
 ];
 
+// Taxas do TikTok Shop Brasil vigentes desde 15/jul/2026 — só duas faixas,
+// definidas pelo preço do item já com desconto aplicado (não por categoria).
+export const TIKTOK_TIERS = [
+  { label: "Abaixo de R$50,00", min: 0, max: 49.99, pct: 0.1, fixo: 4 },
+  { label: "A partir de R$50,00", min: 50, max: 9999999, pct: 0.06, fixo: 6 },
+];
+
 // Valores padrão dos campos de Custo de Produção — usados tanto na primeira
 // vez que a aba abre quanto quando alguém preenche o detalhamento de um
 // produto antigo que foi cadastrado sem essa informação (ver Produtos.jsx).
@@ -95,6 +102,16 @@ export function resolverFaixaShopee(base) {
     if (resultado.faixaOk) return { tier, resultado };
   }
   const tier = SHOPEE_TIERS[SHOPEE_TIERS.length - 1];
+  return { tier, resultado: calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
+}
+
+// Mesma ideia pro TikTok Shop — só duas faixas, sem categoria.
+export function resolverFaixaTikTok(base) {
+  for (const tier of TIKTOK_TIERS) {
+    const resultado = calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max });
+    if (resultado.faixaOk) return { tier, resultado };
+  }
+  const tier = TIKTOK_TIERS[TIKTOK_TIERS.length - 1];
   return { tier, resultado: calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
 }
 

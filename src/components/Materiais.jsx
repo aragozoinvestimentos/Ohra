@@ -19,7 +19,7 @@ function CampoPreco({ material, edicoes, setEdicoes, onSalvar }) {
         type="number"
         step="0.01"
         style={{ width: 90, textAlign: "right" }}
-        value={edicoes[material.id] ?? material.preco}
+        value={edicoes[material.id] ?? arredondarPreco(material.preco)}
         onChange={(e) => setEdicoes((prev) => ({ ...prev, [material.id]: e.target.value }))}
         onBlur={async () => {
           if (edicoes[material.id] !== undefined && parseFloat(edicoes[material.id]) !== material.preco) {
@@ -178,7 +178,7 @@ export default function Materiais({ onToast }) {
   function abrirEdicao(m) {
     setEdicaoForm({
       nome: m.nome,
-      preco: String(m.preco),
+      preco: String(arredondarPreco(m.preco)),
       unidade: m.unidade || "un",
       tipo: m.tipo || "filamento",
       observacao: m.observacao || "",

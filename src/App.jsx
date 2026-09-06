@@ -105,8 +105,8 @@ export default function App() {
     showToast("Custo levado para a Precificação por Canal");
   }
 
-  function salvarComoProduto({ custo, materialNome }) {
-    setProdutoRecebido((prev) => ({ custo, materialNome, seq: (prev?.seq || 0) + 1 }));
+  function salvarComoProduto({ custo, materialNome, detalhe }) {
+    setProdutoRecebido((prev) => ({ custo, materialNome, detalhe, seq: (prev?.seq || 0) + 1 }));
     setTab("cadastros");
     showToast("Custo levado para o cadastro de Produtos");
   }

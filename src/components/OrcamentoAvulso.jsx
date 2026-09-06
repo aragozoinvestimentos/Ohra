@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { calcCanal } from "../lib/calc.js";
-import { BRL, PCT } from "../lib/format.js";
+import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Termometro from "./Termometro.jsx";
@@ -65,9 +65,9 @@ export default function OrcamentoAvulso({ onToast }) {
     }
     setF((prev) => ({
       ...prev,
-      custoProduto: produtoSelecionado.custo_producao,
-      frete: produtoSelecionado.frete_padrao || 0,
-      embalagem: produtoSelecionado.embalagem_padrao || 0,
+      custoProduto: arredondarPreco(produtoSelecionado.custo_producao),
+      frete: arredondarPreco(produtoSelecionado.frete_padrao || 0),
+      embalagem: arredondarPreco(produtoSelecionado.embalagem_padrao || 0),
     }));
   }, [produtoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -108,8 +108,8 @@ export default function OrcamentoAvulso({ onToast }) {
     const { error } = await supabase.from("produtos").insert({
       nome,
       canal: "Encomenda avulsa",
-      custo: resultado.custoTotal,
-      preco: resultado.preco,
+      custo: arredondarPreco(resultado.custoTotal),
+      preco: arredondarPreco(resultado.preco),
       margem: resultado.margem,
       ...(lojaId ? { loja_id: lojaId } : {}),
     });
@@ -153,6 +153,11 @@ export default function OrcamentoAvulso({ onToast }) {
               <input type="number" step="0.01" value={f.embalagem} onChange={set("embalagem")} />
             </div>
           </div>
+          {produtoSelecionado && (
+            <div className="hint" style={{ marginBottom: 0 }}>
+              Preenchido automaticamente com a embalagem já cadastrada nesse produto — não precisa somar de novo.
+            </div>
+          )}
         </div>
 
         <div className="panel">

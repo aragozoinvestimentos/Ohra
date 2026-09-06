@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, calcCanalCustom, aplicarAds } from "../lib/calc.js";
-import { BRL, PCT } from "../lib/format.js";
+import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, calcCanalCustom, aplicarAds } from "../lib/calc.js";
+import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Termometro from "./Termometro.jsx";
@@ -67,13 +67,13 @@ export default function Comparativo() {
 
   useEffect(() => {
     if (produtoSelecionado) {
-      setFrete(produtoSelecionado.frete_padrao || 0);
-      setEmbalagem(produtoSelecionado.embalagem_padrao || 0);
+      setFrete(arredondarPreco(produtoSelecionado.frete_padrao || 0));
+      setEmbalagem(arredondarPreco(produtoSelecionado.embalagem_padrao || 0));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtoId]);
 
-  const custoProduto = produtoSelecionado ? Number(produtoSelecionado.custo_producao) || 0 : parseFloat(custoManual) || 0;
+  const custoProduto = produtoSelecionado ? arredondarPreco(Number(produtoSelecionado.custo_producao) || 0) : parseFloat(custoManual) || 0;
 
   const linhas = useMemo(() => {
     const base = {
@@ -96,6 +96,8 @@ export default function Comparativo() {
         resultado = resolverFaixaShopee(baseCanal).resultado;
       } else if (canal.tipo === "ml") {
         resultado = resolverFaixaML(mlCategoria, baseCanal).resultado;
+      } else if (canal.tipo === "tiktok") {
+        resultado = resolverFaixaTikTok(baseCanal).resultado;
       } else {
         resultado = calcCanalCustom(canal, baseCanal);
       }
@@ -180,6 +182,11 @@ export default function Comparativo() {
               <input type="number" step="0.01" value={embalagem} onChange={(e) => setEmbalagem(e.target.value)} />
             </div>
           </div>
+          {produtoSelecionado && (
+            <div className="hint" style={{ marginTop: -8 }}>
+              Preenchido automaticamente com a embalagem já cadastrada nesse produto — não precisa somar de novo. Só altere aqui se quiser simular um cenário diferente.
+            </div>
+          )}
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Categoria (só afeta o Mercado Livre)</label>
             <select value={mlCategoria} onChange={(e) => setMlCategoria(e.target.value)}>

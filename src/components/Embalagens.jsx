@@ -19,7 +19,7 @@ function CampoPreco({ item, edicoes, setEdicoes, onSalvar }) {
         type="number"
         step="0.01"
         style={{ width: 90, textAlign: "right" }}
-        value={edicoes[item.id] ?? item.preco}
+        value={edicoes[item.id] ?? arredondarPreco(item.preco)}
         onChange={(e) => setEdicoes((prev) => ({ ...prev, [item.id]: e.target.value }))}
         onBlur={async () => {
           if (edicoes[item.id] !== undefined && parseFloat(edicoes[item.id]) !== item.preco) {
@@ -133,7 +133,7 @@ export default function Embalagens({ onToast }) {
   function abrirEdicao(item) {
     setEdicaoForm({
       nome: item.nome,
-      preco: String(item.preco),
+      preco: String(arredondarPreco(item.preco)),
       unidade: item.unidade || "un",
       observacao: item.observacao || "",
     });

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, calcCanal } from "../lib/calc.js";
-import { BRL, PCT } from "../lib/format.js";
+import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, calcCanal } from "../lib/calc.js";
+import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Termometro from "./Termometro.jsx";
@@ -13,6 +13,7 @@ const DEFAULTS = {
   shopeeFaixaIdx: 0,
   mlCategoria: ML_CATEGORIAS[0],
   mlFaixaIdx: 0,
+  tiktokFaixaIdx: 0,
   outroComissao: 0,
   outroFixo: 0,
   imposto: 0,
@@ -34,7 +35,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   // Quando "Usar este custo" é clicado na aba de Produção, aplica o valor aqui.
   useEffect(() => {
     if (custoRecebido == null) return;
-    setF((prev) => ({ ...prev, custoProduto: custoRecebido.value }));
+    setF((prev) => ({ ...prev, custoProduto: arredondarPreco(custoRecebido.value) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [custoRecebido?.seq]);
 
@@ -60,8 +61,12 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
       const tier = ML_FEE_TIERS[f.mlFaixaIdx] || ML_FEE_TIERS[0];
       return { pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
+    if (f.canal === "tiktok") {
+      const tier = TIKTOK_TIERS[f.tiktokFaixaIdx] || TIKTOK_TIERS[0];
+      return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
+    }
     return { pct: n(f.outroComissao) / 100, fixo: n(f.outroFixo), temFaixa: false };
-  }, [f.canal, f.shopeeFaixaIdx, f.mlCategoria, f.mlFaixaIdx, f.outroComissao, f.outroFixo]);
+  }, [f.canal, f.shopeeFaixaIdx, f.mlCategoria, f.mlFaixaIdx, f.tiktokFaixaIdx, f.outroComissao, f.outroFixo]);
 
   const resultado = useMemo(() => {
     return calcCanal({
@@ -84,7 +89,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   const concorrenteLucro = n(f.concorrente) > 0 ? resultado.lucroEm(n(f.concorrente)) : null;
   const negociadoLucro = n(f.negociado) > 0 ? resultado.lucroEm(n(f.negociado)) : null;
 
-  const canalLabel = f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : "Outro canal";
+  const canalLabel = f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : "Outro canal";
 
   async function salvar() {
     const nome = f.nome.trim();
@@ -100,8 +105,8 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
     const { error } = await supabase.from("produtos").insert({
       nome,
       canal: canalLabel,
-      custo: resultado.custoTotal,
-      preco: resultado.preco,
+      custo: arredondarPreco(resultado.custoTotal),
+      preco: arredondarPreco(resultado.preco),
       margem: resultado.margem,
       ...(lojaId ? { loja_id: lojaId } : {}),
     });
@@ -127,9 +132,21 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
             <select value={f.canal} onChange={setStr("canal")}>
               <option value="shopee">Shopee</option>
               <option value="ml">Mercado Livre</option>
+              <option value="tiktok">TikTok Shop</option>
               <option value="outro">Outro canal</option>
             </select>
           </div>
+
+          {f.canal === "tiktok" && (
+            <div className="field">
+              <label>Faixa de preço prevista (já com desconto)</label>
+              <select value={f.tiktokFaixaIdx} onChange={setIdx("tiktokFaixaIdx")}>
+                {TIKTOK_TIERS.map((t, i) => (
+                  <option key={t.label} value={i}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {f.canal === "shopee" && (
             <div className="field">
@@ -214,7 +231,10 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
 
       <div>
         <div className="panel">
-          <h3>Resultado</h3>
+          <h3 className="section-title">
+            Resultado
+            <Ajuda texto="'Taxas descontadas por venda' mostra exatamente o que o canal tira do preço calculado: comissão % (proporcional ao preço) + taxa fixa (mesmo valor em R$ não importa o preço). Imposto e custos fixos aparecem separados porque são configurados por você (Cadastros → Canais), não pela plataforma." />
+          </h3>
           <div className="kv"><span className="k">Custo total do produto</span><span className="v">{BRL(resultado.custoTotal)}</span></div>
           <div className="kv"><span className="k">Mark-up (divisor)</span><span className="v">{isFinite(Number(resultado.markup)) ? Number(resultado.markup).toFixed(3) + "×" : "—"}</span></div>
           <div className="kv total"><span className="k">Preço calculado</span><span className="v">{BRL(resultado.preco)}</span></div>
@@ -239,6 +259,15 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
             </span>
           </div>
           <Termometro valor={resultado.margem} meta={lucratividadeFrac} />
+
+          <div className="detalhe-taxas">
+            <div className="detalhe-taxas-titulo">Taxas descontadas por venda (nesse preço)</div>
+            <div className="kv"><span className="k">Comissão do canal</span><span className="v">{PCT(comissaoFixo.pct)} · {BRL(resultado.preco * comissaoFixo.pct)}</span></div>
+            <div className="kv"><span className="k">Taxa fixa do canal</span><span className="v">{BRL(comissaoFixo.fixo)}</span></div>
+            <div className="kv"><span className="k">Imposto sobre a venda</span><span className="v">{PCT(n(f.imposto) / 100)} · {BRL(resultado.preco * (n(f.imposto) / 100))}</span></div>
+            <div className="kv"><span className="k">Custos fixos adicionais</span><span className="v">{PCT(n(f.custosFixos) / 100)} · {BRL(resultado.preco * (n(f.custosFixos) / 100))}</span></div>
+            <div className="kv total"><span className="k">Total descontado da venda</span><span className="v">{BRL(resultado.preco - resultado.custoTotal - resultado.lucro)}</span></div>
+          </div>
         </div>
 
         <div className="panel">
