@@ -6,7 +6,7 @@ import Comparativo from "./components/Comparativo.jsx";
 import Cadastros from "./components/Cadastros.jsx";
 import Orcamento from "./components/Orcamento.jsx";
 import Promocoes from "./components/Promocoes.jsx";
-import Organizacao from "./components/Organizacao.jsx";
+import Otimizacao from "./components/Otimizacao.jsx";
 import Historico from "./components/Historico.jsx";
 import Lojas from "./components/Lojas.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
@@ -34,7 +34,7 @@ const TABS = [
   { key: "comparativo", label: "Comparativo", icon: "📊" },
   { key: "orcamento", label: "Orçamento", icon: "🧾" },
   { key: "promocoes", label: "Promoções", icon: "🎁" },
-  { key: "organizacao", label: "Organização", icon: "📋" },
+  { key: "otimizacao", label: "Otimização", icon: "📈" },
   { key: "historico", label: "Histórico", icon: "🕘" },
 ];
 
@@ -155,8 +155,8 @@ export default function App() {
           <Promocoes />
         </section>
 
-        <section className={`view ${tab === "organizacao" ? "active" : ""}`}>
-          <Organizacao onToast={showToast} />
+        <section className={`view ${tab === "otimizacao" ? "active" : ""}`}>
+          <Otimizacao onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "historico" ? "active" : ""}`}>

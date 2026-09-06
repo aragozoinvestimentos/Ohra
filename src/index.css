@@ -231,16 +231,6 @@ footer.note { margin-top: 32px; font-size: 12px; color: var(--ink-faint); line-h
 .termometro.compact .termometro-track { height: 6px; }
 .termometro.compact .termometro-meta { height: 11px; top: -2.5px; }
 
-.kanban-board { display: grid; grid-template-columns: repeat(4, minmax(200px, 1fr)); gap: 14px; overflow-x: auto; }
-@media (max-width: 760px) { .kanban-board { grid-template-columns: repeat(4, 240px); } }
-.kanban-col { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; min-width: 0; }
-.kanban-col-title { font-size: 13px; color: var(--ink-soft); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
-.kanban-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; box-shadow: var(--shadow); }
-.kanban-card-titulo { font-size: 13.5px; font-weight: 500; }
-.kanban-card-produto { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
-.kanban-card-actions { display: flex; gap: 4px; margin-top: 8px; justify-content: flex-end; }
-.kanban-card-actions .del:disabled { opacity: 0.3; cursor: default; }
-
 /* Modais (confirmação e PIN) */
 .modal-overlay {
   position: fixed; inset: 0; background: oklch(0.1 0.01 80 / 0.5); z-index: 200;
