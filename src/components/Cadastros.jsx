@@ -4,7 +4,7 @@ import Produtos from "./Produtos.jsx";
 import Canais from "./Canais.jsx";
 
 const SUBABAS = [
-  { key: "materiais", label: "Materiais" },
+  { key: "materiais", label: "Materiais (Fabricação)" },
   { key: "produtos", label: "Produtos" },
   { key: "canais", label: "Canais" },
 ];

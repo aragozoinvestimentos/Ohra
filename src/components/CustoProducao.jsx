@@ -4,6 +4,7 @@ import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Ajuda from "./Ajuda.jsx";
+import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 
 const STORAGE_KEY = "ohra:custo-producao:v2";
 
@@ -18,7 +19,7 @@ const DEFAULTS = {
   falhasPct: 10,
   manutencaoPct: 15,
   acabamentoPct: 10,
-  fixacao: 0.2,
+  consumiveisItens: [],
   maquina: 3198,
   prazoMeses: 12,
   horasDia: 6,
@@ -94,8 +95,13 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     return isFinite(x) ? x : 0;
   };
 
+  const filamentos = materiais.filter((m) => (m.tipo || "filamento") === "filamento");
+  const consumiveisCatalogo = materiais.filter((m) => m.tipo === "consumivel");
+
   const materialSelecionado =
-    materiais.find((m) => m.nome === f.materialNome) || materiais[materiais.length - 1] || null;
+    filamentos.find((m) => m.nome === f.materialNome) || filamentos[filamentos.length - 1] || null;
+
+  const custoConsumiveis = totalItens(consumiveisCatalogo, f.consumiveisItens);
 
   const resultado = useMemo(() => {
     return calcProducao({
@@ -103,13 +109,13 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       diametro: n(f.diametro),
       densidade: n(f.densidade),
       tempo: n(f.tempo),
-      precoKg: materialSelecionado?.preco_kg ?? 0,
+      precoKg: materialSelecionado?.preco ?? 0,
       kwh: n(f.kwh),
       consumo: n(f.consumo),
       falhasPct: n(f.falhasPct) / 100,
       manutencaoPct: n(f.manutencaoPct) / 100,
       acabamentoPct: n(f.acabamentoPct) / 100,
-      fixacao: n(f.fixacao),
+      consumiveis: custoConsumiveis,
       maquina: n(f.maquina),
       prazoMeses: n(f.prazoMeses),
       horasDia: n(f.horasDia),
@@ -118,7 +124,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       markupRapido: n(f.markupRapido) / 100,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f, materialSelecionado]);
+  }, [f, materialSelecionado, custoConsumiveis]);
 
   if (materiaisCarregando) {
     return (
@@ -128,13 +134,13 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     );
   }
 
-  if (materiais.length === 0) {
+  if (filamentos.length === 0) {
     return (
       <div className="panel">
-        <h3>Nenhum material cadastrado ainda</h3>
+        <h3>Nenhum filamento cadastrado ainda</h3>
         <div className="empty">
           {supabase
-            ? "Cadastre pelo menos um material (filamento) em Cadastros → Materiais antes de calcular um custo de produção — assim o preço por kg usado aqui é sempre o que está de fato registrado."
+            ? "Cadastre pelo menos um filamento em Cadastros → Materiais (Fabricação) antes de calcular um custo de produção — assim o preço por kg usado aqui é sempre o que está de fato registrado."
             : "Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para ativar o cadastro de materiais."}
         </div>
         {supabase && onIrParaMateriais && (
@@ -177,9 +183,9 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           <div className="field">
             <label>Filamento</label>
             <select value={materialSelecionado?.nome || ""} onChange={setStr("materialNome")}>
-              {materiais.map((m) => (
+              {filamentos.map((m) => (
                 <option key={m.id} value={m.nome}>
-                  {m.nome} — R${Number(m.preco_kg).toFixed(2)}/kg
+                  {m.nome} — R${Number(m.preco).toFixed(2)}/kg
                 </option>
               ))}
             </select>
@@ -194,7 +200,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         <div className="panel">
           <h3 className="section-title">
             Custos de produção
-            <Ajuda texto="Preço do kWh e consumo da máquina (em Watts) calculam o custo de energia da impressão. Falhas é a % de peças que costuma dar problema e ser perdida — esse custo é diluído nas que dão certo. Fixação é o gasto com spray/cola pra base aderir. Manutenção e acabamento são % aplicados sobre o custo do material, cobrindo desgaste da máquina e pós-processamento (lixar, pintar etc.)." />
+            <Ajuda texto="Preço do kWh e consumo da máquina (em Watts) calculam o custo de energia da impressão. Falhas é a % de peças que costuma dar problema e ser perdida — esse custo é diluído nas que dão certo. Consumíveis é o gasto com cola, spray, lixa etc. (cadastrados em Materiais). Manutenção e acabamento são % aplicados sobre o custo do material, cobrindo desgaste da máquina e pós-processamento." />
           </h3>
           <div className="row2">
             <div className="field">
@@ -206,15 +212,9 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
               <input type="number" step="1" value={f.consumo} onChange={set("consumo")} />
             </div>
           </div>
-          <div className="row2">
-            <div className="field">
-              <label>Média de falhas (%)</label>
-              <input type="number" step="1" value={f.falhasPct} onChange={set("falhasPct")} />
-            </div>
-            <div className="field">
-              <label>Fixação — spray/cola (R$)</label>
-              <input type="number" step="0.01" value={f.fixacao} onChange={set("fixacao")} />
-            </div>
+          <div className="field">
+            <label>Média de falhas (%)</label>
+            <input type="number" step="1" style={{ maxWidth: 160 }} value={f.falhasPct} onChange={set("falhasPct")} />
           </div>
           <div className="row2">
             <div className="field">
@@ -227,6 +227,19 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
             </div>
           </div>
           <div className="hint">Manutenção e acabamento são calculados como % sobre o custo do material — ajuste se sua peça exigir mais ou menos pós-processamento.</div>
+        </div>
+
+        <div className="panel">
+          <h3 className="section-title">
+            Consumíveis
+            <Ajuda texto="Cola, spray de fixação, lixa, tinta — o que essa peça gasta além do filamento. Escolha o item (cadastrado em Materiais → Consumíveis) e quantas unidades ela usa; o app soma tudo automaticamente." />
+          </h3>
+          <SeletorItens
+            catalogo={consumiveisCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade }))}
+            itens={f.consumiveisItens}
+            onChange={(itens) => setF((prev) => ({ ...prev, consumiveisItens: itens }))}
+            rotuloVazio='Nenhum consumível cadastrado — se usar cola, spray, lixa etc., cadastre em Cadastros → Materiais (Fabricação), tipo "Consumível".'
+          />
         </div>
 
         <div className="panel">
@@ -273,7 +286,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           <div className="kv"><span className="k">Manutenção</span><span className="v">{BRL(resultado.manutencao)}</span></div>
           <div className="kv"><span className="k">Falhas</span><span className="v">{BRL(resultado.falhas)}</span></div>
           <div className="kv"><span className="k">Acabamento</span><span className="v">{BRL(resultado.acabamento)}</span></div>
-          <div className="kv"><span className="k">Fixação</span><span className="v">{BRL(n(f.fixacao))}</span></div>
+          <div className="kv"><span className="k">Consumíveis</span><span className="v">{BRL(custoConsumiveis)}</span></div>
           <div className="kv"><span className="k">ROI da máquina nesta peça</span><span className="v">{BRL(resultado.roiPeca)}</span></div>
           <div className="kv"><span className="k">Administrativo</span><span className="v">{BRL(n(f.modelagem))}</span></div>
           <div className="kv total"><span className="k">Custo de produção total</span><span className="v">{BRL(resultado.total)}</span></div>

@@ -4,6 +4,8 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 
+const VAZIO = { nome: "", preco: "", unidade: "un", tipo: "filamento", observacao: "" };
+
 // Fora do Materiais() de propósito: se ficasse dentro, seria recriado a cada
 // tecla digitada e o input perderia o foco a cada caractere.
 function CampoPreco({ material, edicoes, setEdicoes, onSalvar }) {
@@ -14,10 +16,10 @@ function CampoPreco({ material, edicoes, setEdicoes, onSalvar }) {
         type="number"
         step="0.01"
         style={{ width: 90, textAlign: "right" }}
-        value={edicoes[material.id] ?? material.preco_kg}
+        value={edicoes[material.id] ?? material.preco}
         onChange={(e) => setEdicoes((prev) => ({ ...prev, [material.id]: e.target.value }))}
         onBlur={async () => {
-          if (edicoes[material.id] !== undefined && parseFloat(edicoes[material.id]) !== material.preco_kg) {
+          if (edicoes[material.id] !== undefined && parseFloat(edicoes[material.id]) !== material.preco) {
             const ok = await onSalvar(material.id);
             if (ok) disparar();
           }
@@ -31,13 +33,55 @@ function CampoPreco({ material, edicoes, setEdicoes, onSalvar }) {
   );
 }
 
+function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes, onSalvarPreco, onExcluir }) {
+  return (
+    <div className="panel">
+      <h3>{titulo}</h3>
+      {itens.length === 0 ? (
+        <div className="empty">{vazio}</div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th className="num">{comUnidade ? "Preço" : "Preço / kg"}</th>
+                {comUnidade && <th>Unidade</th>}
+                <th>Observação</th>
+                <th>Atualizado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {itens.map((m) => (
+                <tr key={m.id}>
+                  <td>{m.nome}</td>
+                  <td className="num">
+                    <CampoPreco material={m} edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={onSalvarPreco} />
+                  </td>
+                  {comUnidade && <td>{m.unidade || "un"}</td>}
+                  <td>{m.observacao || "—"}</td>
+                  <td>{new Date(m.atualizado_em).toLocaleDateString("pt-BR")}</td>
+                  <td>
+                    <button className="del" title="Excluir" onClick={() => onExcluir(m)}>×</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Materiais({ onToast }) {
   const { lojaId } = useLoja();
   const [materiais, setMateriais] = useState([]);
   const [carregando, setCarregando] = useState(true);
-  const [novo, setNovo] = useState({ nome: "", preco_kg: "", observacao: "" });
+  const [novo, setNovo] = useState(VAZIO);
   const [salvandoNovo, setSalvandoNovo] = useState(false);
-  const [edicoes, setEdicoes] = useState({}); // id -> valor em edição (preco_kg como string)
+  const [edicoes, setEdicoes] = useState({}); // id -> valor em edição (preco como string)
   const [excluirAlvo, setExcluirAlvo] = useState(null);
 
   useEffect(() => {
@@ -75,24 +119,26 @@ export default function Materiais({ onToast }) {
 
   async function adicionar() {
     const nome = novo.nome.trim();
-    const preco = parseFloat(novo.preco_kg);
+    const preco = parseFloat(novo.preco);
     if (!nome || !isFinite(preco)) {
-      onToast("Preencha nome e preço por kg");
+      onToast("Preencha nome e preço");
       return;
     }
     setSalvandoNovo(true);
     const { error } = await supabase.from("materiais").insert({
       nome,
-      preco_kg: preco,
+      preco,
+      unidade: novo.tipo === "filamento" ? "kg" : novo.unidade.trim() || "un",
+      tipo: novo.tipo,
       observacao: novo.observacao.trim() || null,
       ...(lojaId ? { loja_id: lojaId } : {}),
     });
     setSalvandoNovo(false);
     if (error) {
-      onToast("Não foi possível adicionar — tente de novo");
+      onToast(`Não foi possível adicionar: ${error.message}`);
       return;
     }
-    setNovo({ nome: "", preco_kg: "", observacao: "" });
+    setNovo({ ...VAZIO, tipo: novo.tipo });
     onToast("Material adicionado");
   }
 
@@ -104,10 +150,10 @@ export default function Materiais({ onToast }) {
     }
     const { error } = await supabase
       .from("materiais")
-      .update({ preco_kg: valor, atualizado_em: new Date().toISOString() })
+      .update({ preco: valor, atualizado_em: new Date().toISOString() })
       .eq("id", id);
     if (error) {
-      onToast("Não foi possível atualizar — tente de novo");
+      onToast(`Não foi possível atualizar: ${error.message}`);
       return false;
     }
     setEdicoes((prev) => {
@@ -121,7 +167,7 @@ export default function Materiais({ onToast }) {
   async function excluir(id) {
     const { error } = await supabase.from("materiais").delete().eq("id", id);
     if (error) {
-      onToast("Não foi possível excluir — tente de novo");
+      onToast(`Não foi possível excluir: ${error.message}`);
       return;
     }
     setMateriais((prev) => prev.filter((m) => m.id !== id));
@@ -136,29 +182,61 @@ export default function Materiais({ onToast }) {
     );
   }
 
+  const filamentos = materiais.filter((m) => (m.tipo || "filamento") === "filamento");
+  const consumiveis = materiais.filter((m) => m.tipo === "consumivel");
+
   return (
     <div>
       <div className="panel">
         <h3 className="section-title">Adicionar material</h3>
+        <div className="field">
+          <label>Tipo</label>
+          <select value={novo.tipo} onChange={(e) => setNovo((p) => ({ ...p, tipo: e.target.value }))}>
+            <option value="filamento">Filamento (preço por kg)</option>
+            <option value="consumivel">Consumível — cola, lixa, tinta... (preço por unidade)</option>
+          </select>
+        </div>
         <div className="row3">
           <div className="field">
             <label>Nome</label>
             <input
               type="text"
-              placeholder="ex: PETG Premium"
+              placeholder={novo.tipo === "filamento" ? "ex: PETG Premium" : "ex: Cola bastão"}
               value={novo.nome}
               onChange={(e) => setNovo((p) => ({ ...p, nome: e.target.value }))}
             />
           </div>
           <div className="field">
-            <label>Preço por kg (R$)</label>
+            <label>{novo.tipo === "filamento" ? "Preço por kg (R$)" : "Preço por unidade (R$)"}</label>
             <input
               type="number"
               step="0.01"
-              value={novo.preco_kg}
-              onChange={(e) => setNovo((p) => ({ ...p, preco_kg: e.target.value }))}
+              value={novo.preco}
+              onChange={(e) => setNovo((p) => ({ ...p, preco: e.target.value }))}
             />
           </div>
+          {novo.tipo === "consumivel" ? (
+            <div className="field">
+              <label>Unidade (un, ml, g...)</label>
+              <input
+                type="text"
+                placeholder="un"
+                value={novo.unidade}
+                onChange={(e) => setNovo((p) => ({ ...p, unidade: e.target.value }))}
+              />
+            </div>
+          ) : (
+            <div className="field">
+              <label>Observação (opcional)</label>
+              <input
+                type="text"
+                value={novo.observacao}
+                onChange={(e) => setNovo((p) => ({ ...p, observacao: e.target.value }))}
+              />
+            </div>
+          )}
+        </div>
+        {novo.tipo === "consumivel" && (
           <div className="field">
             <label>Observação (opcional)</label>
             <input
@@ -167,54 +245,43 @@ export default function Materiais({ onToast }) {
               onChange={(e) => setNovo((p) => ({ ...p, observacao: e.target.value }))}
             />
           </div>
-        </div>
+        )}
         <button className="btn primary" onClick={adicionar} disabled={salvandoNovo}>
           {salvandoNovo ? "Adicionando…" : "+ Adicionar material"}
         </button>
       </div>
 
-      <div className="panel">
-        <h3>Materiais cadastrados</h3>
-        {carregando ? (
-          <div className="empty">Carregando…</div>
-        ) : materiais.length === 0 ? (
-          <div className="empty">Nenhum material cadastrado ainda.</div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th className="num">Preço / kg</th>
-                  <th>Observação</th>
-                  <th>Atualizado</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {materiais.map((m) => (
-                  <tr key={m.id}>
-                    <td>{m.nome}</td>
-                    <td className="num">
-                      <CampoPreco material={m} edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarPreco} />
-                    </td>
-                    <td>{m.observacao || "—"}</td>
-                    <td>{new Date(m.atualizado_em).toLocaleDateString("pt-BR")}</td>
-                    <td>
-                      <button className="del" title="Excluir" onClick={() => setExcluirAlvo(m)}>×</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {materiais.length > 0 && (
-          <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-            Pra atualizar um preço: clique no valor, edite e aperte Enter (ou clique fora) para salvar. É esse valor que aparece no dropdown de filamento na aba Custo de Produção.
-          </div>
-        )}
-      </div>
+      {carregando ? (
+        <div className="panel"><div className="empty">Carregando…</div></div>
+      ) : (
+        <>
+          <TabelaMateriais
+            titulo="Filamentos"
+            itens={filamentos}
+            vazio="Nenhum filamento cadastrado ainda."
+            comUnidade={false}
+            edicoes={edicoes}
+            setEdicoes={setEdicoes}
+            onSalvarPreco={salvarPreco}
+            onExcluir={setExcluirAlvo}
+          />
+          <TabelaMateriais
+            titulo="Consumíveis"
+            itens={consumiveis}
+            vazio="Nenhum consumível cadastrado ainda — cola, lixa, tinta, o que mais gastar na fabricação."
+            comUnidade
+            edicoes={edicoes}
+            setEdicoes={setEdicoes}
+            onSalvarPreco={salvarPreco}
+            onExcluir={setExcluirAlvo}
+          />
+          {materiais.length > 0 && (
+            <div className="hint" style={{ marginTop: -6, marginBottom: 18 }}>
+              Pra atualizar um preço: clique no valor, edite e aperte Enter (ou clique fora) para salvar. Filamentos aparecem no dropdown da aba Custo de Produção; consumíveis aparecem na seção "Consumíveis" da mesma aba.
+            </div>
+          )}
+        </>
+      )}
 
       {excluirAlvo && (
         <ConfirmDialog

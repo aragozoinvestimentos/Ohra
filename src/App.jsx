@@ -23,20 +23,45 @@ function loadTheme() {
   return "light";
 }
 
-// Ordem segue a etapa do fluxo: cadastra os dados-base primeiro, depois
-// calcula custo, depois preço por canal, compara os canais, organiza a
-// produção e por fim consulta o histórico do que já foi calculado.
-const TABS = [
-  { key: "lojas", label: "Lojas", icon: "🏬" },
-  { key: "cadastros", label: "Cadastros", icon: "🗂️" },
-  { key: "producao", label: "Custo de Produção", icon: "🧮" },
-  { key: "canal", label: "Precificação por Canal", icon: "🏷️" },
-  { key: "comparativo", label: "Comparativo", icon: "📊" },
-  { key: "orcamento", label: "Orçamento", icon: "🧾" },
-  { key: "promocoes", label: "Promoções", icon: "🎁" },
-  { key: "otimizacao", label: "Otimização", icon: "📈" },
-  { key: "historico", label: "Histórico", icon: "🕘" },
+// A barra lateral é agrupada em etapas do fluxo de uso: primeiro configura
+// a loja, depois cadastra os dados-base, depois precifica um produto,
+// depois usa isso pra vender, e por fim gerencia/analisa. A ordem dentro
+// de cada grupo também segue a etapa (calcula custo → preço por canal →
+// compara canais, por exemplo).
+const GRUPOS = [
+  {
+    titulo: "Configuração",
+    tabs: [{ key: "lojas", label: "Lojas", icon: "🏬" }],
+  },
+  {
+    titulo: "Cadastros",
+    tabs: [{ key: "cadastros", label: "Cadastros", icon: "🗂️" }],
+  },
+  {
+    titulo: "Precificar",
+    tabs: [
+      { key: "producao", label: "Custo de Produção", icon: "🧮" },
+      { key: "canal", label: "Precificação por Canal", icon: "🏷️" },
+      { key: "comparativo", label: "Comparativo", icon: "📊" },
+    ],
+  },
+  {
+    titulo: "Vender",
+    tabs: [
+      { key: "orcamento", label: "Orçamento", icon: "🧾" },
+      { key: "promocoes", label: "Promoções", icon: "🎁" },
+    ],
+  },
+  {
+    titulo: "Gestão",
+    tabs: [
+      { key: "otimizacao", label: "Otimização", icon: "📈" },
+      { key: "historico", label: "Histórico", icon: "🕘" },
+    ],
+  },
 ];
+
+const TABS = GRUPOS.flatMap((g) => g.tabs);
 
 export default function App() {
   const [tab, setTab] = useState("producao");
@@ -107,11 +132,16 @@ export default function App() {
         <LojaSwitcher onGerenciar={() => irPara("lojas")} />
 
         <nav className="side-nav">
-          {TABS.map((t) => (
-            <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => irPara(t.key)}>
-              <span className="side-nav-icon">{t.icon}</span>
-              {t.label}
-            </button>
+          {GRUPOS.map((g) => (
+            <div className="side-nav-grupo" key={g.titulo}>
+              <div className="side-nav-label">{g.titulo}</div>
+              {g.tabs.map((t) => (
+                <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => irPara(t.key)}>
+                  <span className="side-nav-icon">{t.icon}</span>
+                  {t.label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
 

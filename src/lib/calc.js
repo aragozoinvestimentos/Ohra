@@ -34,7 +34,7 @@ export function calcProducao(i) {
   const acabamento = material * (i.acabamentoPct ?? 0.1);
   const roiHora = i.maquina / ((i.horasDia * i.diasMes * i.prazoMeses) || 1);
   const roiPeca = (roiHora / 60) * i.tempo;
-  const total = material + energia + manutencao + falhas + acabamento + i.fixacao + roiPeca + i.modelagem;
+  const total = material + energia + manutencao + falhas + acabamento + i.consumiveis + roiPeca + i.modelagem;
   const precoRapido = total * (1 + i.markupRapido);
   return { peso, material, energia, manutencao, falhas, acabamento, roiPeca, total, precoRapido };
 }
