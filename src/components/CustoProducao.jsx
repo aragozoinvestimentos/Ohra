@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FILAMENTOS, calcProducao } from "../lib/calc.js";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import Ajuda from "./Ajuda.jsx";
 
 const STORAGE_KEY = "ohra:custo-producao:v2";
 
@@ -106,7 +107,10 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title">Peça (dados do fatiador)</h3>
+          <h3 className="section-title">
+            Peça (dados do fatiador)
+            <Ajuda texto="Dados que o fatiador (slicer) mostra antes de imprimir. Comprimento é o total de filamento gasto na peça (em metros); diâmetro e densidade dependem do filamento (1.75mm e ~1.24 g/cm³ pra PLA/PETG são padrão); tempo é a duração da impressão. Com isso o app calcula o peso da peça e o custo de material." />
+          </h3>
           <div className="row2">
             <div className="field">
               <label>Comprimento de filamento (m)</label>
@@ -145,7 +149,10 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
         </div>
 
         <div className="panel">
-          <h3 className="section-title">Custos de produção</h3>
+          <h3 className="section-title">
+            Custos de produção
+            <Ajuda texto="Preço do kWh e consumo da máquina (em Watts) calculam o custo de energia da impressão. Falhas é a % de peças que costuma dar problema e ser perdida — esse custo é diluído nas que dão certo. Fixação é o gasto com spray/cola pra base aderir. Manutenção e acabamento são % aplicados sobre o custo do material, cobrindo desgaste da máquina e pós-processamento (lixar, pintar etc.)." />
+          </h3>
           <div className="row2">
             <div className="field">
               <label>Preço do kWh (R$)</label>
@@ -180,7 +187,10 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
         </div>
 
         <div className="panel">
-          <h3 className="section-title">Retorno de investimento na máquina</h3>
+          <h3 className="section-title">
+            Retorno de investimento na máquina
+            <Ajuda texto="Rateia o valor da impressora entre as peças que ela vai produzir até você 'reaver' o investimento no prazo desejado. Quanto mais horas por dia/dias por mês a máquina roda, menor esse custo por peça — e quanto mais rápido você quer pagar a máquina, maior. Modelagem é só se você pagou por um modelo 3D pronto." />
+          </h3>
           <div className="row2">
             <div className="field">
               <label>Valor da máquina (R$)</label>
@@ -226,7 +236,10 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
           <div className="kv total"><span className="k">Custo de produção total</span><span className="v">{BRL(resultado.total)}</span></div>
         </div>
         <div className="panel">
-          <h3 className="section-title">Cálculo rápido de venda</h3>
+          <h3 className="section-title">
+            Cálculo rápido de venda
+            <Ajuda texto="Markup é o multiplicador aplicado sobre o custo total pra chegar num preço sugerido — 100% de markup significa vender pelo dobro do custo. É só uma estimativa rápida, sem considerar taxas de canal; pra um preço final por Shopee/ML/etc., use 'Precificação por Canal'." />
+          </h3>
           <div className="field">
             <label>Markup desejado (%) — ex: 100% = dobro do custo</label>
             <input type="number" step="1" value={f.markupRapido} onChange={set("markupRapido")} />

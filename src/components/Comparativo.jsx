@@ -3,6 +3,7 @@ import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, calcCanalCustom,
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import Termometro from "./Termometro.jsx";
+import Ajuda from "./Ajuda.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -132,7 +133,10 @@ export default function Comparativo() {
         </div>
 
         <div className="panel">
-          <h3 className="section-title">Parâmetros gerais</h3>
+          <h3 className="section-title">
+            Parâmetros gerais
+            <Ajuda texto="Lucratividade desejada é a margem líquida usada como meta pra colorir o termômetro de cada canal (não muda o preço aqui, que já vem do custo do produto). Frete e embalagem são custos extras por sua conta, aplicados igual em todos os canais." />
+          </h3>
           <div className="field">
             <label>Lucratividade líquida desejada (%)</label>
             <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />

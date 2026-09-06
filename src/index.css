@@ -129,8 +129,22 @@ section.view.active { display: block; }
   padding: 20px 22px; box-shadow: var(--shadow);
 }
 .panel + .panel { margin-top: 18px; }
-.panel h3 { font-size: 15px; margin-bottom: 14px; }
+.panel h3 { font-size: 15px; margin-bottom: 14px; display: flex; align-items: center; }
 .panel h3.section-title { color: var(--accent-ink); }
+
+.ajuda-wrap { position: relative; display: inline-flex; margin-left: 7px; }
+.ajuda-btn {
+  width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--ink-soft); font-size: 10.5px; line-height: 1;
+  padding: 0; display: inline-flex; align-items: center; justify-content: center; font-weight: 600;
+}
+.ajuda-btn:hover { color: var(--ink); border-color: var(--accent); }
+.ajuda-popover {
+  position: absolute; top: 24px; left: 0; z-index: 30; width: 250px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px;
+  padding: 10px 12px; font-size: 12px; font-weight: 400; color: var(--ink-soft); line-height: 1.5;
+  box-shadow: var(--shadow); text-transform: none; letter-spacing: normal;
+}
 
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
 .field label { font-size: 12.5px; color: var(--ink-soft); }

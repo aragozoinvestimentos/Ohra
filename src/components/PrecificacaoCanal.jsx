@@ -3,6 +3,7 @@ import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, calcCanal } from "../lib/c
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import Termometro from "./Termometro.jsx";
+import Ajuda from "./Ajuda.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -111,7 +112,10 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title">Canal</h3>
+          <h3 className="section-title">
+            Canal
+            <Ajuda texto="Comissão e taxa fixa são o que Shopee/Mercado Livre descontam de cada venda (calculadas pelas faixas oficiais). Imposto é o % que você recolhe sobre a venda (MEI com DAS fixo pode deixar em 0%). Custos fixos adicionais é qualquer % extra recorrente (embalagens, ferramentas, assinaturas). Lucratividade desejada é a margem líquida que você quer garantir — é ela que define o preço calculado." />
+          </h3>
           <div className="field">
             <label>Canal de venda</label>
             <select value={f.canal} onChange={setStr("canal")}>

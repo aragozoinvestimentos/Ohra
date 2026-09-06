@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
+import Ajuda from "./Ajuda.jsx";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
 
@@ -129,7 +130,10 @@ export default function Canais({ onToast }) {
   return (
     <div>
       <div className="panel">
-        <h3>Canais cadastrados</h3>
+        <h3>
+          Canais cadastrados
+          <Ajuda texto="Comissão e taxa fixa da Shopee/ML seguem as faixas oficiais (calculadas automaticamente). Imposto e custos fixos são por canal — o Comparativo usa o valor daqui pra cada um. % de Ads é quanto você costuma investir em anúncio patrocinado, usado só pra mostrar o lucro com Ads no Comparativo." />
+        </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
         ) : (
