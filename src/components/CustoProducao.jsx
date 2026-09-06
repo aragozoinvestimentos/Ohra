@@ -153,6 +153,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       diasMes: n(f.diasMes),
       modelagem: n(f.modelagem),
       markupRapido: n(f.markupRapido) / 100,
+      pecasPorPlaca: n(f.pecasPorPlaca) || 1,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f, materialSelecionado, custoConsumiveis]);
@@ -189,7 +190,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         <div className="panel">
           <h3 className="section-title">
             Peça (dados do fatiador)
-            <Ajuda texto="Dados que o fatiador (slicer) mostra antes de imprimir. Comprimento é o total de filamento gasto na peça (em metros); diâmetro e densidade dependem do filamento (1.75mm e ~1.24 g/cm³ pra PLA/PETG são padrão); tempo é a duração da impressão. Com isso o app calcula o peso da peça e o custo de material." />
+            <Ajuda texto="Dados que o fatiador (slicer) mostra antes de imprimir. Comprimento é o total de filamento gasto (em metros); diâmetro e densidade dependem do filamento (1.75mm e ~1.24 g/cm³ pra PLA/PETG são padrão); tempo é a duração da impressão. Se você imprime várias peças de uma vez na mesma chapa (aproveitando o espaço da mesa), aumente 'Peças por impressão/chapa' e informe comprimento/tempo do TOTAL da chapa — o app divide tudo automaticamente pra achar o custo de cada peça." />
           </h3>
           {supabase && (
             <div className="field">
@@ -209,9 +210,18 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
                 : 'Esse produto não tem detalhamento salvo ainda — os campos abaixo continuam como estavam. Ao salvar, isso preenche o detalhamento dele.'}
             </div>
           )}
+          <div className="field">
+            <label>Peças por impressão/chapa</label>
+            <input type="number" step="1" min="1" style={{ maxWidth: 160 }} value={f.pecasPorPlaca} onChange={set("pecasPorPlaca")} />
+          </div>
+          {n(f.pecasPorPlaca) > 1 && (
+            <div className="hint" style={{ marginTop: -8 }}>
+              Imprimindo {n(f.pecasPorPlaca)} peças de uma vez na mesma chapa: informe comprimento e tempo de impressão do TOTAL da chapa abaixo — o app divide material, energia, manutenção, falhas, acabamento e ROI da máquina por essa quantidade pra chegar no custo de cada peça.
+            </div>
+          )}
           <div className="row2">
             <div className="field">
-              <label>Comprimento de filamento (m)</label>
+              <label>Comprimento de filamento (m){n(f.pecasPorPlaca) > 1 ? " — total da chapa" : ""}</label>
               <input type="number" step="0.01" value={f.comprimento} onChange={set("comprimento")} />
             </div>
             <div className="field">
@@ -225,7 +235,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
               <input type="number" step="0.01" value={f.densidade} onChange={set("densidade")} />
             </div>
             <div className="field">
-              <label>Tempo de impressão (min)</label>
+              <label>Tempo de impressão (min){n(f.pecasPorPlaca) > 1 ? " — total da chapa" : ""}</label>
               <input type="number" step="1" value={f.tempo} onChange={set("tempo")} />
             </div>
           </div>
@@ -383,6 +393,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
                   horasDia: n(f.horasDia),
                   diasMes: n(f.diasMes),
                   modelagem: n(f.modelagem),
+                  pecasPorPlaca: Math.max(1, n(f.pecasPorPlaca) || 1),
                 },
               })
             }

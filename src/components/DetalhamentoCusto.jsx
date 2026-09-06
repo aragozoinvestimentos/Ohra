@@ -36,15 +36,23 @@ export default function DetalhamentoCusto({ detalhe, salvo, filamentos, consumiv
 
   const set = (campo) => (v) => onChange({ ...detalhe, [campo]: v });
 
+  const pecasPorPlaca = Number(detalhe.pecasPorPlaca) || 1;
+
   return (
     <div className="detalhe-producao">
+      <CampoNum label="Peças por impressão/chapa" valor={detalhe.pecasPorPlaca ?? 1} anterior={salvo?.pecasPorPlaca} onChange={set("pecasPorPlaca")} />
+      {pecasPorPlaca > 1 && (
+        <div className="hint" style={{ marginTop: -8 }}>
+          Comprimento e tempo abaixo devem ser o TOTAL da chapa com {pecasPorPlaca} peças — o app já divide pra achar o custo de cada uma.
+        </div>
+      )}
       <div className="row2">
-        <CampoNum label="Comprimento de filamento (m)" valor={detalhe.comprimento} anterior={salvo?.comprimento} onChange={set("comprimento")} step="0.01" />
+        <CampoNum label={`Comprimento de filamento (m)${pecasPorPlaca > 1 ? " — total da chapa" : ""}`} valor={detalhe.comprimento} anterior={salvo?.comprimento} onChange={set("comprimento")} step="0.01" />
         <CampoNum label="Diâmetro do filamento (mm)" valor={detalhe.diametro} anterior={salvo?.diametro} onChange={set("diametro")} step="0.01" />
       </div>
       <div className="row2">
         <CampoNum label="Densidade (g/cm³)" valor={detalhe.densidade} anterior={salvo?.densidade} onChange={set("densidade")} step="0.01" />
-        <CampoNum label="Tempo de impressão (min)" valor={detalhe.tempo} anterior={salvo?.tempo} onChange={set("tempo")} />
+        <CampoNum label={`Tempo de impressão (min)${pecasPorPlaca > 1 ? " — total da chapa" : ""}`} valor={detalhe.tempo} anterior={salvo?.tempo} onChange={set("tempo")} />
       </div>
       <div className="field">
         <label>

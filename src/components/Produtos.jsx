@@ -233,6 +233,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
       diasMes: n(d.diasMes),
       modelagem: n(d.modelagem),
       markupRapido: 0,
+      pecasPorPlaca: n(d.pecasPorPlaca) || 1,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.producao_detalhe, filamentos, custoConsumiveisDetalhe]);

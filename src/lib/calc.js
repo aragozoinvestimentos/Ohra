@@ -73,17 +73,33 @@ export const DEFAULTS_PRODUCAO = {
   horasDia: 6,
   diasMes: 26,
   modelagem: 0,
+  pecasPorPlaca: 1,
 };
 
+// Quando "Peças por placa" (pecasPorPlaca) é maior que 1, comprimento e
+// tempo de impressão são tratados como o TOTAL gasto pra imprimir a chapa
+// inteira de uma vez (várias peças juntas, aproveitando o espaço da mesa) —
+// daí o custo de material/energia/manutenção/falhas/acabamento/ROI da
+// chapa é dividido pelo número de peças pra chegar no custo de cada uma.
+// Consumíveis e modelagem continuam por peça (já têm sua própria
+// quantidade em SeletorItens), não entram nessa divisão.
 export function calcProducao(i) {
-  const peso = Math.PI * Math.pow(i.diametro / 2, 2) * i.comprimento * i.densidade;
-  const material = (i.precoKg / 1000) * peso;
-  const energia = ((i.kwh / 1000) * i.consumo) * (i.tempo / 60);
-  const manutencao = material * (i.manutencaoPct ?? 0.15);
-  const falhas = material * i.falhasPct;
-  const acabamento = material * (i.acabamentoPct ?? 0.1);
+  const pecas = Math.max(1, Number(i.pecasPorPlaca) || 1);
+  const pesoChapa = Math.PI * Math.pow(i.diametro / 2, 2) * i.comprimento * i.densidade;
+  const materialChapa = (i.precoKg / 1000) * pesoChapa;
+  const energiaChapa = ((i.kwh / 1000) * i.consumo) * (i.tempo / 60);
+  const manutencaoChapa = materialChapa * (i.manutencaoPct ?? 0.15);
+  const falhasChapa = materialChapa * i.falhasPct;
+  const acabamentoChapa = materialChapa * (i.acabamentoPct ?? 0.1);
   const roiHora = i.maquina / ((i.horasDia * i.diasMes * i.prazoMeses) || 1);
-  const roiPeca = (roiHora / 60) * i.tempo;
+  const roiPecaChapa = (roiHora / 60) * i.tempo;
+  const peso = pesoChapa / pecas;
+  const material = materialChapa / pecas;
+  const energia = energiaChapa / pecas;
+  const manutencao = manutencaoChapa / pecas;
+  const falhas = falhasChapa / pecas;
+  const acabamento = acabamentoChapa / pecas;
+  const roiPeca = roiPecaChapa / pecas;
   const total = material + energia + manutencao + falhas + acabamento + i.consumiveis + roiPeca + i.modelagem;
   const precoRapido = total * (1 + i.markupRapido);
   return { peso, material, energia, manutencao, falhas, acabamento, roiPeca, total, precoRapido };
