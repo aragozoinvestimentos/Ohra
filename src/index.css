@@ -84,6 +84,23 @@ a:hover { color: var(--accent); }
 .sidebar-brand .word { font-family: 'Jost', sans-serif; font-weight: 500; font-size: 19px; letter-spacing: 0.08em; }
 .sidebar-brand .tagline { color: var(--ink-soft); font-size: 11.5px; margin-top: 1px; }
 
+.loja-gate {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: var(--bg);
+}
+.loja-gate-card {
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px;
+  padding: 28px 26px; box-shadow: var(--shadow); width: 100%; max-width: 380px;
+}
+.loja-gate-card-larga { max-width: 640px; }
+.loja-gate-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.loja-gate-brand img { height: 38px; width: auto; filter: var(--logo-filter); flex-shrink: 0; }
+.loja-gate-brand .word { font-family: 'Jost', sans-serif; font-weight: 500; font-size: 19px; letter-spacing: 0.08em; }
+.loja-gate-brand .tagline { color: var(--ink-soft); font-size: 11.5px; margin-top: 1px; }
+.loja-gate-lista { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; }
+.loja-gate-lista .loja-opcao { padding: 11px 12px; border-radius: 8px; font-size: 14px; }
+.loja-gate-lista .loja-opcao:hover { background: var(--surface-2); }
+
 .loja-switcher { position: relative; margin-bottom: 14px; }
 .loja-atual {
   width: 100%; display: flex; align-items: center; gap: 8px; background: var(--bg);

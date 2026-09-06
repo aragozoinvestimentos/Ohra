@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import PinPrompt from "./PinPrompt.jsx";
 
-function IconeLoja({ loja, tamanho = 22 }) {
+export function IconeLoja({ loja, tamanho = 22 }) {
   if (loja?.icone_url) {
     return (
       <img

@@ -10,6 +10,8 @@ import Otimizacao from "./components/Otimizacao.jsx";
 import Historico from "./components/Historico.jsx";
 import Lojas from "./components/Lojas.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
+import LojaGate from "./components/LojaGate.jsx";
+import { useLoja } from "./lib/LojaContext.jsx";
 
 const THEME_KEY = "ohra:theme";
 
@@ -64,6 +66,7 @@ const GRUPOS = [
 const TABS = GRUPOS.flatMap((g) => g.tabs);
 
 export default function App() {
+  const { disponivel: lojasDisponivel, carregando: carregandoLoja, lojaId, precisaPin } = useLoja();
   const [tab, setTab] = useState("producao");
   const [custoRecebido, setCustoRecebido] = useState(null);
   const [produtoRecebido, setProdutoRecebido] = useState(null);
@@ -113,6 +116,15 @@ export default function App() {
   }
 
   const tabAtual = TABS.find((t) => t.key === tab);
+
+  // Nenhuma aba pode montar (e nenhum dado pode ser buscado) enquanto a
+  // loja atual não estiver definida e, se tiver PIN, desbloqueada nesta
+  // sessão — vale tanto na primeira visita quanto numa aba/janela anônima,
+  // onde não há nada salvo em localStorage/sessionStorage ainda.
+  const bloqueado = lojasDisponivel && (carregandoLoja || !lojaId || precisaPin(lojaId));
+  if (bloqueado) {
+    return <LojaGate onToast={showToast} />;
+  }
 
   return (
     <div className={`shell ${menuAberto ? "menu-aberto" : ""}`}>
