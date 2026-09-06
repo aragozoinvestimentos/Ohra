@@ -3,13 +3,24 @@ import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import SeletorItens, { totalItens } from "./SeletorItens.jsx";
+import Ajuda from "./Ajuda.jsx";
 
-const VAZIO = { nome: "", material_nome: "", custo_producao: "", frete_padrao: "", embalagem_padrao: "", observacao: "" };
+const VAZIO = {
+  nome: "",
+  material_nome: "",
+  custo_producao: "",
+  frete_padrao: "",
+  embalagem_padrao: "",
+  observacao: "",
+  embalagemItens: [],
+};
 
 export default function Produtos({ produtoRecebido, onToast }) {
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [salvando, setSalvando] = useState(false);
@@ -45,22 +56,45 @@ export default function Produtos({ produtoRecebido, onToast }) {
     };
   }, [lojaId]);
 
+  // Catálogo de embalagens, pra escolher os itens da receita de cada produto.
+  useEffect(() => {
+    if (!supabase) return;
+    let ativo = true;
+    async function carregar() {
+      let query = supabase.from("embalagens").select("*").order("nome", { ascending: true });
+      if (lojaId) query = query.eq("loja_id", lojaId);
+      const { data, error } = await query;
+      if (!ativo) return;
+      if (!error) setEmbalagensCatalogo(data || []);
+    }
+    carregar();
+    const canal = supabase
+      .channel("produtos-embalagens-catalogo-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
+      .subscribe();
+    return () => {
+      ativo = false;
+      supabase.removeChannel(canal);
+    };
+  }, [lojaId]);
+
   // Quando "Salvar como Produto" é clicado na aba de Custo de Produção.
   useEffect(() => {
     if (produtoRecebido == null) return;
     setEditandoId(null);
     setForm({
-      nome: "",
+      ...VAZIO,
       material_nome: produtoRecebido.materialNome || "",
       custo_producao: produtoRecebido.custo,
-      frete_padrao: "",
-      embalagem_padrao: "",
-      observacao: "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtoRecebido?.seq]);
 
   const setCampo = (key) => (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const catalogoEmbalagem = embalagensCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade }));
+  const usaReceitaEmbalagem = (form.embalagemItens || []).length > 0;
+  const custoEmbalagemReceita = totalItens(catalogoEmbalagem, form.embalagemItens);
 
   function limpar() {
     setForm(VAZIO);
@@ -78,25 +112,58 @@ export default function Produtos({ produtoRecebido, onToast }) {
       material_nome: form.material_nome.trim() || null,
       custo_producao: parseFloat(form.custo_producao) || 0,
       frete_padrao: parseFloat(form.frete_padrao) || 0,
-      embalagem_padrao: parseFloat(form.embalagem_padrao) || 0,
+      embalagem_padrao: usaReceitaEmbalagem ? custoEmbalagemReceita : parseFloat(form.embalagem_padrao) || 0,
       observacao: form.observacao.trim() || null,
       atualizado_em: new Date().toISOString(),
     };
     setSalvando(true);
-    const { error } = editandoId
-      ? await supabase.from("produtos_cadastro").update(payload).eq("id", editandoId)
-      : await supabase.from("produtos_cadastro").insert({ ...payload, ...(lojaId ? { loja_id: lojaId } : {}) });
-    setSalvando(false);
+    let produtoId = editandoId;
+    let error;
+    if (editandoId) {
+      ({ error } = await supabase.from("produtos_cadastro").update(payload).eq("id", editandoId));
+    } else {
+      const resposta = await supabase
+        .from("produtos_cadastro")
+        .insert({ ...payload, ...(lojaId ? { loja_id: lojaId } : {}) })
+        .select()
+        .single();
+      error = resposta.error;
+      produtoId = resposta.data?.id;
+    }
     if (error) {
-      onToast("Não foi possível salvar — tente de novo");
+      setSalvando(false);
+      onToast(`Não foi possível salvar: ${error.message}`);
       return;
     }
+    // Grava a receita de embalagem: apaga o que já existia e recria — lista
+    // curta, mais simples e seguro que tentar diferenciar linha por linha.
+    if (produtoId) {
+      await supabase.from("produto_embalagens").delete().eq("produto_id", produtoId);
+      const linhas = (form.embalagemItens || [])
+        .filter((it) => it.itemId)
+        .map((it) => ({ produto_id: produtoId, embalagem_id: it.itemId, quantidade: Number(it.quantidade) || 0 }));
+      if (linhas.length > 0) {
+        const { error: erroReceita } = await supabase.from("produto_embalagens").insert(linhas);
+        if (erroReceita) {
+          setSalvando(false);
+          onToast(`Produto salvo, mas a receita de embalagem falhou: ${erroReceita.message}`);
+          limpar();
+          return;
+        }
+      }
+    }
+    setSalvando(false);
     onToast(editandoId ? "Produto atualizado" : "Produto cadastrado");
     limpar();
   }
 
-  function editar(p) {
+  async function editar(p) {
     setEditandoId(p.id);
+    let itens = [];
+    if (supabase) {
+      const { data } = await supabase.from("produto_embalagens").select("*").eq("produto_id", p.id);
+      itens = (data || []).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade }));
+    }
     setForm({
       nome: p.nome,
       material_nome: p.material_nome || "",
@@ -104,13 +171,25 @@ export default function Produtos({ produtoRecebido, onToast }) {
       frete_padrao: p.frete_padrao,
       embalagem_padrao: p.embalagem_padrao,
       observacao: p.observacao || "",
+      embalagemItens: itens,
     });
+  }
+
+  // Antes de excluir, avisa se o produto está em uso em algum kit — pra não
+  // sumir silenciosamente de um combo já montado.
+  async function pedirExclusao(p) {
+    if (!supabase) {
+      setExcluirAlvo({ ...p, emKits: 0 });
+      return;
+    }
+    const { count } = await supabase.from("kit_produtos").select("id", { count: "exact", head: true }).eq("produto_id", p.id);
+    setExcluirAlvo({ ...p, emKits: count || 0 });
   }
 
   async function excluir(id) {
     const { error } = await supabase.from("produtos_cadastro").delete().eq("id", id);
     if (error) {
-      onToast("Não foi possível excluir — tente de novo");
+      onToast(`Não foi possível excluir: ${error.message}`);
       return;
     }
     if (editandoId === id) limpar();
@@ -124,6 +203,11 @@ export default function Produtos({ produtoRecebido, onToast }) {
       </div>
     );
   }
+
+  const usoMsg = (alvo) => {
+    if (!alvo.emKits) return `Confirma excluir "${alvo.nome}"? Não é possível desfazer.`;
+    return `"${alvo.nome}" está em uso em ${alvo.emKits} kit(s). Excluir remove ele desses kits também. Não é possível desfazer.`;
+  };
 
   return (
     <div>
@@ -149,15 +233,34 @@ export default function Produtos({ produtoRecebido, onToast }) {
             <input type="number" step="0.01" value={form.frete_padrao} onChange={setCampo("frete_padrao")} />
           </div>
           <div className="field">
-            <label>Embalagem padrão (R$)</label>
-            <input type="number" step="0.01" value={form.embalagem_padrao} onChange={setCampo("embalagem_padrao")} />
+            <label>Embalagem (R$)</label>
+            <input
+              type="number"
+              step="0.01"
+              disabled={usaReceitaEmbalagem}
+              value={usaReceitaEmbalagem ? custoEmbalagemReceita.toFixed(2) : form.embalagem_padrao}
+              onChange={setCampo("embalagem_padrao")}
+              title={usaReceitaEmbalagem ? "Calculado a partir dos itens de embalagem abaixo" : "Valor manual — some itens abaixo pra calcular sozinho"}
+            />
           </div>
         </div>
         <div className="field">
           <label>Observação (opcional)</label>
           <input type="text" value={form.observacao} onChange={setCampo("observacao")} />
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+
+        <h3 className="section-title" style={{ marginTop: 4 }}>
+          Itens de embalagem
+          <Ajuda texto="Escolha os itens (cadastrados em Cadastros → Embalagens) que esse produto gasta pra ser enviado, e quantos de cada. O total substitui o campo manual 'Embalagem' acima e atualiza sozinho se o preço de um item mudar. Deixe vazio pra usar o campo manual." />
+        </h3>
+        <SeletorItens
+          catalogo={catalogoEmbalagem}
+          itens={form.embalagemItens}
+          onChange={(itens) => setForm((prev) => ({ ...prev, embalagemItens: itens }))}
+          rotuloVazio='Nenhuma embalagem cadastrada — cadastre em Cadastros → Embalagens (caixa, plástico bolha...), ou use o campo manual acima.'
+        />
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button className="btn primary" onClick={salvar} disabled={salvando}>
             {salvando ? "Salvando…" : editandoId ? "Salvar alterações" : "+ Cadastrar produto"}
           </button>
@@ -199,7 +302,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
                     <td className="num">{BRL(p.embalagem_padrao)}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       <button className="del" title="Editar" onClick={() => editar(p)}>✎</button>
-                      <button className="del" title="Excluir" onClick={() => setExcluirAlvo(p)}>×</button>
+                      <button className="del" title="Excluir" onClick={() => pedirExclusao(p)}>×</button>
                     </td>
                   </tr>
                 ))}
@@ -212,7 +315,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
       {excluirAlvo && (
         <ConfirmDialog
           titulo="Excluir produto"
-          mensagem={`Confirma excluir "${excluirAlvo.nome}"? Não é possível desfazer.`}
+          mensagem={usoMsg(excluirAlvo)}
           confirmarLabel="Excluir"
           perigo
           onConfirm={() => {
