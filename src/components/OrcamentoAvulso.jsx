@@ -25,6 +25,11 @@ export default function OrcamentoAvulso({ onToast }) {
   const [f, setF] = useState(DEFAULTS);
   const [salvando, setSalvando] = useState(false);
 
+  // Troca de loja invalida a seleção anterior de produto cadastrado.
+  useEffect(() => {
+    setProdutoId("");
+  }, [lojaId]);
+
   useEffect(() => {
     if (!supabase) return;
     let ativo = true;
@@ -44,7 +49,13 @@ export default function OrcamentoAvulso({ onToast }) {
   const produtoSelecionado = produtos.find((p) => p.id === produtoId) || null;
 
   useEffect(() => {
-    if (!produtoSelecionado) return;
+    if (!produtoId) return;
+    if (!produtoSelecionado) {
+      // Seleção antiga não existe mais nesta loja (ex: acabou de trocar de
+      // loja) — volta pro preenchimento manual em vez de manter valores presos.
+      setF((prev) => ({ ...prev, custoProduto: "", frete: 0, embalagem: 0 }));
+      return;
+    }
     setF((prev) => ({
       ...prev,
       custoProduto: produtoSelecionado.custo_producao,

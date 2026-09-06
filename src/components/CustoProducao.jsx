@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FILAMENTOS, calcProducao } from "../lib/calc.js";
+import { calcProducao } from "../lib/calc.js";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -37,12 +37,11 @@ function loadInitial() {
   return DEFAULTS;
 }
 
-const FALLBACK_MATERIAIS = FILAMENTOS.map((f) => ({ id: f.nome, nome: f.nome, preco_kg: f.preco }));
-
-export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
+export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMateriais }) {
   const { lojaId } = useLoja();
   const [f, setF] = useState(loadInitial);
-  const [materiais, setMateriais] = useState(FALLBACK_MATERIAIS);
+  const [materiais, setMateriais] = useState([]);
+  const [materiaisCarregando, setMateriaisCarregando] = useState(true);
 
   useEffect(() => {
     try {
@@ -53,15 +52,25 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
   }, [f]);
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase) {
+      setMateriaisCarregando(false);
+      return;
+    }
     let ativo = true;
     async function carregar() {
-      let query = supabase.from("materiais").select("*").order("nome", { ascending: true });
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo || error) return;
-      // Loja sem materiais cadastrados ainda cai nos filamentos padrão.
-      setMateriais(data && data.length > 0 ? data : FALLBACK_MATERIAIS);
+      try {
+        let query = supabase.from("materiais").select("*").order("nome", { ascending: true });
+        if (lojaId) query = query.eq("loja_id", lojaId);
+        const { data, error } = await query;
+        if (!ativo) return;
+        // Só mostra o que está realmente cadastrado — nada de filamento
+        // fictício aparecendo antes de você cadastrar algo de verdade.
+        if (!error) setMateriais(data || []);
+      } catch {
+        // falha de rede — mantém o que já estava carregado
+      } finally {
+        if (ativo) setMateriaisCarregando(false);
+      }
     }
     carregar();
     const canal = supabase
@@ -86,7 +95,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
   };
 
   const materialSelecionado =
-    materiais.find((m) => m.nome === f.materialNome) || materiais[materiais.length - 1] || FALLBACK_MATERIAIS[0];
+    materiais.find((m) => m.nome === f.materialNome) || materiais[materiais.length - 1] || null;
 
   const resultado = useMemo(() => {
     return calcProducao({
@@ -110,6 +119,32 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f, materialSelecionado]);
+
+  if (materiaisCarregando) {
+    return (
+      <div className="panel">
+        <div className="empty">Carregando materiais…</div>
+      </div>
+    );
+  }
+
+  if (materiais.length === 0) {
+    return (
+      <div className="panel">
+        <h3>Nenhum material cadastrado ainda</h3>
+        <div className="empty">
+          {supabase
+            ? "Cadastre pelo menos um material (filamento) em Cadastros → Materiais antes de calcular um custo de produção — assim o preço por kg usado aqui é sempre o que está de fato registrado."
+            : "Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para ativar o cadastro de materiais."}
+        </div>
+        {supabase && onIrParaMateriais && (
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={onIrParaMateriais}>
+            Ir para Cadastros → Materiais
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="grid2">

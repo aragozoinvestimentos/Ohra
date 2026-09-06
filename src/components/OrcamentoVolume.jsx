@@ -28,14 +28,17 @@ export default function OrcamentoVolume() {
       if (lojaId) query = query.eq("loja_id", lojaId);
       const { data, error } = await query;
       if (!ativo || error) return;
-      setProdutos(data || []);
-      if (data && data.length > 0 && !produtoId) setProdutoId(data[0].id);
+      const lista = data || [];
+      setProdutos(lista);
+      // Se a seleção atual não existe mais nesta loja (ex: acabou de trocar
+      // de loja), volta pro primeiro produto da lista nova em vez de manter
+      // um id de outra loja preso no select.
+      setProdutoId((prev) => (lista.some((p) => p.id === prev) ? prev : lista[0]?.id || ""));
     }
     carregar();
     return () => {
       ativo = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lojaId]);
 
   const produto = produtos.find((p) => p.id === produtoId) || null;

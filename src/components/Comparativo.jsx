@@ -21,6 +21,12 @@ export default function Comparativo() {
   const [frete, setFrete] = useState(0);
   const [embalagem, setEmbalagem] = useState(0);
 
+  // Troca de loja invalida a seleção anterior — sem isso o produto de outra
+  // loja continuava "selecionado" (ainda que a lista já fosse outra).
+  useEffect(() => {
+    setProdutoId("");
+  }, [lojaId]);
+
   useEffect(() => {
     if (!supabase) {
       setCarregando(false);
@@ -98,8 +104,17 @@ export default function Comparativo() {
     });
   }, [canais, lucratividade, custoProduto, frete, embalagem, mlCategoria]);
 
-  const melhorOrganico = linhas.reduce((best, l) => (!best || l.resultado.lucro > best.resultado.lucro ? l : best), null);
-  const melhorComAds = linhas.reduce((best, l) => (!best || l.ads.lucroComAds > best.ads.lucroComAds ? l : best), null);
+  // Combinação de taxas impossível (comissão + imposto + custos fixos +
+  // lucratividade >= 100%) deixa lucro/preço como null — nunca vence a
+  // comparação de "melhor canal".
+  const melhorOrganico = linhas.reduce(
+    (best, l) => (l.resultado.lucro != null && (!best || l.resultado.lucro > best.resultado.lucro) ? l : best),
+    null
+  );
+  const melhorComAds = linhas.reduce(
+    (best, l) => (l.resultado.preco != null && (!best || l.ads.lucroComAds > best.ads.lucroComAds) ? l : best),
+    null
+  );
 
   if (!supabase) {
     return (

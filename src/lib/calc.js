@@ -43,11 +43,15 @@ export function calcProducao(i) {
 export function calcCanal({ imposto, comissaoPct, taxaFixa, custosFixosPct, lucratividadePct, custoProduto, frete, embalagem, min, max }) {
   const custoTotal = custoProduto + frete + embalagem;
   const totalPct = imposto + comissaoPct + custosFixosPct;
-  const markup = 1 / (1 - (totalPct + lucratividadePct));
-  const preco = (custoTotal + taxaFixa) * markup;
-  const lucro = preco * (1 - totalPct) - taxaFixa - custoTotal;
-  const margem = lucro / preco;
-  const faixaOk = min == null ? null : preco >= min && preco <= max;
+  // Se comissão + imposto + custos fixos + lucratividade desejada passar de
+  // 100%, não existe preço que feche a conta — vira "—" na tela em vez de um
+  // preço negativo sem aviso.
+  const denom = 1 - (totalPct + lucratividadePct);
+  const markup = denom > 0 ? 1 / denom : null;
+  const preco = markup != null ? (custoTotal + taxaFixa) * markup : null;
+  const lucro = preco != null ? preco * (1 - totalPct) - taxaFixa - custoTotal : null;
+  const margem = preco != null && preco > 0 ? lucro / preco : null;
+  const faixaOk = min == null ? null : preco != null && preco >= min && preco <= max;
   const lucroEm = (p) => (p > 0 ? p * (1 - totalPct) - taxaFixa - custoTotal : null);
   return { custoTotal, totalPct, markup, preco, lucro, margem, faixaOk, lucroEm };
 }

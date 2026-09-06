@@ -81,6 +81,10 @@ export default function App() {
     setMenuAberto(false);
   }
 
+  function irParaMateriais() {
+    setTab("cadastros");
+  }
+
   const tabAtual = TABS.find((t) => t.key === tab);
 
   return (
@@ -126,7 +130,7 @@ export default function App() {
         </section>
 
         <section className={`view ${tab === "producao" ? "active" : ""}`}>
-          <CustoProducao onUsarCusto={usarCusto} onSalvarProduto={salvarComoProduto} />
+          <CustoProducao onUsarCusto={usarCusto} onSalvarProduto={salvarComoProduto} onIrParaMateriais={irParaMateriais} />
         </section>
 
         <section className={`view ${tab === "canal" ? "active" : ""}`}>

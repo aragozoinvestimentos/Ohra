@@ -58,10 +58,18 @@ export default function Promocoes() {
         }
         const [rp, rc] = await Promise.all([qp, qc]);
         if (!ativo) return;
-        if (!rp.error) setProdutos(rp.data || []);
+        // Troca de loja invalida seleções antigas — se o produto/canal
+        // escolhido não existir mais na lista desta loja, volta pro padrão
+        // (manual/primeiro canal) em vez de manter um id de outra loja preso.
+        if (!rp.error) {
+          const listaP = rp.data || [];
+          setProdutos(listaP);
+          setProdutoId((prev) => (listaP.some((p) => p.id === prev) ? prev : ""));
+        }
         if (!rc.error) {
-          setCanais(rc.data || []);
-          if (rc.data && rc.data.length > 0) setCanalId((prev) => prev || rc.data[0].id);
+          const listaC = rc.data || [];
+          setCanais(listaC);
+          setCanalId((prev) => (listaC.some((c) => c.id === prev) ? prev : listaC[0]?.id || ""));
         }
       } catch {
         // falha de rede — mantém o que já estava carregado

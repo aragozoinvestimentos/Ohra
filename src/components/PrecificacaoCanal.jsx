@@ -79,7 +79,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   }, [f, comissaoFixo]);
 
   const lucratividadeFrac = n(f.lucratividade) / 100;
-  const lucrativo = resultado.margem >= lucratividadeFrac - 0.001;
+  const lucrativo = resultado.margem != null && resultado.margem >= lucratividadeFrac - 0.001;
 
   const concorrenteLucro = n(f.concorrente) > 0 ? resultado.lucroEm(n(f.concorrente)) : null;
   const negociadoLucro = n(f.negociado) > 0 ? resultado.lucroEm(n(f.negociado)) : null;
@@ -216,7 +216,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
         <div className="panel">
           <h3>Resultado</h3>
           <div className="kv"><span className="k">Custo total do produto</span><span className="v">{BRL(resultado.custoTotal)}</span></div>
-          <div className="kv"><span className="k">Mark-up (divisor)</span><span className="v">{isFinite(resultado.markup) ? resultado.markup.toFixed(3) + "×" : "—"}</span></div>
+          <div className="kv"><span className="k">Mark-up (divisor)</span><span className="v">{isFinite(Number(resultado.markup)) ? Number(resultado.markup).toFixed(3) + "×" : "—"}</span></div>
           <div className="kv total"><span className="k">Preço calculado</span><span className="v">{BRL(resultado.preco)}</span></div>
           {comissaoFixo.temFaixa && (
             <div className="kv">

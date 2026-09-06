@@ -77,13 +77,21 @@ export function LojaProvider({ children }) {
     if (!supabase) return null;
     const { data, error } = await supabase.from("lojas").insert({ nome }).select().single();
     if (error) return null;
+    // Atualiza a lista local na hora — sem isso o <select> fica sem nenhuma
+    // opção correspondente até o round-trip do realtime voltar.
+    setLojas((prev) => (prev.some((l) => l.id === data.id) ? prev : [...prev, data]));
     selecionar(data.id);
     // Toda loja nova já nasce com Shopee e Mercado Livre cadastrados —
     // mesmo padrão da loja default (item ajustável depois em Canais).
-    await supabase.from("canais").insert([
-      { nome: "Shopee", tipo: "shopee", loja_id: data.id },
-      { nome: "Mercado Livre", tipo: "ml", loja_id: data.id },
-    ]);
+    try {
+      await supabase.from("canais").insert([
+        { nome: "Shopee", tipo: "shopee", loja_id: data.id },
+        { nome: "Mercado Livre", tipo: "ml", loja_id: data.id },
+      ]);
+    } catch {
+      // falha de rede ao semear os canais padrão — a loja já foi criada;
+      // dá pra cadastrar os canais manualmente em Cadastros → Canais.
+    }
     return data;
   }
 
