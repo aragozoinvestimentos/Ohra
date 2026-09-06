@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import CalculadoraPreco from "./CalculadoraPreco.jsx";
 
 const VAZIO = { nome: "", preco: "", unidade: "un", observacao: "" };
 
@@ -191,6 +192,10 @@ export default function Embalagens({ onToast }) {
             />
           </div>
         </div>
+        <CalculadoraPreco
+          unidade={novo.unidade.trim() || "un"}
+          onAplicar={(v) => setNovo((p) => ({ ...p, preco: String(v) }))}
+        />
         <div className="field">
           <label>Observação (opcional)</label>
           <input
