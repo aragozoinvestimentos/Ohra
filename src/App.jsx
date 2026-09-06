@@ -23,12 +23,12 @@ function loadTheme() {
 // calcula custo, depois preço por canal, compara os canais, organiza a
 // produção e por fim consulta o histórico do que já foi calculado.
 const TABS = [
-  { key: "cadastros", label: "Cadastros" },
-  { key: "producao", label: "Custo de Produção" },
-  { key: "canal", label: "Precificação por Canal" },
-  { key: "comparativo", label: "Comparativo" },
-  { key: "organizacao", label: "Organização" },
-  { key: "historico", label: "Histórico" },
+  { key: "cadastros", label: "Cadastros", icon: "🗂️" },
+  { key: "producao", label: "Custo de Produção", icon: "🧮" },
+  { key: "canal", label: "Precificação por Canal", icon: "🏷️" },
+  { key: "comparativo", label: "Comparativo", icon: "📊" },
+  { key: "organizacao", label: "Organização", icon: "📋" },
+  { key: "historico", label: "Histórico", icon: "🕘" },
 ];
 
 export default function App() {
@@ -37,6 +37,7 @@ export default function App() {
   const [produtoRecebido, setProdutoRecebido] = useState(null);
   const [toast, setToast] = useState({ msg: "", show: false });
   const [tema, setTema] = useState(loadTheme);
+  const [menuAberto, setMenuAberto] = useState(false);
   const toastTimer = useRef(null);
 
   useEffect(() => {
@@ -70,55 +71,78 @@ export default function App() {
     showToast("Custo levado para o cadastro de Produtos");
   }
 
+  function irPara(key) {
+    setTab(key);
+    setMenuAberto(false);
+  }
+
+  const tabAtual = TABS.find((t) => t.key === tab);
+
   return (
-    <div className="shell">
-      <header className="top">
-        <img src={logo} alt="Ohra" />
-        <div>
-          <div className="word">OHRA</div>
-          <div className="tagline">Precificador — custo de produção e preço por canal</div>
+    <div className={`shell ${menuAberto ? "menu-aberto" : ""}`}>
+      <button className="menu-toggle" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">
+        ☰
+      </button>
+
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <img src={logo} alt="Ohra" />
+          <div>
+            <div className="word">OHRA</div>
+            <div className="tagline">Precificador</div>
+          </div>
         </div>
+
+        <nav className="side-nav">
+          {TABS.map((t) => (
+            <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => irPara(t.key)}>
+              <span className="side-nav-icon">{t.icon}</span>
+              {t.label}
+            </button>
+          ))}
+        </nav>
+
         <button className="btn theme-toggle" onClick={alternarTema} title="Trocar tema">
           {tema === "dark" ? "☀️ Tema claro" : "🌙 Tema escuro"}
         </button>
-      </header>
+      </aside>
 
-      <nav className="tabs">
-        {TABS.map((t) => (
-          <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      {menuAberto && <div className="sidebar-overlay" onClick={() => setMenuAberto(false)} />}
 
-      <section className={`view ${tab === "cadastros" ? "active" : ""}`}>
-        <Cadastros produtoRecebido={produtoRecebido} onToast={showToast} />
-      </section>
+      <div className="content">
+        <header className="top">
+          <div className="mobile-title">{tabAtual?.label}</div>
+        </header>
 
-      <section className={`view ${tab === "producao" ? "active" : ""}`}>
-        <CustoProducao onUsarCusto={usarCusto} onSalvarProduto={salvarComoProduto} />
-      </section>
+        <section className={`view ${tab === "cadastros" ? "active" : ""}`}>
+          <Cadastros produtoRecebido={produtoRecebido} onToast={showToast} />
+        </section>
 
-      <section className={`view ${tab === "canal" ? "active" : ""}`}>
-        <PrecificacaoCanal custoRecebido={custoRecebido} onToast={showToast} />
-      </section>
+        <section className={`view ${tab === "producao" ? "active" : ""}`}>
+          <CustoProducao onUsarCusto={usarCusto} onSalvarProduto={salvarComoProduto} />
+        </section>
 
-      <section className={`view ${tab === "comparativo" ? "active" : ""}`}>
-        <Comparativo />
-      </section>
+        <section className={`view ${tab === "canal" ? "active" : ""}`}>
+          <PrecificacaoCanal custoRecebido={custoRecebido} onToast={showToast} />
+        </section>
 
-      <section className={`view ${tab === "organizacao" ? "active" : ""}`}>
-        <Organizacao onToast={showToast} />
-      </section>
+        <section className={`view ${tab === "comparativo" ? "active" : ""}`}>
+          <Comparativo />
+        </section>
 
-      <section className={`view ${tab === "historico" ? "active" : ""}`}>
-        <Historico onToast={showToast} />
-      </section>
+        <section className={`view ${tab === "organizacao" ? "active" : ""}`}>
+          <Organizacao onToast={showToast} />
+        </section>
 
-      <footer className="note">
-        Taxas vigentes a partir de mar/2026. Confira periodicamente na Shopee e no Mercado Livre se os percentuais mudaram.
-        O histórico fica salvo na nuvem — abra este app em qualquer aparelho para consultar ou testar um novo produto.
-      </footer>
+        <section className={`view ${tab === "historico" ? "active" : ""}`}>
+          <Historico onToast={showToast} />
+        </section>
+
+        <footer className="note">
+          Taxas vigentes a partir de mar/2026. Confira periodicamente na Shopee e no Mercado Livre se os percentuais mudaram.
+          O histórico fica salvo na nuvem — abra este app em qualquer aparelho para consultar ou testar um novo produto.
+        </footer>
+      </div>
 
       <div className={`toast ${toast.show ? "show" : ""}`}>{toast.msg}</div>
     </div>
