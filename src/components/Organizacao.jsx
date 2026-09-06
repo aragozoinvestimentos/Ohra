@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 
 const COLUNAS = [
   { key: "a_produzir", label: "A produzir" },
@@ -16,6 +17,7 @@ export default function Organizacao({ onToast }) {
   const [titulo, setTitulo] = useState("");
   const [produtoNome, setProdutoNome] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [excluirAlvo, setExcluirAlvo] = useState(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -129,13 +131,27 @@ export default function Organizacao({ onToast }) {
                     <div className="kanban-card-actions">
                       <button className="del" title="Voltar" disabled={colIdx === 0} onClick={() => mover(card, -1)}>←</button>
                       <button className="del" title="Avançar" disabled={colIdx === COLUNAS.length - 1} onClick={() => mover(card, 1)}>→</button>
-                      <button className="del" title="Excluir" onClick={() => excluir(card.id)}>×</button>
+                      <button className="del" title="Excluir" onClick={() => setExcluirAlvo(card)}>×</button>
                     </div>
                   </div>
                 ))}
             </div>
           ))}
         </div>
+      )}
+
+      {excluirAlvo && (
+        <ConfirmDialog
+          titulo="Excluir cartão"
+          mensagem={`Confirma excluir "${excluirAlvo.titulo}"? Não é possível desfazer.`}
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={() => {
+            excluir(excluirAlvo.id);
+            setExcluirAlvo(null);
+          }}
+          onCancel={() => setExcluirAlvo(null)}
+        />
       )}
     </div>
   );

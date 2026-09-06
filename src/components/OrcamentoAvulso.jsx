@@ -41,8 +41,15 @@ export default function OrcamentoAvulso({ onToast }) {
       setProdutos(data || []);
     }
     carregar();
+    // Sem isso, cadastrar/editar/excluir um produto em Cadastros só refletia
+    // aqui depois de recarregar a página inteira.
+    const canal = supabase
+      .channel("orcamento-avulso-produtos-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
+      .subscribe();
     return () => {
       ativo = false;
+      supabase.removeChannel(canal);
     };
   }, [lojaId]);
 

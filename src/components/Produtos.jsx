@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 
 const VAZIO = { nome: "", material_nome: "", custo_producao: "", frete_padrao: "", embalagem_padrao: "", observacao: "" };
 
@@ -12,6 +13,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const [excluirAlvo, setExcluirAlvo] = useState(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -197,7 +199,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
                     <td className="num">{BRL(p.embalagem_padrao)}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       <button className="del" title="Editar" onClick={() => editar(p)}>✎</button>
-                      <button className="del" title="Excluir" onClick={() => excluir(p.id)}>×</button>
+                      <button className="del" title="Excluir" onClick={() => setExcluirAlvo(p)}>×</button>
                     </td>
                   </tr>
                 ))}
@@ -206,6 +208,20 @@ export default function Produtos({ produtoRecebido, onToast }) {
           </div>
         )}
       </div>
+
+      {excluirAlvo && (
+        <ConfirmDialog
+          titulo="Excluir produto"
+          mensagem={`Confirma excluir "${excluirAlvo.nome}"? Não é possível desfazer.`}
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={() => {
+            excluir(excluirAlvo.id);
+            setExcluirAlvo(null);
+          }}
+          onCancel={() => setExcluirAlvo(null)}
+        />
+      )}
     </div>
   );
 }

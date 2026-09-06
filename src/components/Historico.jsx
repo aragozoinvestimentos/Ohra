@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 
 export default function Historico({ onToast }) {
   const { lojaId } = useLoja();
@@ -9,6 +10,8 @@ export default function Historico({ onToast }) {
   const [carregando, setCarregando] = useState(true);
   const [editandoId, setEditandoId] = useState(null);
   const [nomeEditado, setNomeEditado] = useState("");
+  const [recemSalvoId, setRecemSalvoId] = useState(null);
+  const [excluirAlvo, setExcluirAlvo] = useState(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -72,6 +75,8 @@ export default function Historico({ onToast }) {
     }
     setProdutos((prev) => prev.map((p) => (p.id === id ? { ...p, nome } : p)));
     setEditandoId(null);
+    setRecemSalvoId(id);
+    setTimeout(() => setRecemSalvoId((atual) => (atual === id ? null : atual)), 1000);
   }
 
   return (
@@ -116,7 +121,10 @@ export default function Historico({ onToast }) {
                         style={{ width: "100%" }}
                       />
                     ) : (
-                      p.nome || "—"
+                      <>
+                        {p.nome || "—"}
+                        {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
+                      </>
                     )}
                   </td>
                   <td>{p.canal || "—"}</td>
@@ -125,13 +133,27 @@ export default function Historico({ onToast }) {
                   <td className="num">{PCT(p.margem)}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     <button className="del" title="Editar nome" onClick={() => iniciarEdicao(p)}>✎</button>
-                    <button className="del" title="Excluir" onClick={() => excluir(p.id)}>×</button>
+                    <button className="del" title="Excluir" onClick={() => setExcluirAlvo(p)}>×</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {excluirAlvo && (
+        <ConfirmDialog
+          titulo="Excluir do histórico"
+          mensagem={`Confirma excluir "${excluirAlvo.nome || "este item"}"? Não é possível desfazer.`}
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={() => {
+            excluir(excluirAlvo.id);
+            setExcluirAlvo(null);
+          }}
+          onCancel={() => setExcluirAlvo(null)}
+        />
       )}
     </div>
   );

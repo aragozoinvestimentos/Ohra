@@ -1,6 +1,35 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useSalvoFlash } from "../lib/useSalvoFlash.js";
+import ConfirmDialog from "./ConfirmDialog.jsx";
+
+// Fora do Materiais() de propósito: se ficasse dentro, seria recriado a cada
+// tecla digitada e o input perderia o foco a cada caractere.
+function CampoPreco({ material, edicoes, setEdicoes, onSalvar }) {
+  const [salvo, disparar] = useSalvoFlash();
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center" }}>
+      <input
+        type="number"
+        step="0.01"
+        style={{ width: 90, textAlign: "right" }}
+        value={edicoes[material.id] ?? material.preco_kg}
+        onChange={(e) => setEdicoes((prev) => ({ ...prev, [material.id]: e.target.value }))}
+        onBlur={async () => {
+          if (edicoes[material.id] !== undefined && parseFloat(edicoes[material.id]) !== material.preco_kg) {
+            const ok = await onSalvar(material.id);
+            if (ok) disparar();
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.target.blur();
+        }}
+      />
+      {salvo && <span className="salvo-check">✓</span>}
+    </span>
+  );
+}
 
 export default function Materiais({ onToast }) {
   const { lojaId } = useLoja();
@@ -9,6 +38,7 @@ export default function Materiais({ onToast }) {
   const [novo, setNovo] = useState({ nome: "", preco_kg: "", observacao: "" });
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [edicoes, setEdicoes] = useState({}); // id -> valor em edição (preco_kg como string)
+  const [excluirAlvo, setExcluirAlvo] = useState(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -70,7 +100,7 @@ export default function Materiais({ onToast }) {
     const valor = parseFloat(edicoes[id]);
     if (!isFinite(valor)) {
       onToast("Preço inválido");
-      return;
+      return false;
     }
     const { error } = await supabase
       .from("materiais")
@@ -78,14 +108,14 @@ export default function Materiais({ onToast }) {
       .eq("id", id);
     if (error) {
       onToast("Não foi possível atualizar — tente de novo");
-      return;
+      return false;
     }
     setEdicoes((prev) => {
       const next = { ...prev };
       delete next[id];
       return next;
     });
-    onToast("Preço atualizado");
+    return true;
   }
 
   async function excluir(id) {
@@ -166,26 +196,12 @@ export default function Materiais({ onToast }) {
                   <tr key={m.id}>
                     <td>{m.nome}</td>
                     <td className="num">
-                      <input
-                        type="number"
-                        step="0.01"
-                        style={{ width: 90, textAlign: "right" }}
-                        value={edicoes[m.id] ?? m.preco_kg}
-                        onChange={(e) => setEdicoes((prev) => ({ ...prev, [m.id]: e.target.value }))}
-                        onBlur={() => {
-                          if (edicoes[m.id] !== undefined && parseFloat(edicoes[m.id]) !== m.preco_kg) {
-                            salvarPreco(m.id);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") e.target.blur();
-                        }}
-                      />
+                      <CampoPreco material={m} edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarPreco} />
                     </td>
                     <td>{m.observacao || "—"}</td>
                     <td>{new Date(m.atualizado_em).toLocaleDateString("pt-BR")}</td>
                     <td>
-                      <button className="del" title="Excluir" onClick={() => excluir(m.id)}>×</button>
+                      <button className="del" title="Excluir" onClick={() => setExcluirAlvo(m)}>×</button>
                     </td>
                   </tr>
                 ))}
@@ -199,6 +215,20 @@ export default function Materiais({ onToast }) {
           </div>
         )}
       </div>
+
+      {excluirAlvo && (
+        <ConfirmDialog
+          titulo="Excluir material"
+          mensagem={`Confirma excluir "${excluirAlvo.nome}"? Não é possível desfazer.`}
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={() => {
+            excluir(excluirAlvo.id);
+            setExcluirAlvo(null);
+          }}
+          onCancel={() => setExcluirAlvo(null)}
+        />
+      )}
     </div>
   );
 }

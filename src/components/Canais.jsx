@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import Ajuda from "./Ajuda.jsx";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
 
@@ -10,6 +12,7 @@ const TIPO_LABEL = { shopee: "Shopee (faixas oficiais)", ml: "Mercado Livre (fai
 // Componente fora do Canais() de propósito: se ficasse dentro, seria recriado
 // a cada tecla digitada e o input perderia o foco a cada caractere.
 function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSalvar }) {
+  const [salvo, disparar] = useSalvoFlash();
   const k = `${canal.id}:${campo}`;
   const valorAtual = canal[campo];
   const valorExibido = edicoes[k] ?? (isPct ? (Number(valorAtual || 0) * 100).toFixed(1) : Number(valorAtual || 0).toFixed(2));
@@ -22,14 +25,18 @@ function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSal
         style={{ width: 64, textAlign: "right" }}
         value={valorExibido}
         onChange={(e) => setEdicoes((prev) => ({ ...prev, [k]: e.target.value }))}
-        onBlur={() => {
-          if (edicoes[k] !== undefined) onSalvar(canal.id, campo, isPct);
+        onBlur={async () => {
+          if (edicoes[k] !== undefined) {
+            const ok = await onSalvar(canal.id, campo, isPct);
+            if (ok) disparar();
+          }
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") e.target.blur();
         }}
       />
       {sufixo === "%" && "%"}
+      {salvo && <span className="salvo-check">✓</span>}
     </span>
   );
 }
@@ -41,6 +48,7 @@ export default function Canais({ onToast }) {
   const [novo, setNovo] = useState(NOVO_VAZIO);
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [edicoes, setEdicoes] = useState({});
+  const [excluirAlvo, setExcluirAlvo] = useState(null);
 
   useEffect(() => {
     if (!supabase) {
@@ -83,14 +91,14 @@ export default function Canais({ onToast }) {
     const { error } = await supabase.from("canais").update({ [campo]: valorFinal }).eq("id", id);
     if (error) {
       onToast("Não foi possível atualizar — tente de novo");
-      return;
+      return false;
     }
     setEdicoes((prev) => {
       const next = { ...prev };
       delete next[chave(id, campo)];
       return next;
     });
-    onToast("Canal atualizado");
+    return true;
   }
 
   async function adicionar() {
@@ -186,7 +194,7 @@ export default function Canais({ onToast }) {
                     </td>
                     <td>
                       {c.tipo === "custom" && (
-                        <button className="del" title="Excluir" onClick={() => excluir(c.id)}>×</button>
+                        <button className="del" title="Excluir" onClick={() => setExcluirAlvo(c)}>×</button>
                       )}
                     </td>
                   </tr>
@@ -230,6 +238,20 @@ export default function Canais({ onToast }) {
           {salvandoNovo ? "Adicionando…" : "+ Adicionar canal"}
         </button>
       </div>
+
+      {excluirAlvo && (
+        <ConfirmDialog
+          titulo="Excluir canal"
+          mensagem={`Confirma excluir "${excluirAlvo.nome}"? Não é possível desfazer.`}
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={() => {
+            excluir(excluirAlvo.id);
+            setExcluirAlvo(null);
+          }}
+          onCancel={() => setExcluirAlvo(null)}
+        />
+      )}
     </div>
   );
 }

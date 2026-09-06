@@ -8,6 +8,7 @@ import Orcamento from "./components/Orcamento.jsx";
 import Promocoes from "./components/Promocoes.jsx";
 import Organizacao from "./components/Organizacao.jsx";
 import Historico from "./components/Historico.jsx";
+import Lojas from "./components/Lojas.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
 
 const THEME_KEY = "ohra:theme";
@@ -26,6 +27,7 @@ function loadTheme() {
 // calcula custo, depois preço por canal, compara os canais, organiza a
 // produção e por fim consulta o histórico do que já foi calculado.
 const TABS = [
+  { key: "lojas", label: "Lojas", icon: "🏬" },
   { key: "cadastros", label: "Cadastros", icon: "🗂️" },
   { key: "producao", label: "Custo de Produção", icon: "🧮" },
   { key: "canal", label: "Precificação por Canal", icon: "🏷️" },
@@ -102,7 +104,7 @@ export default function App() {
           </div>
         </div>
 
-        <LojaSwitcher />
+        <LojaSwitcher onGerenciar={() => irPara("lojas")} />
 
         <nav className="side-nav">
           {TABS.map((t) => (
@@ -124,6 +126,10 @@ export default function App() {
         <header className="top">
           <div className="mobile-title">{tabAtual?.label}</div>
         </header>
+
+        <section className={`view ${tab === "lojas" ? "active" : ""}`}>
+          <Lojas onToast={showToast} />
+        </section>
 
         <section className={`view ${tab === "cadastros" ? "active" : ""}`}>
           <Cadastros produtoRecebido={produtoRecebido} onToast={showToast} />

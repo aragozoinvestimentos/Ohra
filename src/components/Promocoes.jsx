@@ -78,8 +78,16 @@ export default function Promocoes() {
       }
     }
     carregar();
+    // Sem isso, cadastrar/editar/excluir um produto OU canal em Cadastros só
+    // refletia aqui depois de recarregar a página inteira.
+    const ch = supabase
+      .channel("promocoes-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
+      .subscribe();
     return () => {
       ativo = false;
+      supabase.removeChannel(ch);
     };
   }, [lojaId]);
 
