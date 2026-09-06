@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 
 const COLUNAS = [
   { key: "a_produzir", label: "A produzir" },
@@ -9,6 +10,7 @@ const COLUNAS = [
 ];
 
 export default function Organizacao({ onToast }) {
+  const { lojaId } = useLoja();
   const [cards, setCards] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [titulo, setTitulo] = useState("");
@@ -23,7 +25,9 @@ export default function Organizacao({ onToast }) {
     let ativo = true;
     async function carregar() {
       try {
-        const { data, error } = await supabase.from("kanban_cards").select("*").order("criado_em", { ascending: true });
+        let query = supabase.from("kanban_cards").select("*").order("criado_em", { ascending: true });
+        if (lojaId) query = query.eq("loja_id", lojaId);
+        const { data, error } = await query;
         if (!ativo) return;
         if (!error) setCards(data || []);
       } catch {
@@ -41,7 +45,7 @@ export default function Organizacao({ onToast }) {
       ativo = false;
       supabase.removeChannel(canal);
     };
-  }, []);
+  }, [lojaId]);
 
   async function adicionar() {
     const t = titulo.trim();
@@ -54,6 +58,7 @@ export default function Organizacao({ onToast }) {
       titulo: t,
       produto_nome: produtoNome.trim() || null,
       coluna: "a_produzir",
+      ...(lojaId ? { loja_id: lojaId } : {}),
     });
     setSalvando(false);
     if (error) {

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 
 const VAZIO = { nome: "", material_nome: "", custo_producao: "", frete_padrao: "", embalagem_padrao: "", observacao: "" };
 
 export default function Produtos({ produtoRecebido, onToast }) {
+  const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [form, setForm] = useState(VAZIO);
@@ -19,7 +21,9 @@ export default function Produtos({ produtoRecebido, onToast }) {
     let ativo = true;
     async function carregar() {
       try {
-        const { data, error } = await supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true });
+        let query = supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true });
+        if (lojaId) query = query.eq("loja_id", lojaId);
+        const { data, error } = await query;
         if (!ativo) return;
         if (!error) setProdutos(data || []);
       } catch {
@@ -37,7 +41,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
       ativo = false;
       supabase.removeChannel(canal);
     };
-  }, []);
+  }, [lojaId]);
 
   // Quando "Salvar como Produto" é clicado na aba de Custo de Produção.
   useEffect(() => {
@@ -79,7 +83,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
     setSalvando(true);
     const { error } = editandoId
       ? await supabase.from("produtos_cadastro").update(payload).eq("id", editandoId)
-      : await supabase.from("produtos_cadastro").insert(payload);
+      : await supabase.from("produtos_cadastro").insert({ ...payload, ...(lojaId ? { loja_id: lojaId } : {}) });
     setSalvando(false);
     if (error) {
       onToast("Não foi possível salvar — tente de novo");

@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, calcCanalCustom, aplicarAds } from "../lib/calc.js";
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
 export default function Comparativo() {
+  const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
   const [canais, setCanais] = useState([]);
   const [carregando, setCarregando] = useState(true);
@@ -27,10 +29,13 @@ export default function Comparativo() {
     let ativo = true;
     async function carregar() {
       try {
-        const [rp, rc] = await Promise.all([
-          supabase.from("produtos_cadastro").select("*").order("nome"),
-          supabase.from("canais").select("*").eq("ativo", true).order("tipo"),
-        ]);
+        let qp = supabase.from("produtos_cadastro").select("*").order("nome");
+        let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
+        if (lojaId) {
+          qp = qp.eq("loja_id", lojaId);
+          qc = qc.eq("loja_id", lojaId);
+        }
+        const [rp, rc] = await Promise.all([qp, qc]);
         if (!ativo) return;
         if (!rp.error) setProdutos(rp.data || []);
         if (!rc.error) setCanais(rc.data || []);
@@ -50,7 +55,7 @@ export default function Comparativo() {
       ativo = false;
       supabase.removeChannel(ch);
     };
-  }, []);
+  }, [lojaId]);
 
   const produtoSelecionado = produtos.find((p) => p.id === produtoId) || null;
 

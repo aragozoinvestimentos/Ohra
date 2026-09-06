@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FILAMENTOS, calcProducao } from "../lib/calc.js";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 const STORAGE_KEY = "ohra:custo-producao:v2";
@@ -39,6 +40,7 @@ function loadInitial() {
 const FALLBACK_MATERIAIS = FILAMENTOS.map((f) => ({ id: f.nome, nome: f.nome, preco_kg: f.preco }));
 
 export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
+  const { lojaId } = useLoja();
   const [f, setF] = useState(loadInitial);
   const [materiais, setMateriais] = useState(FALLBACK_MATERIAIS);
 
@@ -54,9 +56,12 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
     if (!supabase) return;
     let ativo = true;
     async function carregar() {
-      const { data, error } = await supabase.from("materiais").select("*").order("nome", { ascending: true });
-      if (!ativo || error || !data || data.length === 0) return;
-      setMateriais(data);
+      let query = supabase.from("materiais").select("*").order("nome", { ascending: true });
+      if (lojaId) query = query.eq("loja_id", lojaId);
+      const { data, error } = await query;
+      if (!ativo || error) return;
+      // Loja sem materiais cadastrados ainda cai nos filamentos padrão.
+      setMateriais(data && data.length > 0 ? data : FALLBACK_MATERIAIS);
     }
     carregar();
     const canal = supabase
@@ -67,7 +72,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
       ativo = false;
       supabase.removeChannel(canal);
     };
-  }, []);
+  }, [lojaId]);
 
   const set = (key) => (e) => {
     const v = e.target.value;

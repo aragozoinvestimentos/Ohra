@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 
 export default function Materiais({ onToast }) {
+  const { lojaId } = useLoja();
   const [materiais, setMateriais] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [novo, setNovo] = useState({ nome: "", preco_kg: "", observacao: "" });
@@ -17,7 +19,9 @@ export default function Materiais({ onToast }) {
 
     async function carregar() {
       try {
-        const { data, error } = await supabase.from("materiais").select("*").order("nome", { ascending: true });
+        let query = supabase.from("materiais").select("*").order("nome", { ascending: true });
+        if (lojaId) query = query.eq("loja_id", lojaId);
+        const { data, error } = await query;
         if (!ativo) return;
         if (!error) setMateriais(data || []);
       } catch {
@@ -37,7 +41,7 @@ export default function Materiais({ onToast }) {
       ativo = false;
       supabase.removeChannel(canal);
     };
-  }, []);
+  }, [lojaId]);
 
   async function adicionar() {
     const nome = novo.nome.trim();
@@ -51,6 +55,7 @@ export default function Materiais({ onToast }) {
       nome,
       preco_kg: preco,
       observacao: novo.observacao.trim() || null,
+      ...(lojaId ? { loja_id: lojaId } : {}),
     });
     setSalvandoNovo(false);
     if (error) {

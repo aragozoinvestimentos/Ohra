@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 
 export default function Historico({ onToast }) {
+  const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [editandoId, setEditandoId] = useState(null);
@@ -18,10 +20,9 @@ export default function Historico({ onToast }) {
 
     async function carregar() {
       try {
-        const { data, error } = await supabase
-          .from("produtos")
-          .select("*")
-          .order("criado_em", { ascending: false });
+        let query = supabase.from("produtos").select("*").order("criado_em", { ascending: false });
+        if (lojaId) query = query.eq("loja_id", lojaId);
+        const { data, error } = await query;
         if (!ativo) return;
         if (!error) setProdutos(data || []);
       } catch {
@@ -41,7 +42,7 @@ export default function Historico({ onToast }) {
       ativo = false;
       supabase.removeChannel(canal);
     };
-  }, []);
+  }, [lojaId]);
 
   async function excluir(id) {
     if (!supabase) return;

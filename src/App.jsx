@@ -6,6 +6,7 @@ import Comparativo from "./components/Comparativo.jsx";
 import Cadastros from "./components/Cadastros.jsx";
 import Organizacao from "./components/Organizacao.jsx";
 import Historico from "./components/Historico.jsx";
+import LojaSwitcher from "./components/LojaSwitcher.jsx";
 
 const THEME_KEY = "ohra:theme";
 
@@ -92,6 +93,8 @@ export default function App() {
             <div className="tagline">Precificador</div>
           </div>
         </div>
+
+        <LojaSwitcher />
 
         <nav className="side-nav">
           {TABS.map((t) => (

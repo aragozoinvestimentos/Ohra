@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
@@ -34,6 +35,7 @@ function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSal
 }
 
 export default function Canais({ onToast }) {
+  const { lojaId } = useLoja();
   const [canais, setCanais] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [novo, setNovo] = useState(NOVO_VAZIO);
@@ -48,7 +50,9 @@ export default function Canais({ onToast }) {
     let ativo = true;
     async function carregar() {
       try {
-        const { data, error } = await supabase.from("canais").select("*").order("tipo", { ascending: true }).order("nome");
+        let query = supabase.from("canais").select("*").order("tipo", { ascending: true }).order("nome");
+        if (lojaId) query = query.eq("loja_id", lojaId);
+        const { data, error } = await query;
         if (!ativo) return;
         if (!error) setCanais(data || []);
       } catch {
@@ -66,7 +70,7 @@ export default function Canais({ onToast }) {
       ativo = false;
       supabase.removeChannel(canal);
     };
-  }, []);
+  }, [lojaId]);
 
   function chave(id, campo) {
     return `${id}:${campo}`;
@@ -103,6 +107,7 @@ export default function Canais({ onToast }) {
       taxa_fixa: parseFloat(novo.taxa_fixa) || 0,
       imposto_pct: (parseFloat(novo.imposto_pct) || 0) / 100,
       custos_fixos_pct: (parseFloat(novo.custos_fixos_pct) || 0) / 100,
+      ...(lojaId ? { loja_id: lojaId } : {}),
     });
     setSalvandoNovo(false);
     if (error) {

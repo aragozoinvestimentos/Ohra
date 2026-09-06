@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, calcCanal } from "../lib/calc.js";
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 
@@ -26,6 +27,7 @@ const DEFAULTS = {
 };
 
 export default function PrecificacaoCanal({ custoRecebido, onToast }) {
+  const { lojaId } = useLoja();
   const [f, setF] = useState(DEFAULTS);
   const [salvando, setSalvando] = useState(false);
 
@@ -98,6 +100,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
       custo: resultado.custoTotal,
       preco: resultado.preco,
       margem: resultado.margem,
+      ...(lojaId ? { loja_id: lojaId } : {}),
     });
     setSalvando(false);
     if (error) {
