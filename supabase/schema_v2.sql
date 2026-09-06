@@ -99,6 +99,14 @@ insert into public.canais (nome, tipo)
 select 'Mercado Livre', 'ml'
 where not exists (select 1 from public.canais where tipo = 'ml');
 
+-- Imposto e custos fixos passaram a ser configuráveis por canal (inclusive
+-- Shopee/ML, que antes só tinham o % de Ads). Preenche quem ainda não tem
+-- valor e define um padrão pra canais novos.
+update public.canais set custos_fixos_pct = 0.02 where custos_fixos_pct is null;
+update public.canais set imposto_pct = 0 where imposto_pct is null;
+alter table public.canais alter column imposto_pct set default 0;
+alter table public.canais alter column custos_fixos_pct set default 0.02;
+
 -- =====================================================================
 -- Organização (kanban simples de etapas)
 -- =====================================================================

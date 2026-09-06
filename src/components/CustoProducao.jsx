@@ -14,6 +14,8 @@ const DEFAULTS = {
   kwh: 1.05,
   consumo: 350,
   falhasPct: 10,
+  manutencaoPct: 15,
+  acabamentoPct: 10,
   fixacao: 0.2,
   maquina: 3198,
   prazoMeses: 12,
@@ -87,6 +89,8 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
       kwh: n(f.kwh),
       consumo: n(f.consumo),
       falhasPct: n(f.falhasPct) / 100,
+      manutencaoPct: n(f.manutencaoPct) / 100,
+      acabamentoPct: n(f.acabamentoPct) / 100,
       fixacao: n(f.fixacao),
       maquina: n(f.maquina),
       prazoMeses: n(f.prazoMeses),
@@ -162,7 +166,17 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
               <input type="number" step="0.01" value={f.fixacao} onChange={set("fixacao")} />
             </div>
           </div>
-          <div className="hint">Manutenção (15%) e acabamento (10%) são calculados sobre o custo do material.</div>
+          <div className="row2">
+            <div className="field">
+              <label>Manutenção (% do material)</label>
+              <input type="number" step="1" value={f.manutencaoPct} onChange={set("manutencaoPct")} />
+            </div>
+            <div className="field">
+              <label>Acabamento (% do material)</label>
+              <input type="number" step="1" value={f.acabamentoPct} onChange={set("acabamentoPct")} />
+            </div>
+          </div>
+          <div className="hint">Manutenção e acabamento são calculados como % sobre o custo do material — ajuste se sua peça exigir mais ou menos pós-processamento.</div>
         </div>
 
         <div className="panel">

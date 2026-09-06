@@ -13,8 +13,6 @@ export default function Comparativo() {
   const [produtoId, setProdutoId] = useState("");
   const [custoManual, setCustoManual] = useState("");
   const [mlCategoria, setMlCategoria] = useState(ML_CATEGORIAS[0]);
-  const [imposto, setImposto] = useState(0);
-  const [custosFixos, setCustosFixos] = useState(2);
   const [lucratividade, setLucratividade] = useState(20);
   const [frete, setFrete] = useState(0);
   const [embalagem, setEmbalagem] = useState(0);
@@ -66,8 +64,6 @@ export default function Comparativo() {
 
   const linhas = useMemo(() => {
     const base = {
-      imposto: (parseFloat(imposto) || 0) / 100,
-      custosFixosPct: (parseFloat(custosFixos) || 0) / 100,
       lucratividadePct: (parseFloat(lucratividade) || 0) / 100,
       custoProduto,
       frete: parseFloat(frete) || 0,
@@ -75,18 +71,25 @@ export default function Comparativo() {
     };
 
     return canais.map((canal) => {
+      // Imposto e custos fixos são por canal (Cadastros → Canais) — cada
+      // linha usa o valor daquele canal, não um input compartilhado.
+      const baseCanal = {
+        ...base,
+        imposto: canal.imposto_pct || 0,
+        custosFixosPct: canal.custos_fixos_pct || 0,
+      };
       let resultado;
       if (canal.tipo === "shopee") {
-        resultado = resolverFaixaShopee(base).resultado;
+        resultado = resolverFaixaShopee(baseCanal).resultado;
       } else if (canal.tipo === "ml") {
-        resultado = resolverFaixaML(mlCategoria, base).resultado;
+        resultado = resolverFaixaML(mlCategoria, baseCanal).resultado;
       } else {
-        resultado = calcCanalCustom(canal, base);
+        resultado = calcCanalCustom(canal, baseCanal);
       }
       const ads = aplicarAds(resultado, canal.ads_pct);
       return { canal, resultado, ads };
     });
-  }, [canais, imposto, custosFixos, lucratividade, custoProduto, frete, embalagem, mlCategoria]);
+  }, [canais, lucratividade, custoProduto, frete, embalagem, mlCategoria]);
 
   const melhorOrganico = linhas.reduce((best, l) => (!best || l.resultado.lucro > best.resultado.lucro ? l : best), null);
   const melhorComAds = linhas.reduce((best, l) => (!best || l.ads.lucroComAds > best.ads.lucroComAds ? l : best), null);
@@ -129,16 +132,6 @@ export default function Comparativo() {
 
         <div className="panel">
           <h3 className="section-title">Parâmetros gerais</h3>
-          <div className="row2">
-            <div className="field">
-              <label>Imposto sobre a venda (%)</label>
-              <input type="number" step="0.1" value={imposto} onChange={(e) => setImposto(e.target.value)} />
-            </div>
-            <div className="field">
-              <label>Custos fixos adicionais (%)</label>
-              <input type="number" step="0.1" value={custosFixos} onChange={(e) => setCustosFixos(e.target.value)} />
-            </div>
-          </div>
           <div className="field">
             <label>Lucratividade líquida desejada (%)</label>
             <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
@@ -160,6 +153,9 @@ export default function Comparativo() {
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
+          </div>
+          <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
+            Imposto e custos fixos de cada canal vêm de Cadastros → Canais — edite lá se algum percentual mudar.
           </div>
         </div>
       </div>

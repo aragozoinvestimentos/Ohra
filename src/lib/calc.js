@@ -29,9 +29,9 @@ export function calcProducao(i) {
   const peso = Math.PI * Math.pow(i.diametro / 2, 2) * i.comprimento * i.densidade;
   const material = (i.precoKg / 1000) * peso;
   const energia = ((i.kwh / 1000) * i.consumo) * (i.tempo / 60);
-  const manutencao = material * 0.15;
+  const manutencao = material * (i.manutencaoPct ?? 0.15);
   const falhas = material * i.falhasPct;
-  const acabamento = material * 0.1;
+  const acabamento = material * (i.acabamentoPct ?? 0.1);
   const roiHora = i.maquina / ((i.horasDia * i.diasMes * i.prazoMeses) || 1);
   const roiPeca = (roiHora / 60) * i.tempo;
   const total = material + energia + manutencao + falhas + acabamento + i.fixacao + roiPeca + i.modelagem;

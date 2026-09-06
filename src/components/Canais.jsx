@@ -5,12 +5,39 @@ const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "",
 
 const TIPO_LABEL = { shopee: "Shopee (faixas oficiais)", ml: "Mercado Livre (faixas oficiais)", custom: "Canal próprio" };
 
+// Componente fora do Canais() de propósito: se ficasse dentro, seria recriado
+// a cada tecla digitada e o input perderia o foco a cada caractere.
+function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSalvar }) {
+  const k = `${canal.id}:${campo}`;
+  const valorAtual = canal[campo];
+  const valorExibido = edicoes[k] ?? (isPct ? (Number(valorAtual || 0) * 100).toFixed(1) : Number(valorAtual || 0).toFixed(2));
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+      {sufixo === "R$" && "R$ "}
+      <input
+        type="number"
+        step="0.01"
+        style={{ width: 64, textAlign: "right" }}
+        value={valorExibido}
+        onChange={(e) => setEdicoes((prev) => ({ ...prev, [k]: e.target.value }))}
+        onBlur={() => {
+          if (edicoes[k] !== undefined) onSalvar(canal.id, campo, isPct);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.target.blur();
+        }}
+      />
+      {sufixo === "%" && "%"}
+    </span>
+  );
+}
+
 export default function Canais({ onToast }) {
   const [canais, setCanais] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [novo, setNovo] = useState(NOVO_VAZIO);
   const [salvandoNovo, setSalvandoNovo] = useState(false);
-  const [edicoesAds, setEdicoesAds] = useState({});
+  const [edicoes, setEdicoes] = useState({});
 
   useEffect(() => {
     if (!supabase) {
@@ -40,22 +67,25 @@ export default function Canais({ onToast }) {
     };
   }, []);
 
-  async function salvarAds(id) {
-    const valor = parseFloat(edicoesAds[id]);
-    const { error } = await supabase
-      .from("canais")
-      .update({ ads_pct: isFinite(valor) ? valor / 100 : 0 })
-      .eq("id", id);
+  function chave(id, campo) {
+    return `${id}:${campo}`;
+  }
+
+  async function salvarCampo(id, campo, isPct) {
+    const raw = edicoes[chave(id, campo)];
+    const valor = parseFloat(String(raw).replace(",", "."));
+    const valorFinal = isFinite(valor) ? (isPct ? valor / 100 : valor) : 0;
+    const { error } = await supabase.from("canais").update({ [campo]: valorFinal }).eq("id", id);
     if (error) {
       onToast("Não foi possível atualizar — tente de novo");
       return;
     }
-    setEdicoesAds((prev) => {
+    setEdicoes((prev) => {
       const next = { ...prev };
-      delete next[id];
+      delete next[chave(id, campo)];
       return next;
     });
-    onToast("% de Ads atualizado");
+    onToast("Canal atualizado");
   }
 
   async function adicionar() {
@@ -111,6 +141,8 @@ export default function Canais({ onToast }) {
                   <th>Tipo</th>
                   <th className="num">Comissão</th>
                   <th className="num">Taxa fixa</th>
+                  <th className="num">Imposto</th>
+                  <th className="num">Custos fixos</th>
                   <th className="num">% Ads</th>
                   <th></th>
                 </tr>
@@ -120,23 +152,28 @@ export default function Canais({ onToast }) {
                   <tr key={c.id}>
                     <td>{c.nome}</td>
                     <td>{TIPO_LABEL[c.tipo] || c.tipo}</td>
-                    <td className="num">{c.tipo === "custom" ? `${(c.comissao_pct * 100).toFixed(1)}%` : "por faixa"}</td>
-                    <td className="num">{c.tipo === "custom" ? `R$ ${Number(c.taxa_fixa).toFixed(2)}` : "por faixa"}</td>
                     <td className="num">
-                      <input
-                        type="number"
-                        step="0.1"
-                        style={{ width: 70, textAlign: "right" }}
-                        value={edicoesAds[c.id] ?? (c.ads_pct * 100).toFixed(1)}
-                        onChange={(e) => setEdicoesAds((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                        onBlur={() => {
-                          if (edicoesAds[c.id] !== undefined) salvarAds(c.id);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") e.target.blur();
-                        }}
-                      />
-                      %
+                      {c.tipo === "custom" ? (
+                        <CampoEditavel canal={c} campo="comissao_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
+                      ) : (
+                        "por faixa"
+                      )}
+                    </td>
+                    <td className="num">
+                      {c.tipo === "custom" ? (
+                        <CampoEditavel canal={c} campo="taxa_fixa" sufixo="R$" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
+                      ) : (
+                        "por faixa"
+                      )}
+                    </td>
+                    <td className="num">
+                      <CampoEditavel canal={c} campo="imposto_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
+                    </td>
+                    <td className="num">
+                      <CampoEditavel canal={c} campo="custos_fixos_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
+                    </td>
+                    <td className="num">
+                      <CampoEditavel canal={c} campo="ads_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
                     </td>
                     <td>
                       {c.tipo === "custom" && (
@@ -150,7 +187,7 @@ export default function Canais({ onToast }) {
           </div>
         )}
         <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-          Shopee e Mercado Livre continuam usando as faixas oficiais de comissão/taxa (calculadas na hora). O % de Ads é o que você costuma investir em anúncio patrocinado nesse canal — usado no Comparativo pra mostrar o lucro com e sem Ads.
+          Shopee e Mercado Livre continuam usando as faixas oficiais de comissão/taxa (calculadas na hora). Imposto e custos fixos agora são por canal — o Comparativo usa automaticamente o valor daqui. O % de Ads é o que você costuma investir em anúncio patrocinado nesse canal.
         </div>
       </div>
 
