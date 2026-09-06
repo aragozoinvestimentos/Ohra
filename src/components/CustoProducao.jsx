@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { calcProducao } from "../lib/calc.js";
+import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -9,22 +9,8 @@ import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 const STORAGE_KEY = "ohra:custo-producao:v2";
 
 const DEFAULTS = {
-  comprimento: 5,
-  diametro: 1.75,
-  densidade: 1.24,
-  tempo: 35,
+  ...DEFAULTS_PRODUCAO,
   materialNome: "PLA (seu custo real)",
-  kwh: 1.05,
-  consumo: 350,
-  falhasPct: 10,
-  manutencaoPct: 15,
-  acabamentoPct: 10,
-  consumiveisItens: [],
-  maquina: 3198,
-  prazoMeses: 12,
-  horasDia: 6,
-  diasMes: 26,
-  modelagem: 0,
   markupRapido: 100,
 };
 
@@ -311,7 +297,30 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           <button
             className="btn"
             style={{ marginTop: 8, width: "100%" }}
-            onClick={() => onSalvarProduto({ custo: resultado.total, materialNome: materialSelecionado?.nome || "" })}
+            onClick={() =>
+              onSalvarProduto({
+                custo: resultado.total,
+                materialNome: materialSelecionado?.nome || "",
+                detalhe: {
+                  comprimento: n(f.comprimento),
+                  diametro: n(f.diametro),
+                  densidade: n(f.densidade),
+                  tempo: n(f.tempo),
+                  materialNome: materialSelecionado?.nome || "",
+                  kwh: n(f.kwh),
+                  consumo: n(f.consumo),
+                  falhasPct: n(f.falhasPct),
+                  manutencaoPct: n(f.manutencaoPct),
+                  acabamentoPct: n(f.acabamentoPct),
+                  consumiveisItens: f.consumiveisItens,
+                  maquina: n(f.maquina),
+                  prazoMeses: n(f.prazoMeses),
+                  horasDia: n(f.horasDia),
+                  diasMes: n(f.diasMes),
+                  modelagem: n(f.modelagem),
+                },
+              })
+            }
           >
             Salvar como Produto →
           </button>

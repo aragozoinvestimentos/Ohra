@@ -25,6 +25,27 @@ export const ML_FEE_TIERS = [
   { label: "A partir de R$79,00 (frete grátis obrigatório)", min: 79, max: 9999999, fixo: 0.0 },
 ];
 
+// Valores padrão dos campos de Custo de Produção — usados tanto na primeira
+// vez que a aba abre quanto quando alguém preenche o detalhamento de um
+// produto antigo que foi cadastrado sem essa informação (ver Produtos.jsx).
+export const DEFAULTS_PRODUCAO = {
+  comprimento: 5,
+  diametro: 1.75,
+  densidade: 1.24,
+  tempo: 35,
+  kwh: 1.05,
+  consumo: 350,
+  falhasPct: 10,
+  manutencaoPct: 15,
+  acabamentoPct: 10,
+  consumiveisItens: [],
+  maquina: 3198,
+  prazoMeses: 12,
+  horasDia: 6,
+  diasMes: 26,
+  modelagem: 0,
+};
+
 export function calcProducao(i) {
   const peso = Math.PI * Math.pow(i.diametro / 2, 2) * i.comprimento * i.densidade;
   const material = (i.precoKg / 1000) * peso;

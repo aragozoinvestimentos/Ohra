@@ -212,6 +212,11 @@ section.view.active { display: block; }
 .kv .v { font-weight: 500; }
 .kv.total .v { font-size: 17px; font-weight: 600; color: var(--accent-ink); }
 
+.detalhe-producao { border: 1px dashed var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; background: var(--surface-soft, transparent); }
+.detalhe-producao .field:last-child, .detalhe-producao .row2:last-child, .detalhe-producao .row3:last-child { margin-bottom: 0; }
+.detalhe-resultado { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--border); }
+.campo-anterior { font-weight: 400; color: var(--ink-faint); font-size: 11.5px; }
+
 .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
 .badge.good { background: var(--good-soft); color: var(--good); }
 .badge.bad { background: var(--bad-soft); color: var(--bad); }
