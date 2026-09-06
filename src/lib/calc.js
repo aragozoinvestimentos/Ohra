@@ -10,15 +10,37 @@ export const FILAMENTOS = [
   { nome: "PLA (seu custo real)", preco: 90.16 },
 ];
 
+// Faixas oficiais Shopee (vendedor CNPJ) vigentes desde 01/03/2026 — validado
+// em 06/09/2026 contra o artigo oficial do Centro de Educação do Vendedor
+// (seller.shopee.com.br) e duas fontes independentes que reproduzem a mesma
+// tabela. Não modela o caso raro de itens abaixo de R$8 (nesse caso o
+// "adicional" vira metade do preço do item em vez do fixo de R$4 — irrelevante
+// pra produtos impressos em 3D, que dificilmente vendem abaixo de R$8) nem o
+// adicional de R$3/item pra vendedor CPF com mais de 450 pedidos em 90 dias.
 export const SHOPEE_TIERS = [
   { label: "Até R$79,99", min: 0, max: 79.99, pct: 0.2, fixo: 4 },
   { label: "R$80,00–99,99", min: 80, max: 99.99, pct: 0.14, fixo: 16 },
   { label: "R$100,00–199,99", min: 100, max: 199.99, pct: 0.14, fixo: 20 },
-  { label: "Acima de R$200,00", min: 200, max: 9999999, pct: 0.14, fixo: 26 },
+  { label: "R$200,00–499,99", min: 200, max: 499.99, pct: 0.14, fixo: 26 },
+  { label: "Acima de R$500,00", min: 500, max: 9999999, pct: 0.14, fixo: 28 },
 ];
 
-export const ML_CATEGORY_PCT = { "Casa & Decoração": 0.13, Beleza: 0.135 };
+// Comissão por categoria no Mercado Livre — oficialmente Clássico varia de 10%
+// a 14% e Premium de 15% a 19% dependendo da categoria (mercadolivre.com.br/
+// ajuda/quanto-custa-vender-um-produto_1338, validado 06/09/2026). Os valores
+// abaixo são os percentuais específicos de "Casa, Móveis e Decoração" (onde
+// produtos impressos em 3D tipicamente se encaixam); "Beleza" fica de fora
+// dessa validação oficial e mantém uma estimativa dentro da faixa divulgada.
+export const ML_CATEGORY_PCT = {
+  "Casa & Decoração": { classico: 0.13, premium: 0.18 },
+  Beleza: { classico: 0.135, premium: 0.185 },
+};
 
+// Taxa fixa por venda de baixo valor — validado 06/09/2026 contra fonte
+// oficial (mercadolivre.com.br) e confirmado por fontes independentes: os
+// valores batem exatamente com o que já estava aqui. Observação: desde
+// março/2026 esse valor pode variar por peso/dimensão do produto conforme o
+// tipo logístico — não modelado aqui por falta desse dado no cadastro.
 export const ML_FEE_TIERS = [
   { label: "R$10,00–20,00", min: 10, max: 20, fixo: 5.5 },
   { label: "R$20,01–78,99", min: 20.01, max: 78.99, fixo: 6.0 },
@@ -115,9 +137,12 @@ export function resolverFaixaTikTok(base) {
   return { tier, resultado: calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
 }
 
-// Mesma ideia para o Mercado Livre, dada a categoria escolhida.
-export function resolverFaixaML(categoria, base) {
-  const comissaoPct = ML_CATEGORY_PCT[categoria] ?? 0.13;
+// Mesma ideia para o Mercado Livre, dada a categoria e o tipo de anúncio
+// (Clássico ou Premium — Premium cobra mais mas permite parcelamento sem
+// juros pro comprador).
+export function resolverFaixaML(categoria, base, tipoAnuncio = "classico") {
+  const pcts = ML_CATEGORY_PCT[categoria] ?? { classico: 0.13, premium: 0.18 };
+  const comissaoPct = tipoAnuncio === "premium" ? pcts.premium : pcts.classico;
   for (const tier of ML_FEE_TIERS) {
     const resultado = calcCanal({ ...base, comissaoPct, taxaFixa: tier.fixo, min: tier.min, max: tier.max });
     if (resultado.faixaOk) return { tier, resultado };

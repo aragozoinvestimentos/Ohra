@@ -184,7 +184,13 @@ export default function OrcamentoAvulso({ onToast }) {
           <h3>Preço sugerido</h3>
           <div className="kv"><span className="k">Custo total</span><span className="v">{BRL(resultado.custoTotal)}</span></div>
           <div className="kv total"><span className="k">Preço do pedido</span><span className="v">{BRL(resultado.preco)}</span></div>
-          <div className="kv"><span className="k">Lucro líquido</span><span className="v">{BRL(resultado.lucro)}</span></div>
+          <div className="destaque-lucro">
+            <span className="k">
+              Quanto cai no seu bolso
+              <span className="k-sub">lucro líquido por unidade, já descontado tudo</span>
+            </span>
+            <span className="v">{BRL(resultado.lucro)}</span>
+          </div>
           <div className="kv"><span className="k">Margem líquida</span><span className="v">{PCT(resultado.margem)}</span></div>
           <Termometro valor={resultado.margem} meta={n(f.lucratividade) / 100} />
           <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>

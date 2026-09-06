@@ -12,6 +12,7 @@ const DEFAULTS = {
   canal: "shopee",
   shopeeFaixaIdx: 0,
   mlCategoria: ML_CATEGORIAS[0],
+  mlTipoAnuncio: "classico",
   mlFaixaIdx: 0,
   tiktokFaixaIdx: 0,
   outroComissao: 0,
@@ -57,7 +58,8 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
       return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
     if (f.canal === "ml") {
-      const pct = ML_CATEGORY_PCT[f.mlCategoria] ?? 0.13;
+      const pcts = ML_CATEGORY_PCT[f.mlCategoria] ?? { classico: 0.13, premium: 0.18 };
+      const pct = f.mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico;
       const tier = ML_FEE_TIERS[f.mlFaixaIdx] || ML_FEE_TIERS[0];
       return { pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
@@ -66,7 +68,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
       return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
     return { pct: n(f.outroComissao) / 100, fixo: n(f.outroFixo), temFaixa: false };
-  }, [f.canal, f.shopeeFaixaIdx, f.mlCategoria, f.mlFaixaIdx, f.tiktokFaixaIdx, f.outroComissao, f.outroFixo]);
+  }, [f.canal, f.shopeeFaixaIdx, f.mlCategoria, f.mlTipoAnuncio, f.mlFaixaIdx, f.tiktokFaixaIdx, f.outroComissao, f.outroFixo]);
 
   const resultado = useMemo(() => {
     return calcCanal({
@@ -161,13 +163,22 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
 
           {f.canal === "ml" && (
             <>
-              <div className="field">
-                <label>Categoria do produto</label>
-                <select value={f.mlCategoria} onChange={setStr("mlCategoria")}>
-                  {ML_CATEGORIAS.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
+              <div className="row2">
+                <div className="field">
+                  <label>Categoria do produto</label>
+                  <select value={f.mlCategoria} onChange={setStr("mlCategoria")}>
+                    {ML_CATEGORIAS.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Tipo de anúncio</label>
+                  <select value={f.mlTipoAnuncio} onChange={setStr("mlTipoAnuncio")}>
+                    <option value="classico">Clássico</option>
+                    <option value="premium">Premium (parcelamento sem juros)</option>
+                  </select>
+                </div>
               </div>
               <div className="field">
                 <label>Faixa de preço prevista (define a taxa fixa)</label>
@@ -248,7 +259,13 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
               </span>
             </div>
           )}
-          <div className="kv"><span className="k">Lucro líquido</span><span className="v">{BRL(resultado.lucro)}</span></div>
+          <div className="destaque-lucro">
+            <span className="k">
+              Quanto cai no seu bolso
+              <span className="k-sub">lucro líquido por unidade, já descontado tudo</span>
+            </span>
+            <span className="v">{BRL(resultado.lucro)}</span>
+          </div>
           <div className="kv">
             <span className="k">Margem líquida</span>
             <span className="v">

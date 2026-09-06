@@ -33,6 +33,7 @@ export default function Promocoes() {
   const [frete, setFrete] = useState(0);
   const [embalagem, setEmbalagem] = useState(0);
   const [mlCategoria, setMlCategoria] = useState(ML_CATEGORIAS[0]);
+  const [mlTipoAnuncio, setMlTipoAnuncio] = useState("classico");
   const [lucratividade, setLucratividade] = useState(30);
 
   const [tipo, setTipo] = useState("desconto");
@@ -128,8 +129,10 @@ export default function Promocoes() {
       return { normal: r.resultado, feeInfo: { comissaoPct: r.tier.pct, taxaFixa: r.tier.fixo } };
     }
     if (canal.tipo === "ml") {
-      const r = resolverFaixaML(mlCategoria, base);
-      return { normal: r.resultado, feeInfo: { comissaoPct: ML_CATEGORY_PCT[mlCategoria] ?? 0.13, taxaFixa: r.tier.fixo } };
+      const r = resolverFaixaML(mlCategoria, base, mlTipoAnuncio);
+      const pcts = ML_CATEGORY_PCT[mlCategoria] ?? { classico: 0.13, premium: 0.18 };
+      const comissaoPct = mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico;
+      return { normal: r.resultado, feeInfo: { comissaoPct, taxaFixa: r.tier.fixo } };
     }
     if (canal.tipo === "tiktok") {
       const r = resolverFaixaTikTok(base);
@@ -137,7 +140,7 @@ export default function Promocoes() {
     }
     return { normal: calcCanalCustom(canal, base), feeInfo: { comissaoPct: canal.comissao_pct || 0, taxaFixa: canal.taxa_fixa || 0 } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canal, base, mlCategoria]);
+  }, [canal, base, mlCategoria, mlTipoAnuncio]);
 
   function atualizarTier(idx, campo, valor) {
     setTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, [campo]: valor } : t)));
@@ -247,13 +250,22 @@ export default function Promocoes() {
                   </select>
                 </div>
                 {canal?.tipo === "ml" && (
-                  <div className="field">
-                    <label>Categoria (Mercado Livre)</label>
-                    <select value={mlCategoria} onChange={(e) => setMlCategoria(e.target.value)}>
-                      {ML_CATEGORIAS.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
+                  <div className="row2">
+                    <div className="field">
+                      <label>Categoria (Mercado Livre)</label>
+                      <select value={mlCategoria} onChange={(e) => setMlCategoria(e.target.value)}>
+                        {ML_CATEGORIAS.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Tipo de anúncio</label>
+                      <select value={mlTipoAnuncio} onChange={(e) => setMlTipoAnuncio(e.target.value)}>
+                        <option value="classico">Clássico</option>
+                        <option value="premium">Premium</option>
+                      </select>
+                    </div>
                   </div>
                 )}
                 <div className="row2">

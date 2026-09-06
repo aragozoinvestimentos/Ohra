@@ -17,6 +17,7 @@ export default function Comparativo() {
   const [produtoId, setProdutoId] = useState("");
   const [custoManual, setCustoManual] = useState("");
   const [mlCategoria, setMlCategoria] = useState(ML_CATEGORIAS[0]);
+  const [mlTipoAnuncio, setMlTipoAnuncio] = useState("classico");
   const [lucratividade, setLucratividade] = useState(20);
   const [frete, setFrete] = useState(0);
   const [embalagem, setEmbalagem] = useState(0);
@@ -95,7 +96,7 @@ export default function Comparativo() {
       if (canal.tipo === "shopee") {
         resultado = resolverFaixaShopee(baseCanal).resultado;
       } else if (canal.tipo === "ml") {
-        resultado = resolverFaixaML(mlCategoria, baseCanal).resultado;
+        resultado = resolverFaixaML(mlCategoria, baseCanal, mlTipoAnuncio).resultado;
       } else if (canal.tipo === "tiktok") {
         resultado = resolverFaixaTikTok(baseCanal).resultado;
       } else {
@@ -104,7 +105,7 @@ export default function Comparativo() {
       const ads = aplicarAds(resultado, canal.ads_pct);
       return { canal, resultado, ads };
     });
-  }, [canais, lucratividade, custoProduto, frete, embalagem, mlCategoria]);
+  }, [canais, lucratividade, custoProduto, frete, embalagem, mlCategoria, mlTipoAnuncio]);
 
   // Uma linha só concorre a "melhor canal" se o preço calculado realmente
   // fechar dentro da própria faixa de comissão usada pra calculá-lo (Shopee/
@@ -187,13 +188,22 @@ export default function Comparativo() {
               Preenchido automaticamente com a embalagem já cadastrada nesse produto — não precisa somar de novo. Só altere aqui se quiser simular um cenário diferente.
             </div>
           )}
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label>Categoria (só afeta o Mercado Livre)</label>
-            <select value={mlCategoria} onChange={(e) => setMlCategoria(e.target.value)}>
-              {ML_CATEGORIAS.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+          <div className="row2" style={{ marginBottom: 0 }}>
+            <div className="field">
+              <label>Categoria (só afeta o Mercado Livre)</label>
+              <select value={mlCategoria} onChange={(e) => setMlCategoria(e.target.value)}>
+                {ML_CATEGORIAS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Tipo de anúncio (ML)</label>
+              <select value={mlTipoAnuncio} onChange={(e) => setMlTipoAnuncio(e.target.value)}>
+                <option value="classico">Clássico</option>
+                <option value="premium">Premium</option>
+              </select>
+            </div>
           </div>
           <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
             Imposto e custos fixos de cada canal vêm de Cadastros → Canais — edite lá se algum percentual mudar.
