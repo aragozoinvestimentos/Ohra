@@ -12,13 +12,25 @@ const LojaContext = createContext({
   disponivel: false,
   carregando: true,
   selecionar: () => {},
-  criar: async () => null,
-  atualizar: async () => false,
-  remover: async () => false,
+  criar: async () => ({ ok: false, error: "não inicializado" }),
+  atualizar: async () => ({ ok: false, error: "não inicializado" }),
+  remover: async () => ({ ok: false, error: "não inicializado" }),
   precisaPin: () => false,
   desbloquear: () => false,
   conferirPin: () => true,
 });
+
+// Mensagem de erro do Postgres/PostgREST enriquecida com uma dica quando o
+// motivo mais provável é uma migração (schema_v4.sql/v5.sql) que ainda não
+// rodou no Supabase.
+function explicarErro(error) {
+  if (!error) return "erro desconhecido";
+  const msg = error.message || String(error);
+  if (/column .* does not exist/i.test(msg) || /schema cache/i.test(msg)) {
+    return `${msg} — provavelmente falta rodar uma migração (schema_v4.sql ou schema_v5.sql) no Supabase.`;
+  }
+  return msg;
+}
 
 function lerSalvo() {
   try {
@@ -144,11 +156,11 @@ export function LojaProvider({ children }) {
   }
 
   async function criar({ nome, pin }) {
-    if (!supabase) return null;
+    if (!supabase) return { ok: false, error: "Supabase não configurado" };
     const payload = { nome };
     if (pin) payload.pin = pin;
     const { data, error } = await supabase.from("lojas").insert(payload).select().single();
-    if (error) return null;
+    if (error) return { ok: false, error: explicarErro(error) };
     // Atualiza a lista local na hora — sem isso o seletor fica sem nenhuma
     // opção correspondente até o round-trip do realtime voltar.
     setLojas((prev) => (prev.some((l) => l.id === data.id) ? prev : [...prev, data]));
@@ -167,29 +179,29 @@ export function LojaProvider({ children }) {
       // falha de rede ao semear os canais padrão — a loja já foi criada;
       // dá pra cadastrar os canais manualmente em Cadastros → Canais.
     }
-    return data;
+    return { ok: true, loja: data };
   }
 
   async function atualizar(id, { nome, pin, iconeUrl, removerIcone } = {}) {
-    if (!supabase) return false;
+    if (!supabase) return { ok: false, error: "Supabase não configurado" };
     const patch = {};
     if (nome !== undefined) patch.nome = nome;
     if (pin !== undefined) patch.pin = pin || null;
     if (removerIcone) patch.icone_url = null;
     else if (iconeUrl !== undefined) patch.icone_url = iconeUrl;
     const { data, error } = await supabase.from("lojas").update(patch).eq("id", id).select().single();
-    if (error) return false;
+    if (error) return { ok: false, error: explicarErro(error) };
     setLojas((prev) => prev.map((l) => (l.id === id ? data : l)));
     // Quem definiu/trocou o PIN agora mesmo já sabe ele.
     if (patch.pin) marcarDesbloqueada(id);
-    return true;
+    return { ok: true, loja: data };
   }
 
   async function remover(id) {
-    if (!supabase) return false;
+    if (!supabase) return { ok: false, error: "Supabase não configurado" };
     const loja = lojas.find((l) => l.id === id);
     const { error } = await supabase.from("lojas").delete().eq("id", id);
-    if (error) return false;
+    if (error) return { ok: false, error: explicarErro(error) };
     setLojas((prev) => prev.filter((l) => l.id !== id));
     setDesbloqueadas((prev) => {
       if (!prev.has(id)) return prev;
@@ -206,7 +218,7 @@ export function LojaProvider({ children }) {
         // arquivo órfão no Storage não é grave — a loja já foi excluída
       }
     }
-    return true;
+    return { ok: true };
   }
 
   return (

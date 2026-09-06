@@ -8,17 +8,17 @@ const BUCKET = "loja-icones";
 const TAMANHO_MAX_MB = 3;
 
 async function enviarIcone(lojaId, file) {
-  if (!supabase) return null;
+  if (!supabase) return { ok: false, error: "Supabase não configurado" };
   try {
     const extBruta = (file.name.split(".").pop() || "png").toLowerCase();
     const ext = /^[a-z0-9]{1,5}$/.test(extBruta) ? extBruta : "png";
     const caminho = `${lojaId}/icone-${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from(BUCKET).upload(caminho, file, { upsert: true, cacheControl: "3600" });
-    if (error) return null;
+    if (error) return { ok: false, error: error.message };
     const { data } = supabase.storage.from(BUCKET).getPublicUrl(caminho);
-    return data?.publicUrl || null;
-  } catch {
-    return null;
+    return data?.publicUrl ? { ok: true, url: data.publicUrl } : { ok: false, error: "URL pública não retornada" };
+  } catch (e) {
+    return { ok: false, error: e?.message || "falha ao enviar" };
   }
 }
 
@@ -99,7 +99,7 @@ function FormLoja({ valor, onChange, onSalvar, onCancelar, salvando, tituloBotao
         </div>
       </div>
       <div className="hint" style={{ marginBottom: 10 }}>
-        Deixe o PIN em branco pra loja ficar sem trava de acesso. Com PIN, ele é pedido pra entrar nessa loja e pra excluí-la.
+        Deixe o PIN em branco pra loja ficar sem trava de acesso. Com PIN, ele é pedido pra entrar, editar ou excluir essa loja.
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <button className="btn primary" onClick={onSalvar} disabled={salvando}>
@@ -122,8 +122,9 @@ export default function Lojas({ onToast }) {
   const [salvando, setSalvando] = useState(false);
   const [confirmacao, setConfirmacao] = useState(null); // "nova" | "editar"
   const [excluirAlvo, setExcluirAlvo] = useState(null);
+  const [pinParaEditar, setPinParaEditar] = useState(null); // loja aguardando PIN pra abrir a edição
 
-  function iniciarEdicao(loja) {
+  function abrirEdicao(loja) {
     setCriando(false);
     setEditandoId(loja.id);
     setEdicao({
@@ -134,6 +135,16 @@ export default function Lojas({ onToast }) {
       iconeUrlAtual: loja.icone_url || null,
       removerIcone: false,
     });
+  }
+
+  // Loja com PIN pede o PIN antes de abrir o formulário de edição — sem PIN
+  // cadastrado não tem o que conferir, então abre direto.
+  function iniciarEdicao(loja) {
+    if (loja.pin) {
+      setPinParaEditar(loja);
+      return;
+    }
+    abrirEdicao(loja);
   }
 
   function cancelarEdicao() {
@@ -169,16 +180,16 @@ export default function Lojas({ onToast }) {
     setConfirmacao(null);
     setSalvando(true);
     const nome = novo.nome.trim();
-    const loja = await criar({ nome, pin: novo.pin || null });
-    if (!loja) {
+    const resultado = await criar({ nome, pin: novo.pin || null });
+    if (!resultado.ok) {
       setSalvando(false);
-      onToast("Não foi possível criar a loja — tente de novo");
+      onToast(`Não foi possível criar a loja: ${resultado.error}`);
       return;
     }
     if (novo.iconeFile) {
-      const url = await enviarIcone(loja.id, novo.iconeFile);
-      if (url) await atualizar(loja.id, { iconeUrl: url });
-      else onToast("Loja criada, mas o ícone não pôde ser enviado — tente adicionar em Editar");
+      const up = await enviarIcone(resultado.loja.id, novo.iconeFile);
+      if (up.ok) await atualizar(resultado.loja.id, { iconeUrl: up.url });
+      else onToast(`Loja criada, mas o ícone não pôde ser enviado: ${up.error}`);
     }
     setSalvando(false);
     setNovo(NOVO_VAZIO);
@@ -192,18 +203,19 @@ export default function Lojas({ onToast }) {
     const nome = edicao.nome.trim();
     let iconeUrl;
     if (edicao.iconeFile) {
-      iconeUrl = await enviarIcone(editandoId, edicao.iconeFile);
-      if (!iconeUrl) onToast("Não foi possível enviar o novo ícone — o restante foi salvo");
+      const up = await enviarIcone(editandoId, edicao.iconeFile);
+      if (up.ok) iconeUrl = up.url;
+      else onToast(`Não foi possível enviar o novo ícone: ${up.error} — o restante foi salvo`);
     }
-    const ok = await atualizar(editandoId, {
+    const resultado = await atualizar(editandoId, {
       nome,
       pin: edicao.pin || null,
       removerIcone: edicao.removerIcone,
       ...(iconeUrl ? { iconeUrl } : {}),
     });
     setSalvando(false);
-    if (!ok) {
-      onToast("Não foi possível salvar — tente de novo");
+    if (!resultado.ok) {
+      onToast(`Não foi possível salvar: ${resultado.error}`);
       return;
     }
     onToast("Loja atualizada");
@@ -213,17 +225,17 @@ export default function Lojas({ onToast }) {
   async function confirmarExclusaoSemPin() {
     const loja = excluirAlvo;
     setExcluirAlvo(null);
-    const ok = await remover(loja.id);
-    onToast(ok ? "Loja excluída" : "Não foi possível excluir — tente de novo");
+    const resultado = await remover(loja.id);
+    onToast(resultado.ok ? "Loja excluída" : `Não foi possível excluir: ${resultado.error}`);
     if (editandoId === loja.id) cancelarEdicao();
   }
 
   async function confirmarExclusaoComPin(pin) {
     const loja = excluirAlvo;
     if (!conferirPin(loja.id, pin)) return false;
-    const ok = await remover(loja.id);
+    const resultado = await remover(loja.id);
     setExcluirAlvo(null);
-    onToast(ok ? "Loja excluída" : "Não foi possível excluir — tente de novo");
+    onToast(resultado.ok ? "Loja excluída" : `Não foi possível excluir: ${resultado.error}`);
     if (editandoId === loja.id) cancelarEdicao();
     return true;
   }
@@ -319,6 +331,23 @@ export default function Lojas({ onToast }) {
         />
       )}
 
+      {pinParaEditar && (
+        <PinPrompt
+          titulo={`PIN da loja "${pinParaEditar.nome}"`}
+          subtitulo="Essa loja é protegida por PIN — digite os 4 números pra editar."
+          confirmarLabel="Continuar"
+          onSubmit={async (pin) => {
+            const ok = conferirPin(pinParaEditar.id, pin);
+            if (ok) {
+              abrirEdicao(pinParaEditar);
+              setPinParaEditar(null);
+            }
+            return ok;
+          }}
+          onCancel={() => setPinParaEditar(null)}
+        />
+      )}
+
       {excluirAlvo && excluirAlvo.pin && (
         <PinPrompt
           titulo={`Excluir loja "${excluirAlvo.nome}"`}
@@ -332,7 +361,8 @@ export default function Lojas({ onToast }) {
       {excluirAlvo && !excluirAlvo.pin && (
         <ConfirmDialog
           titulo={`Excluir loja "${excluirAlvo.nome}"`}
-          mensagem="Essa ação apaga também todos os materiais, produtos, canais, pedidos e o histórico dessa loja — não pode ser desfeita."
+          mensagem="Essa loja não tem PIN cadastrado. Essa ação apaga também todos os materiais, produtos, canais, pedidos e o histórico dela — não pode ser desfeita."
+          confirmarComTexto={excluirAlvo.nome}
           confirmarLabel="Excluir"
           perigo
           onConfirm={confirmarExclusaoSemPin}
