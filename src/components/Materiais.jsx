@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
+import { arredondarPreco } from "../lib/format.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import EditarDialog from "./EditarDialog.jsx";
 import CalculadoraPreco from "./CalculadoraPreco.jsx";
 
 const VAZIO = { nome: "", preco: "", unidade: "un", tipo: "filamento", observacao: "" };
@@ -34,7 +36,7 @@ function CampoPreco({ material, edicoes, setEdicoes, onSalvar }) {
   );
 }
 
-function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes, onSalvarPreco, onExcluir }) {
+function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes, onSalvarPreco, onEditar, onExcluir }) {
   return (
     <div className="panel">
       <h3>{titulo}</h3>
@@ -64,6 +66,7 @@ function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes
                   <td>{m.observacao || "—"}</td>
                   <td>{new Date(m.atualizado_em).toLocaleDateString("pt-BR")}</td>
                   <td>
+                    <button className="del" title="Editar" onClick={() => onEditar(m)}>✎</button>
                     <button className="del" title="Excluir" onClick={() => onExcluir(m)}>×</button>
                   </td>
                 </tr>
@@ -84,6 +87,9 @@ export default function Materiais({ onToast }) {
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [edicoes, setEdicoes] = useState({}); // id -> valor em edição (preco como string)
   const [excluirAlvo, setExcluirAlvo] = useState(null);
+  const [editItem, setEditItem] = useState(null); // material sendo editado no menu, ou null
+  const [edicaoForm, setEdicaoForm] = useState(VAZIO);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -120,15 +126,15 @@ export default function Materiais({ onToast }) {
 
   async function adicionar() {
     const nome = novo.nome.trim();
-    const preco = parseFloat(novo.preco);
-    if (!nome || !isFinite(preco)) {
+    const precoBruto = parseFloat(novo.preco);
+    if (!nome || !isFinite(precoBruto)) {
       onToast("Preencha nome e preço");
       return;
     }
     setSalvandoNovo(true);
     const { error } = await supabase.from("materiais").insert({
       nome,
-      preco,
+      preco: arredondarPreco(precoBruto),
       unidade: novo.tipo === "filamento" ? "kg" : novo.unidade.trim() || "un",
       tipo: novo.tipo,
       observacao: novo.observacao.trim() || null,
@@ -151,7 +157,7 @@ export default function Materiais({ onToast }) {
     }
     const { error } = await supabase
       .from("materiais")
-      .update({ preco: valor, atualizado_em: new Date().toISOString() })
+      .update({ preco: arredondarPreco(valor), atualizado_em: new Date().toISOString() })
       .eq("id", id);
     if (error) {
       onToast(`Não foi possível atualizar: ${error.message}`);
@@ -163,6 +169,49 @@ export default function Materiais({ onToast }) {
       return next;
     });
     return true;
+  }
+
+  // Editar abre um menu (modal) com o item inteiro pra ajustar — nome,
+  // unidade, tipo, observação — sem precisar excluir e cadastrar de novo
+  // (o que deixaria dois registros parecidos na lista, um deles esquecido
+  // desatualizado).
+  function abrirEdicao(m) {
+    setEdicaoForm({
+      nome: m.nome,
+      preco: String(m.preco),
+      unidade: m.unidade || "un",
+      tipo: m.tipo || "filamento",
+      observacao: m.observacao || "",
+    });
+    setEditItem(m);
+  }
+
+  async function salvarEdicao() {
+    const nome = edicaoForm.nome.trim();
+    const precoBruto = parseFloat(edicaoForm.preco);
+    if (!nome || !isFinite(precoBruto)) {
+      onToast("Preencha nome e preço");
+      return;
+    }
+    setSalvandoEdicao(true);
+    const { error } = await supabase
+      .from("materiais")
+      .update({
+        nome,
+        preco: arredondarPreco(precoBruto),
+        unidade: edicaoForm.tipo === "filamento" ? "kg" : edicaoForm.unidade.trim() || "un",
+        tipo: edicaoForm.tipo,
+        observacao: edicaoForm.observacao.trim() || null,
+        atualizado_em: new Date().toISOString(),
+      })
+      .eq("id", editItem.id);
+    setSalvandoEdicao(false);
+    if (error) {
+      onToast(`Não foi possível salvar: ${error.message}`);
+      return;
+    }
+    setEditItem(null);
+    onToast("Material atualizado");
   }
 
   async function excluir(id) {
@@ -268,6 +317,7 @@ export default function Materiais({ onToast }) {
             edicoes={edicoes}
             setEdicoes={setEdicoes}
             onSalvarPreco={salvarPreco}
+            onEditar={abrirEdicao}
             onExcluir={setExcluirAlvo}
           />
           <TabelaMateriais
@@ -278,6 +328,7 @@ export default function Materiais({ onToast }) {
             edicoes={edicoes}
             setEdicoes={setEdicoes}
             onSalvarPreco={salvarPreco}
+            onEditar={abrirEdicao}
             onExcluir={setExcluirAlvo}
           />
           {materiais.length > 0 && (
@@ -300,6 +351,64 @@ export default function Materiais({ onToast }) {
           }}
           onCancel={() => setExcluirAlvo(null)}
         />
+      )}
+
+      {editItem && (
+        <EditarDialog
+          titulo={`Editar ${editItem.tipo === "consumivel" ? "consumível" : "filamento"}`}
+          salvando={salvandoEdicao}
+          onSalvar={salvarEdicao}
+          onCancelar={() => setEditItem(null)}
+        >
+          <div className="field">
+            <label>Tipo</label>
+            <select value={edicaoForm.tipo} onChange={(e) => setEdicaoForm((p) => ({ ...p, tipo: e.target.value }))}>
+              <option value="filamento">Filamento (preço por kg)</option>
+              <option value="consumivel">Consumível — cola, lixa, tinta... (preço por unidade)</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Nome</label>
+            <input
+              type="text"
+              value={edicaoForm.nome}
+              onChange={(e) => setEdicaoForm((p) => ({ ...p, nome: e.target.value }))}
+            />
+          </div>
+          <div className="row2">
+            <div className="field">
+              <label>{edicaoForm.tipo === "filamento" ? "Preço por kg (R$)" : "Preço por unidade (R$)"}</label>
+              <input
+                type="number"
+                step="0.01"
+                value={edicaoForm.preco}
+                onChange={(e) => setEdicaoForm((p) => ({ ...p, preco: e.target.value }))}
+              />
+            </div>
+            {edicaoForm.tipo === "consumivel" && (
+              <div className="field">
+                <label>Unidade (un, ml, g...)</label>
+                <input
+                  type="text"
+                  value={edicaoForm.unidade}
+                  onChange={(e) => setEdicaoForm((p) => ({ ...p, unidade: e.target.value }))}
+                />
+              </div>
+            )}
+          </div>
+          <CalculadoraPreco
+            unidade={edicaoForm.tipo === "filamento" ? "kg" : edicaoForm.unidade.trim() || "un"}
+            onAplicar={(v) => setEdicaoForm((p) => ({ ...p, preco: String(v) }))}
+          />
+          <div className="field">
+            <label>Observação (opcional)</label>
+            <input
+              type="text"
+              value={edicaoForm.observacao}
+              onChange={(e) => setEdicaoForm((p) => ({ ...p, observacao: e.target.value }))}
+            />
+          </div>
+        </EditarDialog>
       )}
     </div>
   );

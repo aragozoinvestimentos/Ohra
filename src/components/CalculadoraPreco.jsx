@@ -1,9 +1,12 @@
 import { useState } from "react";
+import { arredondarPreco } from "../lib/format.js";
 
 // Ajuda a preencher "preço por unidade" quando você só tem a conta da compra
 // inteira (quantidade do pacote/nota + valor total pago) — evita ter que
 // fazer a divisão de cabeça antes de digitar. Só calcula e devolve o valor
 // pro campo de preço via onAplicar; não mexe em nada sozinho.
+// Arredonda em no máximo 3 casas decimais — o suficiente pra itens baratos
+// comprados em pacote (ex: R$0,079/un) sem acumular dízima.
 export default function CalculadoraPreco({ unidade, onAplicar }) {
   const [aberta, setAberta] = useState(false);
   const [quantidade, setQuantidade] = useState("");
@@ -11,7 +14,7 @@ export default function CalculadoraPreco({ unidade, onAplicar }) {
 
   const qtd = parseFloat(quantidade);
   const total = parseFloat(valorTotal);
-  const resultado = qtd > 0 && isFinite(total) ? total / qtd : null;
+  const resultado = qtd > 0 && isFinite(total) ? arredondarPreco(total / qtd) : null;
 
   function fechar() {
     setAberta(false);
@@ -55,7 +58,7 @@ export default function CalculadoraPreco({ unidade, onAplicar }) {
         {resultado != null ? (
           <>
             <span>
-              = R$ {resultado.toFixed(4).replace(".", ",")} por {unidade || "un"}
+              = R$ {resultado.toFixed(3).replace(".", ",")} por {unidade || "un"}
             </span>
             <button
               type="button"

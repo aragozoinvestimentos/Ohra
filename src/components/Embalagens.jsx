@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
+import { arredondarPreco } from "../lib/format.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import EditarDialog from "./EditarDialog.jsx";
 import CalculadoraPreco from "./CalculadoraPreco.jsx";
 
 const VAZIO = { nome: "", preco: "", unidade: "un", observacao: "" };
@@ -42,6 +44,9 @@ export default function Embalagens({ onToast }) {
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [edicoes, setEdicoes] = useState({});
   const [excluirAlvo, setExcluirAlvo] = useState(null);
+  const [editItem, setEditItem] = useState(null); // embalagem sendo editada no menu, ou null
+  const [edicaoForm, setEdicaoForm] = useState(VAZIO);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -78,15 +83,15 @@ export default function Embalagens({ onToast }) {
 
   async function adicionar() {
     const nome = novo.nome.trim();
-    const preco = parseFloat(novo.preco);
-    if (!nome || !isFinite(preco)) {
+    const precoBruto = parseFloat(novo.preco);
+    if (!nome || !isFinite(precoBruto)) {
       onToast("Preencha nome e preço");
       return;
     }
     setSalvandoNovo(true);
     const { error } = await supabase.from("embalagens").insert({
       nome,
-      preco,
+      preco: arredondarPreco(precoBruto),
       unidade: novo.unidade.trim() || "un",
       observacao: novo.observacao.trim() || null,
       ...(lojaId ? { loja_id: lojaId } : {}),
@@ -108,7 +113,7 @@ export default function Embalagens({ onToast }) {
     }
     const { error } = await supabase
       .from("embalagens")
-      .update({ preco: valor, atualizado_em: new Date().toISOString() })
+      .update({ preco: arredondarPreco(valor), atualizado_em: new Date().toISOString() })
       .eq("id", id);
     if (error) {
       onToast(`Não foi possível atualizar: ${error.message}`);
@@ -120,6 +125,46 @@ export default function Embalagens({ onToast }) {
       return next;
     });
     return true;
+  }
+
+  // Editar abre um menu (modal) com o item inteiro — nome, preço, unidade,
+  // observação — pra ajustar sem excluir e recadastrar (o que deixaria dois
+  // registros parecidos na lista, um deles esquecido desatualizado).
+  function abrirEdicao(item) {
+    setEdicaoForm({
+      nome: item.nome,
+      preco: String(item.preco),
+      unidade: item.unidade || "un",
+      observacao: item.observacao || "",
+    });
+    setEditItem(item);
+  }
+
+  async function salvarEdicao() {
+    const nome = edicaoForm.nome.trim();
+    const precoBruto = parseFloat(edicaoForm.preco);
+    if (!nome || !isFinite(precoBruto)) {
+      onToast("Preencha nome e preço");
+      return;
+    }
+    setSalvandoEdicao(true);
+    const { error } = await supabase
+      .from("embalagens")
+      .update({
+        nome,
+        preco: arredondarPreco(precoBruto),
+        unidade: edicaoForm.unidade.trim() || "un",
+        observacao: edicaoForm.observacao.trim() || null,
+        atualizado_em: new Date().toISOString(),
+      })
+      .eq("id", editItem.id);
+    setSalvandoEdicao(false);
+    if (error) {
+      onToast(`Não foi possível salvar: ${error.message}`);
+      return;
+    }
+    setEditItem(null);
+    onToast("Embalagem atualizada");
   }
 
   // Antes de excluir, avisa se o item está em uso em alguma receita — pra
@@ -239,6 +284,7 @@ export default function Embalagens({ onToast }) {
                     <td>{m.observacao || "—"}</td>
                     <td>{new Date(m.atualizado_em).toLocaleDateString("pt-BR")}</td>
                     <td>
+                      <button className="del" title="Editar" onClick={() => abrirEdicao(m)}>✎</button>
                       <button className="del" title="Excluir" onClick={() => pedirExclusao(m)}>×</button>
                     </td>
                   </tr>
@@ -266,6 +312,50 @@ export default function Embalagens({ onToast }) {
           }}
           onCancel={() => setExcluirAlvo(null)}
         />
+      )}
+
+      {editItem && (
+        <EditarDialog titulo="Editar embalagem" salvando={salvandoEdicao} onSalvar={salvarEdicao} onCancelar={() => setEditItem(null)}>
+          <div className="row3">
+            <div className="field">
+              <label>Nome</label>
+              <input
+                type="text"
+                value={edicaoForm.nome}
+                onChange={(e) => setEdicaoForm((p) => ({ ...p, nome: e.target.value }))}
+              />
+            </div>
+            <div className="field">
+              <label>Preço por unidade (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={edicaoForm.preco}
+                onChange={(e) => setEdicaoForm((p) => ({ ...p, preco: e.target.value }))}
+              />
+            </div>
+            <div className="field">
+              <label>Unidade (un, m...)</label>
+              <input
+                type="text"
+                value={edicaoForm.unidade}
+                onChange={(e) => setEdicaoForm((p) => ({ ...p, unidade: e.target.value }))}
+              />
+            </div>
+          </div>
+          <CalculadoraPreco
+            unidade={edicaoForm.unidade.trim() || "un"}
+            onAplicar={(v) => setEdicaoForm((p) => ({ ...p, preco: String(v) }))}
+          />
+          <div className="field">
+            <label>Observação (opcional)</label>
+            <input
+              type="text"
+              value={edicaoForm.observacao}
+              onChange={(e) => setEdicaoForm((p) => ({ ...p, observacao: e.target.value }))}
+            />
+          </div>
+        </EditarDialog>
       )}
     </div>
   );
