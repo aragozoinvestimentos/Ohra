@@ -84,7 +84,10 @@ export default function Promocoes() {
     setEmbalagem(produto.embalagem_padrao || 0);
   }, [produtoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const n = (v) => (isFinite(v) ? v : 0);
+  const n = (v) => {
+    const x = Number(v);
+    return isFinite(x) ? x : 0;
+  };
   const custoProduto = produto ? Number(produto.custo_producao) || 0 : parseFloat(custoManual) || 0;
 
   // Resolve preço normal (sem promoção) pelo canal escolhido, e guarda as

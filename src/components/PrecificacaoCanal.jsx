@@ -45,7 +45,10 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   const setStr = (key) => (e) => setF((prev) => ({ ...prev, [key]: e.target.value }));
   const setIdx = (key) => (e) => setF((prev) => ({ ...prev, [key]: parseInt(e.target.value, 10) }));
 
-  const n = (v) => (isFinite(v) ? v : 0);
+  const n = (v) => {
+    const x = Number(v);
+    return isFinite(x) ? x : 0;
+  };
 
   const comissaoFixo = useMemo(() => {
     if (f.canal === "shopee") {

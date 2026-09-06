@@ -57,7 +57,10 @@ export default function OrcamentoAvulso({ onToast }) {
     const v = e.target.value;
     setF((prev) => ({ ...prev, [key]: v === "" ? "" : parseFloat(v) }));
   };
-  const n = (v) => (isFinite(v) ? v : 0);
+  const n = (v) => {
+    const x = Number(v);
+    return isFinite(x) ? x : 0;
+  };
 
   const resultado = useMemo(() => {
     return calcCanal({

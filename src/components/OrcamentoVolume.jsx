@@ -39,7 +39,10 @@ export default function OrcamentoVolume() {
   }, [lojaId]);
 
   const produto = produtos.find((p) => p.id === produtoId) || null;
-  const n = (v) => (isFinite(v) ? v : 0);
+  const n = (v) => {
+    const x = Number(v);
+    return isFinite(x) ? x : 0;
+  };
 
   function calcularLote(qtd) {
     if (!produto) return null;

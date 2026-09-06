@@ -80,7 +80,10 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
   };
   const setStr = (key) => (e) => setF((prev) => ({ ...prev, [key]: e.target.value }));
 
-  const n = (v) => (isFinite(v) ? v : 0);
+  const n = (v) => {
+    const x = Number(v);
+    return isFinite(x) ? x : 0;
+  };
 
   const materialSelecionado =
     materiais.find((m) => m.nome === f.materialNome) || materiais[materiais.length - 1] || FALLBACK_MATERIAIS[0];
@@ -228,7 +231,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto }) {
           <h3>Resultado</h3>
           <div className="kv">
             <span className="k">Peso estimado da peça</span>
-            <span className="v">{isFinite(resultado.peso) ? resultado.peso.toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " g" : "—"}</span>
+            <span className="v">{isFinite(Number(resultado.peso)) ? Number(resultado.peso).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " g" : "—"}</span>
           </div>
           <div className="kv"><span className="k">Custo de material</span><span className="v">{BRL(resultado.material)}</span></div>
           <div className="kv"><span className="k">Custo de energia</span><span className="v">{BRL(resultado.energia)}</span></div>
