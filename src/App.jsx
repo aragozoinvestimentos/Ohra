@@ -8,6 +8,7 @@ import Orcamento from "./components/Orcamento.jsx";
 import Promocoes from "./components/Promocoes.jsx";
 import Otimizacao from "./components/Otimizacao.jsx";
 import Historico from "./components/Historico.jsx";
+import Tutorial from "./components/Tutorial.jsx";
 import Lojas from "./components/Lojas.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
 import LojaGate from "./components/LojaGate.jsx";
@@ -60,6 +61,10 @@ const GRUPOS = [
       { key: "otimizacao", label: "Otimização", icon: "📈" },
       { key: "historico", label: "Histórico", icon: "🕘" },
     ],
+  },
+  {
+    titulo: "Ajuda",
+    tabs: [{ key: "tutorial", label: "Tutorial", icon: "📘" }],
   },
 ];
 
@@ -203,6 +208,10 @@ export default function App() {
 
         <section className={`view ${tab === "historico" ? "active" : ""}`}>
           <Historico onToast={showToast} />
+        </section>
+
+        <section className={`view ${tab === "tutorial" ? "active" : ""}`}>
+          <Tutorial />
         </section>
 
         <footer className="note">
