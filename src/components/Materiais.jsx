@@ -333,7 +333,7 @@ export default function Materiais({ onToast }) {
           />
           {materiais.length > 0 && (
             <div className="hint" style={{ marginTop: -6, marginBottom: 18 }}>
-              Pra atualizar um preço: clique no valor, edite e aperte Enter (ou clique fora) para salvar. Filamentos aparecem no dropdown da aba Custo de Produção; consumíveis aparecem na seção "Consumíveis" da mesma aba.
+              Pra atualizar um preço: clique no valor, edite e aperte Enter (ou clique fora) para salvar. Filamentos aparecem no dropdown da aba Simular Custo de Produção; consumíveis aparecem na seção "Consumíveis" da mesma aba.
             </div>
           )}
         </>

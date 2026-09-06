@@ -124,7 +124,7 @@ export default function OrcamentoVolume() {
           <h3 className="section-title">Parâmetros</h3>
           <div className="row2">
             <div className="field">
-              <label>Imposto sobre a venda (%)</label>
+              <label>Imposto sobre a venda — seu CNPJ/MEI (%)</label>
               <input type="number" step="0.1" value={imposto} onChange={(e) => setImposto(e.target.value)} />
             </div>
             <div className="field">

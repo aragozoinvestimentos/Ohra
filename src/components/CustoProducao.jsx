@@ -29,6 +29,51 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   const [f, setF] = useState(loadInitial);
   const [materiais, setMateriais] = useState([]);
   const [materiaisCarregando, setMateriaisCarregando] = useState(true);
+  const [produtos, setProdutos] = useState([]);
+  const [produtoId, setProdutoId] = useState("");
+
+  // Troca de loja invalida a seleção anterior de produto cadastrado.
+  useEffect(() => {
+    setProdutoId("");
+  }, [lojaId]);
+
+  // Produtos cadastrados, pra carregar o detalhamento salvo de um deles (se
+  // tiver) e reajustar em vez de simular sempre do zero.
+  useEffect(() => {
+    if (!supabase) return;
+    let ativo = true;
+    async function carregar() {
+      let query = supabase.from("produtos_cadastro").select("id, nome, material_nome, producao_detalhe").order("nome");
+      if (lojaId) query = query.eq("loja_id", lojaId);
+      const { data, error } = await query;
+      if (!ativo) return;
+      if (!error) setProdutos(data || []);
+    }
+    carregar();
+    const canal = supabase
+      .channel("custo-producao-produtos-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
+      .subscribe();
+    return () => {
+      ativo = false;
+      supabase.removeChannel(canal);
+    };
+  }, [lojaId]);
+
+  const produtoSelecionado = produtos.find((p) => p.id === produtoId) || null;
+
+  // Ao escolher um produto, carrega o detalhamento salvo dele pros campos —
+  // se ele não tiver detalhamento (cadastrado manual/antigo), só ajusta o
+  // filamento e deixa o resto como está, pra você preencher e "adotar" ele.
+  useEffect(() => {
+    if (!produtoId || !produtoSelecionado) return;
+    if (produtoSelecionado.producao_detalhe) {
+      setF((prev) => ({ ...DEFAULTS, ...produtoSelecionado.producao_detalhe, markupRapido: prev.markupRapido }));
+    } else if (produtoSelecionado.material_nome) {
+      setF((prev) => ({ ...prev, materialNome: produtoSelecionado.material_nome }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produtoId]);
 
   useEffect(() => {
     try {
@@ -146,6 +191,24 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
             Peça (dados do fatiador)
             <Ajuda texto="Dados que o fatiador (slicer) mostra antes de imprimir. Comprimento é o total de filamento gasto na peça (em metros); diâmetro e densidade dependem do filamento (1.75mm e ~1.24 g/cm³ pra PLA/PETG são padrão); tempo é a duração da impressão. Com isso o app calcula o peso da peça e o custo de material." />
           </h3>
+          {supabase && (
+            <div className="field">
+              <label>Produto cadastrado (opcional)</label>
+              <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+                <option value="">— novo cálculo —</option>
+                {produtos.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nome}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {produtoSelecionado && (
+            <div className="hint" style={{ marginTop: -8 }}>
+              {produtoSelecionado.producao_detalhe
+                ? 'Detalhamento desse produto carregado abaixo — ajuste o que quiser e use "Salvar como Produto" pra atualizar ele (não cria um novo).'
+                : 'Esse produto não tem detalhamento salvo ainda — os campos abaixo continuam como estavam. Ao salvar, isso preenche o detalhamento dele.'}
+            </div>
+          )}
           <div className="row2">
             <div className="field">
               <label>Comprimento de filamento (m)</label>
@@ -299,6 +362,8 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
             style={{ marginTop: 8, width: "100%" }}
             onClick={() =>
               onSalvarProduto({
+                id: produtoId || null,
+                nome: produtoSelecionado?.nome || "",
                 custo: resultado.total,
                 materialNome: materialSelecionado?.nome || "",
                 detalhe: {
@@ -322,7 +387,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
               })
             }
           >
-            Salvar como Produto →
+            {produtoId ? "Atualizar produto cadastrado →" : "Salvar como Produto →"}
           </button>
         </div>
       </div>

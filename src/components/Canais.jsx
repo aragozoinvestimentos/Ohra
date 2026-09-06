@@ -178,7 +178,7 @@ export default function Canais({ onToast }) {
                   <th>Tipo</th>
                   <th className="num">Comissão</th>
                   <th className="num">Taxa fixa</th>
-                  <th className="num">Imposto</th>
+                  <th className="num">Imposto (seu)</th>
                   <th className="num">Custos fixos</th>
                   <th className="num">% Ads</th>
                   <th></th>
@@ -251,7 +251,7 @@ export default function Canais({ onToast }) {
             <input type="number" step="0.01" value={novo.taxa_fixa} onChange={(e) => setNovo((p) => ({ ...p, taxa_fixa: e.target.value }))} />
           </div>
           <div className="field">
-            <label>Imposto (%)</label>
+            <label>Imposto (seu CNPJ/MEI) (%)</label>
             <input type="number" step="0.1" value={novo.imposto_pct} onChange={(e) => setNovo((p) => ({ ...p, imposto_pct: e.target.value }))} />
           </div>
           <div className="field">

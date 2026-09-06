@@ -32,10 +32,59 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   const { lojaId } = useLoja();
   const [f, setF] = useState(DEFAULTS);
   const [salvando, setSalvando] = useState(false);
+  const [produtos, setProdutos] = useState([]);
+  const [produtoId, setProdutoId] = useState("");
+
+  // Troca de loja invalida a seleção anterior de produto cadastrado.
+  useEffect(() => {
+    setProdutoId("");
+  }, [lojaId]);
+
+  // Produtos cadastrados, pra puxar custo/frete/embalagem automaticamente em
+  // vez de digitar tudo de novo (mesma lista usada no Comparativo).
+  useEffect(() => {
+    if (!supabase) return;
+    let ativo = true;
+    async function carregar() {
+      let query = supabase.from("produtos_cadastro").select("*").order("nome");
+      if (lojaId) query = query.eq("loja_id", lojaId);
+      const { data, error } = await query;
+      if (!ativo) return;
+      if (!error) setProdutos(data || []);
+    }
+    carregar();
+    const canal = supabase
+      .channel("precificacao-canal-produtos-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
+      .subscribe();
+    return () => {
+      ativo = false;
+      supabase.removeChannel(canal);
+    };
+  }, [lojaId]);
+
+  const produtoSelecionado = produtos.find((p) => p.id === produtoId) || null;
+
+  useEffect(() => {
+    if (!produtoId) return;
+    if (!produtoSelecionado) {
+      setF((prev) => ({ ...prev, custoProduto: "", frete: 0, embalagem: 0 }));
+      return;
+    }
+    setF((prev) => ({
+      ...prev,
+      custoProduto: arredondarPreco(produtoSelecionado.custo_producao),
+      frete: arredondarPreco(produtoSelecionado.frete_padrao || 0),
+      embalagem: arredondarPreco(produtoSelecionado.embalagem_padrao || 0),
+      nome: prev.nome || produtoSelecionado.nome,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produtoId]);
 
   // Quando "Usar este custo" é clicado na aba de Produção, aplica o valor aqui.
   useEffect(() => {
     if (custoRecebido == null) return;
+    setProdutoId("");
     setF((prev) => ({ ...prev, custoProduto: arredondarPreco(custoRecebido.value) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [custoRecebido?.seq]);
@@ -206,7 +255,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
 
           <div className="row2">
             <div className="field">
-              <label>Imposto sobre a venda (%)</label>
+              <label>Imposto sobre a venda — seu CNPJ/MEI (%)</label>
               <input type="number" step="0.1" value={f.imposto} onChange={set("imposto")} />
             </div>
             <div className="field">
@@ -222,7 +271,19 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
         </div>
 
         <div className="panel">
-          <h3 className="section-title">Custo do produto</h3>
+          <h3 className="section-title">
+            Custo do produto
+            <Ajuda texto="Escolha um produto já cadastrado pra puxar custo, frete e embalagem automaticamente — ou preencha na mão pra simular algo que ainda não existe no catálogo." />
+          </h3>
+          <div className="field">
+            <label>Produto cadastrado (opcional)</label>
+            <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+              <option value="">— preencher manualmente —</option>
+              {produtos.map((p) => (
+                <option key={p.id} value={p.id}>{p.nome}</option>
+              ))}
+            </select>
+          </div>
           <div className="field">
             <label>Custo da mercadoria/produção (R$)</label>
             <input type="number" step="0.01" value={f.custoProduto} onChange={set("custoProduto")} />
@@ -237,6 +298,11 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
               <input type="number" step="0.01" value={f.embalagem} onChange={set("embalagem")} />
             </div>
           </div>
+          {produtoSelecionado && (
+            <div className="hint" style={{ marginBottom: 0 }}>
+              Preenchido automaticamente com o custo, frete e embalagem já cadastrados nesse produto — ajuste aqui só pra simular um cenário diferente.
+            </div>
+          )}
         </div>
       </div>
 
@@ -281,7 +347,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
             <div className="detalhe-taxas-titulo">Taxas descontadas por venda (nesse preço)</div>
             <div className="kv"><span className="k">Comissão do canal</span><span className="v">{PCT(comissaoFixo.pct)} · {BRL(resultado.preco * comissaoFixo.pct)}</span></div>
             <div className="kv"><span className="k">Taxa fixa do canal</span><span className="v">{BRL(comissaoFixo.fixo)}</span></div>
-            <div className="kv"><span className="k">Imposto sobre a venda</span><span className="v">{PCT(n(f.imposto) / 100)} · {BRL(resultado.preco * (n(f.imposto) / 100))}</span></div>
+            <div className="kv"><span className="k">Imposto (seu CNPJ/MEI)</span><span className="v">{PCT(n(f.imposto) / 100)} · {BRL(resultado.preco * (n(f.imposto) / 100))}</span></div>
             <div className="kv"><span className="k">Custos fixos adicionais</span><span className="v">{PCT(n(f.custosFixos) / 100)} · {BRL(resultado.preco * (n(f.custosFixos) / 100))}</span></div>
             <div className="kv total"><span className="k">Total descontado da venda</span><span className="v">{BRL(resultado.preco - resultado.custoTotal - resultado.lucro)}</span></div>
           </div>

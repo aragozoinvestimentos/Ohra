@@ -143,9 +143,40 @@ export default function Produtos({ produtoRecebido, onToast }) {
     };
   }, [lojaId]);
 
-  // Quando "Salvar como Produto" é clicado na aba de Custo de Produção.
+  // Quando "Salvar como Produto"/"Atualizar produto cadastrado" é clicado na
+  // aba de Simular Custo de Produção.
   useEffect(() => {
     if (produtoRecebido == null) return;
+    // Veio de um produto já cadastrado (escolhido lá em Simular Custo de
+    // Produção) — entra direto no modo de edição desse mesmo produto, em vez
+    // de criar um duplicado, preservando frete/embalagem/observação já salvos.
+    if (produtoRecebido.id) {
+      (async () => {
+        let pExistente = produtos.find((p) => p.id === produtoRecebido.id) || null;
+        if (!pExistente && supabase) {
+          const { data } = await supabase.from("produtos_cadastro").select("*").eq("id", produtoRecebido.id).single();
+          pExistente = data || null;
+        }
+        let itens = [];
+        if (supabase) {
+          const { data } = await supabase.from("produto_embalagens").select("*").eq("produto_id", produtoRecebido.id);
+          itens = (data || []).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade }));
+        }
+        setEditandoId(produtoRecebido.id);
+        setForm({
+          nome: produtoRecebido.nome || pExistente?.nome || "",
+          material_nome: produtoRecebido.materialNome || pExistente?.material_nome || "",
+          custo_producao: arredondarPreco(produtoRecebido.custo),
+          frete_padrao: arredondarPreco(pExistente?.frete_padrao || 0),
+          embalagem_padrao: arredondarPreco(pExistente?.embalagem_padrao || 0),
+          observacao: pExistente?.observacao || "",
+          embalagemItens: itens,
+          producao_detalhe: produtoRecebido.detalhe || null,
+        });
+        setDetalheSalvo(produtoRecebido.detalhe || null);
+      })();
+      return;
+    }
     setEditandoId(null);
     setForm({
       ...VAZIO,
@@ -153,7 +184,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
       custo_producao: arredondarPreco(produtoRecebido.custo),
       producao_detalhe: produtoRecebido.detalhe || null,
     });
-    // Nada aparece como "alterado" logo depois de trazer da Custo de
+    // Nada aparece como "alterado" logo depois de trazer da Simular Custo de
     // Produção — o snapshot de referência começa igual ao que acabou de vir.
     setDetalheSalvo(produtoRecebido.detalhe || null);
     // eslint-disable-next-line react-hooks/exhaustive-deps

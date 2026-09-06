@@ -43,7 +43,7 @@ const GRUPOS = [
   {
     titulo: "Precificar",
     tabs: [
-      { key: "producao", label: "Custo de Produção", icon: "🧮" },
+      { key: "producao", label: "Simular Custo de Produção", icon: "🧮" },
       { key: "canal", label: "Precificação por Canal", icon: "🏷️" },
       { key: "comparativo", label: "Comparativo", icon: "📊" },
     ],
@@ -105,10 +105,10 @@ export default function App() {
     showToast("Custo levado para a Precificação por Canal");
   }
 
-  function salvarComoProduto({ custo, materialNome, detalhe }) {
-    setProdutoRecebido((prev) => ({ custo, materialNome, detalhe, seq: (prev?.seq || 0) + 1 }));
+  function salvarComoProduto({ custo, materialNome, detalhe, id, nome }) {
+    setProdutoRecebido((prev) => ({ custo, materialNome, detalhe, id: id || null, nome: nome || "", seq: (prev?.seq || 0) + 1 }));
     setTab("cadastros");
-    showToast("Custo levado para o cadastro de Produtos");
+    showToast(id ? "Detalhamento levado para atualizar o produto" : "Custo levado para o cadastro de Produtos");
   }
 
   function irPara(key) {

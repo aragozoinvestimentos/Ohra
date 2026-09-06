@@ -59,15 +59,15 @@ const ETAPAS = [
     passos: [
       {
         icone: "🧮",
-        nome: "Custo de Produção",
+        nome: "Simular Custo de Produção",
         texto:
-          "Ponto de partida de tudo: digite os dados que o fatiador (slicer) mostra antes de imprimir — comprimento de filamento, tempo de impressão etc. O app calcula o peso da peça e soma material, energia, manutenção, falhas, consumíveis e o rateio (ROI) da impressora até chegar no custo de produção total. Dali dá pra levar o custo direto pra Precificação por Canal, ou salvar a peça como Produto.",
+          "Ponto de partida de tudo: digite os dados que o fatiador (slicer) mostra antes de imprimir — comprimento de filamento, tempo de impressão etc. O app calcula o peso da peça e soma material, energia, manutenção, falhas, consumíveis e o rateio (ROI) da impressora até chegar no custo de produção total. Dá pra escolher um produto já cadastrado no topo pra carregar o detalhamento dele e reajustar, ou simular do zero. Dali dá pra levar o custo direto pra Precificação por Canal, ou salvar a peça como Produto (se veio de um produto já cadastrado, isso atualiza ele em vez de criar um novo).",
       },
       {
         icone: "🏷️",
         nome: "Precificação por Canal",
         texto:
-          "Pega um custo (vindo da Custo de Produção ou digitado na mão) e calcula o preço de venda pra um canal específico, dada a margem líquida que você quer garantir — o app já desconta comissão, taxa fixa, imposto e custos extras daquele canal antes de sugerir o preço.",
+          "Pega um custo (escolhendo um produto já cadastrado, vindo da Simular Custo de Produção, ou digitado na mão) e calcula o preço de venda pra um canal específico, dada a margem líquida que você quer garantir — o app já desconta comissão, taxa fixa, imposto (o seu, sobre a venda) e custos extras daquele canal antes de sugerir o preço.",
       },
       {
         icone: "📊",
