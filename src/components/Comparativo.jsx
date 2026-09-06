@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, calcCanalCustom, aplicarAds } from "../lib/calc.js";
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import Termometro from "./Termometro.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -190,7 +191,10 @@ export default function Comparativo() {
                       </td>
                       <td className="num">{BRL(resultado.preco)}</td>
                       <td className="num">{BRL(resultado.lucro)}</td>
-                      <td className="num">{PCT(resultado.margem)}</td>
+                      <td className="num">
+                        {PCT(resultado.margem)}
+                        <Termometro valor={resultado.margem} meta={(parseFloat(lucratividade) || 0) / 100} compact />
+                      </td>
                       <td className="num">{canal.ads_pct > 0 ? BRL(ads.lucroComAds) : "—"}</td>
                       <td className="num">{canal.ads_pct > 0 ? PCT(ads.margemComAds) : "—"}</td>
                     </tr>

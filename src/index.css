@@ -16,6 +16,8 @@
   --good-soft: oklch(0.55 0.11 145 / 0.13);
   --bad: oklch(0.55 0.16 25);
   --bad-soft: oklch(0.55 0.16 25 / 0.13);
+  --warn: oklch(0.72 0.14 80);
+  --warn-soft: oklch(0.72 0.14 80 / 0.15);
   --shadow: 0 1px 2px oklch(0.18 0.01 80 / 0.06), 0 8px 24px oklch(0.18 0.01 80 / 0.05);
   --logo-filter: none;
   color-scheme: light;
@@ -40,6 +42,8 @@
   --good-soft: oklch(0.72 0.13 145 / 0.16);
   --bad: oklch(0.72 0.15 25);
   --bad-soft: oklch(0.72 0.15 25 / 0.16);
+  --warn: oklch(0.8 0.14 80);
+  --warn-soft: oklch(0.8 0.14 80 / 0.18);
   --shadow: 0 1px 2px oklch(0 0 0 / 0.3), 0 8px 24px oklch(0 0 0 / 0.35);
   --logo-filter: invert(1);
 }
@@ -172,6 +176,18 @@ th.num { text-align: right; }
 .toast.show { opacity: 1; }
 
 footer.note { margin-top: 32px; font-size: 12px; color: var(--ink-faint); line-height: 1.6; }
+
+.termometro { margin-top: 6px; }
+.termometro-label { font-size: 11px; color: var(--ink-faint); margin-bottom: 4px; }
+.termometro-track { position: relative; height: 8px; border-radius: 999px; background: var(--surface-2); }
+.termometro-fill { height: 100%; border-radius: 999px; transition: width 0.25s ease; }
+.termometro-fill.good { background: var(--good); }
+.termometro-fill.warn { background: var(--warn); }
+.termometro-fill.bad { background: var(--bad); }
+.termometro-meta { position: absolute; top: -3px; width: 2px; height: 14px; background: var(--ink-soft); border-radius: 1px; }
+.termometro.compact { margin-top: 4px; min-width: 70px; }
+.termometro.compact .termometro-track { height: 6px; }
+.termometro.compact .termometro-meta { height: 11px; top: -2.5px; }
 
 .kanban-board { display: grid; grid-template-columns: repeat(4, minmax(200px, 1fr)); gap: 14px; overflow-x: auto; }
 @media (max-width: 760px) { .kanban-board { grid-template-columns: repeat(4, 240px); } }

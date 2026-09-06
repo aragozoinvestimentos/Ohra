@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, calcCanal } from "../lib/calc.js";
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import Termometro from "./Termometro.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -227,6 +228,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
                 : <span className="badge bad">abaixo da meta</span>}
             </span>
           </div>
+          <Termometro valor={resultado.margem} meta={lucratividadeFrac} />
         </div>
 
         <div className="panel">
