@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
@@ -18,7 +19,7 @@ export default function Historico({ onToast }) {
   const [precos, setPrecos] = useState([]);
   const [carregandoPrecos, setCarregandoPrecos] = useState(true);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
-  const [editandoId, setEditandoId] = useState(null);
+  const [editAlvo, setEditAlvo] = useState(null); // { id, nomeItem, nomeCanal, custoTotal }
   const [edicao, setEdicao] = useState({ preco: "", lucro: "", margem: "" });
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [recemSalvoId, setRecemSalvoId] = useState(null);
@@ -70,8 +71,8 @@ export default function Historico({ onToast }) {
     setPrecos((prev) => prev.filter((p) => p.id !== precoId));
   }
 
-  function iniciarEdicao(p) {
-    setEditandoId(p.id);
+  function iniciarEdicao(p, item, canalObj) {
+    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal });
     setEdicao({
       preco: Number(p.preco || 0).toFixed(2),
       lucro: p.lucro != null ? Number(p.lucro).toFixed(2) : "",
@@ -79,7 +80,8 @@ export default function Historico({ onToast }) {
     });
   }
 
-  async function salvarEdicao(precoId) {
+  async function salvarEdicao() {
+    const precoId = editAlvo.id;
     const preco = parseFloat(String(edicao.preco).replace(",", "."));
     if (!isFinite(preco) || preco <= 0) {
       onToast("Informe um preço válido");
@@ -100,7 +102,7 @@ export default function Historico({ onToast }) {
       return;
     }
     setPrecos((prev) => prev.map((p) => (p.id === precoId ? { ...p, preco: arredondarPreco(preco), lucro, margem } : p)));
-    setEditandoId(null);
+    setEditAlvo(null);
     setRecemSalvoId(precoId);
     setTimeout(() => setRecemSalvoId((atual) => (atual === precoId ? null : atual)), 1000);
     onToast("Preço atualizado");
@@ -154,70 +156,35 @@ export default function Historico({ onToast }) {
                   <td className="num">{BRL(item.custoTotal)}</td>
                   {canais.map((c) => {
                     const p = precoDe(item, c);
-                    if (p && editandoId === p.id) {
-                      return (
-                        <td key={c.id} className="num">
-                          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
-                            <input
-                              type="number"
-                              step="0.01"
-                              placeholder="Preço"
-                              style={{ width: 88, textAlign: "right" }}
-                              value={edicao.preco}
-                              onChange={(e) => setEdicao((prev) => ({ ...prev, preco: e.target.value }))}
-                              autoFocus
-                            />
-                            <input
-                              type="number"
-                              step="0.01"
-                              placeholder="Lucro"
-                              style={{ width: 88, textAlign: "right" }}
-                              value={edicao.lucro}
-                              onChange={(e) => setEdicao((prev) => ({ ...prev, lucro: e.target.value }))}
-                            />
-                            <input
-                              type="number"
-                              step="0.1"
-                              placeholder="Margem %"
-                              style={{ width: 88, textAlign: "right" }}
-                              value={edicao.margem}
-                              onChange={(e) => setEdicao((prev) => ({ ...prev, margem: e.target.value }))}
-                            />
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <button className="btn primary" style={{ padding: "2px 10px", fontSize: 12 }} onClick={() => salvarEdicao(p.id)} disabled={salvandoEdicao}>
-                                {salvandoEdicao ? "…" : "✓"}
-                              </button>
-                              <button className="del" title="Cancelar" onClick={() => setEditandoId(null)}>
-                                ×
-                              </button>
-                            </div>
-                          </div>
-                        </td>
-                      );
-                    }
                     return (
                       <td key={c.id} className="num">
                         {p ? (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
-                            <span>
-                              {BRL(p.preco)}
-                              {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
-                              <span className="campo-anterior" style={{ display: "block" }}>
-                                {p.lucro != null ? `lucro ${BRL(p.lucro)}` : "—"}
-                                {p.margem != null ? ` · ${PCT(p.margem)}` : ""}
+                          <div className="preco-canal-cel">
+                            <div className="preco-canal-topo">
+                              <span className="preco-canal-valor">
+                                {BRL(p.preco)}
+                                {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
                               </span>
-                            </span>
-                            <button className="del" title="Editar preço salvo" onClick={() => iniciarEdicao(p)}>
-                              ✎
-                            </button>
-                            <button
-                              className="del"
-                              title="Excluir preço salvo"
-                              onClick={() => setExcluirAlvo({ ...p, nomeItem: item.nome, nomeCanal: c.nome })}
-                            >
-                              ×
-                            </button>
-                          </span>
+                              <button className="del" title="Editar preço salvo" onClick={() => iniciarEdicao(p, item, c)}>
+                                ✎
+                              </button>
+                              <button
+                                className="del"
+                                title="Excluir preço salvo"
+                                onClick={() => setExcluirAlvo({ ...p, nomeItem: item.nome, nomeCanal: c.nome })}
+                              >
+                                ×
+                              </button>
+                            </div>
+                            <div className="preco-canal-linha">
+                              <span className="rotulo">Lucro</span>
+                              {p.lucro != null ? BRL(p.lucro) : "—"}
+                            </div>
+                            <div className="preco-canal-linha">
+                              <span className="rotulo">Margem</span>
+                              {p.margem != null ? PCT(p.margem) : "—"}
+                            </div>
+                          </div>
                         ) : (
                           <span style={{ color: "var(--ink-faint)" }}>—</span>
                         )}
@@ -234,6 +201,58 @@ export default function Historico({ onToast }) {
         Pra preencher uma célula vazia, vá em Precificação por Canal, escolha o produto/kit e o canal, calcule e clique em "Salvar". Pra corrigir um valor já
         salvo, use o ✎ na própria célula — ou o × pra excluir (pede confirmação antes).
       </div>
+
+      {editAlvo && (
+        <EditarDialog
+          titulo={`Editar preço — ${editAlvo.nomeItem} em ${editAlvo.nomeCanal}`}
+          salvando={salvandoEdicao}
+          onSalvar={salvarEdicao}
+          onCancelar={() => setEditAlvo(null)}
+        >
+          <div className="hint" style={{ marginTop: 0 }}>
+            Custo total desse item: {BRL(editAlvo.custoTotal)}
+          </div>
+          <div className="field">
+            <label>
+              Preço de venda (R$)
+              <Ajuda texto="O preço final que aparece pro cliente nesse canal." />
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              autoFocus
+              value={edicao.preco}
+              onChange={(e) => setEdicao((prev) => ({ ...prev, preco: e.target.value }))}
+            />
+          </div>
+          <div className="row2">
+            <div className="field">
+              <label>
+                Lucro (R$)
+                <Ajuda texto="Quanto sobra líquido nessa venda, já descontado o custo e as taxas/comissão do canal." />
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={edicao.lucro}
+                onChange={(e) => setEdicao((prev) => ({ ...prev, lucro: e.target.value }))}
+              />
+            </div>
+            <div className="field">
+              <label>
+                Margem (%)
+                <Ajuda texto="O lucro dividido pelo preço de venda, em porcentagem." />
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={edicao.margem}
+                onChange={(e) => setEdicao((prev) => ({ ...prev, margem: e.target.value }))}
+              />
+            </div>
+          </div>
+        </EditarDialog>
+      )}
 
       {excluirAlvo && (
         <ConfirmDialog

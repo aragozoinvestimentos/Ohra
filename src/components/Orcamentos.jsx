@@ -3,6 +3,7 @@ import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import EditarDialog from "./EditarDialog.jsx";
 
 // Lista dos orçamentos avulsos (encomendas diretas) salvos em "Encomenda
 // avulsa" — separada de Preços por Canal porque não tem comissão de
@@ -13,6 +14,7 @@ export default function Orcamentos({ onToast }) {
   const [carregando, setCarregando] = useState(true);
   const [editandoId, setEditandoId] = useState(null);
   const [nomeEditado, setNomeEditado] = useState("");
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [recemSalvoId, setRecemSalvoId] = useState(null);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
 
@@ -65,13 +67,16 @@ export default function Orcamentos({ onToast }) {
     setNomeEditado(o.nome || "");
   }
 
-  async function salvarNome(id) {
+  async function salvarNome() {
+    const id = editandoId;
     const nome = nomeEditado.trim();
     if (!nome) {
       onToast("O nome não pode ficar vazio");
       return;
     }
+    setSalvandoEdicao(true);
     const { error } = await supabase.from("orcamentos_avulsos").update({ nome }).eq("id", id);
+    setSalvandoEdicao(false);
     if (error) {
       onToast("Não foi possível salvar — tente de novo");
       return;
@@ -80,6 +85,7 @@ export default function Orcamentos({ onToast }) {
     setEditandoId(null);
     setRecemSalvoId(id);
     setTimeout(() => setRecemSalvoId((atual) => (atual === id ? null : atual)), 1000);
+    onToast("Nome atualizado");
   }
 
   return (
@@ -108,25 +114,8 @@ export default function Orcamentos({ onToast }) {
               {orcamentos.map((o) => (
                 <tr key={o.id}>
                   <td>
-                    {editandoId === o.id ? (
-                      <input
-                        type="text"
-                        autoFocus
-                        value={nomeEditado}
-                        onChange={(e) => setNomeEditado(e.target.value)}
-                        onBlur={() => salvarNome(o.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") e.target.blur();
-                          if (e.key === "Escape") setEditandoId(null);
-                        }}
-                        style={{ width: "100%" }}
-                      />
-                    ) : (
-                      <>
-                        {o.nome || "—"}
-                        {recemSalvoId === o.id && <span className="salvo-check">✓</span>}
-                      </>
-                    )}
+                    {o.nome || "—"}
+                    {recemSalvoId === o.id && <span className="salvo-check">✓</span>}
                   </td>
                   <td className="num">{BRL(o.custo_total)}</td>
                   <td className="num">{BRL(o.preco)}</td>
@@ -141,6 +130,28 @@ export default function Orcamentos({ onToast }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {editandoId && (
+        <EditarDialog
+          titulo="Editar nome do orçamento"
+          salvando={salvandoEdicao}
+          onSalvar={salvarNome}
+          onCancelar={() => setEditandoId(null)}
+        >
+          <div className="field">
+            <label>Nome do pedido</label>
+            <input
+              type="text"
+              autoFocus
+              value={nomeEditado}
+              onChange={(e) => setNomeEditado(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") salvarNome();
+              }}
+            />
+          </div>
+        </EditarDialog>
       )}
 
       {excluirAlvo && (

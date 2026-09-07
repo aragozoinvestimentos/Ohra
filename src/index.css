@@ -257,6 +257,15 @@ th.num { text-align: right; }
 .del { background: none; border: none; color: var(--ink-faint); font-size: 16px; padding: 2px 6px; }
 .del:hover { color: var(--bad); }
 
+/* Célula de "Preços por Canal": preço + ações numa linha, lucro/margem cada
+   um na sua própria linha com um rótulo pequeno — pra não embolar tudo junto
+   quando o item já tem preço salvo nesse canal. */
+.preco-canal-cel { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 108px; }
+.preco-canal-topo { display: flex; align-items: center; gap: 2px; }
+.preco-canal-valor { font-weight: 600; }
+.preco-canal-linha { font-size: 11.5px; color: var(--ink-soft); display: flex; gap: 4px; }
+.preco-canal-linha .rotulo { color: var(--ink-faint); }
+
 .seletor-linha {
   display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
   padding: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px;
