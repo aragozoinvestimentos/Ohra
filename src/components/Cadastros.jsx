@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Materiais from "./Materiais.jsx";
 import Embalagens from "./Embalagens.jsx";
 import Produtos from "./Produtos.jsx";
@@ -15,8 +15,31 @@ const SUBABAS = [
   { key: "taxas", label: "Taxas Marketplace" },
 ];
 
-export default function Cadastros({ produtoRecebido, onToast }) {
+export default function Cadastros({ produtoRecebido, abrirItem, onToast }) {
   const [sub, setSub] = useState("materiais");
+
+  // Veio de "Salvar como Produto" (Simular Custo de Produção) — troca pra
+  // sub-aba Produtos automaticamente, mesmo se Cadastros já estava aberto
+  // numa outra sub-aba (sem isso, o efeito que carrega o produto em
+  // Produtos.jsx só dispara se ele já estiver montado).
+  useEffect(() => {
+    (() => {
+      if (produtoRecebido?.seq) setSub("produtos");
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produtoRecebido?.seq]);
+
+  // Veio de "Editar completo" em Preços por Canal — troca pra Produtos ou
+  // Kits conforme o tipo do item.
+  useEffect(() => {
+    (() => {
+      if (abrirItem?.seq) setSub(abrirItem.tipo === "kit" ? "kits" : "produtos");
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirItem?.seq]);
+
+  const abrirProdutoId = abrirItem?.id && abrirItem.tipo !== "kit" ? { id: abrirItem.id, seq: abrirItem.seq } : null;
+  const abrirKitId = abrirItem?.id && abrirItem.tipo === "kit" ? { id: abrirItem.id, seq: abrirItem.seq } : null;
 
   return (
     <div>
@@ -35,8 +58,8 @@ export default function Cadastros({ produtoRecebido, onToast }) {
 
       {sub === "materiais" && <Materiais onToast={onToast} />}
       {sub === "embalagens" && <Embalagens onToast={onToast} />}
-      {sub === "produtos" && <Produtos produtoRecebido={produtoRecebido} onToast={onToast} />}
-      {sub === "kits" && <Kits onToast={onToast} />}
+      {sub === "produtos" && <Produtos produtoRecebido={produtoRecebido} abrirProdutoId={abrirProdutoId} onToast={onToast} />}
+      {sub === "kits" && <Kits abrirKitId={abrirKitId} onToast={onToast} />}
       {sub === "canais" && <Canais onToast={onToast} />}
       {sub === "taxas" && <TaxasMarketplace />}
     </div>

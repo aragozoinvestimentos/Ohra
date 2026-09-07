@@ -95,6 +95,7 @@ export default function App() {
   const [tab, setTab] = useState(loadTab);
   const [custoRecebido, setCustoRecebido] = useState(null);
   const [produtoRecebido, setProdutoRecebido] = useState(null);
+  const [abrirItem, setAbrirItem] = useState(null); // { tipo: "produto"|"kit", id, seq } — vindo de "editar completo" em Preços por Canal
   const [toast, setToast] = useState({ msg: "", show: false });
   const [tema, setTema] = useState(loadTheme);
   const [menuAberto, setMenuAberto] = useState(false);
@@ -145,6 +146,11 @@ export default function App() {
     }));
     setTab("cadastros");
     showToast(id ? "Detalhamento levado para atualizar o produto" : "Custo levado para o cadastro de Produtos");
+  }
+
+  function editarItemCompleto(tipo, id) {
+    setAbrirItem((prev) => ({ tipo, id, seq: (prev?.seq || 0) + 1 }));
+    setTab("cadastros");
   }
 
   function irPara(key) {
@@ -217,7 +223,7 @@ export default function App() {
         </section>
 
         <section className={`view ${tab === "cadastros" ? "active" : ""}`}>
-          <Cadastros produtoRecebido={produtoRecebido} onToast={showToast} />
+          <Cadastros produtoRecebido={produtoRecebido} abrirItem={abrirItem} onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "producao" ? "active" : ""}`}>
@@ -249,7 +255,7 @@ export default function App() {
         </section>
 
         <section className={`view ${tab === "historico" ? "active" : ""}`}>
-          <Historico onToast={showToast} />
+          <Historico onEditarCompleto={editarItemCompleto} onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "tutorial" ? "active" : ""}`}>

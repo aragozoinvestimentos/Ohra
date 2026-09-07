@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { BRL, arredondarPreco } from "../lib/format.js";
+import { arredondarPreco } from "../lib/format.js";
 import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
-import ConfirmDialog from "./ConfirmDialog.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import DetalhamentoCusto from "./DetalhamentoCusto.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -21,19 +20,18 @@ const VAZIO = {
   pecas_por_impressao: 1,
 };
 
-export default function Produtos({ produtoRecebido, onToast }) {
+export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  const [, setCarregando] = useState(true);
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [materiais, setMateriais] = useState([]);
+  const [kitsSku, setKitsSku] = useState([]); // só id/nome/sku, pra conferir SKU duplicado contra Kits também
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [detalheSalvo, setDetalheSalvo] = useState(null); // snapshot carregado do banco, só pra comparar "valor anterior"
   const [pecasPorImpressaoSalvo, setPecasPorImpressaoSalvo] = useState(null);
   const [salvando, setSalvando] = useState(false);
-  const [excluirAlvo, setExcluirAlvo] = useState(null);
-  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -109,6 +107,59 @@ export default function Produtos({ produtoRecebido, onToast }) {
       supabase.removeChannel(canal);
     };
   }, [lojaId]);
+
+  // Só nome/SKU dos Kits, pra conferir SKU duplicado contra os dois
+  // catálogos (Produtos e Kits) — SKU é pensado como identificador único
+  // pra qualquer item, não só dentro de Produtos.
+  useEffect(() => {
+    if (!supabase) return;
+    let ativo = true;
+    async function carregar() {
+      let query = supabase.from("kits").select("id, nome, sku");
+      if (lojaId) query = query.eq("loja_id", lojaId);
+      const { data, error } = await query;
+      if (!ativo) return;
+      if (!error) setKitsSku(data || []);
+    }
+    carregar();
+    const canal = supabase
+      .channel("produtos-kits-sku-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregar)
+      .subscribe();
+    return () => {
+      ativo = false;
+      supabase.removeChannel(canal);
+    };
+  }, [lojaId]);
+
+  // Abre um produto específico pra edição vindo de outra aba (hoje: o ✎ de
+  // "editar cadastro completo" em Preços por Canal) — mesma ação de clicar
+  // no ✎ da lista, só que disparada de fora.
+  useEffect(() => {
+    if (!abrirProdutoId?.id) return;
+    (async () => {
+      let p = produtos.find((x) => x.id === abrirProdutoId.id) || null;
+      if (!p && supabase) {
+        const { data } = await supabase.from("produtos_cadastro").select("*").eq("id", abrirProdutoId.id).single();
+        p = data || null;
+      }
+      if (p) editar(p);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirProdutoId?.seq]);
+
+  // SKU pensado como identificador único de qualquer item (produto ou kit) —
+  // confere os dois catálogos e avisa sem bloquear salvar (pode ser
+  // proposital em algum caso raro).
+  function achaConflitoSku(sku, meuProdutoId) {
+    const alvo = sku.trim().toLowerCase();
+    if (!alvo) return null;
+    const emProdutos = produtos.find((p) => p.id !== meuProdutoId && (p.sku || "").trim().toLowerCase() === alvo);
+    if (emProdutos) return { tipo: "produto", nome: emProdutos.nome };
+    const emKits = kitsSku.find((k) => (k.sku || "").trim().toLowerCase() === alvo);
+    if (emKits) return { tipo: "kit", nome: emKits.nome };
+    return null;
+  }
 
   // Quando "Salvar como Produto"/"Atualizar produto cadastrado" é clicado na
   // aba de Simular Custo de Produção.
@@ -306,26 +357,6 @@ export default function Produtos({ produtoRecebido, onToast }) {
     setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
   }
 
-  // Antes de excluir, avisa se o produto está em uso em algum kit — pra não
-  // sumir silenciosamente de um combo já montado.
-  async function pedirExclusao(p) {
-    if (!supabase) {
-      setExcluirAlvo({ ...p, emKits: 0 });
-      return;
-    }
-    const { count } = await supabase.from("kit_produtos").select("id", { count: "exact", head: true }).eq("produto_id", p.id);
-    setExcluirAlvo({ ...p, emKits: count || 0 });
-  }
-
-  async function excluir(id) {
-    const { error } = await supabase.from("produtos_cadastro").delete().eq("id", id);
-    if (error) {
-      onToast(`Não foi possível excluir: ${error.message}`);
-      return;
-    }
-    if (editandoId === id) limpar();
-  }
-
   if (!supabase) {
     return (
       <div className="panel">
@@ -335,10 +366,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
     );
   }
 
-  const usoMsg = (alvo) => {
-    if (!alvo.emKits) return `Confirma excluir "${alvo.nome}"? Não é possível desfazer.`;
-    return `"${alvo.nome}" está em uso em ${alvo.emKits} kit(s). Excluir remove ele desses kits também. Não é possível desfazer.`;
-  };
+  const conflitoSku = achaConflitoSku(form.sku, editandoId);
 
   return (
     <div>
@@ -355,6 +383,11 @@ export default function Produtos({ produtoRecebido, onToast }) {
               <Ajuda texto="Código próprio seu pra identificar o produto (o mesmo que você usa no Shopee/ML/etc, se tiver). Não é obrigatório — dá pra deixar em branco e preencher depois. Serve pra buscar mais rápido e, no futuro, vincular qualquer métrica a esse código." />
             </label>
             <input type="text" placeholder="ex: VS-MED-01" value={form.sku} onChange={setCampo("sku")} />
+            {conflitoSku && (
+              <div className="hint" style={{ marginTop: 4, marginBottom: 0, color: "var(--warn)" }}>
+                Já existe um {conflitoSku.tipo} com esse SKU: {conflitoSku.nome}
+              </div>
+            )}
           </div>
           <div className="field">
             <label>Material</label>
@@ -432,80 +465,10 @@ export default function Produtos({ produtoRecebido, onToast }) {
           )}
         </div>
         <div className="hint" style={{ marginBottom: 0, marginTop: 10 }}>
-          Dica: na aba Custo de Produção, o botão "Salvar como Produto" já traz o custo calculado pra cá.
+          Dica: na aba Custo de Produção, o botão "Salvar como Produto" já traz o custo calculado pra cá. Pra ver, buscar, clonar, editar ou excluir os
+          produtos já cadastrados, use Preços por Canal (aba Cadastros).
         </div>
       </div>
-
-      <div className="panel">
-        <h3 className="section-title">
-          Produtos cadastrados
-          <Ajuda texto="Custo total já soma produção + frete + embalagem. Pra ver o lucro por canal de tudo que está cadastrado, use o Ranking por retorno (aba Gestão) — e pra ver preços reais já definidos por canal, use Preços por Canal (aba Gestão)." />
-        </h3>
-        {produtos.length > 0 && (
-          <div className="field" style={{ maxWidth: 320 }}>
-            <input type="text" placeholder="Buscar por nome ou SKU…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-          </div>
-        )}
-        {carregando ? (
-          <div className="empty">Carregando…</div>
-        ) : produtos.length === 0 ? (
-          <div className="empty">Nenhum produto cadastrado ainda.</div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th>SKU</th>
-                  <th className="num">Custo total</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {produtos
-                  .filter((p) => {
-                    const alvo = busca.trim().toLowerCase();
-                    if (!alvo) return true;
-                    return p.nome.toLowerCase().includes(alvo) || (p.sku || "").toLowerCase().includes(alvo);
-                  })
-                  .map((p) => {
-                    const custoTotal = arredondarPreco(
-                      (Number(p.custo_producao) || 0) + (Number(p.frete_padrao) || 0) + (Number(p.embalagem_padrao) || 0)
-                    );
-                    return (
-                      <tr key={p.id}>
-                        <td>
-                          {p.nome}
-                          {p.material_nome && <div className="campo-anterior">{p.material_nome}</div>}
-                        </td>
-                        <td>{p.sku || <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
-                        <td className="num">{BRL(custoTotal)}</td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          <button className="del" title="Editar" onClick={() => editar(p)}>✎</button>
-                          <button className="del" title="Excluir" onClick={() => pedirExclusao(p)}>×</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {excluirAlvo && (
-        <ConfirmDialog
-          titulo="Excluir produto"
-          mensagem={usoMsg(excluirAlvo)}
-          confirmarLabel="Excluir"
-          perigo
-          onConfirm={() => {
-            excluir(excluirAlvo.id);
-            setExcluirAlvo(null);
-          }}
-          onCancel={() => setExcluirAlvo(null)}
-        />
-      )}
     </div>
   );
 }

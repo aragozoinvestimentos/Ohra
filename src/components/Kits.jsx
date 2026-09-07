@@ -2,13 +2,12 @@ import { useEffect, useState } from "react";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
-import ConfirmDialog from "./ConfirmDialog.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 const VAZIO = { nome: "", sku: "", observacao: "", produtosItens: [], embalagemItens: [] };
 
-export default function Kits({ onToast }) {
+export default function Kits({ abrirKitId, onToast }) {
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
@@ -20,9 +19,7 @@ export default function Kits({ onToast }) {
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [salvando, setSalvando] = useState(false);
-  const [excluirAlvo, setExcluirAlvo] = useState(null);
   const [markup, setMarkup] = useState(100);
-  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -87,6 +84,24 @@ export default function Kits({ onToast }) {
       supabase.removeChannel(canal);
     };
   }, [lojaId]);
+
+  // Veio de "Editar completo" em Preços por Canal — carrega o kit certo pra edição.
+  useEffect(() => {
+    if (!abrirKitId?.id) return;
+    const k = kits.find((kk) => kk.id === abrirKitId.id);
+    if (k) editar(k);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirKitId?.seq]);
+
+  function achaConflitoSku(sku, meuKitId) {
+    const alvo = sku.trim().toLowerCase();
+    if (!alvo) return null;
+    const emKits = kits.find((k) => k.id !== meuKitId && (k.sku || "").trim().toLowerCase() === alvo);
+    if (emKits) return { tipo: "kit", nome: emKits.nome };
+    const emProdutos = produtos.find((p) => (p.sku || "").trim().toLowerCase() === alvo);
+    if (emProdutos) return { tipo: "produto", nome: emProdutos.nome };
+    return null;
+  }
 
   const catalogoProdutos = produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" }));
   const catalogoEmbalagens = embalagensCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade }));
@@ -201,28 +216,6 @@ export default function Kits({ onToast }) {
     });
   }
 
-  async function excluir(id) {
-    const { error } = await supabase.from("kits").delete().eq("id", id);
-    if (error) {
-      onToast(`Não foi possível excluir: ${error.message}`);
-      return;
-    }
-    if (editandoId === id) limpar();
-  }
-
-  function custoKit(k) {
-    const prodItens = kitProdutosTodos
-      .filter((r) => r.kit_id === k.id)
-      .map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade }));
-    const embItens = kitEmbalagensTodos
-      .filter((r) => r.kit_id === k.id)
-      .map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade }));
-    const fab = totalItens(catalogoProdutos, prodItens);
-    const emb = totalItens(catalogoEmbalagens, embItens);
-    const nPecas = prodItens.reduce((s, i) => s + (Number(i.quantidade) || 0), 0);
-    return { fab, emb, total: fab + emb, nPecas };
-  }
-
   if (!supabase) {
     return (
       <div className="panel">
@@ -231,6 +224,8 @@ export default function Kits({ onToast }) {
       </div>
     );
   }
+
+  const conflitoSku = achaConflitoSku(form.sku, editandoId);
 
   return (
     <div>
@@ -247,6 +242,11 @@ export default function Kits({ onToast }) {
               <Ajuda texto="Código próprio seu pra identificar o kit (o mesmo que você usa no Shopee/ML/etc, se tiver). Não é obrigatório — dá pra deixar em branco e preencher depois. Serve pra buscar mais rápido e vincular métricas a esse código." />
             </label>
             <input type="text" placeholder="ex: KIT-01" value={form.sku} onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))} />
+            {conflitoSku && (
+              <div className="hint" style={{ marginTop: 4, marginBottom: 0, color: "var(--warn)" }}>
+                Já existe um {conflitoSku.tipo} com esse SKU: {conflitoSku.nome}
+              </div>
+            )}
           </div>
           <div className="field">
             <label>Observação (opcional)</label>
@@ -301,76 +301,12 @@ export default function Kits({ onToast }) {
           </button>
           {editandoId && <button className="btn" onClick={limpar}>Cancelar</button>}
         </div>
+        <div className="hint" style={{ marginBottom: 0, marginTop: 10 }}>
+          {carregando
+            ? "Carregando…"
+            : `${kits.length} kit${kits.length === 1 ? "" : "s"} cadastrado${kits.length === 1 ? "" : "s"}. Pra ver, buscar, clonar, editar ou excluir os kits já cadastrados, use Preços por Canal (aba Cadastros).`}
+        </div>
       </div>
-
-      <div className="panel">
-        <h3>Kits cadastrados</h3>
-        {kits.length > 0 && (
-          <div className="field" style={{ maxWidth: 320 }}>
-            <input type="text" placeholder="Buscar por nome ou SKU…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-          </div>
-        )}
-        {carregando ? (
-          <div className="empty">Carregando…</div>
-        ) : kits.length === 0 ? (
-          <div className="empty">Nenhum kit cadastrado ainda.</div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Kit</th>
-                  <th>SKU</th>
-                  <th className="num">Peças</th>
-                  <th className="num">Fabricação</th>
-                  <th className="num">Embalagem</th>
-                  <th className="num">Custo total</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {kits
-                  .filter((k) => {
-                    const alvo = busca.trim().toLowerCase();
-                    if (!alvo) return true;
-                    return k.nome.toLowerCase().includes(alvo) || (k.sku || "").toLowerCase().includes(alvo);
-                  })
-                  .map((k) => {
-                    const c = custoKit(k);
-                    return (
-                      <tr key={k.id}>
-                        <td>{k.nome}</td>
-                        <td>{k.sku || <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
-                        <td className="num">{c.nPecas}</td>
-                        <td className="num">{BRL(c.fab)}</td>
-                        <td className="num">{BRL(c.emb)}</td>
-                        <td className="num" style={{ fontWeight: 600 }}>{BRL(c.total)}</td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          <button className="del" title="Editar" onClick={() => editar(k)}>✎</button>
-                          <button className="del" title="Excluir" onClick={() => setExcluirAlvo(k)}>×</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {excluirAlvo && (
-        <ConfirmDialog
-          titulo="Excluir kit"
-          mensagem={`Confirma excluir "${excluirAlvo.nome}"? Não é possível desfazer.`}
-          confirmarLabel="Excluir"
-          perigo
-          onConfirm={() => {
-            excluir(excluirAlvo.id);
-            setExcluirAlvo(null);
-          }}
-          onCancel={() => setExcluirAlvo(null)}
-        />
-      )}
     </div>
   );
 }

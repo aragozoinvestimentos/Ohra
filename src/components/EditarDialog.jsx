@@ -3,7 +3,7 @@
 // formulário — os campos vêm de fora via children, o modal só cuida do
 // overlay/título/botões. Fechar clicando fora tem o mesmo efeito de
 // "Cancelar" (não salva nada), igual ao PinPrompt/ConfirmDialog.
-export default function EditarDialog({ titulo, salvando, onSalvar, onCancelar, children }) {
+export default function EditarDialog({ titulo, salvando, onSalvar, onCancelar, salvarLabel = "Salvar alterações", salvandoLabel = "Salvando…", children }) {
   return (
     <div className="modal-overlay" onClick={onCancelar}>
       <div className="modal-box modal-box-larga" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
@@ -14,7 +14,7 @@ export default function EditarDialog({ titulo, salvando, onSalvar, onCancelar, c
             Cancelar
           </button>
           <button className="btn primary" onClick={onSalvar} disabled={salvando}>
-            {salvando ? "Salvando…" : "Salvar alterações"}
+            {salvando ? salvandoLabel : salvarLabel}
           </button>
         </div>
       </div>
