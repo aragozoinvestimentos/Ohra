@@ -55,6 +55,49 @@ export default function Historico({ onToast }) {
     };
   }, [lojaId]);
 
+  function numOuNull(v) {
+    const n = parseFloat(String(v).replace(",", "."));
+    return isFinite(n) ? n : null;
+  }
+
+  // Preço, lucro e margem sempre se relacionam por margem = lucro / preço —
+  // então mexer numa reflete nas outras duas ao vivo, sem precisar salvar
+  // pra ver o resultado. Convenção: editar o Preço recalcula o Lucro
+  // mantendo a Margem que já estava; editar o Lucro ou a Margem recalcula a
+  // outra mantendo o Preço (que é o que realmente foi cobrado do cliente).
+  function editarPreco(valor) {
+    setEdicao((prev) => {
+      const precoNum = numOuNull(valor);
+      const margemNum = numOuNull(prev.margem);
+      if (precoNum != null && margemNum != null) {
+        return { ...prev, preco: valor, lucro: (precoNum * (margemNum / 100)).toFixed(2) };
+      }
+      return { ...prev, preco: valor };
+    });
+  }
+
+  function editarLucro(valor) {
+    setEdicao((prev) => {
+      const lucroNum = numOuNull(valor);
+      const precoNum = numOuNull(prev.preco);
+      if (lucroNum != null && precoNum != null && precoNum > 0) {
+        return { ...prev, lucro: valor, margem: ((lucroNum / precoNum) * 100).toFixed(1) };
+      }
+      return { ...prev, lucro: valor };
+    });
+  }
+
+  function editarMargem(valor) {
+    setEdicao((prev) => {
+      const margemNum = numOuNull(valor);
+      const precoNum = numOuNull(prev.preco);
+      if (margemNum != null && precoNum != null) {
+        return { ...prev, margem: valor, lucro: (precoNum * (margemNum / 100)).toFixed(2) };
+      }
+      return { ...prev, margem: valor };
+    });
+  }
+
   function precoDe(item, canalObj) {
     const [tipo, id] = item.id.split(":");
     const itemTipo = tipo === "k" ? "kit" : "produto";
@@ -209,45 +252,49 @@ export default function Historico({ onToast }) {
           onSalvar={salvarEdicao}
           onCancelar={() => setEditAlvo(null)}
         >
-          <div className="hint" style={{ marginTop: 0 }}>
-            Custo total desse item: {BRL(editAlvo.custoTotal)}
+          <div className="destaque-custo">
+            <span className="k">
+              Custo total do item
+              <span className="k-sub">quanto custa produzir, antes de qualquer taxa</span>
+            </span>
+            <span className="v">{BRL(editAlvo.custoTotal)}</span>
           </div>
           <div className="field">
             <label>
               Preço de venda (R$)
-              <Ajuda texto="O preço final que aparece pro cliente nesse canal." />
+              <Ajuda texto="O preço final que aparece pro cliente nesse canal. Mudar aqui recalcula o Lucro na hora, mantendo a Margem atual." />
             </label>
             <input
               type="number"
               step="0.01"
               autoFocus
               value={edicao.preco}
-              onChange={(e) => setEdicao((prev) => ({ ...prev, preco: e.target.value }))}
+              onChange={(e) => editarPreco(e.target.value)}
             />
           </div>
           <div className="row2">
             <div className="field">
               <label>
                 Lucro (R$)
-                <Ajuda texto="Quanto sobra líquido nessa venda, já descontado o custo e as taxas/comissão do canal." />
+                <Ajuda texto="Quanto sobra líquido nessa venda, já descontado o custo e as taxas/comissão do canal. Mudar aqui recalcula a Margem na hora, mantendo o Preço atual." />
               </label>
               <input
                 type="number"
                 step="0.01"
                 value={edicao.lucro}
-                onChange={(e) => setEdicao((prev) => ({ ...prev, lucro: e.target.value }))}
+                onChange={(e) => editarLucro(e.target.value)}
               />
             </div>
             <div className="field">
               <label>
                 Margem (%)
-                <Ajuda texto="O lucro dividido pelo preço de venda, em porcentagem." />
+                <Ajuda texto="O lucro dividido pelo preço de venda, em porcentagem. Mudar aqui recalcula o Lucro na hora, mantendo o Preço atual." />
               </label>
               <input
                 type="number"
                 step="0.1"
                 value={edicao.margem}
-                onChange={(e) => setEdicao((prev) => ({ ...prev, margem: e.target.value }))}
+                onChange={(e) => editarMargem(e.target.value)}
               />
             </div>
           </div>
