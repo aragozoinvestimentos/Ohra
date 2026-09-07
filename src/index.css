@@ -58,7 +58,6 @@ body {
   line-height: 1.5;
 }
 h1, h2, h3 { font-family: 'Jost', sans-serif; font-weight: 500; margin: 0; text-wrap: balance; }
-.eyebrow { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-ink); font-weight: 600; }
 button { font-family: inherit; cursor: pointer; }
 input, select {
   font-family: inherit; font-size: 14px;

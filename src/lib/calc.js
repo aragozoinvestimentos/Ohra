@@ -1,15 +1,6 @@
 // Lógica de custo e precificação — mesma validada na planilha "Precificador Ohra 2.0"
 // e no protótipo Claude. Mantida como funções puras para ser fácil de testar.
 
-export const FILAMENTOS = [
-  { nome: "ABS Comum", preco: 99 },
-  { nome: "ABS barato", preco: 68 },
-  { nome: "Nylon", preco: 320 },
-  { nome: "PETG", preco: 90 },
-  { nome: "ABS Wood", preco: 150 },
-  { nome: "PLA (seu custo real)", preco: 90.16 },
-];
-
 // Faixas oficiais Shopee (vendedor CNPJ) vigentes desde 01/03/2026 — validado
 // em 06/09/2026 contra o artigo oficial do Centro de Educação do Vendedor
 // (seller.shopee.com.br) e duas fontes independentes que reproduzem a mesma
