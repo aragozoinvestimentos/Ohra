@@ -36,6 +36,7 @@ export default function Ranking() {
   const [canais, setCanais] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [canalFiltro, setCanalFiltro] = useState("melhor"); // "melhor" ou o id de um canal específico
+  const [tipoFiltro, setTipoFiltro] = useState("todos"); // "todos" | "produtos" | "kits"
 
   useEffect(() => {
     if (!supabase) {
@@ -153,7 +154,9 @@ export default function Ranking() {
     if (canais.length === 0) return [];
     const canaisAlvo = canalFiltro === "melhor" ? canais : canais.filter((c) => c.id === canalFiltro);
     if (canaisAlvo.length === 0) return [];
-    return itens
+    const itensAlvo =
+      tipoFiltro === "produtos" ? itens.filter((i) => i.tipo === "Produto") : tipoFiltro === "kits" ? itens.filter((i) => i.tipo === "Kit") : itens;
+    return itensAlvo
       .map((item) => {
         let melhor = null;
         for (const c of canaisAlvo) {
@@ -167,7 +170,7 @@ export default function Ranking() {
       .filter(Boolean)
       .sort((a, b) => b.lucro - a.lucro);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itens, canais, canalFiltro]);
+  }, [itens, canais, canalFiltro, tipoFiltro]);
 
   if (!supabase) {
     return (
@@ -183,17 +186,27 @@ export default function Ranking() {
       <div className="panel">
         <h3 className="section-title">
           Ranking por retorno
-          <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade (a ${LUCRATIVIDADE_PADRAO}% de lucratividade, o padrão do app) — não é ranking de venda/popularidade, isso fica pro ERP futuro. É só análise: pra simular outras metas de lucratividade, use Precificação por Canal ou Comparativo. Use o filtro de canal pra ver o retorno só num marketplace específico, ou deixe em 'Melhor canal' pra ver o teto de cada item.`} />
+          <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade (a ${LUCRATIVIDADE_PADRAO}% de lucratividade, o padrão do app) — não é ranking de venda/popularidade, isso fica pro ERP futuro. É só análise: pra simular outras metas de lucratividade, use Precificação por Canal ou Comparativo. Use "Mostrar" pra enxugar a lista só pra Produtos ou só pra Kits, e "Marketplace" pra ver o retorno num canal específico (ou deixe em 'Melhor canal' pra ver o teto de cada item).`} />
         </h3>
         {canais.length > 0 ? (
-          <div className="field" style={{ marginBottom: 0, maxWidth: 320 }}>
-            <label>Canal</label>
-            <select value={canalFiltro} onChange={(e) => setCanalFiltro(e.target.value)}>
-              <option value="melhor">Melhor canal (recomendado)</option>
-              {canais.map((c) => (
-                <option key={c.id} value={c.id}>{c.nome}</option>
-              ))}
-            </select>
+          <div className="row2" style={{ marginBottom: 0, maxWidth: 560 }}>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Mostrar</label>
+              <select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)}>
+                <option value="todos">Produtos e Kits</option>
+                <option value="produtos">Somente Produtos</option>
+                <option value="kits">Somente Kits</option>
+              </select>
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Marketplace</label>
+              <select value={canalFiltro} onChange={(e) => setCanalFiltro(e.target.value)}>
+                <option value="melhor">Melhor canal (recomendado)</option>
+                {canais.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nome}</option>
+                ))}
+              </select>
+            </div>
           </div>
         ) : (
           <div className="empty">Nenhum canal ativo cadastrado ainda — vá em Cadastros → Canais.</div>
