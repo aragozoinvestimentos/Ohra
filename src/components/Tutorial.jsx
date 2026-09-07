@@ -79,7 +79,7 @@ const ETAPAS = [
         icone: "🏷️",
         nome: "Precificação por Canal",
         texto:
-          'Pega um custo (escolhendo um produto ou kit já cadastrado, vindo da Simular Custo de Produção, ou digitado na mão) e calcula o preço de venda pra um canal específico — Shopee, Mercado Livre, TikTok Shop, Shein ou um canal próprio seu — dada a margem líquida que você quer garantir. O app já desconta comissão, taxa fixa, imposto (o seu, sobre a venda) e custos extras daquele canal antes de sugerir o preço. O resultado destaca três números: custo total do produto, preço definido para a plataforma e quanto cai no seu bolso. Escolhendo um produto/kit cadastrado, o botão "Salvar" grava esse preço em Preços por Canal.',
+          'Pega um custo (escolhendo um produto ou kit já cadastrado, vindo da Simular Custo de Produção, ou digitado na mão) e calcula o preço de venda pra um canal específico — Shopee, Mercado Livre, TikTok Shop, Shein ou um canal próprio seu — dada a margem líquida que você quer garantir. O app já desconta comissão, taxa fixa, imposto (o seu, sobre a venda) e custos extras daquele canal antes de sugerir o preço. O resultado destaca três números: custo total do produto, preço definido para a plataforma e quanto cai no seu bolso. Escolhendo um produto/kit cadastrado, o botão "Salvar" grava esse preço em Preços por Canal — se já existir um preço salvo pra essa mesma combinação, o app avisa antes, porque salvar de novo substitui o valor anterior.',
       },
       {
         icone: "📊",
@@ -115,7 +115,7 @@ const ETAPAS = [
         icone: "🏆",
         nome: "Ranking por Retorno",
         texto:
-          'Lista todo produto e kit cadastrado ordenado pelo lucro líquido por unidade (a uma lucratividade padrão fixa, pra comparar todo mundo em pé de igualdade — pra simular outra meta, use Precificação por Canal ou Comparativo). Não é ranking de venda/popularidade, é só "onde vale mais a pena focar". Filtros pra ver só Produtos ou só Kits, e pra ver o retorno no melhor canal de cada item ou num canal específico.',
+          'Lista todo produto e kit cadastrado ordenado pelo lucro líquido por unidade. Quando já existe um preço salvo pra aquele item naquele canal (em Preços por Canal), usa o lucro/margem reais desse preço — marcado "salvo". Quando ainda não existe, estima a uma lucratividade padrão fixa só pra dar uma referência — marcado "estimado" (pra simular outra meta, use Precificação por Canal ou Comparativo). Não é ranking de venda/popularidade, é só "onde vale mais a pena focar". Filtros pra ver só Produtos ou só Kits, e pra ver o retorno no melhor canal de cada item ou num canal específico.',
       },
       {
         icone: "📈",

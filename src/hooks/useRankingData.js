@@ -45,10 +45,25 @@ function lucroPorCanal(custoTotal, canal) {
   return calcCanalCustom(canal, base);
 }
 
+// Acha, dentro da lista de precos_canal já carregada, o preço realmente
+// salvo (via Precificação por Canal ou editado na mão em Preços por Canal)
+// pra esse item nesse canal — usado pra preferir o valor real ao invés do
+// cálculo teórico sempre que ele existir.
+function precoRealDe(precos, item, canalObj) {
+  const [tipo, id] = item.id.split(":");
+  const itemTipo = tipo === "k" ? "kit" : "produto";
+  return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalObj.id) || null;
+}
+
 // Dado o catálogo unificado (produtos + kits, já com custoTotal) e os
 // canais ativos, monta o ranking ordenado por lucro — usado tanto pela
 // aba Ranking quanto pela tela de descanso, sempre com a mesma lógica.
-export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFiltro = "todos" } = {}) {
+// Quando existe um preço já salvo em Preços por Canal pra um item+canal, o
+// ranking usa o lucro/margem REAL desse preço em vez do cálculo teórico a
+// LUCRATIVIDADE_PADRAO — assim o que você edita/salva lá se reflete aqui
+// também, e o cálculo teórico só entra pra preencher o que ainda não foi
+// precificado de verdade.
+export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFiltro = "todos", precos = [] } = {}) {
   if (canais.length === 0) return [];
   const canaisAlvo = canalFiltro === "melhor" ? canais : canais.filter((c) => c.id === canalFiltro);
   if (canaisAlvo.length === 0) return [];
@@ -58,9 +73,16 @@ export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFil
     .map((item) => {
       let melhor = null;
       for (const c of canaisAlvo) {
-        const r = lucroPorCanal(item.custoTotal, c);
-        if (r?.lucro != null && (melhor == null || r.lucro > melhor.lucro)) {
-          melhor = { canal: c, lucro: r.lucro, margem: r.margem };
+        const salvo = precos.length ? precoRealDe(precos, item, c) : null;
+        const candidato =
+          salvo && salvo.lucro != null
+            ? { canal: c, lucro: Number(salvo.lucro), margem: salvo.margem != null ? Number(salvo.margem) : null, origem: "salvo" }
+            : (() => {
+                const r = lucroPorCanal(item.custoTotal, c);
+                return r?.lucro != null ? { canal: c, lucro: r.lucro, margem: r.margem, origem: "estimado" } : null;
+              })();
+        if (candidato && (melhor == null || candidato.lucro > melhor.lucro)) {
+          melhor = candidato;
         }
       }
       return melhor ? { item, ...melhor } : null;
@@ -80,6 +102,7 @@ export function useRankingData() {
   const [kitEmbalagensTodos, setKitEmbalagensTodos] = useState([]);
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [canais, setCanais] = useState([]);
+  const [precos, setPrecos] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [idInstancia] = useState(() => proximoIdInstancia++);
 
@@ -95,18 +118,21 @@ export function useRankingData() {
         let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
         let qk = supabase.from("kits").select("*").order("nome");
         let qe = supabase.from("embalagens").select("*").order("nome");
+        let qpc = supabase.from("precos_canal").select("*");
         if (lojaId) {
           qp = qp.eq("loja_id", lojaId);
           qc = qc.eq("loja_id", lojaId);
           qk = qk.eq("loja_id", lojaId);
           qe = qe.eq("loja_id", lojaId);
+          qpc = qpc.eq("loja_id", lojaId);
         }
-        const [rp, rc, rk, re] = await Promise.all([qp, qc, qk, qe]);
+        const [rp, rc, rk, re, rpc] = await Promise.all([qp, qc, qk, qe, qpc]);
         if (!ativo) return;
         if (!rp.error) setProdutos(rp.data || []);
         if (!rc.error) setCanais(rc.data || []);
         if (!rk.error) setKits(rk.data || []);
         if (!re.error) setEmbalagensCatalogo(re.data || []);
+        if (!rpc.error) setPrecos(rpc.data || []);
 
         const kitIds = (rk.data || []).map((k) => k.id);
         const [kpResp, keResp] = await Promise.all([
@@ -131,6 +157,7 @@ export function useRankingData() {
       .on("postgres_changes", { event: "*", schema: "public", table: "kit_produtos" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
@@ -180,6 +207,7 @@ export function useRankingData() {
     canais,
     produtos,
     kits,
+    precos,
     carregando,
     contagemProdutos: produtos.length,
     contagemKits: kits.length,

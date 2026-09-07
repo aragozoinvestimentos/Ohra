@@ -35,7 +35,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   const [salvando, setSalvando] = useState(false);
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | "p:<id>" | "k:<id>"
   const [canalProprioId, setCanalProprioId] = useState("");
-  const { itens: baseItens, canais, produtos } = useRankingData();
+  const { itens: baseItens, canais, produtos, precos } = useRankingData();
 
   const canaisProprios = canais.filter((c) => c.tipo === "custom");
 
@@ -162,6 +162,19 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
     const c = canais.find((x) => x.tipo === f.canal);
     return c?.id || null;
   }
+
+  // Se o produto/kit + canal escolhidos já têm um preço salvo, mostra pra não
+  // sobrescrever sem avisar — o "Salvar" abaixo sempre substitui o que já
+  // existia (upsert), então vale deixar claro antes de clicar.
+  const canalIdAtual = resolverCanalId();
+  const precoExistente =
+    baseSelecionada && canalIdAtual
+      ? (() => {
+          const [tipo, id] = baseSelecionada.split(":");
+          const itemTipo = tipo === "k" ? "kit" : "produto";
+          return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalIdAtual) || null;
+        })()
+      : null;
 
   async function salvar() {
     if (!supabase) {
@@ -444,7 +457,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
         <div className="panel">
           <h3 className="section-title">
             Salvar em Preços por Canal
-            <Ajuda texto="Salva o preço, custo e lucro calculados aqui pra esse produto/kit + canal — depois é só consultar em Gestão → Preços por Canal, sem precisar recalcular tudo de novo." />
+            <Ajuda texto="Salva o preço, custo e lucro calculados aqui pra esse produto/kit + canal — depois é só consultar em Preços por Canal, sem precisar recalcular tudo de novo. Se já existir um preço salvo pra essa mesma combinação, salvar de novo substitui o valor anterior (por isso avisamos antes)." />
           </h3>
           {!baseSelecionada ? (
             <div className="hint" style={{ marginBottom: 0 }}>
@@ -455,6 +468,18 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
               <div className="hint" style={{ marginTop: 0, marginBottom: 0 }}>
                 Salva o resultado atual pra <strong>{baseItens.find((i) => i.id === baseSelecionada)?.nome}</strong> no canal <strong>{canalLabel}</strong>.
               </div>
+              {precoExistente && (
+                <div className="hint" style={{ marginTop: 0, marginBottom: 0, color: "var(--warn)" }}>
+                  Já existe um preço salvo aqui: <strong>{BRL(precoExistente.preco)}</strong>
+                  {precoExistente.lucro != null && (
+                    <>
+                      {" "}(lucro {BRL(precoExistente.lucro)}
+                      {precoExistente.margem != null ? ` · ${PCT(precoExistente.margem)}` : ""})
+                    </>
+                  )}
+                  . Salvar agora vai substituir esse valor.
+                </div>
+              )}
               <button className="btn primary" onClick={salvar} disabled={salvando}>
                 {salvando ? "Salvando…" : "Salvar"}
               </button>

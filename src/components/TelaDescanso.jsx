@@ -29,7 +29,7 @@ export default function TelaDescanso() {
   const [versiculo] = useState(() => versiculoDoDia());
   const modoRef = useRef(null);
   const ultimaAtividadeRef = useRef(null);
-  const { itens, canais, contagemProdutos, contagemKits } = useRankingData();
+  const { itens, canais, precos, contagemProdutos, contagemKits } = useRankingData();
 
   useEffect(() => {
     modoRef.current = modo;
@@ -113,7 +113,7 @@ export default function TelaDescanso() {
     );
   }
 
-  const top3 = calcularRanking(itens, canais, { canalFiltro: "melhor", tipoFiltro: "todos" }).slice(0, 3);
+  const top3 = calcularRanking(itens, canais, { canalFiltro: "melhor", tipoFiltro: "todos", precos }).slice(0, 3);
 
   return (
     <div className="tela-descanso">
