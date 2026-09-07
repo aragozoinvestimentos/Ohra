@@ -8,6 +8,7 @@ import Orcamento from "./components/Orcamento.jsx";
 import Promocoes from "./components/Promocoes.jsx";
 import Otimizacao from "./components/Otimizacao.jsx";
 import Ranking from "./components/Ranking.jsx";
+import TelaDescanso from "./components/TelaDescanso.jsx";
 import Historico from "./components/Historico.jsx";
 import Tutorial from "./components/Tutorial.jsx";
 import Lojas from "./components/Lojas.jsx";
@@ -180,6 +181,8 @@ export default function App() {
       {menuAberto && <div className="sidebar-overlay" onClick={() => setMenuAberto(false)} />}
 
       <div className="content">
+        <TelaDescanso />
+
         <header className="top">
           <div className="mobile-title">{tabAtual?.label}</div>
         </header>

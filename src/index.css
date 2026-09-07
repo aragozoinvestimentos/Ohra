@@ -153,7 +153,7 @@ a:hover { color: var(--accent); }
 
 .sidebar-overlay { display: none; }
 
-.content { flex: 1; min-width: 0; max-width: 1080px; padding: 28px 32px 64px; }
+.content { flex: 1; min-width: 0; max-width: 1080px; padding: 28px 32px 64px; position: relative; }
 
 header.top { display: none; }
 
@@ -360,3 +360,52 @@ footer.note { margin-top: 32px; font-size: 12px; color: var(--ink-faint); line-h
 .loja-form-icone { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
 .loja-form-icone-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .loja-form-icone-actions .btn { padding: 7px 11px; font-size: 12.5px; }
+
+/* Tela de descanso */
+.tela-descanso {
+  position: absolute; inset: 0; z-index: 25; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px 28px; text-align: center; gap: 20px; overflow-y: auto;
+  animation: td-fadein 0.4s ease;
+}
+@keyframes td-fadein { from { opacity: 0; } to { opacity: 1; } }
+
+.td-logo { height: 52px; width: auto; filter: var(--logo-filter); opacity: 0.9; }
+
+.td-frase {
+  font-family: 'Jost', sans-serif; font-weight: 500; font-size: 22px;
+  max-width: 540px; color: var(--ink); text-wrap: balance;
+}
+
+.td-versiculo { max-width: 460px; color: var(--ink-soft); font-size: 14.5px; font-style: italic; }
+.td-versiculo .ref {
+  display: block; margin-top: 6px; font-style: normal; font-size: 11.5px;
+  color: var(--ink-faint); letter-spacing: 0.03em;
+}
+
+.td-amem { padding: 9px 22px; font-size: 14px; }
+
+.td-divisor { width: 40px; height: 1px; background: var(--border-strong); }
+
+.td-resumo { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: center; color: var(--ink-faint); font-size: 12px; }
+.td-resumo .contagem { color: var(--ink-soft); font-weight: 600; }
+
+.td-ranking { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 620px; }
+.td-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 136px;
+  box-shadow: var(--shadow);
+}
+.td-card .pos { font-size: 10px; color: var(--ink-faint); font-weight: 600; }
+.td-card .nome { font-size: 12.5px; font-weight: 500; color: var(--ink); }
+.td-card .tipo { font-size: 10px; color: var(--ink-faint); }
+.td-card .lucro { font-size: 13px; font-weight: 700; color: var(--good); font-variant-numeric: tabular-nums; }
+
+.td-dica { color: var(--ink-faint); font-size: 10.5px; }
+
+.tela-descanso-leve { gap: 14px; }
+
+@media (max-width: 640px) {
+  .tela-descanso { padding: 32px 18px; }
+  .td-frase { font-size: 19px; }
+}
