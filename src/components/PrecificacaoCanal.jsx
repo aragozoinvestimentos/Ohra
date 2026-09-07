@@ -19,7 +19,7 @@ const DEFAULTS = {
   outroComissao: 0,
   outroFixo: 0,
   imposto: 0,
-  custosFixos: 2,
+  custosFixos: 0,
   lucratividade: 20,
   custoProduto: 0,
   frete: 0,
