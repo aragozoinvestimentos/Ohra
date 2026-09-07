@@ -40,7 +40,10 @@ const GRUPOS = [
   },
   {
     titulo: "Cadastros",
-    tabs: [{ key: "cadastros", label: "Cadastros", icon: "🗂️" }],
+    tabs: [
+      { key: "cadastros", label: "Cadastros", icon: "🗂️" },
+      { key: "historico", label: "Preços por Canal", icon: "💰" },
+    ],
   },
   {
     titulo: "Precificar",
@@ -62,7 +65,6 @@ const GRUPOS = [
     tabs: [
       { key: "ranking", label: "Ranking por Retorno", icon: "🏆" },
       { key: "otimizacao", label: "Otimização", icon: "📈" },
-      { key: "historico", label: "Preços por Canal", icon: "🕘" },
     ],
   },
   {

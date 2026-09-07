@@ -105,11 +105,11 @@ export default function OrcamentoAvulso({ onToast }) {
       return;
     }
     setSalvando(true);
-    const { error } = await supabase.from("produtos").insert({
+    const { error } = await supabase.from("orcamentos_avulsos").insert({
       nome,
-      canal: "Encomenda avulsa",
-      custo: arredondarPreco(resultado.custoTotal),
+      custo_total: arredondarPreco(resultado.custoTotal),
       preco: arredondarPreco(resultado.preco),
+      lucro: arredondarPreco(resultado.lucro),
       margem: resultado.margem,
       ...(lojaId ? { loja_id: lojaId } : {}),
     });
@@ -118,7 +118,7 @@ export default function OrcamentoAvulso({ onToast }) {
       onToast("Não foi possível salvar agora — tente de novo");
       return;
     }
-    onToast("Orçamento salvo no histórico");
+    onToast("Orçamento salvo em Orçamentos salvos");
     setF((prev) => ({ ...prev, nome: "" }));
   }
 
@@ -208,7 +208,7 @@ export default function OrcamentoAvulso({ onToast }) {
         </div>
 
         <div className="panel">
-          <h3 className="section-title">Salvar no histórico</h3>
+          <h3 className="section-title">Salvar em Orçamentos</h3>
           <div className="save-row">
             <div className="field">
               <label>Nome do pedido</label>
