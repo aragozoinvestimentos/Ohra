@@ -37,7 +37,7 @@ const ETAPAS = [
         icone: "🧱",
         nome: "Produtos",
         texto:
-          "O cadastro central de cada produto que você vende. Além do nome e custo, dá pra montar a receita de itens de embalagem (quanto de cada item cadastrado acima esse produto gasta pra ser enviado) — o total substitui o campo manual de embalagem e atualiza sozinho se o preço de um item mudar. Esse cadastro é usado no Comparativo, Orçamento, Promoções e Otimização.",
+          "O cadastro central de cada produto que você vende. Além do nome e custo, dá pra montar a receita de itens de embalagem (quanto de cada item cadastrado acima esse produto gasta pra ser enviado) — o total substitui o campo manual de embalagem e atualiza sozinho se o preço de um item mudar. Esse cadastro é usado em praticamente toda aba do app. Pra ver o lucro por canal de tudo que está cadastrado, use o Ranking por Retorno; pra ver preços reais já definidos por canal, use Preços por Canal.",
       },
       {
         icone: "🎁",
@@ -49,7 +49,19 @@ const ETAPAS = [
         icone: "🏷️",
         nome: "Canais",
         texto:
-          "As regras de cada canal de venda (Shopee, Mercado Livre). Comissão e taxa fixa seguem as faixas oficiais, calculadas automaticamente pelo app. Imposto e custos fixos são o que você configura por canal. O % de Ads é quanto você costuma investir em anúncio patrocinado — só usado pra mostrar o lucro com Ads no Comparativo, não muda o preço de venda.",
+          'As regras de cada canal de venda. Shopee, Mercado Livre, TikTok Shop e Shein seguem as faixas/comissão oficiais de cada plataforma, calculadas automaticamente pelo app (toda loja nova já nasce com Shopee, Mercado Livre e Shein cadastrados — TikTok Shop é opcional, use o botão "+ Adicionar"). Pra um canal próprio (site, WhatsApp etc.) cadastre comissão e taxa fixa na mão em "Adicionar canal próprio". Imposto, custos fixos e % de Ads são configurados por canal, oficial ou próprio — o % de Ads só é usado pra mostrar o lucro com Ads no Comparativo, não muda o preço de venda.',
+      },
+      {
+        icone: "📋",
+        nome: "Taxas Marketplace",
+        texto:
+          "Referência somente-leitura com a tabela oficial de comissão/taxa fixa de Shopee, Mercado Livre, TikTok Shop e Shein (com a data em que cada uma foi validada contra o site oficial), mais os canais próprios que você cadastrou — útil pra conferir de vez em quando se as faixas usadas no app ainda batem com a realidade.",
+      },
+      {
+        icone: "💰",
+        nome: "Preços por Canal",
+        texto:
+          'Fica no menu logo abaixo de "Cadastros", mas é sobre preço, não sobre cadastro-base — por isso vale um destaque à parte. É uma grade: cada linha é um produto ou kit cadastrado, cada coluna é um canal cadastrado, e cada célula mostra o preço, lucro e margem mais recentes salvos pra essa combinação. Ela se preenche sozinha quando você clica em "Salvar" na Precificação por Canal — célula vazia é só uma combinação que ainda não foi calculada/salva. Em cada célula já preenchida dá pra usar o ✎ pra corrigir o valor na mão, ou o × pra excluir (sempre pede confirmação antes).',
       },
     ],
   },
@@ -67,7 +79,7 @@ const ETAPAS = [
         icone: "🏷️",
         nome: "Precificação por Canal",
         texto:
-          "Pega um custo (escolhendo um produto já cadastrado, vindo da Simular Custo de Produção, ou digitado na mão) e calcula o preço de venda pra um canal específico, dada a margem líquida que você quer garantir — o app já desconta comissão, taxa fixa, imposto (o seu, sobre a venda) e custos extras daquele canal antes de sugerir o preço.",
+          'Pega um custo (escolhendo um produto ou kit já cadastrado, vindo da Simular Custo de Produção, ou digitado na mão) e calcula o preço de venda pra um canal específico — Shopee, Mercado Livre, TikTok Shop, Shein ou um canal próprio seu — dada a margem líquida que você quer garantir. O app já desconta comissão, taxa fixa, imposto (o seu, sobre a venda) e custos extras daquele canal antes de sugerir o preço. O resultado destaca três números: custo total do produto, preço definido para a plataforma e quanto cai no seu bolso. Escolhendo um produto/kit cadastrado, o botão "Salvar" grava esse preço em Preços por Canal.',
       },
       {
         icone: "📊",
@@ -85,30 +97,31 @@ const ETAPAS = [
         icone: "🧾",
         nome: "Orçamento",
         texto:
-          'Duas sub-abas: "Encomenda avulsa" é pra venda direta, fora de marketplace, sem comissão nem taxa fixa de plataforma — puxe um produto cadastrado ou preencha na mão pra algo sob medida. "Encomenda em volume" calcula o preço por lote, diluindo o frete entre as peças (quanto mais peças no lote, menor o frete por unidade).',
+          'Três sub-abas: "Encomenda avulsa" é pra venda direta, fora de marketplace, sem comissão nem taxa fixa de plataforma — puxe um produto cadastrado ou preencha na mão pra algo sob medida, e o "Salvar" grava numa lista própria. "Encomenda em volume" calcula o preço por lote, diluindo o frete entre as peças (quanto mais peças no lote, menor o frete por unidade). "Orçamentos salvos" lista tudo que foi salvo em "Encomenda avulsa", com editar nome e excluir.',
       },
       {
         icone: "🎁",
         nome: "Promoções",
         texto:
-          "Simula o impacto de um desconto no lucro, a partir do preço normal do canal escolhido. Dá pra simular desconto por faixa de quantidade (a taxa fixa do canal continua sendo cobrada por unidade) ou um kit fechado vendido como pedido único (taxa fixa cobrada uma vez só, o que ajuda a bancar o desconto).",
+          "Simula o impacto de uma promoção no lucro, a partir do preço normal já calculado pro canal escolhido (mesmas taxas de Cadastros → Canais). Sete formatos pra escolher: desconto direto, progressivo por quantidade, combo (leve mais pague menos), venda combinada (mistura produtos e/ou kits diferentes num pedido só), frete grátis subsidiado, brinde/order bump, e liquidação com piso de margem (você define a margem mínima aceitável e o app calcula o maior desconto possível sem furar esse piso).",
       },
     ],
   },
   {
     titulo: "5. Gestão",
-    intro: "Pra olhar o negócio de um passo atrás: capacidade de produção e o que já foi calculado antes.",
+    intro: "Pra olhar o negócio de um passo atrás: onde focar produção e divulgação, e sua capacidade real de produzir.",
     passos: [
+      {
+        icone: "🏆",
+        nome: "Ranking por Retorno",
+        texto:
+          'Lista todo produto e kit cadastrado ordenado pelo lucro líquido por unidade (a uma lucratividade padrão fixa, pra comparar todo mundo em pé de igualdade — pra simular outra meta, use Precificação por Canal ou Comparativo). Não é ranking de venda/popularidade, é só "onde vale mais a pena focar". Filtros pra ver só Produtos ou só Kits, e pra ver o retorno no melhor canal de cada item ou num canal específico.',
+      },
       {
         icone: "📈",
         nome: "Otimização",
         texto:
           "Analisa sua capacidade real de produção: quantas impressoras você tem e quantas horas elas rodam por dia (isso roda sozinho), e quanto do seu próprio tempo (mão de obra) cada peça consome pra trocar impressão, acabar e embalar. Com isso o app mostra se o gargalo é impressora ou é você, e quanto dá pra produzir por dia.",
-      },
-      {
-        icone: "🕘",
-        nome: "Histórico",
-        texto: "Lista de todos os produtos já salvos, com data. Dá pra reabrir, renomear ou excluir um cálculo salvo.",
       },
     ],
   },
@@ -125,7 +138,7 @@ const GLOSSARIO = [
   },
   {
     termo: "Comissão e taxa fixa",
-    def: "O que Shopee/Mercado Livre descontam de cada venda, seguindo as faixas oficiais de cada plataforma — calculadas automaticamente a partir do preço e categoria.",
+    def: "O que Shopee, Mercado Livre, TikTok Shop e Shein descontam de cada venda, seguindo as faixas oficiais de cada plataforma — calculadas automaticamente a partir do preço (e, no Mercado Livre, da categoria). Confira os valores usados em Cadastros → Taxas Marketplace.",
   },
   {
     termo: "% de Ads",
@@ -144,9 +157,10 @@ export default function Tutorial() {
         <h3>Como usar o Ohra</h3>
         <p style={{ margin: "0 0 4px", fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.6 }}>
           O app segue o mesmo fluxo do menu lateral, de cima pra baixo: primeiro você configura a loja, depois
-          cadastra os dados que se repetem (materiais, embalagens, produtos, canais), depois calcula o custo e o
-          preço de uma peça, depois usa isso pra vender e, por fim, acompanha capacidade e histórico. Abaixo vai um
-          passo a passo rápido de cada etapa.
+          cadastra os dados que se repetem (materiais, embalagens, produtos, canais) e consulta os preços já
+          calculados por canal, depois calcula o custo e o preço de uma peça, depois usa isso pra vender e, por fim,
+          acompanha onde vale mais a pena focar e sua capacidade de produção. Abaixo vai um passo a passo rápido de
+          cada etapa.
         </p>
       </div>
 
