@@ -49,6 +49,7 @@ export default function Promocoes() {
   const [kitEmbalagensTodos, setKitEmbalagensTodos] = useState([]);
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [canais, setCanais] = useState([]);
+  const [precos, setPrecos] = useState([]); // precos_canal já salvos — base do "preço original de venda" abaixo
   const [carregando, setCarregando] = useState(true);
 
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | `p:<id>` | `k:<id>`
@@ -91,13 +92,15 @@ export default function Promocoes() {
         let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
         let qk = supabase.from("kits").select("*").order("nome");
         let qe = supabase.from("embalagens").select("*").order("nome");
+        let qpc = supabase.from("precos_canal").select("*");
         if (lojaId) {
           qp = qp.eq("loja_id", lojaId);
           qc = qc.eq("loja_id", lojaId);
           qk = qk.eq("loja_id", lojaId);
           qe = qe.eq("loja_id", lojaId);
+          qpc = qpc.eq("loja_id", lojaId);
         }
-        const [rp, rc, rk, re] = await Promise.all([qp, qc, qk, qe]);
+        const [rp, rc, rk, re, rpc] = await Promise.all([qp, qc, qk, qe, qpc]);
         if (!ativo) return;
         // Troca de loja invalida seleções antigas — se o produto/canal/kit
         // escolhido não existir mais na lista desta loja, volta pro padrão
@@ -110,6 +113,7 @@ export default function Promocoes() {
         }
         if (!rk.error) setKits(rk.data || []);
         if (!re.error) setEmbalagensCatalogo(re.data || []);
+        if (!rpc.error) setPrecos(rpc.data || []);
 
         const kitIds = (rk.data || []).map((k) => k.id);
         const [kpResp, keResp] = await Promise.all([
@@ -146,6 +150,7 @@ export default function Promocoes() {
       .on("postgres_changes", { event: "*", schema: "public", table: "kit_produtos" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
@@ -236,12 +241,42 @@ export default function Promocoes() {
     return { resultado: calcCanalCustom(canalObj, baseObj), comissaoPct: canalObj.comissao_pct || 0, taxaFixa: canalObj.taxa_fixa || 0 };
   }
 
-  const { normal, feeInfo } = useMemo(() => {
+  const { normal: normalCalculado, feeInfo } = useMemo(() => {
     if (!canal) return { normal: null, feeInfo: null };
     const r = resolverComTier(canal, base);
     return { normal: r.resultado, feeInfo: { comissaoPct: r.comissaoPct, taxaFixa: r.taxaFixa } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canal, base, mlCategoria, mlTipoAnuncio]);
+
+  // Preço já salvo (Precificação por Canal) pra esse item + canal — quando
+  // existe, é a referência mais real do "preço original" do que a conta
+  // teórica de custo + lucratividade desejada.
+  const precoSalvo = useMemo(() => {
+    if (!baseSelecionada || !canalId) return null;
+    const [t, id] = baseSelecionada.split(":");
+    const itemTipo = t === "k" ? "kit" : "produto";
+    return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalId) || null;
+  }, [precos, baseSelecionada, canalId]);
+
+  // "Preço original de venda" — editável. Vem preenchido com o preço salvo
+  // (ou, na falta dele, com o calculado pela margem desejada) toda vez que
+  // o item ou o canal mudam, mas fica parado enquanto você só ajusta
+  // margem/custo/frete, pra não brigar com um valor que você já digitou.
+  const [precoOriginalOverride, setPrecoOriginalOverride] = useState("");
+
+  useEffect(() => {
+    const valor = precoSalvo?.preco ?? normalCalculado?.preco ?? null;
+    setPrecoOriginalOverride(valor != null ? String(arredondarPreco(valor)) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseSelecionada, canalId]);
+
+  const precoOriginalNum = parseFloat(precoOriginalOverride);
+  const normal = useMemo(() => {
+    if (!normalCalculado) return null;
+    if (!isFinite(precoOriginalNum) || precoOriginalNum <= 0) return normalCalculado;
+    const lucro = normalCalculado.lucroEm(precoOriginalNum);
+    return { ...normalCalculado, preco: precoOriginalNum, lucro, margem: precoOriginalNum > 0 ? lucro / precoOriginalNum : null };
+  }, [normalCalculado, precoOriginalNum]);
 
   function atualizarTier(idx, campo, valor) {
     setTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, [campo]: valor } : t)));
@@ -551,8 +586,26 @@ export default function Promocoes() {
 
           {normal && tipo !== "combinada" && (
             <div className="panel">
-              <h3>Preço normal (sem promoção)</h3>
-              <div className="kv"><span className="k">Preço</span><span className="v">{BRL(normal.preco)}</span></div>
+              <h3 className="section-title">
+                Preço normal (sem promoção)
+                <Ajuda texto="Preço original de venda: vem do que você já salvou em Preços por Canal pra esse item+canal (ou, se ainda não salvou nada, de um cálculo por margem desejada) — mas pode ajustar aqui na mão pra testar um valor diferente antes de aplicar o desconto. O desconto da promoção é sempre calculado em cima desse número." />
+              </h3>
+              <div className="field" style={{ marginBottom: 8 }}>
+                <label>Preço original de venda (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={precoOriginalOverride}
+                  onChange={(e) => setPrecoOriginalOverride(e.target.value)}
+                />
+              </div>
+              <div className="hint" style={{ marginTop: -4 }}>
+                {precoSalvo && Math.abs(precoOriginalNum - precoSalvo.preco) < 0.005
+                  ? "Preenchido com o preço já salvo em Preços por Canal pra esse item nesse canal."
+                  : precoSalvo
+                  ? `Ajustado na mão — o preço salvo em Preços por Canal pra esse item é ${BRL(precoSalvo.preco)}.`
+                  : "Nenhum preço salvo ainda pra esse item+canal — preenchido pelo cálculo de margem desejada abaixo. Ajuste aqui se seu preço real for outro."}
+              </div>
               <div className="kv"><span className="k">Lucro</span><span className="v">{BRL(normal.lucro)}</span></div>
               <div className="kv"><span className="k">Margem</span><span className="v">{PCT(normal.margem)}</span></div>
               {canal?.tipo !== "custom" && normal.faixaOk === false && (
