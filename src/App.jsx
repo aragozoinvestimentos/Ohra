@@ -75,9 +75,24 @@ const GRUPOS = [
 
 const TABS = GRUPOS.flatMap((g) => g.tabs);
 
+const TAB_KEY = "ohra:ultima-aba";
+
+// Lembra a última aba aberta pra não voltar sempre pro início ao atualizar
+// a página — só aceita uma chave que ainda exista (uma aba pode ter sido
+// renomeada/removida entre versões do app).
+function loadTab() {
+  try {
+    const saved = localStorage.getItem(TAB_KEY);
+    if (saved && TABS.some((t) => t.key === saved)) return saved;
+  } catch {
+    // sem problema, usa o padrão
+  }
+  return "producao";
+}
+
 export default function App() {
   const { disponivel: lojasDisponivel, carregando: carregandoLoja, lojaId, precisaPin } = useLoja();
-  const [tab, setTab] = useState("producao");
+  const [tab, setTab] = useState(loadTab);
   const [custoRecebido, setCustoRecebido] = useState(null);
   const [produtoRecebido, setProdutoRecebido] = useState(null);
   const [toast, setToast] = useState({ msg: "", show: false });
@@ -97,6 +112,14 @@ export default function App() {
   function alternarTema() {
     setTema((t) => (t === "dark" ? "light" : "dark"));
   }
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TAB_KEY, tab);
+    } catch {
+      // sem problema, só não lembra da próxima vez
+    }
+  }, [tab]);
 
   function showToast(msg) {
     setToast({ msg, show: true });
