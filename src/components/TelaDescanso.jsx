@@ -3,6 +3,7 @@ import logo from "../assets/logo.png";
 import { BRL } from "../lib/format.js";
 import { versiculoDoDia } from "../data/versiculosDoDia.js";
 import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 
 const CHAVE_ULTIMA_DATA = "ohra:tela-descanso:ultima-data";
 const LIMITE_INATIVIDADE_MS = 5 * 60 * 1000;
@@ -30,6 +31,9 @@ export default function TelaDescanso() {
   const modoRef = useRef(null);
   const ultimaAtividadeRef = useRef(null);
   const { itens, canais, precos, contagemProdutos, contagemKits } = useRankingData();
+  const { lojas, lojaId } = useLoja();
+  const lojaAtual = lojas.find((l) => l.id === lojaId) || null;
+  const logoAtual = lojaAtual?.icone_url || logo;
 
   useEffect(() => {
     modoRef.current = modo;
@@ -103,7 +107,7 @@ export default function TelaDescanso() {
   if (modo === "leve") {
     return (
       <div className="tela-descanso tela-descanso-leve">
-        <img className="td-logo" src={logo} alt="" />
+        <img className="td-logo" src={logoAtual} alt="" />
         <div className="td-frase">{versiculo.frase}</div>
         <div className="td-versiculo">
           {versiculo.texto}
@@ -117,7 +121,7 @@ export default function TelaDescanso() {
 
   return (
     <div className="tela-descanso">
-      <img className="td-logo" src={logo} alt="" />
+      <img className="td-logo" src={logoAtual} alt="" />
 
       <div className="td-frase">{versiculo.frase}</div>
       <div className="td-versiculo">

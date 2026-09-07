@@ -180,6 +180,26 @@ export function useRankingData() {
     return totalItens(catalogoProdutosBase, prodItens) + totalItens(catalogoEmbalagensBase, embItens);
   }
 
+  // Detalha um kit item por item — quanto cada produto/embalagem que o
+  // compõe pesa no custo total (usado em Precificação por Canal pra
+  // estratificar o "custo total do kit" em vez de mostrar só a soma).
+  function composicaoDoKit(kitId) {
+    const linhaDe = (r, idKey, catalogo, rotuloAusente) => {
+      const item = catalogo.find((c) => c.id === r[idKey]);
+      const quantidade = Number(r.quantidade) || 0;
+      const custoUnit = item?.preco || 0;
+      return { nome: item?.nome || rotuloAusente, quantidade, custoUnit, subtotal: custoUnit * quantidade };
+    };
+    return {
+      produtos: kitProdutosTodos
+        .filter((r) => r.kit_id === kitId)
+        .map((r) => linhaDe(r, "produto_id", catalogoProdutosBase, "Produto removido")),
+      embalagens: kitEmbalagensTodos
+        .filter((r) => r.kit_id === kitId)
+        .map((r) => linhaDe(r, "embalagem_id", catalogoEmbalagensBase, "Embalagem removida")),
+    };
+  }
+
   // Lista unificada: cada produto cadastrado com custo total (produção +
   // frete + embalagem) e cada kit cadastrado com seu custo total (produtos
   // + embalagem do kit) num só lugar.
@@ -211,5 +231,6 @@ export function useRankingData() {
     carregando,
     contagemProdutos: produtos.length,
     contagemKits: kits.length,
+    composicaoDoKit,
   };
 }

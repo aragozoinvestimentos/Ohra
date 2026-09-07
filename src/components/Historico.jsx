@@ -290,6 +290,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
               <thead>
                 <tr>
                   <th>Produto/Kit</th>
+                  <th>SKU</th>
                   <th className="num">Custo total</th>
                   {canais.map((c) => (
                     <th key={c.id} className="num">{c.nome}</th>
@@ -300,7 +301,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                 {itensFiltrados.map((item) => (
                   <tr key={item.id}>
                     <td>
-                      {item.nome} <span className="campo-anterior">({item.tipo}{item.sku ? ` · SKU ${item.sku}` : ""})</span>
+                      {item.nome} <span className="campo-anterior">({item.tipo})</span>
                       <span style={{ whiteSpace: "nowrap", marginLeft: 6 }}>
                         <button className="del" title="Clonar produto/kit" onClick={() => abrirClonar(item)}>
                           ⧉
@@ -317,6 +318,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                         </button>
                       </span>
                     </td>
+                    <td>{item.sku || <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
                     <td className="num">{BRL(item.custoTotal)}</td>
                     {canais.map((c) => {
                       const p = precoDe(item, c);

@@ -91,7 +91,7 @@ function loadTab() {
 }
 
 export default function App() {
-  const { disponivel: lojasDisponivel, carregando: carregandoLoja, lojaId, precisaPin } = useLoja();
+  const { lojas, disponivel: lojasDisponivel, carregando: carregandoLoja, lojaId, precisaPin } = useLoja();
   const [tab, setTab] = useState(loadTab);
   const [custoRecebido, setCustoRecebido] = useState(null);
   const [produtoRecebido, setProdutoRecebido] = useState(null);
@@ -163,6 +163,7 @@ export default function App() {
   }
 
   const tabAtual = TABS.find((t) => t.key === tab);
+  const lojaAtual = lojas.find((l) => l.id === lojaId) || null;
 
   // Nenhuma aba pode montar (e nenhum dado pode ser buscado) enquanto a
   // loja atual não estiver definida e, se tiver PIN, desbloqueada nesta
@@ -181,7 +182,7 @@ export default function App() {
 
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <img src={logo} alt="Ohra" />
+          <img src={lojaAtual?.icone_url || logo} alt="Ohra" />
           <div>
             <div className="word">OHRA</div>
             <div className="tagline">Precificador</div>

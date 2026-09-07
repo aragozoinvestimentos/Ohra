@@ -35,7 +35,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   const [salvando, setSalvando] = useState(false);
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | "p:<id>" | "k:<id>"
   const [canalProprioId, setCanalProprioId] = useState("");
-  const { itens: baseItens, canais, produtos, precos } = useRankingData();
+  const { itens: baseItens, canais, produtos, precos, composicaoDoKit } = useRankingData();
 
   const canaisProprios = canais.filter((c) => c.tipo === "custom");
 
@@ -166,6 +166,11 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   // Se o produto/kit + canal escolhidos já têm um preço salvo, mostra pra não
   // sobrescrever sem avisar — o "Salvar" abaixo sempre substitui o que já
   // existia (upsert), então vale deixar claro antes de clicar.
+  // Quando um kit está selecionado, detalha item a item quanto cada produto
+  // (e a embalagem própria do kit) pesa no custo total mostrado acima.
+  const kitSelecionadoId = baseSelecionada.startsWith("k:") ? baseSelecionada.slice(2) : null;
+  const composicaoKit = kitSelecionadoId ? composicaoDoKit(kitSelecionadoId) : null;
+
   const canalIdAtual = resolverCanalId();
   const precoExistente =
     baseSelecionada && canalIdAtual
@@ -356,7 +361,9 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
             <select value={baseSelecionada} onChange={(e) => setBaseSelecionada(e.target.value)}>
               <option value="">— preencher manualmente —</option>
               {baseItens.map((item) => (
-                <option key={item.id} value={item.id}>{item.nome} ({item.tipo})</option>
+                <option key={item.id} value={item.id}>
+                  {item.nome}{item.sku ? ` · SKU ${item.sku}` : ""} ({item.tipo})
+                </option>
               ))}
             </select>
           </div>
@@ -380,6 +387,33 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
             </div>
           )}
         </div>
+
+        {composicaoKit && (composicaoKit.produtos.length > 0 || composicaoKit.embalagens.length > 0) && (
+          <div className="panel" style={{ background: "var(--surface-2)" }}>
+            <h3 className="section-title">
+              Composição do kit
+              <Ajuda texto="Quanto cada produto (fabricação) e a embalagem própria do kit pesam no custo total mostrado ao lado — só pra conferir de onde vem o número, não muda o cálculo." />
+            </h3>
+            {composicaoKit.produtos.map((linha, i) => (
+              <div className="kv" key={`p-${i}`}>
+                <span className="k">
+                  {linha.nome}
+                  {linha.quantidade !== 1 && <span className="k-sub">{linha.quantidade}× {BRL(linha.custoUnit)}</span>}
+                </span>
+                <span className="v">{BRL(linha.subtotal)}</span>
+              </div>
+            ))}
+            {composicaoKit.embalagens.map((linha, i) => (
+              <div className="kv" key={`e-${i}`}>
+                <span className="k">
+                  {linha.nome} <span className="campo-anterior">(embalagem do kit)</span>
+                  {linha.quantidade !== 1 && <span className="k-sub">{linha.quantidade}× {BRL(linha.custoUnit)}</span>}
+                </span>
+                <span className="v">{BRL(linha.subtotal)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div>
