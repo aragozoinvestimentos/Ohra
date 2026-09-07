@@ -113,6 +113,45 @@ function FormLoja({ valor, onChange, onSalvar, onCancelar, salvando, tituloBotao
 
 const NOVO_VAZIO = { nome: "", pin: "", iconeFile: null, iconePreview: null, removerIcone: false };
 
+// Todas as tabelas que guardam dados de verdade do app (fora o Storage de
+// ícones) — o backup lê elas sem filtro de loja de propósito, pra sair um
+// snapshot com TODAS as lojas de uma vez, não só a que está selecionada.
+const BACKUP_TABELAS = [
+  "lojas",
+  "materiais",
+  "embalagens",
+  "produtos_cadastro",
+  "produto_embalagens",
+  "kits",
+  "kit_produtos",
+  "kit_embalagens",
+  "canais",
+  "produtos",
+];
+
+async function exportarBackup(onToast) {
+  const dados = {};
+  for (const tabela of BACKUP_TABELAS) {
+    const { data, error } = await supabase.from(tabela).select("*");
+    if (error) {
+      onToast(`Backup interrompido na tabela "${tabela}": ${error.message}`);
+      return false;
+    }
+    dados[tabela] = data || [];
+  }
+  const payload = { geradoEm: new Date().toISOString(), app: "Precificador Ohra", tabelas: dados };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `backup-ohra-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return true;
+}
+
 export default function Lojas({ onToast }) {
   const { lojas, criar, atualizar, remover, conferirPin } = useLoja();
   const [criando, setCriando] = useState(false);
@@ -123,6 +162,14 @@ export default function Lojas({ onToast }) {
   const [confirmacao, setConfirmacao] = useState(null); // "nova" | "editar"
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const [pinParaEditar, setPinParaEditar] = useState(null); // loja aguardando PIN pra abrir a edição
+  const [backupBaixando, setBackupBaixando] = useState(false);
+
+  async function baixarBackup() {
+    setBackupBaixando(true);
+    const ok = await exportarBackup(onToast);
+    setBackupBaixando(false);
+    if (ok) onToast("Backup baixado — arquivo .json com todas as lojas");
+  }
 
   function abrirEdicao(loja) {
     setCriando(false);
@@ -252,7 +299,15 @@ export default function Lojas({ onToast }) {
   return (
     <div>
       <div className="panel">
-        <h3 className="section-title">Suas lojas</h3>
+        <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span>Suas lojas</span>
+          <button className="btn" onClick={baixarBackup} disabled={backupBaixando} style={{ fontWeight: 400 }}>
+            {backupBaixando ? "Gerando backup…" : "⬇ Baixar backup completo (todas as lojas)"}
+          </button>
+        </h3>
+        <div className="hint" style={{ marginTop: -4 }}>
+          Baixa um arquivo .json com tudo que está cadastrado — materiais, embalagens, produtos, kits, canais, orçamentos/histórico — de TODAS as lojas, não só a selecionada agora. Guarde esse arquivo em lugar seguro (Drive, e-mail etc.) como cópia de segurança.
+        </div>
         {lojas.length === 0 ? (
           <div className="empty">Nenhuma loja cadastrada ainda.</div>
         ) : (

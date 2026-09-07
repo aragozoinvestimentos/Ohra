@@ -105,8 +105,16 @@ export default function App() {
     showToast("Custo levado para a Precificação por Canal");
   }
 
-  function salvarComoProduto({ custo, materialNome, detalhe, id, nome }) {
-    setProdutoRecebido((prev) => ({ custo, materialNome, detalhe, id: id || null, nome: nome || "", seq: (prev?.seq || 0) + 1 }));
+  function salvarComoProduto({ custo, materialNome, detalhe, id, nome, pecasPorImpressao }) {
+    setProdutoRecebido((prev) => ({
+      custo,
+      materialNome,
+      detalhe,
+      id: id || null,
+      nome: nome || "",
+      pecasPorImpressao: pecasPorImpressao ?? 1,
+      seq: (prev?.seq || 0) + 1,
+    }));
     setTab("cadastros");
     showToast(id ? "Detalhamento levado para atualizar o produto" : "Custo levado para o cadastro de Produtos");
   }

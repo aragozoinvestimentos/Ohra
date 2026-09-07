@@ -12,6 +12,7 @@ const DEFAULTS = {
   ...DEFAULTS_PRODUCAO,
   materialNome: "PLA (seu custo real)",
   markupRapido: 100,
+  pecasPorPlaca: 1,
 };
 
 function loadInitial() {
@@ -43,7 +44,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     if (!supabase) return;
     let ativo = true;
     async function carregar() {
-      let query = supabase.from("produtos_cadastro").select("id, nome, material_nome, producao_detalhe").order("nome");
+      let query = supabase.from("produtos_cadastro").select("id, nome, material_nome, producao_detalhe, pecas_por_impressao").order("nome");
       if (lojaId) query = query.eq("loja_id", lojaId);
       const { data, error } = await query;
       if (!ativo) return;
@@ -67,10 +68,19 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   // filamento e deixa o resto como está, pra você preencher e "adotar" ele.
   useEffect(() => {
     if (!produtoId || !produtoSelecionado) return;
+    // "Peças por lote" agora vive só na coluna pecas_por_impressao (a mesma
+    // que a Otimização usa) — com fallback pro valor antigo dentro do
+    // detalhamento, pra produtos salvos antes dessa unificação.
+    const pecasPorPlaca =
+      Number(produtoSelecionado.pecas_por_impressao) ||
+      Number(produtoSelecionado.producao_detalhe?.pecasPorPlaca) ||
+      1;
     if (produtoSelecionado.producao_detalhe) {
-      setF((prev) => ({ ...DEFAULTS, ...produtoSelecionado.producao_detalhe, markupRapido: prev.markupRapido }));
+      setF((prev) => ({ ...DEFAULTS, ...produtoSelecionado.producao_detalhe, markupRapido: prev.markupRapido, pecasPorPlaca }));
     } else if (produtoSelecionado.material_nome) {
-      setF((prev) => ({ ...prev, materialNome: produtoSelecionado.material_nome }));
+      setF((prev) => ({ ...prev, materialNome: produtoSelecionado.material_nome, pecasPorPlaca }));
+    } else {
+      setF((prev) => ({ ...prev, pecasPorPlaca }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtoId]);
@@ -376,6 +386,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
                 nome: produtoSelecionado?.nome || "",
                 custo: resultado.total,
                 materialNome: materialSelecionado?.nome || "",
+                pecasPorImpressao: Math.max(1, n(f.pecasPorPlaca) || 1),
                 detalhe: {
                   comprimento: n(f.comprimento),
                   diametro: n(f.diametro),
@@ -393,7 +404,6 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
                   horasDia: n(f.horasDia),
                   diasMes: n(f.diasMes),
                   modelagem: n(f.modelagem),
-                  pecasPorPlaca: Math.max(1, n(f.pecasPorPlaca) || 1),
                 },
               })
             }

@@ -73,7 +73,6 @@ export const DEFAULTS_PRODUCAO = {
   horasDia: 6,
   diasMes: 26,
   modelagem: 0,
-  pecasPorPlaca: 1,
 };
 
 // Quando "Peças por placa" (pecasPorPlaca) é maior que 1, comprimento e

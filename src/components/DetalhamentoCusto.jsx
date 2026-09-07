@@ -22,7 +22,19 @@ function CampoNum({ label, valor, anterior, onChange, step = "1" }) {
 // produto — assim dá pra conferir depois quais métricas geraram aquele
 // custo, ajustar qualquer uma e ver o total recalculado na hora com os
 // preços ATUAIS de material (não um valor congelado do dia do cadastro).
-export default function DetalhamentoCusto({ detalhe, salvo, filamentos, consumiveisCatalogo, resultado, custoConsumiveis, onChange, onIniciar }) {
+export default function DetalhamentoCusto({
+  detalhe,
+  salvo,
+  filamentos,
+  consumiveisCatalogo,
+  resultado,
+  custoConsumiveis,
+  onChange,
+  onIniciar,
+  pecasPorImpressao,
+  pecasPorImpressaoSalvo,
+  onChangePecasPorImpressao,
+}) {
   if (!detalhe) {
     return (
       <div className="hint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -36,11 +48,11 @@ export default function DetalhamentoCusto({ detalhe, salvo, filamentos, consumiv
 
   const set = (campo) => (v) => onChange({ ...detalhe, [campo]: v });
 
-  const pecasPorPlaca = Number(detalhe.pecasPorPlaca) || 1;
+  const pecasPorPlaca = Number(pecasPorImpressao) || 1;
 
   return (
     <div className="detalhe-producao">
-      <CampoNum label="Peças por impressão/chapa" valor={detalhe.pecasPorPlaca ?? 1} anterior={salvo?.pecasPorPlaca} onChange={set("pecasPorPlaca")} />
+      <CampoNum label="Peças por impressão/chapa" valor={pecasPorImpressao ?? 1} anterior={pecasPorImpressaoSalvo} onChange={onChangePecasPorImpressao} />
       {pecasPorPlaca > 1 && (
         <div className="hint" style={{ marginTop: -8 }}>
           Comprimento e tempo abaixo devem ser o TOTAL da chapa com {pecasPorPlaca} peças — o app já divide pra achar o custo de cada uma.

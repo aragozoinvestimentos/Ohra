@@ -275,6 +275,9 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
             Custo do produto
             <Ajuda texto="Escolha um produto já cadastrado pra puxar custo, frete e embalagem automaticamente — ou preencha na mão pra simular algo que ainda não existe no catálogo." />
           </h3>
+          <div className="hint" style={{ marginTop: -4 }}>
+            Três formas de preencher aqui embaixo: preencha na mão, escolha um "Produto cadastrado" abaixo (puxa custo/frete/embalagem salvos dele), ou vá em "Simular Custo de Produção" e use o botão "Usar este custo na Precificação por Canal →" pra trazer um cálculo feito na hora.
+          </div>
           <div className="field">
             <label>Produto cadastrado (opcional)</label>
             <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>

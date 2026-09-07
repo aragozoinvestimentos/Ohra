@@ -27,6 +27,7 @@ const VAZIO = {
   observacao: "",
   embalagemItens: [],
   producao_detalhe: null,
+  pecas_por_impressao: 1,
 };
 
 export default function Produtos({ produtoRecebido, onToast }) {
@@ -38,6 +39,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [detalheSalvo, setDetalheSalvo] = useState(null); // snapshot carregado do banco, só pra comparar "valor anterior"
+  const [pecasPorImpressaoSalvo, setPecasPorImpressaoSalvo] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const [canais, setCanais] = useState([]);
@@ -172,8 +174,10 @@ export default function Produtos({ produtoRecebido, onToast }) {
           observacao: pExistente?.observacao || "",
           embalagemItens: itens,
           producao_detalhe: produtoRecebido.detalhe || null,
+          pecas_por_impressao: produtoRecebido.pecasPorImpressao ?? pExistente?.pecas_por_impressao ?? 1,
         });
         setDetalheSalvo(produtoRecebido.detalhe || null);
+        setPecasPorImpressaoSalvo(produtoRecebido.pecasPorImpressao ?? pExistente?.pecas_por_impressao ?? 1);
       })();
       return;
     }
@@ -183,10 +187,12 @@ export default function Produtos({ produtoRecebido, onToast }) {
       material_nome: produtoRecebido.materialNome || "",
       custo_producao: arredondarPreco(produtoRecebido.custo),
       producao_detalhe: produtoRecebido.detalhe || null,
+      pecas_por_impressao: produtoRecebido.pecasPorImpressao ?? 1,
     });
     // Nada aparece como "alterado" logo depois de trazer da Simular Custo de
     // Produção — o snapshot de referência começa igual ao que acabou de vir.
     setDetalheSalvo(produtoRecebido.detalhe || null);
+    setPecasPorImpressaoSalvo(produtoRecebido.pecasPorImpressao ?? 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtoRecebido?.seq]);
 
@@ -233,15 +239,16 @@ export default function Produtos({ produtoRecebido, onToast }) {
       diasMes: n(d.diasMes),
       modelagem: n(d.modelagem),
       markupRapido: 0,
-      pecasPorPlaca: n(d.pecasPorPlaca) || 1,
+      pecasPorPlaca: n(form.pecas_por_impressao) || 1,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.producao_detalhe, filamentos, custoConsumiveisDetalhe]);
+  }, [form.producao_detalhe, form.pecas_por_impressao, filamentos, custoConsumiveisDetalhe]);
 
   function limpar() {
     setForm(VAZIO);
     setEditandoId(null);
     setDetalheSalvo(null);
+    setPecasPorImpressaoSalvo(null);
   }
 
   function iniciarDetalhamento() {
@@ -265,6 +272,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
       embalagem_padrao: arredondarPreco(usaReceitaEmbalagem ? custoEmbalagemReceita : parseFloat(form.embalagem_padrao) || 0),
       observacao: form.observacao.trim() || null,
       producao_detalhe: form.producao_detalhe || null,
+      pecas_por_impressao: Math.max(1, parseInt(form.pecas_por_impressao, 10) || 1),
       atualizado_em: new Date().toISOString(),
     };
     setSalvando(true);
@@ -324,8 +332,10 @@ export default function Produtos({ produtoRecebido, onToast }) {
       observacao: p.observacao || "",
       embalagemItens: itens,
       producao_detalhe: p.producao_detalhe || null,
+      pecas_por_impressao: p.pecas_por_impressao ?? 1,
     });
     setDetalheSalvo(p.producao_detalhe || null);
+    setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
   }
 
   // Antes de excluir, avisa se o produto está em uso em algum kit — pra não
@@ -369,6 +379,28 @@ export default function Produtos({ produtoRecebido, onToast }) {
     if (canal.tipo === "tiktok") return resolverFaixaTikTok(base).resultado;
     return calcCanalCustom(canal, base);
   }
+
+  // Ranking por retorno: pra cada produto, olha o MELHOR canal (maior lucro
+  // líquido por unidade) e ordena do que mais deixa dinheiro no bolso pro
+  // que menos deixa. Não é ranking de venda/popularidade (isso é assunto pro
+  // futuro ERP) — só quanto cada peça realmente rende pra você quando vendida.
+  const rankingRetorno = useMemo(() => {
+    if (canais.length === 0) return [];
+    return produtos
+      .map((p) => {
+        let melhor = null;
+        for (const c of canais) {
+          const r = lucroPorCanal(p, c);
+          if (r?.lucro != null && (melhor == null || r.lucro > melhor.lucro)) {
+            melhor = { canal: c, lucro: r.lucro, margem: r.margem };
+          }
+        }
+        return melhor ? { produto: p, ...melhor } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.lucro - a.lucro);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produtos, canais, lucratividadeVisao, mlCategoriaVisao, mlTipoAnuncioVisao]);
 
   if (!supabase) {
     return (
@@ -455,6 +487,9 @@ export default function Produtos({ produtoRecebido, onToast }) {
           custoConsumiveis={custoConsumiveisDetalhe}
           onChange={(detalhe) => setForm((prev) => ({ ...prev, producao_detalhe: detalhe }))}
           onIniciar={iniciarDetalhamento}
+          pecasPorImpressao={form.pecas_por_impressao}
+          pecasPorImpressaoSalvo={pecasPorImpressaoSalvo}
+          onChangePecasPorImpressao={(v) => setForm((prev) => ({ ...prev, pecas_por_impressao: v }))}
         />
 
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
@@ -470,13 +505,13 @@ export default function Produtos({ produtoRecebido, onToast }) {
         </div>
       </div>
 
-      <div className="panel">
-        <h3 className="section-title">
-          Produtos cadastrados
-          <Ajuda texto="Custo total já soma produção + frete + embalagem. As colunas de canal mostram quanto realmente cai no seu bolso (lucro líquido por unidade) se você vender pela lucratividade desejada configurada aqui — ajuste pra simular outras metas. Uma faixa que não confere (ícone ⚠) significa que o custo está baixo/alto demais pra fechar de forma consistente naquele canal; confira na Precificação por Canal." />
-        </h3>
-        {canais.length > 0 && (
-          <div className="row3" style={{ marginBottom: 4 }}>
+      {canais.length > 0 && (
+        <div className="panel">
+          <h3 className="section-title">
+            Simulação de lucratividade
+            <Ajuda texto="Essa lucratividade desejada (e categoria/tipo de anúncio do ML) alimenta tanto o Ranking por retorno quanto a coluna de lucro por canal na lista de produtos abaixo — ajuste aqui pra simular outras metas nos dois de uma vez." />
+          </h3>
+          <div className="row3" style={{ marginBottom: 0 }}>
             <div className="field">
               <label>Lucratividade desejada pra simular (%)</label>
               <input
@@ -506,7 +541,49 @@ export default function Produtos({ produtoRecebido, onToast }) {
               </>
             )}
           </div>
-        )}
+        </div>
+      )}
+
+      {canais.length > 0 && rankingRetorno.length > 0 && (
+        <div className="panel">
+          <h3 className="section-title">
+            Ranking por retorno
+            <Ajuda texto="Ordena seus produtos pelo que mais deixa dinheiro no seu bolso por unidade vendida (lucro líquido no melhor canal, com a lucratividade simulada acima) — não é ranking de venda/popularidade, isso fica pro ERP futuro. Serve pra você decidir onde vale mais a pena focar produção e divulgação." />
+          </h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Produto</th>
+                  <th>Melhor canal</th>
+                  <th className="num">Lucro/un.</th>
+                  <th className="num">Margem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rankingRetorno.map((linha, idx) => (
+                  <tr key={linha.produto.id}>
+                    <td>{idx + 1}º</td>
+                    <td>{linha.produto.nome}</td>
+                    <td>{linha.canal.nome}</td>
+                    <td className="num" style={{ color: linha.lucro >= 0 ? "var(--good)" : "var(--bad)", fontWeight: 600 }}>
+                      {BRL(linha.lucro)}
+                    </td>
+                    <td className="num">{linha.margem != null ? PCT(linha.margem) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="panel">
+        <h3 className="section-title">
+          Produtos cadastrados
+          <Ajuda texto="Custo total já soma produção + frete + embalagem. As colunas de canal mostram quanto realmente cai no seu bolso (lucro líquido por unidade) se você vender pela lucratividade desejada configurada acima em 'Simulação de lucratividade'. Uma faixa que não confere (ícone ⚠) significa que o custo está baixo/alto demais pra fechar de forma consistente naquele canal; confira na Precificação por Canal." />
+        </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
         ) : produtos.length === 0 ? (
