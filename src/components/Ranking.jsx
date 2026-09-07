@@ -9,23 +9,32 @@ import {
 } from "../lib/calc.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { totalItens } from "./SeletorItens.jsx";
 import Ajuda from "./Ajuda.jsx";
 
-const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
+// Lucratividade e categoria/tipo de anúncio (ML) usados só pra achar o
+// preço/lucro de referência de cada produto — fixos de propósito. Esta aba
+// é só pra ANALISAR o que já está cadastrado, não pra simular cenários
+// (isso já existe em Precificação por Canal e Comparativo).
+const LUCRATIVIDADE_PADRAO = 20;
+const ML_CATEGORIA_PADRAO = Object.keys(ML_CATEGORY_PCT)[0];
+const ML_TIPO_ANUNCIO_PADRAO = "classico";
 
-// Ranking por retorno: pra cada produto cadastrado, olha o lucro líquido por
-// unidade (quanto cai no bolso de verdade, já descontado tudo) e ordena do
-// que mais retorna pro que menos retorna. De propósito NÃO é ranking de
-// venda/popularidade — isso é assunto pro futuro ERP; aqui é só "onde vale
-// mais a pena focar produção e divulgação" do ponto de vista financeiro.
+// Ranking por retorno: pra cada produto E kit cadastrado, olha o lucro
+// líquido por unidade (quanto cai no bolso de verdade, já descontado tudo,
+// à lucratividade padrão do app) e ordena do que mais retorna pro que menos
+// retorna. De propósito NÃO é ranking de venda/popularidade — isso é
+// assunto pro futuro ERP; aqui é só "onde vale mais a pena focar produção e
+// divulgação" do ponto de vista financeiro.
 export default function Ranking() {
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
+  const [kits, setKits] = useState([]);
+  const [kitProdutosTodos, setKitProdutosTodos] = useState([]);
+  const [kitEmbalagensTodos, setKitEmbalagensTodos] = useState([]);
+  const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [canais, setCanais] = useState([]);
   const [carregando, setCarregando] = useState(true);
-  const [lucratividadeVisao, setLucratividadeVisao] = useState(20);
-  const [mlCategoriaVisao, setMlCategoriaVisao] = useState(ML_CATEGORIAS[0]);
-  const [mlTipoAnuncioVisao, setMlTipoAnuncioVisao] = useState("classico");
   const [canalFiltro, setCanalFiltro] = useState("melhor"); // "melhor" ou o id de um canal específico
 
   useEffect(() => {
@@ -36,11 +45,31 @@ export default function Ranking() {
     let ativo = true;
     async function carregar() {
       try {
-        let query = supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true });
-        if (lojaId) query = query.eq("loja_id", lojaId);
-        const { data, error } = await query;
+        let qp = supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true });
+        let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
+        let qk = supabase.from("kits").select("*").order("nome");
+        let qe = supabase.from("embalagens").select("*").order("nome");
+        if (lojaId) {
+          qp = qp.eq("loja_id", lojaId);
+          qc = qc.eq("loja_id", lojaId);
+          qk = qk.eq("loja_id", lojaId);
+          qe = qe.eq("loja_id", lojaId);
+        }
+        const [rp, rc, rk, re] = await Promise.all([qp, qc, qk, qe]);
         if (!ativo) return;
-        if (!error) setProdutos(data || []);
+        if (!rp.error) setProdutos(rp.data || []);
+        if (!rc.error) setCanais(rc.data || []);
+        if (!rk.error) setKits(rk.data || []);
+        if (!re.error) setEmbalagensCatalogo(re.data || []);
+
+        const kitIds = (rk.data || []).map((k) => k.id);
+        const [kpResp, keResp] = await Promise.all([
+          kitIds.length ? supabase.from("kit_produtos").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
+          kitIds.length ? supabase.from("kit_embalagens").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
+        ]);
+        if (!ativo) return;
+        setKitProdutosTodos(kpResp.data || []);
+        setKitEmbalagensTodos(keResp.data || []);
       } catch {
         // falha de rede — mantém o que já estava carregado
       } finally {
@@ -49,29 +78,13 @@ export default function Ranking() {
     }
     carregar();
     const canal = supabase
-      .channel("ranking-produtos-realtime")
+      .channel("ranking-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
-  useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      let query = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo) return;
-      if (!error) setCanais(data || []);
-    }
-    carregar();
-    const canal = supabase
-      .channel("ranking-canais-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "kit_produtos" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
@@ -85,44 +98,76 @@ export default function Ranking() {
     setCanalFiltro("melhor");
   }, [lojaId]);
 
-  function lucroPorCanal(p, canal) {
-    const custoProduto = arredondarPreco(Number(p.custo_producao) || 0);
-    const frete = arredondarPreco(Number(p.frete_padrao) || 0);
-    const embalagem = arredondarPreco(Number(p.embalagem_padrao) || 0);
-    if (custoProduto + frete + embalagem <= 0) return null;
+  const catalogoProdutosBase = useMemo(
+    () => produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" })),
+    [produtos]
+  );
+  const catalogoEmbalagensBase = useMemo(
+    () => embalagensCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade })),
+    [embalagensCatalogo]
+  );
+
+  function custoKitTotal(k) {
+    const prodItens = kitProdutosTodos.filter((r) => r.kit_id === k.id).map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade }));
+    const embItens = kitEmbalagensTodos.filter((r) => r.kit_id === k.id).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade }));
+    return totalItens(catalogoProdutosBase, prodItens) + totalItens(catalogoEmbalagensBase, embItens);
+  }
+
+  function lucroPorCanal(custoTotal, canal) {
+    if (custoTotal <= 0) return null;
     const base = {
-      custoProduto,
-      frete,
-      embalagem,
-      lucratividadePct: (parseFloat(lucratividadeVisao) || 0) / 100,
+      custoProduto: custoTotal,
+      frete: 0,
+      embalagem: 0,
+      lucratividadePct: LUCRATIVIDADE_PADRAO / 100,
       imposto: canal.imposto_pct || 0,
       custosFixosPct: canal.custos_fixos_pct || 0,
     };
     if (canal.tipo === "shopee") return resolverFaixaShopee(base).resultado;
-    if (canal.tipo === "ml") return resolverFaixaML(mlCategoriaVisao, base, mlTipoAnuncioVisao).resultado;
+    if (canal.tipo === "ml") return resolverFaixaML(ML_CATEGORIA_PADRAO, base, ML_TIPO_ANUNCIO_PADRAO).resultado;
     if (canal.tipo === "tiktok") return resolverFaixaTikTok(base).resultado;
     return calcCanalCustom(canal, base);
   }
+
+  // Lista unificada: cada produto cadastrado com custo total (produção +
+  // frete + embalagem) e cada kit cadastrado com seu custo total (produtos +
+  // embalagem do kit) — as "informações pertinentes" pedidas, num só lugar.
+  const itens = useMemo(() => {
+    const doProdutos = produtos.map((p) => ({
+      id: `p:${p.id}`,
+      nome: p.nome,
+      tipo: "Produto",
+      custoTotal: arredondarPreco((Number(p.custo_producao) || 0) + (Number(p.frete_padrao) || 0) + (Number(p.embalagem_padrao) || 0)),
+    }));
+    const doKits = kits.map((k) => ({
+      id: `k:${k.id}`,
+      nome: k.nome,
+      tipo: "Kit",
+      custoTotal: arredondarPreco(custoKitTotal(k)),
+    }));
+    return [...doProdutos, ...doKits];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produtos, kits, kitProdutosTodos, kitEmbalagensTodos, embalagensCatalogo]);
 
   const ranking = useMemo(() => {
     if (canais.length === 0) return [];
     const canaisAlvo = canalFiltro === "melhor" ? canais : canais.filter((c) => c.id === canalFiltro);
     if (canaisAlvo.length === 0) return [];
-    return produtos
-      .map((p) => {
+    return itens
+      .map((item) => {
         let melhor = null;
         for (const c of canaisAlvo) {
-          const r = lucroPorCanal(p, c);
+          const r = lucroPorCanal(item.custoTotal, c);
           if (r?.lucro != null && (melhor == null || r.lucro > melhor.lucro)) {
             melhor = { canal: c, lucro: r.lucro, margem: r.margem };
           }
         }
-        return melhor ? { produto: p, ...melhor } : null;
+        return melhor ? { item, ...melhor } : null;
       })
       .filter(Boolean)
       .sort((a, b) => b.lucro - a.lucro);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produtos, canais, canalFiltro, lucratividadeVisao, mlCategoriaVisao, mlTipoAnuncioVisao]);
+  }, [itens, canais, canalFiltro]);
 
   if (!supabase) {
     return (
@@ -138,44 +183,17 @@ export default function Ranking() {
       <div className="panel">
         <h3 className="section-title">
           Ranking por retorno
-          <Ajuda texto="Ordena seus produtos pelo que mais deixa dinheiro no seu bolso por unidade vendida (lucro líquido, com a lucratividade simulada abaixo) — não é ranking de venda/popularidade, isso fica pro ERP futuro. Serve pra decidir onde vale mais a pena focar produção e divulgação. Use o filtro de canal pra ver o retorno só num marketplace específico, ou deixe em 'Melhor canal' pra ver o teto de cada produto." />
+          <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade (a ${LUCRATIVIDADE_PADRAO}% de lucratividade, o padrão do app) — não é ranking de venda/popularidade, isso fica pro ERP futuro. É só análise: pra simular outras metas de lucratividade, use Precificação por Canal ou Comparativo. Use o filtro de canal pra ver o retorno só num marketplace específico, ou deixe em 'Melhor canal' pra ver o teto de cada item.`} />
         </h3>
         {canais.length > 0 ? (
-          <div className="row3" style={{ marginBottom: 0 }}>
-            <div className="field">
-              <label>Canal</label>
-              <select value={canalFiltro} onChange={(e) => setCanalFiltro(e.target.value)}>
-                <option value="melhor">Melhor canal (recomendado)</option>
-                {canais.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nome}</option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label>Lucratividade desejada pra simular (%)</label>
-              <input
-                type="number"
-                step="1"
-                value={lucratividadeVisao}
-                onChange={(e) => setLucratividadeVisao(e.target.value)}
-              />
-            </div>
-            {canais.some((c) => c.tipo === "ml") && (canalFiltro === "melhor" || canais.find((c) => c.id === canalFiltro)?.tipo === "ml") && (
-              <div className="field">
-                <label>Categoria/anúncio (Mercado Livre)</label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <select value={mlCategoriaVisao} onChange={(e) => setMlCategoriaVisao(e.target.value)} style={{ flex: 1 }}>
-                    {ML_CATEGORIAS.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                  <select value={mlTipoAnuncioVisao} onChange={(e) => setMlTipoAnuncioVisao(e.target.value)} style={{ flex: 1 }}>
-                    <option value="classico">Clássico</option>
-                    <option value="premium">Premium</option>
-                  </select>
-                </div>
-              </div>
-            )}
+          <div className="field" style={{ marginBottom: 0, maxWidth: 320 }}>
+            <label>Canal</label>
+            <select value={canalFiltro} onChange={(e) => setCanalFiltro(e.target.value)}>
+              <option value="melhor">Melhor canal (recomendado)</option>
+              {canais.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome}</option>
+              ))}
+            </select>
           </div>
         ) : (
           <div className="empty">Nenhum canal ativo cadastrado ainda — vá em Cadastros → Canais.</div>
@@ -188,7 +206,7 @@ export default function Ranking() {
             <div className="empty">Carregando…</div>
           ) : ranking.length === 0 ? (
             <div className="empty">
-              Nenhum produto com custo cadastrado ainda (custo + frete + embalagem precisa ser maior que zero) — cadastre em Cadastros → Produtos.
+              Nenhum produto ou kit com custo cadastrado ainda — cadastre em Cadastros → Produtos ou Cadastros → Kits.
             </div>
           ) : (
             <div className="table-wrap">
@@ -196,7 +214,9 @@ export default function Ranking() {
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>Produto</th>
+                    <th>Item</th>
+                    <th>Tipo</th>
+                    <th className="num">Custo total</th>
                     <th>{canalFiltro === "melhor" ? "Melhor canal" : "Canal"}</th>
                     <th className="num">Lucro/un.</th>
                     <th className="num">Margem</th>
@@ -204,9 +224,11 @@ export default function Ranking() {
                 </thead>
                 <tbody>
                   {ranking.map((linha, idx) => (
-                    <tr key={linha.produto.id}>
+                    <tr key={linha.item.id}>
                       <td>{idx + 1}º</td>
-                      <td>{linha.produto.nome}</td>
+                      <td>{linha.item.nome}</td>
+                      <td><span className="campo-anterior">{linha.item.tipo}</span></td>
+                      <td className="num">{BRL(linha.item.custoTotal)}</td>
                       <td>{linha.canal.nome}</td>
                       <td className="num" style={{ color: linha.lucro >= 0 ? "var(--good)" : "var(--bad)", fontWeight: 600 }}>
                         {BRL(linha.lucro)}

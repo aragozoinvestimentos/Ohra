@@ -3,6 +3,7 @@ import { ML_CATEGORY_PCT, calcCanal, calcCanalCustom, resolverFaixaML, resolverF
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 
@@ -12,7 +13,10 @@ const TIPOS = [
   { key: "desconto", label: "Desconto direto" },
   { key: "progressivo", label: "Progressivo por quantidade" },
   { key: "combo", label: "Combo (leve mais, pague menos)" },
+  { key: "combinada", label: "Venda combinada" },
   { key: "frete", label: "Frete grátis" },
+  { key: "brinde", label: "Brinde / order bump" },
+  { key: "liquidacao", label: "Liquidação com piso de margem" },
 ];
 
 const TIERS_PADRAO = [
@@ -21,13 +25,33 @@ const TIERS_PADRAO = [
   { qtd: 5, desconto: 22 },
 ];
 
+// Linha de comparação padrão em toda promoção: quanto essa configuração
+// deixa a mais (ou a menos) do que vender a(s) mesma(s) peça(s) avulsa(s),
+// no preço/margem normal. Um desconto isolado (Desconto direto, Frete
+// grátis, Brinde) SEMPRE dá negativo aqui — isso é esperado, é o preço de
+// atrair a venda. Já Combo/Venda combinada podem dar positivo, porque a
+// taxa fixa do canal é cobrada uma vez só em vez de uma vez por peça.
+function DeltaAvulso({ delta, sufixo = "" }) {
+  if (delta == null || !isFinite(delta)) return null;
+  const melhor = delta >= 0;
+  return (
+    <div className="hint" style={{ marginTop: 10, marginBottom: 0, color: melhor ? "var(--good)" : "var(--bad)", fontWeight: 600 }}>
+      {melhor ? "▲" : "▼"} {BRL(Math.abs(delta))} {melhor ? "a mais" : "a menos"} do que vender avulso{sufixo}
+    </div>
+  );
+}
+
 export default function Promocoes() {
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
+  const [kits, setKits] = useState([]);
+  const [kitProdutosTodos, setKitProdutosTodos] = useState([]);
+  const [kitEmbalagensTodos, setKitEmbalagensTodos] = useState([]);
+  const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [canais, setCanais] = useState([]);
   const [carregando, setCarregando] = useState(true);
 
-  const [produtoId, setProdutoId] = useState("");
+  const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | `p:<id>` | `k:<id>`
   const [canalId, setCanalId] = useState("");
   const [custoManual, setCustoManual] = useState("");
   const [frete, setFrete] = useState(0);
@@ -43,6 +67,18 @@ export default function Promocoes() {
   const [pagar, setPagar] = useState(2);
   const [freteAbsorvido, setFreteAbsorvido] = useState(12);
 
+  // Venda combinada
+  const [itensCombinada, setItensCombinada] = useState([]);
+  const [descontoCombinada, setDescontoCombinada] = useState(10);
+  const [freteCombinada, setFreteCombinada] = useState(0);
+  const [embalagemCombinada, setEmbalagemCombinada] = useState(0);
+
+  // Liquidação com piso de margem
+  const [margemMinima, setMargemMinima] = useState(10);
+
+  // Brinde / order bump
+  const [brindeId, setBrindeId] = useState("");
+
   useEffect(() => {
     if (!supabase) {
       setCarregando(false);
@@ -53,25 +89,46 @@ export default function Promocoes() {
       try {
         let qp = supabase.from("produtos_cadastro").select("*").order("nome");
         let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
+        let qk = supabase.from("kits").select("*").order("nome");
+        let qe = supabase.from("embalagens").select("*").order("nome");
         if (lojaId) {
           qp = qp.eq("loja_id", lojaId);
           qc = qc.eq("loja_id", lojaId);
+          qk = qk.eq("loja_id", lojaId);
+          qe = qe.eq("loja_id", lojaId);
         }
-        const [rp, rc] = await Promise.all([qp, qc]);
+        const [rp, rc, rk, re] = await Promise.all([qp, qc, qk, qe]);
         if (!ativo) return;
-        // Troca de loja invalida seleções antigas — se o produto/canal
+        // Troca de loja invalida seleções antigas — se o produto/canal/kit
         // escolhido não existir mais na lista desta loja, volta pro padrão
         // (manual/primeiro canal) em vez de manter um id de outra loja preso.
-        if (!rp.error) {
-          const listaP = rp.data || [];
-          setProdutos(listaP);
-          setProdutoId((prev) => (listaP.some((p) => p.id === prev) ? prev : ""));
-        }
+        if (!rp.error) setProdutos(rp.data || []);
         if (!rc.error) {
           const listaC = rc.data || [];
           setCanais(listaC);
           setCanalId((prev) => (listaC.some((c) => c.id === prev) ? prev : listaC[0]?.id || ""));
         }
+        if (!rk.error) setKits(rk.data || []);
+        if (!re.error) setEmbalagensCatalogo(re.data || []);
+
+        const kitIds = (rk.data || []).map((k) => k.id);
+        const [kpResp, keResp] = await Promise.all([
+          kitIds.length ? supabase.from("kit_produtos").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
+          kitIds.length ? supabase.from("kit_embalagens").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
+        ]);
+        if (!ativo) return;
+        setKitProdutosTodos(kpResp.data || []);
+        setKitEmbalagensTodos(keResp.data || []);
+
+        setBaseSelecionada((prev) => {
+          if (!prev) return prev;
+          const [t, id] = prev.split(":");
+          const listaP = rp.data || [];
+          const listaK = rk.data || [];
+          if (t === "p" && !listaP.some((p) => p.id === id)) return "";
+          if (t === "k" && !listaK.some((k) => k.id === id)) return "";
+          return prev;
+        });
       } catch {
         // falha de rede — mantém o que já estava carregado
       } finally {
@@ -79,12 +136,16 @@ export default function Promocoes() {
       }
     }
     carregar();
-    // Sem isso, cadastrar/editar/excluir um produto OU canal em Cadastros só
-    // refletia aqui depois de recarregar a página inteira.
+    // Sem isso, cadastrar/editar/excluir um produto, kit OU canal em
+    // Cadastros só refletia aqui depois de recarregar a página inteira.
     const ch = supabase
       .channel("promocoes-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "kit_produtos" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
@@ -92,24 +153,55 @@ export default function Promocoes() {
     };
   }, [lojaId]);
 
-  const produto = produtos.find((p) => p.id === produtoId) || null;
   const canal = canais.find((c) => c.id === canalId) || null;
 
+  const [tipoBaseSel, idBaseSel] = baseSelecionada ? baseSelecionada.split(":") : [null, null];
+  const produtoBase = tipoBaseSel === "p" ? produtos.find((p) => p.id === idBaseSel) || null : null;
+  const kitBase = tipoBaseSel === "k" ? kits.find((k) => k.id === idBaseSel) || null : null;
+
+  const catalogoProdutosBase = useMemo(
+    () => produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" })),
+    [produtos]
+  );
+  const catalogoEmbalagensBase = useMemo(
+    () => embalagensCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade })),
+    [embalagensCatalogo]
+  );
+
+  function custoKitTotal(k) {
+    const prodItens = kitProdutosTodos.filter((r) => r.kit_id === k.id).map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade }));
+    const embItens = kitEmbalagensTodos.filter((r) => r.kit_id === k.id).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade }));
+    return totalItens(catalogoProdutosBase, prodItens) + totalItens(catalogoEmbalagensBase, embItens);
+  }
+
+  // Ao trocar de produto/kit, preenche frete/embalagem automaticamente — do
+  // cadastro do produto, ou zerado pro kit (a embalagem do kit já entra no
+  // custo dele, tem sua própria receita separada em Cadastros → Kits).
   useEffect(() => {
-    if (!produto) return;
-    setFrete(arredondarPreco(produto.frete_padrao || 0));
-    setEmbalagem(arredondarPreco(produto.embalagem_padrao || 0));
-  }, [produtoId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!baseSelecionada) return;
+    if (tipoBaseSel === "p" && produtoBase) {
+      setFrete(arredondarPreco(produtoBase.frete_padrao || 0));
+      setEmbalagem(arredondarPreco(produtoBase.embalagem_padrao || 0));
+    } else if (tipoBaseSel === "k") {
+      setFrete(0);
+      setEmbalagem(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseSelecionada]);
 
   const n = (v) => {
     const x = Number(v);
     return isFinite(x) ? x : 0;
   };
-  const custoProduto = produto ? arredondarPreco(Number(produto.custo_producao) || 0) : parseFloat(custoManual) || 0;
+  const custoProduto = produtoBase
+    ? arredondarPreco(Number(produtoBase.custo_producao) || 0)
+    : kitBase
+    ? arredondarPreco(custoKitTotal(kitBase))
+    : parseFloat(custoManual) || 0;
 
   // Resolve preço normal (sem promoção) pelo canal escolhido, e guarda as
   // taxas efetivas (comissão/taxa fixa) pra reaproveitar nos cálculos de
-  // combo, que precisam montar um "pedido" com custo/preço diferentes.
+  // combo/combinada, que precisam montar um "pedido" com custo/preço diferentes.
   const base = useMemo(
     () => ({
       custoProduto,
@@ -122,23 +214,32 @@ export default function Promocoes() {
     [custoProduto, frete, embalagem, lucratividade, canal]
   );
 
-  const { normal, feeInfo } = useMemo(() => {
-    if (!canal) return { normal: null, feeInfo: null };
-    if (canal.tipo === "shopee") {
-      const r = resolverFaixaShopee(base);
-      return { normal: r.resultado, feeInfo: { comissaoPct: r.tier.pct, taxaFixa: r.tier.fixo } };
+  // Resolve comissão/taxa fixa efetivas pra um canal+base quaisquer — usada
+  // tanto pro item principal quanto, em Venda combinada, pra cada item da
+  // lista e pro pacote combinado.
+  function resolverComTier(canalObj, baseObj) {
+    if (!canalObj) return null;
+    if (canalObj.tipo === "shopee") {
+      const r = resolverFaixaShopee(baseObj);
+      return { resultado: r.resultado, comissaoPct: r.tier.pct, taxaFixa: r.tier.fixo };
     }
-    if (canal.tipo === "ml") {
-      const r = resolverFaixaML(mlCategoria, base, mlTipoAnuncio);
+    if (canalObj.tipo === "ml") {
+      const r = resolverFaixaML(mlCategoria, baseObj, mlTipoAnuncio);
       const pcts = ML_CATEGORY_PCT[mlCategoria] ?? { classico: 0.13, premium: 0.18 };
       const comissaoPct = mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico;
-      return { normal: r.resultado, feeInfo: { comissaoPct, taxaFixa: r.tier.fixo } };
+      return { resultado: r.resultado, comissaoPct, taxaFixa: r.tier.fixo };
     }
-    if (canal.tipo === "tiktok") {
-      const r = resolverFaixaTikTok(base);
-      return { normal: r.resultado, feeInfo: { comissaoPct: r.tier.pct, taxaFixa: r.tier.fixo } };
+    if (canalObj.tipo === "tiktok") {
+      const r = resolverFaixaTikTok(baseObj);
+      return { resultado: r.resultado, comissaoPct: r.tier.pct, taxaFixa: r.tier.fixo };
     }
-    return { normal: calcCanalCustom(canal, base), feeInfo: { comissaoPct: canal.comissao_pct || 0, taxaFixa: canal.taxa_fixa || 0 } };
+    return { resultado: calcCanalCustom(canalObj, baseObj), comissaoPct: canalObj.comissao_pct || 0, taxaFixa: canalObj.taxa_fixa || 0 };
+  }
+
+  const { normal, feeInfo } = useMemo(() => {
+    if (!canal) return { normal: null, feeInfo: null };
+    const r = resolverComTier(canal, base);
+    return { normal: r.resultado, feeInfo: { comissaoPct: r.comissaoPct, taxaFixa: r.taxaFixa } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canal, base, mlCategoria, mlTipoAnuncio]);
 
@@ -151,7 +252,7 @@ export default function Promocoes() {
     return tiers.map((t) => {
       const precoUnit = normal.preco * (1 - (n(t.desconto) || 0) / 100);
       const lucroUnit = normal.lucroEm(precoUnit);
-      return { ...t, precoUnit, lucroUnit, margemUnit: precoUnit > 0 ? lucroUnit / precoUnit : null };
+      return { ...t, precoUnit, lucroUnit, margemUnit: precoUnit > 0 ? lucroUnit / precoUnit : null, deltaVsAvulso: lucroUnit - normal.lucro };
     });
   }, [normal, tiers]);
 
@@ -181,14 +282,150 @@ export default function Promocoes() {
       precoUnidadeEfetivo: precoKit / L,
       lucroUnidadeEfetivo: lucroKit / L,
       economiaTaxaFixa: feeInfo.taxaFixa * (L - 1),
+      deltaVsAvulso: lucroKit - normal.lucro * L,
     };
   }, [normal, feeInfo, levar, pagar, custoProduto, embalagem, frete, base]);
 
   const freteGratis = useMemo(() => {
     if (!normal) return null;
     const lucro = normal.lucro - (n(freteAbsorvido) || 0);
-    return { lucro, margem: normal.preco > 0 ? lucro / normal.preco : null };
+    return { lucro, margem: normal.preco > 0 ? lucro / normal.preco : null, delta: lucro - normal.lucro };
   }, [normal, freteAbsorvido]);
+
+  const liquidacao = useMemo(() => {
+    if (!normal || !feeInfo) return null;
+    const alvo = (parseFloat(margemMinima) || 0) / 100;
+    const denom = 1 - normal.totalPct - alvo;
+    if (denom <= 0) return { possivel: false };
+    const precoMinimo = (feeInfo.taxaFixa + normal.custoTotal) / denom;
+    const lucroNoPiso = normal.lucroEm(precoMinimo);
+    const descontoMaximo = normal.preco > 0 ? 1 - precoMinimo / normal.preco : null;
+    return { possivel: true, precoMinimo, lucroNoPiso, descontoMaximo, delta: lucroNoPiso - normal.lucro };
+  }, [normal, feeInfo, margemMinima]);
+
+  const brinde = produtos.find((p) => p.id === brindeId) || null;
+  const brindeResultado = useMemo(() => {
+    if (!normal || !brinde) return null;
+    const custoBrinde = arredondarPreco((Number(brinde.custo_producao) || 0) + (Number(brinde.embalagem_padrao) || 0));
+    const lucroComBrinde = normal.lucro - custoBrinde;
+    return {
+      custoBrinde,
+      lucroComBrinde,
+      margemComBrinde: normal.preco > 0 ? lucroComBrinde / normal.preco : null,
+      delta: lucroComBrinde - normal.lucro,
+    };
+  }, [normal, brinde]);
+
+  // Catálogo pro seletor de "Venda combinada" — produtos e kits juntos,
+  // marcados na hora de exibir; o "preço" aqui é o custo de cada um (mesma
+  // convenção usada em Kits.jsx), só pra calcular o subtotal em custo.
+  const catalogoCombinacao = useMemo(() => {
+    const p = produtos.map((x) => ({ id: `p:${x.id}`, nome: x.nome, preco: Number(x.custo_producao) || 0, unidade: "un" }));
+    const k = kits.map((x) => ({ id: `k:${x.id}`, nome: `[Kit] ${x.nome}`, preco: custoKitTotal(x), unidade: "un" }));
+    return [...p, ...k];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produtos, kits, kitProdutosTodos, kitEmbalagensTodos, embalagensCatalogo]);
+
+  function custoBaseDoItem(idPrefixado) {
+    const [t, id] = idPrefixado.split(":");
+    if (t === "p") {
+      const p = produtos.find((x) => x.id === id);
+      return p ? arredondarPreco(Number(p.custo_producao) || 0) : 0;
+    }
+    const k = kits.find((x) => x.id === id);
+    return k ? arredondarPreco(custoKitTotal(k)) : 0;
+  }
+
+  // "Se vendido avulso" de um item da combinação: resolve o preço/lucro dele
+  // sozinho, com o frete/embalagem PRÓPRIO (produto) ou já embutido (kit) —
+  // é a referência de "vender em pedidos separados" pra comparar com o pacote.
+  function avulsoItem(idPrefixado) {
+    const [t, id] = idPrefixado.split(":");
+    if (!canal) return null;
+    let custoP, freteP, embP;
+    if (t === "p") {
+      const p = produtos.find((x) => x.id === id);
+      if (!p) return null;
+      custoP = arredondarPreco(Number(p.custo_producao) || 0);
+      freteP = arredondarPreco(Number(p.frete_padrao) || 0);
+      embP = arredondarPreco(Number(p.embalagem_padrao) || 0);
+    } else {
+      const k = kits.find((x) => x.id === id);
+      if (!k) return null;
+      custoP = arredondarPreco(custoKitTotal(k));
+      freteP = 0;
+      embP = 0;
+    }
+    const baseItem = {
+      custoProduto: custoP,
+      frete: freteP,
+      embalagem: embP,
+      lucratividadePct: n(lucratividade) / 100,
+      imposto: canal.imposto_pct || 0,
+      custosFixosPct: canal.custos_fixos_pct || 0,
+    };
+    const r = resolverComTier(canal, baseItem);
+    if (!r?.resultado?.preco) return null;
+    return { preco: r.resultado.preco, lucro: r.resultado.lucro };
+  }
+
+  const combinada = useMemo(() => {
+    if (!canal) return null;
+    const itensValidos = itensCombinada.filter((it) => it.itemId && (Number(it.quantidade) || 0) > 0);
+    if (itensValidos.length === 0) return null;
+
+    let precoSomaAvulso = 0;
+    let lucroSomaAvulso = 0;
+    let custoItensTotal = 0;
+    let totalPecas = 0;
+    for (const it of itensValidos) {
+      const qtd = Number(it.quantidade) || 0;
+      const av = avulsoItem(it.itemId);
+      if (av) {
+        precoSomaAvulso += av.preco * qtd;
+        lucroSomaAvulso += av.lucro * qtd;
+      }
+      custoItensTotal += custoBaseDoItem(it.itemId) * qtd;
+      totalPecas += qtd;
+    }
+    if (totalPecas === 0) return null;
+
+    const baseCombinadaTier = {
+      custoProduto: custoItensTotal,
+      frete: n(freteCombinada),
+      embalagem: n(embalagemCombinada),
+      lucratividadePct: n(lucratividade) / 100,
+      imposto: canal.imposto_pct || 0,
+      custosFixosPct: canal.custos_fixos_pct || 0,
+    };
+    const rTier = resolverComTier(canal, baseCombinadaTier);
+    if (!rTier?.resultado) return null;
+    const resultadoCombinada = calcCanal({
+      imposto: canal.imposto_pct || 0,
+      comissaoPct: rTier.comissaoPct,
+      taxaFixa: rTier.taxaFixa,
+      custosFixosPct: canal.custos_fixos_pct || 0,
+      lucratividadePct: n(lucratividade) / 100,
+      custoProduto: custoItensTotal,
+      frete: n(freteCombinada),
+      embalagem: n(embalagemCombinada),
+    });
+    const precoCombinado = precoSomaAvulso * (1 - (n(descontoCombinada) || 0) / 100);
+    const lucroCombinado = resultadoCombinada.lucroEm(precoCombinado);
+
+    return {
+      totalPecas,
+      pedidos: itensValidos.length,
+      precoSomaAvulso,
+      lucroSomaAvulso,
+      precoCombinado,
+      lucroCombinado,
+      margemCombinado: precoCombinado > 0 ? lucroCombinado / precoCombinado : null,
+      lucroUnidadeEfetivo: lucroCombinado / totalPecas,
+      deltaVsAvulso: lucroCombinado - lucroSomaAvulso,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canal, itensCombinada, freteCombinada, embalagemCombinada, descontoCombinada, lucratividade, produtos, kits, kitProdutosTodos, kitEmbalagensTodos, mlCategoria, mlTipoAnuncio]);
 
   if (!supabase) {
     return (
@@ -218,27 +455,42 @@ export default function Promocoes() {
         <div>
           <div className="panel">
             <h3 className="section-title">
-              Produto e canal
+              {tipo === "combinada" ? "Canal" : "Produto e canal"}
               <Ajuda texto="Simula o impacto de uma promoção no lucro, a partir do preço normal calculado pro canal escolhido (mesmas taxas de Cadastros → Canais)." />
             </h3>
             {carregando ? (
               <div className="empty">Carregando…</div>
             ) : (
               <>
-                <div className="field">
-                  <label>Produto cadastrado</label>
-                  <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
-                    <option value="">— usar custo manual —</option>
-                    {produtos.map((p) => (
-                      <option key={p.id} value={p.id}>{p.nome}</option>
-                    ))}
-                  </select>
-                </div>
-                {!produtoId && (
-                  <div className="field">
-                    <label>Custo de produção (R$)</label>
-                    <input type="number" step="0.01" value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
-                  </div>
+                {tipo !== "combinada" && (
+                  <>
+                    <div className="field">
+                      <label>Produto ou kit cadastrado</label>
+                      <select value={baseSelecionada} onChange={(e) => setBaseSelecionada(e.target.value)}>
+                        <option value="">— usar custo manual —</option>
+                        {produtos.length > 0 && (
+                          <optgroup label="Produtos">
+                            {produtos.map((p) => (
+                              <option key={`p:${p.id}`} value={`p:${p.id}`}>{p.nome}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {kits.length > 0 && (
+                          <optgroup label="Kits">
+                            {kits.map((k) => (
+                              <option key={`k:${k.id}`} value={`k:${k.id}`}>{k.nome}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </div>
+                    {!baseSelecionada && (
+                      <div className="field">
+                        <label>Custo de produção (R$)</label>
+                        <input type="number" step="0.01" value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="field">
                   <label>Canal</label>
@@ -268,20 +520,26 @@ export default function Promocoes() {
                     </div>
                   </div>
                 )}
-                <div className="row2">
-                  <div className="field">
-                    <label>Frete extra por sua conta (R$)</label>
-                    <input type="number" step="0.01" value={frete} onChange={(e) => setFrete(e.target.value)} />
-                  </div>
-                  <div className="field">
-                    <label>Embalagem (R$)</label>
-                    <input type="number" step="0.01" value={embalagem} onChange={(e) => setEmbalagem(e.target.value)} />
-                  </div>
-                </div>
-                {produto && (
-                  <div className="hint" style={{ marginTop: -8 }}>
-                    Preenchido automaticamente com a embalagem já cadastrada nesse produto — não precisa somar de novo.
-                  </div>
+                {tipo !== "combinada" && (
+                  <>
+                    <div className="row2">
+                      <div className="field">
+                        <label>Frete extra por sua conta (R$)</label>
+                        <input type="number" step="0.01" value={frete} onChange={(e) => setFrete(e.target.value)} />
+                      </div>
+                      <div className="field">
+                        <label>Embalagem (R$)</label>
+                        <input type="number" step="0.01" value={embalagem} onChange={(e) => setEmbalagem(e.target.value)} />
+                      </div>
+                    </div>
+                    {(produtoBase || kitBase) && (
+                      <div className="hint" style={{ marginTop: -8 }}>
+                        {produtoBase
+                          ? "Preenchido automaticamente com a embalagem já cadastrada nesse produto — não precisa somar de novo."
+                          : "Kit selecionado: a embalagem já está no custo dele (receita própria em Cadastros → Kits) — deixe zerado, a menos que essa promoção precise de embalagem extra."}
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="field" style={{ marginBottom: 0 }}>
                   <label>Lucratividade líquida desejada (%)</label>
@@ -291,7 +549,7 @@ export default function Promocoes() {
             )}
           </div>
 
-          {normal && (
+          {normal && tipo !== "combinada" && (
             <div className="panel">
               <h3>Preço normal (sem promoção)</h3>
               <div className="kv"><span className="k">Preço</span><span className="v">{BRL(normal.preco)}</span></div>
@@ -307,7 +565,54 @@ export default function Promocoes() {
         </div>
 
         <div>
-          {!normal ? (
+          {tipo === "combinada" ? (
+            <div className="panel">
+              <h3 className="section-title">
+                Venda combinada
+                <Ajuda texto="Combine produtos e/ou kits diferentes num pedido só. A taxa fixa do canal é cobrada uma vez (não por item), então dá pra oferecer desconto sobre a soma dos preços avulsos e ainda assim sair ganhando — o comparativo abaixo mostra se esse desconto está valendo a pena ou comendo demais do lucro." />
+              </h3>
+              {!canal ? (
+                <div className="empty">Escolha um canal cadastrado pra simular.</div>
+              ) : (
+                <>
+                  <SeletorItens
+                    catalogo={catalogoCombinacao}
+                    itens={itensCombinada}
+                    onChange={setItensCombinada}
+                    rotuloVazio="Cadastre produtos ou kits primeiro pra combinar (Cadastros → Produtos / Kits)."
+                  />
+                  <div className="row2" style={{ marginTop: 12 }}>
+                    <div className="field">
+                      <label>Frete da combinação (R$)</label>
+                      <input type="number" step="0.01" value={freteCombinada} onChange={(e) => setFreteCombinada(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label>Embalagem da combinação (R$)</label>
+                      <input type="number" step="0.01" value={embalagemCombinada} onChange={(e) => setEmbalagemCombinada(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>Desconto sobre a soma dos preços avulsos (%)</label>
+                    <input type="number" step="1" value={descontoCombinada} onChange={(e) => setDescontoCombinada(e.target.value)} />
+                  </div>
+                  {combinada && (
+                    <>
+                      <div className="kv"><span className="k">Vendendo separado ({combinada.totalPecas} peças em {combinada.pedidos} pedidos)</span><span className="v">{BRL(combinada.precoSomaAvulso)}</span></div>
+                      <div className="kv"><span className="k">Preço combinado (com desconto)</span><span className="v">{BRL(combinada.precoCombinado)}</span></div>
+                      <div className="kv total"><span className="k">Lucro combinado</span><span className="v">{BRL(combinada.lucroCombinado)}</span></div>
+                      <div className="kv"><span className="k">Lucro efetivo por peça</span><span className="v">{BRL(combinada.lucroUnidadeEfetivo)}</span></div>
+                      <div className="kv">
+                        <span className="k">Margem combinada</span>
+                        <span className="v">{combinada.margemCombinado != null ? PCT(combinada.margemCombinado) : "—"}</span>
+                      </div>
+                      <Termometro valor={combinada.margemCombinado || 0} meta={n(lucratividade) / 100} />
+                      <DeltaAvulso delta={combinada.deltaVsAvulso} sufixo=" (total do pedido, vs. vender tudo separado)" />
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          ) : !normal ? (
             <div className="panel"><div className="empty">Escolha um canal cadastrado pra simular.</div></div>
           ) : tipo === "desconto" ? (
             <div className="panel">
@@ -326,6 +631,7 @@ export default function Promocoes() {
                     <div className="kv total"><span className="k">Lucro com desconto</span><span className="v">{BRL(lucroPromo)}</span></div>
                     <div className="kv"><span className="k">Margem com desconto</span><span className="v">{margemPromo != null ? PCT(margemPromo) : "—"}</span></div>
                     <Termometro valor={margemPromo || 0} meta={n(lucratividade) / 100} />
+                    <DeltaAvulso delta={lucroPromo - normal.lucro} />
                   </>
                 );
               })()}
@@ -345,6 +651,7 @@ export default function Promocoes() {
                       <th className="num">Preço/un.</th>
                       <th className="num">Lucro/un.</th>
                       <th className="num">Margem</th>
+                      <th className="num">Vs. avulso</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -372,6 +679,9 @@ export default function Promocoes() {
                         <td className="num">{BRL(t.precoUnit)}</td>
                         <td className="num">{BRL(t.lucroUnit)}</td>
                         <td className="num">{t.margemUnit != null ? PCT(t.margemUnit) : "—"}</td>
+                        <td className="num" style={{ color: t.deltaVsAvulso >= 0 ? "var(--good)" : "var(--bad)" }}>
+                          {t.deltaVsAvulso >= 0 ? "+" : ""}{BRL(t.deltaVsAvulso)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -408,6 +718,60 @@ export default function Promocoes() {
                   <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
                     Economia de taxa fixa por vender junto: {BRL(combo.economiaTaxaFixa)} (comparado a vender as {combo.L} unidades em pedidos separados).
                   </div>
+                  <DeltaAvulso delta={combo.deltaVsAvulso} sufixo={` (total do pedido, vs. vender ${combo.L} unidades avulsas)`} />
+                </>
+              )}
+            </div>
+          ) : tipo === "liquidacao" ? (
+            <div className="panel">
+              <h3 className="section-title">
+                Liquidação com piso de margem
+                <Ajuda texto="Em vez de chutar um desconto e ver o que sobra, você define a margem mínima que aceita — o app calcula o maior desconto possível sem furar esse piso. Útil pra saída de estoque sem vender no prejuízo." />
+              </h3>
+              <div className="field">
+                <label>Margem mínima aceitável (%)</label>
+                <input type="number" step="1" value={margemMinima} onChange={(e) => setMargemMinima(e.target.value)} />
+              </div>
+              {liquidacao && !liquidacao.possivel ? (
+                <div className="empty">Essa margem mínima é maior que o teto possível pra esse canal/custo — reduza o piso.</div>
+              ) : liquidacao ? (
+                <>
+                  <div className="kv"><span className="k">Preço mínimo permitido</span><span className="v">{BRL(liquidacao.precoMinimo)}</span></div>
+                  <div className="kv">
+                    <span className="k">Desconto máximo sobre o preço normal</span>
+                    <span className="v">{liquidacao.descontoMaximo != null ? PCT(liquidacao.descontoMaximo) : "—"}</span>
+                  </div>
+                  <div className="kv total"><span className="k">Lucro nesse piso</span><span className="v">{BRL(liquidacao.lucroNoPiso)}</span></div>
+                  <DeltaAvulso delta={liquidacao.delta} />
+                </>
+              ) : null}
+            </div>
+          ) : tipo === "brinde" ? (
+            <div className="panel">
+              <h3 className="section-title">
+                Brinde / order bump
+                <Ajuda texto="Vende o produto principal pelo preço normal, mas inclui de brinde outro produto cadastrado (geralmente um item barato) — calcula o quanto isso reduz o lucro, sem mudar o preço nem a taxa do canal." />
+              </h3>
+              <div className="field">
+                <label>Brinde (produto cadastrado)</label>
+                <select value={brindeId} onChange={(e) => setBrindeId(e.target.value)}>
+                  <option value="">— escolha —</option>
+                  {produtos.filter((p) => p.id !== produtoBase?.id).map((p) => (
+                    <option key={p.id} value={p.id}>{p.nome}</option>
+                  ))}
+                </select>
+              </div>
+              {brindeResultado && (
+                <>
+                  <div className="kv"><span className="k">Custo do brinde</span><span className="v">{BRL(brindeResultado.custoBrinde)}</span></div>
+                  <div className="kv"><span className="k">Preço (não muda)</span><span className="v">{BRL(normal.preco)}</span></div>
+                  <div className="kv total"><span className="k">Lucro com o brinde incluso</span><span className="v">{BRL(brindeResultado.lucroComBrinde)}</span></div>
+                  <div className="kv">
+                    <span className="k">Margem com o brinde</span>
+                    <span className="v">{brindeResultado.margemComBrinde != null ? PCT(brindeResultado.margemComBrinde) : "—"}</span>
+                  </div>
+                  <Termometro valor={brindeResultado.margemComBrinde || 0} meta={n(lucratividade) / 100} />
+                  <DeltaAvulso delta={brindeResultado.delta} />
                 </>
               )}
             </div>
@@ -430,6 +794,7 @@ export default function Promocoes() {
                   <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
                     Frete grátis costuma aumentar conversão e ranking no marketplace — vale comparar esse lucro com o ganho esperado em volume de vendas.
                   </div>
+                  <DeltaAvulso delta={freteGratis.delta} />
                 </>
               )}
             </div>
