@@ -60,11 +60,14 @@ export default function Historico({ onToast }) {
     return isFinite(n) ? n : null;
   }
 
-  // Preço, lucro e margem sempre se relacionam por margem = lucro / preço —
-  // então mexer numa reflete nas outras duas ao vivo, sem precisar salvar
-  // pra ver o resultado. Convenção: editar o Preço recalcula o Lucro
-  // mantendo a Margem que já estava; editar o Lucro ou a Margem recalcula a
-  // outra mantendo o Preço (que é o que realmente foi cobrado do cliente).
+  // Preço e Margem são as duas entradas editáveis; o Lucro é sempre
+  // CALCULADO a partir delas (lucro = preço × margem) — igual aos outros
+  // calculadores do app (Precificação por Canal, Orçamento). Não dá pra
+  // deixar os três "soltos" ao mesmo tempo: com só uma fórmula ligando os
+  // três (margem = lucro / preço), editar um teria que assumir qual dos
+  // outros dois fica fixo — então travamos o Lucro como resultado, nunca
+  // como entrada, pra não ter ambiguidade. Editar o Preço recalcula o Lucro
+  // mantendo a Margem; editar a Margem recalcula o Lucro mantendo o Preço.
   function editarPreco(valor) {
     setEdicao((prev) => {
       const precoNum = numOuNull(valor);
@@ -73,17 +76,6 @@ export default function Historico({ onToast }) {
         return { ...prev, preco: valor, lucro: (precoNum * (margemNum / 100)).toFixed(2) };
       }
       return { ...prev, preco: valor };
-    });
-  }
-
-  function editarLucro(valor) {
-    setEdicao((prev) => {
-      const lucroNum = numOuNull(valor);
-      const precoNum = numOuNull(prev.preco);
-      if (lucroNum != null && precoNum != null && precoNum > 0) {
-        return { ...prev, lucro: valor, margem: ((lucroNum / precoNum) * 100).toFixed(1) };
-      }
-      return { ...prev, lucro: valor };
     });
   }
 
@@ -259,36 +251,24 @@ export default function Historico({ onToast }) {
             </span>
             <span className="v">{BRL(editAlvo.custoTotal)}</span>
           </div>
-          <div className="field">
-            <label>
-              Preço de venda (R$)
-              <Ajuda texto="O preço final que aparece pro cliente nesse canal. Mudar aqui recalcula o Lucro na hora, mantendo a Margem atual." />
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              autoFocus
-              value={edicao.preco}
-              onChange={(e) => editarPreco(e.target.value)}
-            />
-          </div>
           <div className="row2">
             <div className="field">
               <label>
-                Lucro (R$)
-                <Ajuda texto="Quanto sobra líquido nessa venda, já descontado o custo e as taxas/comissão do canal. Mudar aqui recalcula a Margem na hora, mantendo o Preço atual." />
+                Preço de venda (R$)
+                <Ajuda texto="O preço final que aparece pro cliente nesse canal." />
               </label>
               <input
                 type="number"
                 step="0.01"
-                value={edicao.lucro}
-                onChange={(e) => editarLucro(e.target.value)}
+                autoFocus
+                value={edicao.preco}
+                onChange={(e) => editarPreco(e.target.value)}
               />
             </div>
             <div className="field">
               <label>
                 Margem (%)
-                <Ajuda texto="O lucro dividido pelo preço de venda, em porcentagem. Mudar aqui recalcula o Lucro na hora, mantendo o Preço atual." />
+                <Ajuda texto="O lucro dividido pelo preço de venda, em porcentagem — a meta líquida que você quer garantir nessa venda." />
               </label>
               <input
                 type="number"
@@ -297,6 +277,13 @@ export default function Historico({ onToast }) {
                 onChange={(e) => editarMargem(e.target.value)}
               />
             </div>
+          </div>
+          <div className="destaque-lucro">
+            <span className="k">
+              Lucro
+              <span className="k-sub">calculado a partir do preço e da margem acima</span>
+            </span>
+            <span className="v">{numOuNull(edicao.lucro) != null ? BRL(numOuNull(edicao.lucro)) : "—"}</span>
           </div>
         </EditarDialog>
       )}
