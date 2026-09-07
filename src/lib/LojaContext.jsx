@@ -168,12 +168,13 @@ export function LojaProvider({ children }) {
     // sentido pedir de volta na mesma hora.
     if (pin) marcarDesbloqueada(data.id);
     selecionar(data.id);
-    // Toda loja nova já nasce com Shopee e Mercado Livre cadastrados —
+    // Toda loja nova já nasce com Shopee, Mercado Livre e Shein cadastrados —
     // mesmo padrão da loja default (item ajustável depois em Canais).
     try {
       await supabase.from("canais").insert([
         { nome: "Shopee", tipo: "shopee", loja_id: data.id },
         { nome: "Mercado Livre", tipo: "ml", loja_id: data.id },
+        { nome: "Shein", tipo: "shein", loja_id: data.id },
       ]);
     } catch {
       // falha de rede ao semear os canais padrão — a loja já foi criada;
