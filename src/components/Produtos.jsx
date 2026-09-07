@@ -1,22 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { BRL, PCT, arredondarPreco } from "../lib/format.js";
-import {
-  calcProducao,
-  DEFAULTS_PRODUCAO,
-  ML_CATEGORY_PCT,
-  resolverFaixaShopee,
-  resolverFaixaML,
-  resolverFaixaTikTok,
-  calcCanalCustom,
-} from "../lib/calc.js";
+import { BRL, arredondarPreco } from "../lib/format.js";
+import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import DetalhamentoCusto from "./DetalhamentoCusto.jsx";
 import Ajuda from "./Ajuda.jsx";
-
-const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
 const VAZIO = {
   nome: "",
@@ -42,10 +32,6 @@ export default function Produtos({ produtoRecebido, onToast }) {
   const [pecasPorImpressaoSalvo, setPecasPorImpressaoSalvo] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
-  const [canais, setCanais] = useState([]);
-  const [lucratividadeVisao, setLucratividadeVisao] = useState(20);
-  const [mlCategoriaVisao, setMlCategoriaVisao] = useState(ML_CATEGORIAS[0]);
-  const [mlTipoAnuncioVisao, setMlTipoAnuncioVisao] = useState("classico");
 
   useEffect(() => {
     if (!supabase) {
@@ -92,29 +78,6 @@ export default function Produtos({ produtoRecebido, onToast }) {
     const canal = supabase
       .channel("produtos-embalagens-catalogo-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
-  // Canais ativos, pra montar a coluna "quanto cai no bolso" por canal na
-  // lista de produtos cadastrados (mesma lógica de faixas do Comparativo).
-  useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      let query = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo) return;
-      if (!error) setCanais(data || []);
-    }
-    carregar();
-    const canal = supabase
-      .channel("produtos-canais-catalogo-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
@@ -358,28 +321,6 @@ export default function Produtos({ produtoRecebido, onToast }) {
     if (editandoId === id) limpar();
   }
 
-  // Pra cada produto cadastrado, calcula o lucro (quanto cai no bolso) em
-  // cada canal ativo, usando a mesma lógica de faixas oficiais do
-  // Comparativo — só que aqui pra todos os produtos de uma vez.
-  function lucroPorCanal(p, canal) {
-    const custoProduto = arredondarPreco(Number(p.custo_producao) || 0);
-    const frete = arredondarPreco(Number(p.frete_padrao) || 0);
-    const embalagem = arredondarPreco(Number(p.embalagem_padrao) || 0);
-    if (custoProduto + frete + embalagem <= 0) return null;
-    const base = {
-      custoProduto,
-      frete,
-      embalagem,
-      lucratividadePct: (parseFloat(lucratividadeVisao) || 0) / 100,
-      imposto: canal.imposto_pct || 0,
-      custosFixosPct: canal.custos_fixos_pct || 0,
-    };
-    if (canal.tipo === "shopee") return resolverFaixaShopee(base).resultado;
-    if (canal.tipo === "ml") return resolverFaixaML(mlCategoriaVisao, base, mlTipoAnuncioVisao).resultado;
-    if (canal.tipo === "tiktok") return resolverFaixaTikTok(base).resultado;
-    return calcCanalCustom(canal, base);
-  }
-
   if (!supabase) {
     return (
       <div className="panel">
@@ -483,49 +424,10 @@ export default function Produtos({ produtoRecebido, onToast }) {
         </div>
       </div>
 
-      {canais.length > 0 && (
-        <div className="panel">
-          <h3 className="section-title">
-            Simulação de lucratividade
-            <Ajuda texto="Essa lucratividade desejada (e categoria/tipo de anúncio do ML) alimenta a coluna de lucro por canal na lista de produtos abaixo — ajuste aqui pra simular outra meta. O Ranking por retorno (aba Gestão) tem sua própria simulação, independente dessa." />
-          </h3>
-          <div className="row3" style={{ marginBottom: 0 }}>
-            <div className="field">
-              <label>Lucratividade desejada pra simular (%)</label>
-              <input
-                type="number"
-                step="1"
-                value={lucratividadeVisao}
-                onChange={(e) => setLucratividadeVisao(e.target.value)}
-              />
-            </div>
-            {canais.some((c) => c.tipo === "ml") && (
-              <>
-                <div className="field">
-                  <label>Categoria (Mercado Livre)</label>
-                  <select value={mlCategoriaVisao} onChange={(e) => setMlCategoriaVisao(e.target.value)}>
-                    {ML_CATEGORIAS.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Tipo de anúncio (ML)</label>
-                  <select value={mlTipoAnuncioVisao} onChange={(e) => setMlTipoAnuncioVisao(e.target.value)}>
-                    <option value="classico">Clássico</option>
-                    <option value="premium">Premium</option>
-                  </select>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
       <div className="panel">
         <h3 className="section-title">
           Produtos cadastrados
-          <Ajuda texto="Custo total já soma produção + frete + embalagem. As colunas de canal mostram quanto realmente cai no seu bolso (lucro líquido por unidade) se você vender pela lucratividade desejada configurada acima em 'Simulação de lucratividade'. Uma faixa que não confere (ícone ⚠) significa que o custo está baixo/alto demais pra fechar de forma consistente naquele canal; confira na Precificação por Canal." />
+          <Ajuda texto="Custo total já soma produção + frete + embalagem. Pra ver o lucro por canal de tudo que está cadastrado, use o Ranking por retorno (aba Gestão) — e pra ver preços reais já definidos por canal, use Preços por Canal (aba Gestão)." />
         </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
@@ -538,9 +440,6 @@ export default function Produtos({ produtoRecebido, onToast }) {
                 <tr>
                   <th>Produto</th>
                   <th className="num">Custo total</th>
-                  {canais.map((c) => (
-                    <th key={c.id} className="num">{c.nome}</th>
-                  ))}
                   <th></th>
                 </tr>
               </thead>
@@ -556,29 +455,6 @@ export default function Produtos({ produtoRecebido, onToast }) {
                         {p.material_nome && <div className="campo-anterior">{p.material_nome}</div>}
                       </td>
                       <td className="num">{BRL(custoTotal)}</td>
-                      {canais.map((c) => {
-                        const r = lucroPorCanal(p, c);
-                        const inconsistente = c.tipo !== "custom" && r?.faixaOk === false;
-                        return (
-                          <td key={c.id} className="num">
-                            {r == null ? (
-                              "—"
-                            ) : (
-                              <>
-                                <div style={{ color: r.lucro >= 0 ? "var(--good)" : "var(--bad)", fontWeight: 600 }}>
-                                  {BRL(r.lucro)}
-                                  {inconsistente && (
-                                    <span title="Faixa não confere — custo baixo/alto demais pra esse canal fechar de forma consistente. Confira na Precificação por Canal.">
-                                      {" "}⚠
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="campo-anterior">{r.margem != null ? PCT(r.margem) : "—"}</div>
-                              </>
-                            )}
-                          </td>
-                        );
-                      })}
                       <td style={{ whiteSpace: "nowrap" }}>
                         <button className="del" title="Editar" onClick={() => editar(p)}>✎</button>
                         <button className="del" title="Excluir" onClick={() => pedirExclusao(p)}>×</button>
@@ -588,11 +464,6 @@ export default function Produtos({ produtoRecebido, onToast }) {
                 })}
               </tbody>
             </table>
-          </div>
-        )}
-        {canais.length === 0 && !carregando && (
-          <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-            Nenhum canal cadastrado ainda — vá em Cadastros → Canais pra ver o lucro por canal aqui também.
           </div>
         )}
       </div>

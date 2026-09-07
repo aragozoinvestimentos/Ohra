@@ -2,150 +2,145 @@ import { useEffect, useState } from "react";
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useRankingData } from "../hooks/useRankingData.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import Ajuda from "./Ajuda.jsx";
 
+// Antes esta aba lia uma tabela solta ("produtos") que só guardava um
+// instantâneo do que foi salvo em Precificação por Canal, sem ligação real
+// com o cadastro. Agora ela é uma grade: cada linha é um produto ou kit
+// cadastrado, cada coluna é um canal cadastrado, e cada célula é o preço
+// (com lucro e margem) mais recente salvo pra essa combinação — preenchida
+// automaticamente quando alguém salva em Precificação por Canal.
 export default function Historico({ onToast }) {
   const { lojaId } = useLoja();
-  const [produtos, setProdutos] = useState([]);
-  const [carregando, setCarregando] = useState(true);
-  const [editandoId, setEditandoId] = useState(null);
-  const [nomeEditado, setNomeEditado] = useState("");
-  const [recemSalvoId, setRecemSalvoId] = useState(null);
+  const { itens, canais, carregando: carregandoBase } = useRankingData();
+  const [precos, setPrecos] = useState([]);
+  const [carregandoPrecos, setCarregandoPrecos] = useState(true);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
 
   useEffect(() => {
     if (!supabase) {
-      setCarregando(false);
+      setCarregandoPrecos(false);
       return;
     }
-
     let ativo = true;
-
     async function carregar() {
       try {
-        let query = supabase.from("produtos").select("*").order("criado_em", { ascending: false });
+        let query = supabase.from("precos_canal").select("*");
         if (lojaId) query = query.eq("loja_id", lojaId);
         const { data, error } = await query;
         if (!ativo) return;
-        if (!error) setProdutos(data || []);
+        if (!error) setPrecos(data || []);
       } catch {
         // falha de rede — mantém o que já estava carregado
       } finally {
-        if (ativo) setCarregando(false);
+        if (ativo) setCarregandoPrecos(false);
       }
     }
     carregar();
-
     const canal = supabase
-      .channel("produtos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos" }, carregar)
+      .channel("precos-canal-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
       .subscribe();
-
     return () => {
       ativo = false;
       supabase.removeChannel(canal);
     };
   }, [lojaId]);
 
-  async function excluir(id) {
+  function precoDe(item, canalObj) {
+    const [tipo, id] = item.id.split(":");
+    const itemTipo = tipo === "k" ? "kit" : "produto";
+    return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalObj.id) || null;
+  }
+
+  async function excluir(precoId) {
     if (!supabase) return;
-    const { error } = await supabase.from("produtos").delete().eq("id", id);
+    const { error } = await supabase.from("precos_canal").delete().eq("id", precoId);
     if (error) {
       onToast("Não foi possível excluir agora — tente de novo");
       return;
     }
-    setProdutos((prev) => prev.filter((p) => p.id !== id));
+    setPrecos((prev) => prev.filter((p) => p.id !== precoId));
   }
 
-  function iniciarEdicao(p) {
-    setEditandoId(p.id);
-    setNomeEditado(p.nome || "");
-  }
-
-  async function salvarNome(id) {
-    const nome = nomeEditado.trim();
-    if (!nome) {
-      onToast("O nome não pode ficar vazio");
-      return;
-    }
-    const { error } = await supabase.from("produtos").update({ nome }).eq("id", id);
-    if (error) {
-      onToast("Não foi possível salvar — tente de novo");
-      return;
-    }
-    setProdutos((prev) => prev.map((p) => (p.id === id ? { ...p, nome } : p)));
-    setEditandoId(null);
-    setRecemSalvoId(id);
-    setTimeout(() => setRecemSalvoId((atual) => (atual === id ? null : atual)), 1000);
-  }
+  const carregando = carregandoBase || carregandoPrecos;
 
   return (
     <div className="panel">
-      <h3>Produtos salvos</h3>
+      <h3>
+        Preços por canal
+        <Ajuda texto="Cada célula mostra o preço, lucro e margem salvos pra esse produto/kit nesse canal — atualize em Precificação por Canal, escolhendo o produto/kit e o canal e clicando em Salvar. Célula vazia significa que ainda não foi salvo nada pra essa combinação." />
+      </h3>
       {!supabase ? (
-        <div className="empty">
-          Histórico indisponível — configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para ativar.
-        </div>
+        <div className="empty">Preços por Canal indisponível — configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para ativar.</div>
       ) : carregando ? (
         <div className="empty">Carregando…</div>
-      ) : produtos.length === 0 ? (
-        <div className="empty">Nenhum produto salvo ainda. Calcule um preço na aba anterior e clique em "Salvar".</div>
+      ) : itens.length === 0 ? (
+        <div className="empty">Nenhum produto ou kit cadastrado ainda. Cadastre em Cadastros → Produtos ou Kits.</div>
+      ) : canais.length === 0 ? (
+        <div className="empty">Nenhum canal cadastrado ainda. Cadastre em Cadastros → Canais.</div>
       ) : (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Produto</th>
-                <th>Canal</th>
-                <th className="num">Custo</th>
-                <th className="num">Preço</th>
-                <th className="num">Margem</th>
-                <th></th>
+                <th>Produto/Kit</th>
+                <th className="num">Custo total</th>
+                {canais.map((c) => (
+                  <th key={c.id} className="num">{c.nome}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {produtos.map((p) => (
-                <tr key={p.id}>
+              {itens.map((item) => (
+                <tr key={item.id}>
                   <td>
-                    {editandoId === p.id ? (
-                      <input
-                        type="text"
-                        autoFocus
-                        value={nomeEditado}
-                        onChange={(e) => setNomeEditado(e.target.value)}
-                        onBlur={() => salvarNome(p.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") e.target.blur();
-                          if (e.key === "Escape") setEditandoId(null);
-                        }}
-                        style={{ width: "100%" }}
-                      />
-                    ) : (
-                      <>
-                        {p.nome || "—"}
-                        {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
-                      </>
-                    )}
+                    {item.nome} <span className="campo-anterior">({item.tipo})</span>
                   </td>
-                  <td>{p.canal || "—"}</td>
-                  <td className="num">{BRL(p.custo)}</td>
-                  <td className="num">{BRL(p.preco)}</td>
-                  <td className="num">{PCT(p.margem)}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <button className="del" title="Editar nome" onClick={() => iniciarEdicao(p)}>✎</button>
-                    <button className="del" title="Excluir" onClick={() => setExcluirAlvo(p)}>×</button>
-                  </td>
+                  <td className="num">{BRL(item.custoTotal)}</td>
+                  {canais.map((c) => {
+                    const p = precoDe(item, c);
+                    return (
+                      <td key={c.id} className="num">
+                        {p ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                            <span>
+                              {BRL(p.preco)}
+                              <span className="campo-anterior" style={{ display: "block" }}>
+                                {p.lucro != null ? `lucro ${BRL(p.lucro)}` : "—"}
+                                {p.margem != null ? ` · ${PCT(p.margem)}` : ""}
+                              </span>
+                            </span>
+                            <button
+                              className="del"
+                              title="Excluir preço salvo"
+                              onClick={() => setExcluirAlvo({ ...p, nomeItem: item.nome, nomeCanal: c.nome })}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--ink-faint)" }}>—</span>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
+        Pra preencher ou atualizar uma célula, vá em Precificação por Canal, escolha o produto/kit e o canal, calcule e clique em "Salvar".
+      </div>
 
       {excluirAlvo && (
         <ConfirmDialog
-          titulo="Excluir do histórico"
-          mensagem={`Confirma excluir "${excluirAlvo.nome || "este item"}"? Não é possível desfazer.`}
+          titulo="Excluir preço salvo"
+          mensagem={`Confirma excluir o preço de "${excluirAlvo.nomeItem}" em ${excluirAlvo.nomeCanal}? Não é possível desfazer.`}
           confirmarLabel="Excluir"
           perigo
           onConfirm={() => {

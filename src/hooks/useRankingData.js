@@ -4,6 +4,7 @@ import {
   resolverFaixaShopee,
   resolverFaixaML,
   resolverFaixaTikTok,
+  resolverFaixaShein,
   calcCanalCustom,
 } from "../lib/calc.js";
 import { arredondarPreco } from "../lib/format.js";
@@ -40,6 +41,7 @@ function lucroPorCanal(custoTotal, canal) {
   if (canal.tipo === "shopee") return resolverFaixaShopee(base).resultado;
   if (canal.tipo === "ml") return resolverFaixaML(ML_CATEGORIA_PADRAO, base, ML_TIPO_ANUNCIO_PADRAO).resultado;
   if (canal.tipo === "tiktok") return resolverFaixaTikTok(base).resultado;
+  if (canal.tipo === "shein") return resolverFaixaShein(base).resultado;
   return calcCanalCustom(canal, base);
 }
 
@@ -174,6 +176,8 @@ export function useRankingData() {
   return {
     itens,
     canais,
+    produtos,
+    kits,
     carregando,
     contagemProdutos: produtos.length,
     contagemKits: kits.length,

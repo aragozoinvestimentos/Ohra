@@ -62,7 +62,7 @@ const GRUPOS = [
     tabs: [
       { key: "ranking", label: "Ranking por Retorno", icon: "🏆" },
       { key: "otimizacao", label: "Otimização", icon: "📈" },
-      { key: "historico", label: "Histórico", icon: "🕘" },
+      { key: "historico", label: "Preços por Canal", icon: "🕘" },
     ],
   },
   {

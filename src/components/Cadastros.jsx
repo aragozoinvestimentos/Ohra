@@ -4,6 +4,7 @@ import Embalagens from "./Embalagens.jsx";
 import Produtos from "./Produtos.jsx";
 import Kits from "./Kits.jsx";
 import Canais from "./Canais.jsx";
+import TaxasMarketplace from "./TaxasMarketplace.jsx";
 
 const SUBABAS = [
   { key: "materiais", label: "Materiais (Fabricação)" },
@@ -11,6 +12,7 @@ const SUBABAS = [
   { key: "produtos", label: "Produtos" },
   { key: "kits", label: "Kits" },
   { key: "canais", label: "Canais" },
+  { key: "taxas", label: "Taxas Marketplace" },
 ];
 
 export default function Cadastros({ produtoRecebido, onToast }) {
@@ -36,6 +38,7 @@ export default function Cadastros({ produtoRecebido, onToast }) {
       {sub === "produtos" && <Produtos produtoRecebido={produtoRecebido} onToast={onToast} />}
       {sub === "kits" && <Kits onToast={onToast} />}
       {sub === "canais" && <Canais onToast={onToast} />}
+      {sub === "taxas" && <TaxasMarketplace />}
     </div>
   );
 }

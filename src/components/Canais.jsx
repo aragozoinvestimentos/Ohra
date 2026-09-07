@@ -11,6 +11,7 @@ const TIPO_LABEL = {
   shopee: "Shopee (faixas oficiais)",
   ml: "Mercado Livre (faixas oficiais)",
   tiktok: "TikTok Shop (faixas oficiais)",
+  shein: "Shein (faixa oficial)",
   custom: "Canal próprio",
 };
 
@@ -137,6 +138,7 @@ export default function Canais({ onToast }) {
   }
 
   const temTiktok = canais.some((c) => c.tipo === "tiktok");
+  const temShein = canais.some((c) => c.tipo === "shein");
 
   async function adicionarTiktok() {
     const { error } = await supabase.from("canais").insert({
@@ -149,6 +151,19 @@ export default function Canais({ onToast }) {
       return;
     }
     onToast("TikTok Shop adicionado");
+  }
+
+  async function adicionarShein() {
+    const { error } = await supabase.from("canais").insert({
+      nome: "Shein",
+      tipo: "shein",
+      ...(lojaId ? { loja_id: lojaId } : {}),
+    });
+    if (error) {
+      onToast("Não foi possível adicionar — tente de novo");
+      return;
+    }
+    onToast("Shein adicionado");
   }
 
   if (!supabase) {
@@ -213,7 +228,7 @@ export default function Canais({ onToast }) {
                       <CampoEditavel canal={c} campo="ads_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
                     </td>
                     <td>
-                      {(c.tipo === "custom" || c.tipo === "tiktok") && (
+                      {(c.tipo === "custom" || c.tipo === "tiktok" || c.tipo === "shein") && (
                         <button className="del" title="Excluir" onClick={() => setExcluirAlvo(c)}>×</button>
                       )}
                     </td>
@@ -226,11 +241,18 @@ export default function Canais({ onToast }) {
         <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
           Shopee, Mercado Livre e TikTok Shop usam as faixas oficiais de comissão/taxa (calculadas na hora). Imposto e custos fixos agora são por canal — o Comparativo usa automaticamente o valor daqui. O % de Ads é o que você costuma investir em anúncio patrocinado nesse canal.
         </div>
-        {!temTiktok && (
-          <button className="btn" style={{ marginTop: 12 }} onClick={adicionarTiktok}>
-            + Adicionar TikTok Shop (faixas oficiais)
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          {!temTiktok && (
+            <button className="btn" onClick={adicionarTiktok}>
+              + Adicionar TikTok Shop (faixas oficiais)
+            </button>
+          )}
+          {!temShein && (
+            <button className="btn" onClick={adicionarShein}>
+              + Adicionar Shein (faixa oficial)
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="panel">

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, calcCanal } from "../lib/calc.js";
+import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, SHEIN_TIERS, calcCanal } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useRankingData } from "../hooks/useRankingData.js";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 
@@ -32,62 +33,68 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   const { lojaId } = useLoja();
   const [f, setF] = useState(DEFAULTS);
   const [salvando, setSalvando] = useState(false);
-  const [produtos, setProdutos] = useState([]);
-  const [produtoId, setProdutoId] = useState("");
+  const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | "p:<id>" | "k:<id>"
+  const [canalProprioId, setCanalProprioId] = useState("");
+  const { itens: baseItens, canais, produtos } = useRankingData();
 
-  // Troca de loja invalida a seleção anterior de produto cadastrado.
+  const canaisProprios = canais.filter((c) => c.tipo === "custom");
+
+  // Troca de loja invalida a seleção anterior de produto/kit cadastrado.
   useEffect(() => {
-    setProdutoId("");
+    setBaseSelecionada("");
+    setCanalProprioId("");
   }, [lojaId]);
 
-  // Produtos cadastrados, pra puxar custo/frete/embalagem automaticamente em
-  // vez de digitar tudo de novo (mesma lista usada no Comparativo).
   useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      let query = supabase.from("produtos_cadastro").select("*").order("nome");
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo) return;
-      if (!error) setProdutos(data || []);
+    if (!baseSelecionada) return;
+    const [tipo, id] = baseSelecionada.split(":");
+    if (tipo === "p") {
+      const p = produtos.find((x) => x.id === id) || null;
+      if (!p) {
+        setF((prev) => ({ ...prev, custoProduto: "", frete: 0, embalagem: 0 }));
+        return;
+      }
+      setF((prev) => ({
+        ...prev,
+        custoProduto: arredondarPreco(p.custo_producao),
+        frete: arredondarPreco(p.frete_padrao || 0),
+        embalagem: arredondarPreco(p.embalagem_padrao || 0),
+        nome: prev.nome || p.nome,
+      }));
+    } else if (tipo === "k") {
+      const item = baseItens.find((x) => x.id === baseSelecionada) || null;
+      setF((prev) => ({
+        ...prev,
+        custoProduto: arredondarPreco(item?.custoTotal || 0),
+        frete: 0,
+        embalagem: 0,
+        nome: prev.nome || item?.nome || "",
+      }));
     }
-    carregar();
-    const canal = supabase
-      .channel("precificacao-canal-produtos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
-  const produtoSelecionado = produtos.find((p) => p.id === produtoId) || null;
-
-  useEffect(() => {
-    if (!produtoId) return;
-    if (!produtoSelecionado) {
-      setF((prev) => ({ ...prev, custoProduto: "", frete: 0, embalagem: 0 }));
-      return;
-    }
-    setF((prev) => ({
-      ...prev,
-      custoProduto: arredondarPreco(produtoSelecionado.custo_producao),
-      frete: arredondarPreco(produtoSelecionado.frete_padrao || 0),
-      embalagem: arredondarPreco(produtoSelecionado.embalagem_padrao || 0),
-      nome: prev.nome || produtoSelecionado.nome,
-    }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produtoId]);
+  }, [baseSelecionada]);
 
   // Quando "Usar este custo" é clicado na aba de Produção, aplica o valor aqui.
   useEffect(() => {
     if (custoRecebido == null) return;
-    setProdutoId("");
+    setBaseSelecionada("");
     setF((prev) => ({ ...prev, custoProduto: arredondarPreco(custoRecebido.value) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [custoRecebido?.seq]);
+
+  // Escolher um canal próprio específico (quando o canal de venda é "outro")
+  // preenche comissão/taxa fixa com o que já está cadastrado nele.
+  useEffect(() => {
+    if (!canalProprioId) return;
+    const c = canaisProprios.find((x) => x.id === canalProprioId);
+    if (!c) return;
+    setF((prev) => ({
+      ...prev,
+      outroComissao: arredondarPreco((c.comissao_pct || 0) * 100),
+      outroFixo: arredondarPreco(c.taxa_fixa || 0),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canalProprioId]);
 
   const set = (key) => (e) => {
     const v = e.target.value;
@@ -116,6 +123,10 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
       const tier = TIKTOK_TIERS[f.tiktokFaixaIdx] || TIKTOK_TIERS[0];
       return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
+    if (f.canal === "shein") {
+      const tier = SHEIN_TIERS[0];
+      return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: false };
+    }
     return { pct: n(f.outroComissao) / 100, fixo: n(f.outroFixo), temFaixa: false };
   }, [f.canal, f.shopeeFaixaIdx, f.mlCategoria, f.mlTipoAnuncio, f.mlFaixaIdx, f.tiktokFaixaIdx, f.outroComissao, f.outroFixo]);
 
@@ -140,34 +151,58 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   const concorrenteLucro = n(f.concorrente) > 0 ? resultado.lucroEm(n(f.concorrente)) : null;
   const negociadoLucro = n(f.negociado) > 0 ? resultado.lucroEm(n(f.negociado)) : null;
 
-  const canalLabel = f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : "Outro canal";
+  const canalLabel =
+    f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : "Outro canal";
+
+  // Acha o canal cadastrado de verdade correspondente ao que está selecionado
+  // aqui — pelos tipos oficiais dá pra achar sozinho; "outro" depende do
+  // canal próprio escolhido no seletor extra.
+  function resolverCanalId() {
+    if (f.canal === "outro") return canalProprioId || null;
+    const c = canais.find((x) => x.tipo === f.canal);
+    return c?.id || null;
+  }
 
   async function salvar() {
-    const nome = f.nome.trim();
-    if (!nome) {
-      onToast('Dê um nome ao produto antes de salvar');
-      return;
-    }
     if (!supabase) {
-      onToast("Histórico indisponível (Supabase não configurado)");
+      onToast("Preços por Canal indisponível (Supabase não configurado)");
       return;
     }
+    if (!baseSelecionada) {
+      onToast("Selecione um produto ou kit cadastrado acima pra salvar o preço por canal");
+      return;
+    }
+    const canalId = resolverCanalId();
+    if (!canalId) {
+      onToast(
+        f.canal === "outro"
+          ? "Selecione qual canal próprio é esse, ou cadastre um em Cadastros → Canais"
+          : `Cadastre o canal ${canalLabel} em Cadastros → Canais pra poder salvar`
+      );
+      return;
+    }
+    const [tipo, id] = baseSelecionada.split(":");
     setSalvando(true);
-    const { error } = await supabase.from("produtos").insert({
-      nome,
-      canal: canalLabel,
-      custo: arredondarPreco(resultado.custoTotal),
-      preco: arredondarPreco(resultado.preco),
-      margem: resultado.margem,
-      ...(lojaId ? { loja_id: lojaId } : {}),
-    });
+    const { error } = await supabase.from("precos_canal").upsert(
+      {
+        loja_id: lojaId || null,
+        item_tipo: tipo === "k" ? "kit" : "produto",
+        item_id: id,
+        canal_id: canalId,
+        preco: arredondarPreco(resultado.preco),
+        custo_total: arredondarPreco(resultado.custoTotal),
+        lucro: resultado.lucro != null ? arredondarPreco(resultado.lucro) : null,
+        margem: resultado.margem,
+        atualizado_em: new Date().toISOString(),
+      },
+      { onConflict: "item_tipo,item_id,canal_id" }
+    );
     setSalvando(false);
     if (error) {
-      onToast("Não foi possível salvar agora — tente de novo");
+      onToast(`Não foi possível salvar: ${error.message}`);
       return;
     }
-    onToast("Produto salvo no histórico");
-    setF((prev) => ({ ...prev, nome: "" }));
+    onToast(`Preço salvo em Preços por Canal (${canalLabel})`);
   }
 
   return (
@@ -184,9 +219,16 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
               <option value="shopee">Shopee</option>
               <option value="ml">Mercado Livre</option>
               <option value="tiktok">TikTok Shop</option>
+              <option value="shein">Shein</option>
               <option value="outro">Outro canal</option>
             </select>
           </div>
+
+          {f.canal === "shein" && (
+            <div className="hint" style={{ marginTop: -4 }}>
+              Comissão fixa de 16%, sem taxa por venda — não varia por categoria nem faixa de preço.
+            </div>
+          )}
 
           {f.canal === "tiktok" && (
             <div className="field">
@@ -241,16 +283,34 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
           )}
 
           {f.canal === "outro" && (
-            <div className="row2">
-              <div className="field">
-                <label>Comissão (%)</label>
-                <input type="number" step="0.1" value={f.outroComissao} onChange={set("outroComissao")} />
+            <>
+              {canaisProprios.length > 0 && (
+                <div className="field">
+                  <label>Qual canal próprio é esse?</label>
+                  <select value={canalProprioId} onChange={(e) => setCanalProprioId(e.target.value)}>
+                    <option value="">— preencher manualmente —</option>
+                    {canaisProprios.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nome}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="row2">
+                <div className="field">
+                  <label>Comissão (%)</label>
+                  <input type="number" step="0.1" value={f.outroComissao} onChange={set("outroComissao")} />
+                </div>
+                <div className="field">
+                  <label>Taxa fixa (R$)</label>
+                  <input type="number" step="0.01" value={f.outroFixo} onChange={set("outroFixo")} />
+                </div>
               </div>
-              <div className="field">
-                <label>Taxa fixa (R$)</label>
-                <input type="number" step="0.01" value={f.outroFixo} onChange={set("outroFixo")} />
-              </div>
-            </div>
+              {canaisProprios.length === 0 && (
+                <div className="hint" style={{ marginTop: -4 }}>
+                  Pra salvar em Preços por Canal, cadastre esse canal em Cadastros → Canais primeiro.
+                </div>
+              )}
+            </>
           )}
 
           <div className="row2">
@@ -276,14 +336,14 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
             <Ajuda texto="Escolha um produto já cadastrado pra puxar custo, frete e embalagem automaticamente — ou preencha na mão pra simular algo que ainda não existe no catálogo." />
           </h3>
           <div className="hint" style={{ marginTop: -4 }}>
-            Três formas de preencher aqui embaixo: preencha na mão, escolha um "Produto cadastrado" abaixo (puxa custo/frete/embalagem salvos dele), ou vá em "Simular Custo de Produção" e use o botão "Usar este custo na Precificação por Canal →" pra trazer um cálculo feito na hora.
+            Três formas de preencher aqui embaixo: preencha na mão, escolha um "Produto ou kit cadastrado" abaixo (puxa custo total já calculado, e frete/embalagem quando for produto), ou vá em "Simular Custo de Produção" e use o botão "Usar este custo na Precificação por Canal →" pra trazer um cálculo feito na hora.
           </div>
           <div className="field">
-            <label>Produto cadastrado (opcional)</label>
-            <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+            <label>Produto ou kit cadastrado (opcional)</label>
+            <select value={baseSelecionada} onChange={(e) => setBaseSelecionada(e.target.value)}>
               <option value="">— preencher manualmente —</option>
-              {produtos.map((p) => (
-                <option key={p.id} value={p.id}>{p.nome}</option>
+              {baseItens.map((item) => (
+                <option key={item.id} value={item.id}>{item.nome} ({item.tipo})</option>
               ))}
             </select>
           </div>
@@ -301,9 +361,9 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
               <input type="number" step="0.01" value={f.embalagem} onChange={set("embalagem")} />
             </div>
           </div>
-          {produtoSelecionado && (
+          {baseSelecionada && (
             <div className="hint" style={{ marginBottom: 0 }}>
-              Preenchido automaticamente com o custo, frete e embalagem já cadastrados nesse produto — ajuste aqui só pra simular um cenário diferente.
+              Preenchido automaticamente com o custo já cadastrado desse {baseSelecionada.startsWith("k:") ? "kit" : "produto"} — ajuste aqui só pra simular um cenário diferente.
             </div>
           )}
         </div>
@@ -315,9 +375,18 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
             Resultado
             <Ajuda texto="'Taxas descontadas por venda' mostra exatamente o que o canal tira do preço calculado: comissão % (proporcional ao preço) + taxa fixa (mesmo valor em R$ não importa o preço). Imposto e custos fixos aparecem separados porque são configurados por você (Cadastros → Canais), não pela plataforma." />
           </h3>
-          <div className="kv"><span className="k">Custo total do produto</span><span className="v">{BRL(resultado.custoTotal)}</span></div>
+          <div className="destaque-custo">
+            <span className="k">Custo total do produto</span>
+            <span className="v">{BRL(resultado.custoTotal)}</span>
+          </div>
+          <div className="destaque-preco">
+            <span className="k">
+              Preço definido para a plataforma
+              <span className="k-sub">o que vai anunciado no canal</span>
+            </span>
+            <span className="v">{BRL(resultado.preco)}</span>
+          </div>
           <div className="kv"><span className="k">Mark-up (divisor)</span><span className="v">{isFinite(Number(resultado.markup)) ? Number(resultado.markup).toFixed(3) + "×" : "—"}</span></div>
-          <div className="kv total"><span className="k">Preço calculado</span><span className="v">{BRL(resultado.preco)}</span></div>
           {comissaoFixo.temFaixa && (
             <div className="kv">
               <span className="k">Confere com a faixa escolhida?</span>
@@ -373,16 +442,24 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
         </div>
 
         <div className="panel">
-          <h3 className="section-title">Salvar no histórico</h3>
-          <div className="save-row">
-            <div className="field">
-              <label>Nome do produto</label>
-              <input type="text" placeholder="ex: Vaso decorativo médio" value={f.nome} onChange={setStr("nome")} />
+          <h3 className="section-title">
+            Salvar em Preços por Canal
+            <Ajuda texto="Salva o preço, custo e lucro calculados aqui pra esse produto/kit + canal — depois é só consultar em Gestão → Preços por Canal, sem precisar recalcular tudo de novo." />
+          </h3>
+          {!baseSelecionada ? (
+            <div className="hint" style={{ marginBottom: 0 }}>
+              Selecione um produto ou kit cadastrado em "Custo do produto" acima pra poder salvar.
             </div>
-            <button className="btn primary" onClick={salvar} disabled={salvando}>
-              {salvando ? "Salvando…" : "Salvar"}
-            </button>
-          </div>
+          ) : (
+            <div className="save-row">
+              <div className="hint" style={{ marginTop: 0, marginBottom: 0 }}>
+                Salva o resultado atual pra <strong>{baseItens.find((i) => i.id === baseSelecionada)?.nome}</strong> no canal <strong>{canalLabel}</strong>.
+              </div>
+              <button className="btn primary" onClick={salvar} disabled={salvando}>
+                {salvando ? "Salvando…" : "Salvar"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -54,6 +54,16 @@ export const TIKTOK_TIERS = [
   { label: "A partir de R$50,00", min: 50, max: 9999999, pct: 0.06, fixo: 6 },
 ];
 
+// Comissão da Shein Marketplace Brasil — validada em 07/09/2026 contra três
+// fontes independentes (a página oficial de política de comissão da Shein
+// devolveu erro de acesso na hora da validação, vale reconferir depois em
+// br.shein.com/SHEIN-Commission-Policy-a-1420.html): comissão padrão de 16%
+// sobre o valor final da venda, sem taxa fixa por venda e sem diferenciação
+// por categoria pra produtos fora de vestuário (algumas categorias de moda
+// chegam a ~20%, irrelevante pra produtos impressos em 3D). Só uma faixa —
+// bem mais simples que Shopee/ML/TikTok.
+export const SHEIN_TIERS = [{ label: "Padrão (todas as faixas de preço)", min: 0, max: 9999999, pct: 0.16, fixo: 0 }];
+
 // Valores padrão dos campos de Custo de Produção — usados tanto na primeira
 // vez que a aba abre quanto quando alguém preenche o detalhamento de um
 // produto antigo que foi cadastrado sem essa informação (ver Produtos.jsx).
@@ -164,6 +174,14 @@ export function resolverFaixaML(categoria, base, tipoAnuncio = "classico") {
   }
   const tier = ML_FEE_TIERS[ML_FEE_TIERS.length - 1];
   return { tier, resultado: calcCanal({ ...base, comissaoPct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
+}
+
+// Shein: uma faixa só, sem categoria — resolve trivial, mas mantido no
+// mesmo formato de resolverFaixaX pra encaixar direto onde os outros três
+// já são usados (Ranking, Promoções, Produtos, Taxas Marketplace).
+export function resolverFaixaShein(base) {
+  const tier = SHEIN_TIERS[0];
+  return { tier, resultado: calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
 }
 
 // Canal customizado (Site Próprio, TikTok Shop etc.): comissão/taxa fixas, sem faixas.
