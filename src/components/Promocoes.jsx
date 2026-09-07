@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ML_CATEGORY_PCT, calcCanal, calcCanalCustom, resolverFaixaML, resolverFaixaShopee, resolverFaixaTikTok } from "../lib/calc.js";
+import { ML_CATEGORY_PCT, calcCanalCustom, resolverFaixaML, resolverFaixaShopee, resolverFaixaTikTok, resultadoNoPreco } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -271,12 +271,34 @@ export default function Promocoes() {
   }, [baseSelecionada, canalId]);
 
   const precoOriginalNum = parseFloat(precoOriginalOverride);
+  // Reavalia lucro/margem com a faixa de comissão certa pro preço original
+  // DIGITADO, não com a faixa resolvida pro preço teórico (custo + margem
+  // desejada) — sem isso, subir esse preço além da faixa original podia
+  // continuar usando comissão/taxa fixa de uma faixa mais barata (ou mais
+  // cara) do que a que realmente vale ali, e mostrar lucro errado (inclusive
+  // negativo mesmo com o preço subindo). O `lucroEm` também é substituído por
+  // uma versão que resolve a faixa certa pra QUALQUER preço avaliado depois
+  // (desconto, progressivo, liquidação…), não só pro preço original em si —
+  // o mesmo problema existe pra desconto grande ou preço bem diferente do
+  // teórico. `faixaOk` continua refletindo o preço TEÓRICO (aviso de
+  // custo/margem inconsistente), sem relação com esse ajuste manual.
   const normal = useMemo(() => {
     if (!normalCalculado) return null;
-    if (!isFinite(precoOriginalNum) || precoOriginalNum <= 0) return normalCalculado;
-    const lucro = normalCalculado.lucroEm(precoOriginalNum);
-    return { ...normalCalculado, preco: precoOriginalNum, lucro, margem: precoOriginalNum > 0 ? lucro / precoOriginalNum : null };
-  }, [normalCalculado, precoOriginalNum]);
+    const precoBase = isFinite(precoOriginalNum) && precoOriginalNum > 0 ? precoOriginalNum : normalCalculado.preco;
+    const r = resultadoNoPreco(canal, base, precoBase, mlCategoria, mlTipoAnuncio);
+    if (!r) return normalCalculado;
+    const lucroEm = (p) => resultadoNoPreco(canal, base, p, mlCategoria, mlTipoAnuncio)?.lucro ?? null;
+    return {
+      ...normalCalculado,
+      preco: r.preco,
+      lucro: r.lucro,
+      margem: r.margem,
+      totalPct: r.totalPct,
+      taxaFixa: r.taxaFixa,
+      custoTotal: r.custoTotal,
+      lucroEm,
+    };
+  }, [normalCalculado, precoOriginalNum, canal, base, mlCategoria, mlTipoAnuncio]);
 
   function atualizarTier(idx, campo, valor) {
     setTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, [campo]: valor } : t)));
@@ -296,18 +318,12 @@ export default function Promocoes() {
     const L = Math.max(1, n(levar) || 1);
     const P = Math.min(L, Math.max(0, n(pagar) || 0));
     const custoKit = custoProduto * L + n(embalagem) * L;
-    const resultadoKit = calcCanal({
-      imposto: base.imposto,
-      comissaoPct: feeInfo.comissaoPct,
-      taxaFixa: feeInfo.taxaFixa,
-      custosFixosPct: base.custosFixosPct,
-      lucratividadePct: base.lucratividadePct,
-      custoProduto: custoKit,
-      frete: n(frete),
-      embalagem: 0,
-    });
     const precoKit = normal.preco * P;
-    const lucroKit = resultadoKit.lucroEm(precoKit);
+    // Preço do kit é ~L vezes o preço de uma unidade — quase sempre cai numa
+    // faixa de comissão diferente da de uma venda avulsa (feeInfo), então
+    // reavalia a faixa certa pro preço do KIT, não reaproveita a de uma peça.
+    const baseKit = { imposto: base.imposto, custosFixosPct: base.custosFixosPct, custoProduto: custoKit, frete: n(frete), embalagem: 0 };
+    const lucroKit = resultadoNoPreco(canal, baseKit, precoKit, mlCategoria, mlTipoAnuncio)?.lucro ?? null;
     return {
       L,
       P,
@@ -319,7 +335,7 @@ export default function Promocoes() {
       economiaTaxaFixa: feeInfo.taxaFixa * (L - 1),
       deltaVsAvulso: lucroKit - normal.lucro * L,
     };
-  }, [normal, feeInfo, levar, pagar, custoProduto, embalagem, frete, base]);
+  }, [normal, feeInfo, levar, pagar, custoProduto, embalagem, frete, base, canal, mlCategoria, mlTipoAnuncio]);
 
   const freteGratis = useMemo(() => {
     if (!normal) return null;
@@ -433,20 +449,13 @@ export default function Promocoes() {
       imposto: canal.imposto_pct || 0,
       custosFixosPct: canal.custos_fixos_pct || 0,
     };
-    const rTier = resolverComTier(canal, baseCombinadaTier);
-    if (!rTier?.resultado) return null;
-    const resultadoCombinada = calcCanal({
-      imposto: canal.imposto_pct || 0,
-      comissaoPct: rTier.comissaoPct,
-      taxaFixa: rTier.taxaFixa,
-      custosFixosPct: canal.custos_fixos_pct || 0,
-      lucratividadePct: n(lucratividade) / 100,
-      custoProduto: custoItensTotal,
-      frete: n(freteCombinada),
-      embalagem: n(embalagemCombinada),
-    });
     const precoCombinado = precoSomaAvulso * (1 - (n(descontoCombinada) || 0) / 100);
-    const lucroCombinado = resultadoCombinada.lucroEm(precoCombinado);
+    // Reavalia a faixa certa pro preço COMBINADO (soma de vários itens, com
+    // desconto) em vez de reaproveitar a faixa resolvida pro custo+margem
+    // teórico da combinação — mesmo risco de faixa errada dos outros casos.
+    const resultadoCombinada = resultadoNoPreco(canal, baseCombinadaTier, precoCombinado, mlCategoria, mlTipoAnuncio);
+    if (!resultadoCombinada) return null;
+    const lucroCombinado = resultadoCombinada.lucro;
 
     return {
       totalPecas,

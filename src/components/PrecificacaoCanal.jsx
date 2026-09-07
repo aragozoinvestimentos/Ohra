@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, SHEIN_TIERS, calcCanal } from "../lib/calc.js";
+import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, SHEIN_TIERS, calcCanal, resultadoNoPreco } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -148,8 +148,29 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   const lucratividadeFrac = n(f.lucratividade) / 100;
   const lucrativo = resultado.margem != null && resultado.margem >= lucratividadeFrac - 0.001;
 
-  const concorrenteLucro = n(f.concorrente) > 0 ? resultado.lucroEm(n(f.concorrente)) : null;
-  const negociadoLucro = n(f.negociado) > 0 ? resultado.lucroEm(n(f.negociado)) : null;
+  // "Comparar com outro preço" avalia um preço DIFERENTE do calculado — pra
+  // Shopee/ML/TikTok, esse outro preço pode cair numa faixa de comissão
+  // diferente da faixa escolhida acima (Faixa 1, 2, 3…). Reaproveitar
+  // `resultado.lucroEm` (que fixa a faixa selecionada) dava lucro errado
+  // sempre que o preço de comparação pertencia a outra faixa — resolve a
+  // faixa certa pro preço informado em vez disso. Shein/canal próprio não têm
+  // faixa por preço, então usam a mesma comissão/taxa fixa de sempre.
+  const baseSemComissao = {
+    imposto: n(f.imposto) / 100,
+    custosFixosPct: n(f.custosFixos) / 100,
+    custoProduto: n(f.custoProduto),
+    frete: n(f.frete),
+    embalagem: n(f.embalagem),
+  };
+  const canalParaComparacao = {
+    tipo: f.canal,
+    comissao_pct: f.canal === "shein" ? SHEIN_TIERS[0].pct : n(f.outroComissao) / 100,
+    taxa_fixa: f.canal === "shein" ? SHEIN_TIERS[0].fixo : n(f.outroFixo),
+  };
+  const concorrenteLucro =
+    n(f.concorrente) > 0 ? resultadoNoPreco(canalParaComparacao, baseSemComissao, n(f.concorrente), f.mlCategoria, f.mlTipoAnuncio)?.lucro ?? null : null;
+  const negociadoLucro =
+    n(f.negociado) > 0 ? resultadoNoPreco(canalParaComparacao, baseSemComissao, n(f.negociado), f.mlCategoria, f.mlTipoAnuncio)?.lucro ?? null : null;
 
   const canalLabel =
     f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : "Outro canal";

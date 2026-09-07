@@ -175,6 +175,49 @@ export function resolverFaixaShein(base) {
   return { tier, resultado: calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
 }
 
+// Comissão/taxa fixa que REALMENTE valem pra um preço já definido (editado à
+// mão, com desconto aplicado, preço de um kit/combo etc.) — as resolverFaixaX
+// acima acham a faixa a partir do preço TEÓRICO (calculado por custo + margem
+// desejada); reaproveitar esse totalPct/taxaFixa (via `.lucroEm(outroPreco)`)
+// só dá o resultado certo se os dois preços caírem na MESMA faixa. Shopee, ML
+// e TikTok têm comissão e/ou taxa fixa diferentes por faixa de preço final —
+// essa função acha a faixa certa pro preço informado, não pra um preço
+// diferente calculado antes. Shein (faixa única) e canal customizado não têm
+// esse risco — devolve null pra esses (quem chama usa a taxa fixa do canal).
+export function resolverTaxasNoPreco(canalTipo, preco, mlCategoria, mlTipoAnuncio = "classico") {
+  if (canalTipo === "shopee") {
+    const tier = SHOPEE_TIERS.find((t) => preco >= t.min && preco <= t.max) || SHOPEE_TIERS[SHOPEE_TIERS.length - 1];
+    return { comissaoPct: tier.pct, taxaFixa: tier.fixo };
+  }
+  if (canalTipo === "ml") {
+    const pcts = ML_CATEGORY_PCT[mlCategoria] ?? { classico: 0.13, premium: 0.18 };
+    const tier = ML_FEE_TIERS.find((t) => preco >= t.min && preco <= t.max) || ML_FEE_TIERS[ML_FEE_TIERS.length - 1];
+    return { comissaoPct: mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico, taxaFixa: tier.fixo };
+  }
+  if (canalTipo === "tiktok") {
+    const tier = TIKTOK_TIERS.find((t) => preco >= t.min && preco <= t.max) || TIKTOK_TIERS[TIKTOK_TIERS.length - 1];
+    return { comissaoPct: tier.pct, taxaFixa: tier.fixo };
+  }
+  return null;
+}
+
+// Lucro/margem de um preço já definido, com a faixa certa pra ESSE preço (ver
+// resolverTaxasNoPreco) — usar no lugar de `.lucroEm(outroPreco)` sempre que o
+// preço avaliado pode ser bem diferente do preço que resolveu a faixa
+// original (desconto grande, kit com várias unidades, preço editado à mão…).
+// `canal` só precisa ter `.tipo` e, quando for canal customizado, `comissao_pct`/`taxa_fixa`.
+export function resultadoNoPreco(canal, base, preco, mlCategoria, mlTipoAnuncio = "classico") {
+  if (!(preco > 0)) return null;
+  const taxas = resolverTaxasNoPreco(canal?.tipo, preco, mlCategoria, mlTipoAnuncio);
+  const comissaoPct = taxas ? taxas.comissaoPct : canal?.comissao_pct || 0;
+  const taxaFixa = taxas ? taxas.taxaFixa : canal?.taxa_fixa || 0;
+  const totalPct = (base.imposto || 0) + comissaoPct + (base.custosFixosPct || 0);
+  const custoTotal = base.custoProduto + base.frete + base.embalagem;
+  const lucro = preco * (1 - totalPct) - taxaFixa - custoTotal;
+  const margem = preco > 0 ? lucro / preco : null;
+  return { preco, lucro, margem, comissaoPct, taxaFixa, totalPct, custoTotal };
+}
+
 // Canal customizado (Site Próprio, TikTok Shop etc.): comissão/taxa fixas, sem faixas.
 export function calcCanalCustom(canal, base) {
   return calcCanal({
