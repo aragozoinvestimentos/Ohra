@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { arredondarPreco } from "../lib/format.js";
 import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
+import { lerUltimosPercentuais, salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
@@ -272,7 +273,11 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
   function iniciarDetalhamento() {
     setForm((prev) => ({
       ...prev,
-      producao_detalhe: { ...DEFAULTS_PRODUCAO, materialNome: filamentos[0]?.nome || "" },
+      producao_detalhe: {
+        ...DEFAULTS_PRODUCAO,
+        ...lerUltimosPercentuais(DEFAULTS_PRODUCAO),
+        materialNome: filamentos[0]?.nome || "",
+      },
     }));
   }
 
@@ -329,6 +334,9 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
           return;
         }
       }
+    }
+    if (form.producao_detalhe) {
+      salvarUltimosPercentuais(form.producao_detalhe);
     }
     setSalvando(false);
     onToast(editandoId ? "Produto atualizado" : "Produto cadastrado");

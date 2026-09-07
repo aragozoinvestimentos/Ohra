@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
+import { salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -392,7 +393,8 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           <button
             className="btn"
             style={{ marginTop: 8, width: "100%" }}
-            onClick={() =>
+            onClick={() => {
+              salvarUltimosPercentuais({ falhasPct: n(f.falhasPct), manutencaoPct: n(f.manutencaoPct), acabamentoPct: n(f.acabamentoPct) });
               onSalvarProduto({
                 id: produtoId || null,
                 nome: produtoSelecionado?.nome || "",
@@ -417,8 +419,8 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
                   diasMes: n(f.diasMes),
                   modelagem: n(f.modelagem),
                 },
-              })
-            }
+              });
+            }}
           >
             {produtoId ? "Atualizar produto cadastrado →" : "Salvar como Produto →"}
           </button>
