@@ -33,6 +33,9 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
   const [pecasPorImpressaoSalvo, setPecasPorImpressaoSalvo] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
+  // Só de referência visual ao lado do custo — nunca é salva no banco nem
+  // entra em nenhum cálculo, é puramente pra comparar de olho.
+  const [concorrencia, setConcorrencia] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -196,6 +199,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
         });
         setDetalheSalvo(produtoRecebido.detalhe || null);
         setPecasPorImpressaoSalvo(produtoRecebido.pecasPorImpressao ?? pExistente?.pecas_por_impressao ?? 1);
+        setConcorrencia("");
       })();
       return;
     }
@@ -211,6 +215,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
     // Produção — o snapshot de referência começa igual ao que acabou de vir.
     setDetalheSalvo(produtoRecebido.detalhe || null);
     setPecasPorImpressaoSalvo(produtoRecebido.pecasPorImpressao ?? 1);
+    setConcorrencia("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtoRecebido?.seq]);
 
@@ -267,6 +272,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
     setEditandoId(null);
     setDetalheSalvo(null);
     setPecasPorImpressaoSalvo(null);
+    setConcorrencia("");
   }
 
   function iniciarDetalhamento() {
@@ -337,6 +343,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
 
   async function editar(p) {
     setEditandoId(p.id);
+    setConcorrencia("");
     let itens = [];
     if (supabase) {
       const { data } = await supabase.from("produto_embalagens").select("*").eq("produto_id", p.id);
@@ -493,9 +500,25 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
             />
           </div>
         </div>
-        <div className="field">
-          <label>Observação (opcional)</label>
-          <input type="text" value={form.observacao} onChange={setCampo("observacao")} />
+        <div className="row2">
+          <div className="field">
+            <label>Observação (opcional)</label>
+            <input type="text" value={form.observacao} onChange={setCampo("observacao")} />
+          </div>
+          <div className="field">
+            <label>
+              Concorrência (opcional)
+              <Ajuda texto="Só pra você comparar de olho com o custo ao lado — não é salva nem entra em nenhum cálculo." />
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="R$ 0,00"
+              value={concorrencia}
+              onChange={(e) => setConcorrencia(e.target.value)}
+            />
+          </div>
         </div>
 
         <h3 className="section-title" style={{ marginTop: 4 }}>

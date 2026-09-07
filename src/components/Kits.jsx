@@ -21,6 +21,9 @@ export default function Kits({ abrirKitId, onToast }) {
   const [salvando, setSalvando] = useState(false);
   const [markup, setMarkup] = useState(100);
   const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
+  // Só de referência visual ao lado do preço sugerido — nunca é salva no
+  // banco nem entra em nenhum cálculo, é puramente pra comparar de olho.
+  const [concorrencia, setConcorrencia] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -114,6 +117,7 @@ export default function Kits({ abrirKitId, onToast }) {
         produtosItens: (kp || []).map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade })),
         embalagemItens: (ke || []).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade })),
       });
+      setConcorrencia("");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirKitId?.seq]);
@@ -139,6 +143,7 @@ export default function Kits({ abrirKitId, onToast }) {
   function limpar() {
     setForm(VAZIO);
     setEditandoId(null);
+    setConcorrencia("");
   }
 
   // Soma a embalagem de cada produto escolhido (vezes a quantidade dele no
@@ -228,6 +233,7 @@ export default function Kits({ abrirKitId, onToast }) {
 
   function editar(k) {
     setEditandoId(k.id);
+    setConcorrencia("");
     setForm({
       nome: k.nome,
       sku: k.sku || "",
@@ -369,7 +375,7 @@ export default function Kits({ abrirKitId, onToast }) {
           <div className="kv"><span className="k">Custo de fabricação (produtos)</span><span className="v">{BRL(custoFabricacao)}</span></div>
           <div className="kv"><span className="k">Custo de embalagem do kit</span><span className="v">{BRL(custoEmbalagemKit)}</span></div>
           <div className="kv total"><span className="k">Custo total do kit</span><span className="v">{BRL(custoTotal)}</span></div>
-          <div className="row2" style={{ marginTop: 12, marginBottom: 0 }}>
+          <div className="row3" style={{ marginTop: 12, marginBottom: 0 }}>
             <div className="field" style={{ marginBottom: 0 }}>
               <label>Markup desejado (%)</label>
               <input type="number" step="1" value={markup} onChange={(e) => setMarkup(e.target.value)} />
@@ -377,6 +383,20 @@ export default function Kits({ abrirKitId, onToast }) {
             <div className="field" style={{ marginBottom: 0 }}>
               <label>Preço sugerido</label>
               <input type="text" readOnly value={BRL(precoSugerido)} />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>
+                Concorrência (opcional)
+                <Ajuda texto="Só pra você comparar de olho com o preço sugerido ao lado — não é salva nem entra em nenhum cálculo." />
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="R$ 0,00"
+                value={concorrencia}
+                onChange={(e) => setConcorrencia(e.target.value)}
+              />
             </div>
           </div>
         </div>
