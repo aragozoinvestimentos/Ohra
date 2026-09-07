@@ -20,6 +20,7 @@ export default function Kits({ abrirKitId, onToast }) {
   const [editandoId, setEditandoId] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [markup, setMarkup] = useState(100);
+  const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -85,11 +86,35 @@ export default function Kits({ abrirKitId, onToast }) {
     };
   }, [lojaId]);
 
-  // Veio de "Editar completo" em Preços por Canal — carrega o kit certo pra edição.
+  // Veio de "Editar completo" em Preços por Canal — carrega o kit certo pra
+  // edição. Essa sub-aba pode acabar de montar (troca vinda de outra aba de
+  // Cadastros), então o catálogo local ainda pode não ter carregado — sem
+  // isso, o efeito rodava uma vez só, achava a lista vazia e desistia,
+  // deixando o formulário em branco.
   useEffect(() => {
     if (!abrirKitId?.id) return;
-    const k = kits.find((kk) => kk.id === abrirKitId.id);
-    if (k) editar(k);
+    (async () => {
+      let k = kits.find((kk) => kk.id === abrirKitId.id) || null;
+      if (k) {
+        editar(k);
+        return;
+      }
+      if (!supabase) return;
+      const { data: kitData } = await supabase.from("kits").select("*").eq("id", abrirKitId.id).single();
+      if (!kitData) return;
+      const [{ data: kp }, { data: ke }] = await Promise.all([
+        supabase.from("kit_produtos").select("*").eq("kit_id", kitData.id),
+        supabase.from("kit_embalagens").select("*").eq("kit_id", kitData.id),
+      ]);
+      setEditandoId(kitData.id);
+      setForm({
+        nome: kitData.nome,
+        sku: kitData.sku || "",
+        observacao: kitData.observacao || "",
+        produtosItens: (kp || []).map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade })),
+        embalagemItens: (ke || []).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade })),
+      });
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirKitId?.seq]);
 
@@ -216,6 +241,25 @@ export default function Kits({ abrirKitId, onToast }) {
     });
   }
 
+  // Puxa a composição de um kit já cadastrado como ponto de partida pra um
+  // novo (ex: uma variação de cor/tamanho) — igual ao Clonar de Preços por
+  // Canal, mas sem criar nada ainda: só preenche o formulário. Nome e SKU
+  // ficam do jeito que a pessoa já tinha digitado, só o resto vem copiado.
+  function usarComoBase(k) {
+    setForm((prev) => ({
+      ...prev,
+      observacao: k.observacao || "",
+      produtosItens: kitProdutosTodos
+        .filter((r) => r.kit_id === k.id)
+        .map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade })),
+      embalagemItens: kitEmbalagensTodos
+        .filter((r) => r.kit_id === k.id)
+        .map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade })),
+    }));
+    setSugestoesOcultas(true);
+    onToast(`Composição de "${k.nome}" usada como base — nome e SKU continuam os que você digitou, ajuste o resto se precisar antes de salvar`);
+  }
+
   if (!supabase) {
     return (
       <div className="panel">
@@ -227,6 +271,19 @@ export default function Kits({ abrirKitId, onToast }) {
 
   const conflitoSku = achaConflitoSku(form.sku, editandoId);
 
+  const nomeQuery = form.nome.trim().toLowerCase();
+  const skuQuery = form.sku.trim().toLowerCase();
+  const sugestoes =
+    editandoId || sugestoesOcultas || (nomeQuery.length < 2 && skuQuery.length < 2)
+      ? []
+      : kits
+          .filter(
+            (k) =>
+              (nomeQuery.length >= 2 && k.nome.toLowerCase().includes(nomeQuery)) ||
+              (skuQuery.length >= 2 && (k.sku || "").toLowerCase().includes(skuQuery))
+          )
+          .slice(0, 5);
+
   return (
     <div>
       <div className="panel">
@@ -234,14 +291,30 @@ export default function Kits({ abrirKitId, onToast }) {
         <div className="row3">
           <div className="field">
             <label>Nome do kit</label>
-            <input type="text" placeholder="ex: Combo Vaso + Suporte" value={form.nome} onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))} />
+            <input
+              type="text"
+              placeholder="ex: Combo Vaso + Suporte"
+              value={form.nome}
+              onChange={(e) => {
+                setForm((p) => ({ ...p, nome: e.target.value }));
+                setSugestoesOcultas(false);
+              }}
+            />
           </div>
           <div className="field">
             <label>
               SKU (opcional)
               <Ajuda texto="Código próprio seu pra identificar o kit (o mesmo que você usa no Shopee/ML/etc, se tiver). Não é obrigatório — dá pra deixar em branco e preencher depois. Serve pra buscar mais rápido e vincular métricas a esse código." />
             </label>
-            <input type="text" placeholder="ex: KIT-01" value={form.sku} onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))} />
+            <input
+              type="text"
+              placeholder="ex: KIT-01"
+              value={form.sku}
+              onChange={(e) => {
+                setForm((p) => ({ ...p, sku: e.target.value }));
+                setSugestoesOcultas(false);
+              }}
+            />
             {conflitoSku && (
               <div className="hint" style={{ marginTop: 4, marginBottom: 0, color: "var(--warn)" }}>
                 Já existe um {conflitoSku.tipo} com esse SKU: {conflitoSku.nome}
@@ -253,6 +326,19 @@ export default function Kits({ abrirKitId, onToast }) {
             <input type="text" value={form.observacao} onChange={(e) => setForm((p) => ({ ...p, observacao: e.target.value }))} />
           </div>
         </div>
+        {sugestoes.length > 0 && (
+          <div className="hint" style={{ marginTop: -4 }}>
+            Parece com um kit já cadastrado — usar como base copia a composição (produtos + embalagem do kit; o nome e o SKU continuam os que você já
+            digitou):
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+              {sugestoes.map((k) => (
+                <button type="button" key={k.id} className="btn" style={{ fontWeight: 400 }} onClick={() => usarComoBase(k)}>
+                  Usar "{k.nome}{k.sku ? ` · ${k.sku}` : ""}" como base
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <h3 className="section-title" style={{ marginTop: 4 }}>
           Produtos no kit

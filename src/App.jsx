@@ -184,7 +184,7 @@ export default function App() {
         <div className="sidebar-brand">
           <img src={lojaAtual?.icone_url || logo} alt="Ohra" />
           <div>
-            <div className="word">OHRA</div>
+            <div className="word">{lojaAtual?.nome || "OHRA"}</div>
             <div className="tagline">Precificador</div>
           </div>
         </div>

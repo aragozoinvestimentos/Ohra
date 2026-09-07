@@ -309,7 +309,10 @@ export default function Historico({ onEditarCompleto, onToast }) {
                         <button
                           className="del"
                           title="Editar cadastro completo"
-                          onClick={() => onEditarCompleto?.(item.tipo === "kit" ? "kit" : "produto", item.id.split(":")[1])}
+                          onClick={() => {
+                            const [tipoLetra, id] = item.id.split(":");
+                            onEditarCompleto?.(tipoLetra === "k" ? "kit" : "produto", id);
+                          }}
                         >
                           ✎
                         </button>

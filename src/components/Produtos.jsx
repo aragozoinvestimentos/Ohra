@@ -32,6 +32,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
   const [detalheSalvo, setDetalheSalvo] = useState(null); // snapshot carregado do banco, só pra comparar "valor anterior"
   const [pecasPorImpressaoSalvo, setPecasPorImpressaoSalvo] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -357,6 +358,34 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
     setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
   }
 
+  // Puxa os dados de um produto já cadastrado como ponto de partida pra um
+  // novo (ex: uma variação de cor/tamanho) — igual ao Clonar de Preços por
+  // Canal, mas sem criar nada ainda: só preenche o formulário. Nome e SKU
+  // ficam do jeito que a pessoa já tinha digitado (é o que diferencia essa
+  // variação da original), só o resto vem copiado.
+  async function usarComoBase(p) {
+    let itens = [];
+    if (supabase) {
+      const { data } = await supabase.from("produto_embalagens").select("*").eq("produto_id", p.id);
+      itens = (data || []).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade }));
+    }
+    setForm((prev) => ({
+      ...prev,
+      material_nome: p.material_nome || "",
+      custo_producao: arredondarPreco(p.custo_producao),
+      frete_padrao: arredondarPreco(p.frete_padrao),
+      embalagem_padrao: arredondarPreco(p.embalagem_padrao),
+      observacao: p.observacao || "",
+      embalagemItens: itens,
+      producao_detalhe: p.producao_detalhe || null,
+      pecas_por_impressao: p.pecas_por_impressao ?? 1,
+    }));
+    setDetalheSalvo(p.producao_detalhe || null);
+    setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
+    setSugestoesOcultas(true);
+    onToast(`Dados de "${p.nome}" usados como base — nome e SKU continuam os que você digitou, ajuste o resto se precisar antes de salvar`);
+  }
+
   if (!supabase) {
     return (
       <div className="panel">
@@ -368,6 +397,19 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
 
   const conflitoSku = achaConflitoSku(form.sku, editandoId);
 
+  const nomeQuery = form.nome.trim().toLowerCase();
+  const skuQuery = form.sku.trim().toLowerCase();
+  const sugestoes =
+    editandoId || sugestoesOcultas || (nomeQuery.length < 2 && skuQuery.length < 2)
+      ? []
+      : produtos
+          .filter(
+            (p) =>
+              (nomeQuery.length >= 2 && p.nome.toLowerCase().includes(nomeQuery)) ||
+              (skuQuery.length >= 2 && (p.sku || "").toLowerCase().includes(skuQuery))
+          )
+          .slice(0, 5);
+
   return (
     <div>
       <div className="panel">
@@ -375,14 +417,30 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
         <div className="row3">
           <div className="field">
             <label>Nome do produto</label>
-            <input type="text" placeholder="ex: Vaso decorativo médio" value={form.nome} onChange={setCampo("nome")} />
+            <input
+              type="text"
+              placeholder="ex: Vaso decorativo médio"
+              value={form.nome}
+              onChange={(e) => {
+                setCampo("nome")(e);
+                setSugestoesOcultas(false);
+              }}
+            />
           </div>
           <div className="field">
             <label>
               SKU (opcional)
               <Ajuda texto="Código próprio seu pra identificar o produto (o mesmo que você usa no Shopee/ML/etc, se tiver). Não é obrigatório — dá pra deixar em branco e preencher depois. Serve pra buscar mais rápido e, no futuro, vincular qualquer métrica a esse código." />
             </label>
-            <input type="text" placeholder="ex: VS-MED-01" value={form.sku} onChange={setCampo("sku")} />
+            <input
+              type="text"
+              placeholder="ex: VS-MED-01"
+              value={form.sku}
+              onChange={(e) => {
+                setCampo("sku")(e);
+                setSugestoesOcultas(false);
+              }}
+            />
             {conflitoSku && (
               <div className="hint" style={{ marginTop: 4, marginBottom: 0, color: "var(--warn)" }}>
                 Já existe um {conflitoSku.tipo} com esse SKU: {conflitoSku.nome}
@@ -394,6 +452,19 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
             <input type="text" placeholder="ex: PLA (seu custo real)" value={form.material_nome} onChange={setCampo("material_nome")} />
           </div>
         </div>
+        {sugestoes.length > 0 && (
+          <div className="hint" style={{ marginTop: -4 }}>
+            Parece com um produto já cadastrado — usar como base copia material, custo, frete, embalagem e detalhamento (o nome e o SKU continuam os que
+            você já digitou):
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+              {sugestoes.map((p) => (
+                <button type="button" key={p.id} className="btn" style={{ fontWeight: 400 }} onClick={() => usarComoBase(p)}>
+                  Usar "{p.nome}{p.sku ? ` · ${p.sku}` : ""}" como base
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="row3">
           <div className="field">
             <label>Custo de produção (R$)</label>
