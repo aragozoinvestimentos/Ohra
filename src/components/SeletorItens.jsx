@@ -77,10 +77,14 @@ export default function SeletorItens({ catalogo, itens, onChange, rotuloVazio = 
     return <div className="hint" style={{ marginBottom: 0 }}>{rotuloVazio}</div>;
   }
 
+  // Sem corte de quantidade — a lista rola dentro do dropdown (ver
+  // .seletor-item-sugestoes no CSS). Um corte fixo aqui já escondeu item
+  // cadastrado (ficava fora dos primeiros N em ordem alfabética) sem
+  // nenhum aviso de "digite pra ver mais".
   const alvo = query.trim().toLowerCase();
-  const sugestoes = (
-    alvo ? catalogo.filter((c) => c.nome.toLowerCase().includes(alvo) || (c.sku || "").toLowerCase().includes(alvo)) : catalogo
-  ).slice(0, 8);
+  const sugestoes = alvo
+    ? catalogo.filter((c) => c.nome.toLowerCase().includes(alvo) || (c.sku || "").toLowerCase().includes(alvo))
+    : catalogo;
 
   return (
     <div ref={ref}>
