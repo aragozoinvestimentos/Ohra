@@ -12,8 +12,10 @@ function hojeStr() {
   return new Date().toDateString();
 }
 
-// Tela de descanso: aparece sozinha em dois momentos, sempre por cima só
-// da área de conteúdo (a sidebar continua visível e clicável por baixo).
+// Tela de descanso: aparece sozinha em dois momentos, cobrindo a tela toda
+// (inclusive por cima da barra lateral) — como as duas versões somem com
+// muito pouco esforço (um clique ou só mexer o mouse), cobrir tudo não
+// atrapalha em nada.
 //
 // 1) Primeira vez do dia (ao abrir/atualizar a página): versão completa,
 //    com logo, frase + versículo do dia, contagem de produtos/kits e o
@@ -101,6 +103,7 @@ export default function TelaDescanso() {
   if (modo === "leve") {
     return (
       <div className="tela-descanso tela-descanso-leve">
+        <img className="td-logo" src={logo} alt="" />
         <div className="td-frase">{versiculo.frase}</div>
         <div className="td-versiculo">
           {versiculo.texto}
