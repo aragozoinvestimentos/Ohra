@@ -22,7 +22,10 @@ function hojeStr() {
 //    com logo, frase + versículo do dia, contagem de produtos/kits e o
 //    top 3 do ranking (sempre "melhor canal, todos os itens", pra ser uma
 //    foto neutra do dia, independente de filtro que esteja ativo em
-//    Ranking) — some com o botão "Amém" ou qualquer clique.
+//    Ranking) — só some com o botão "Amém", de propósito (ver useEffect
+//    abaixo: antes qualquer clique fechava, e isso incluía digitar o PIN
+//    de loja pra entrar no app de manhã — a tela nem chegava a aparecer
+//    de verdade, sumia junto com o clique que confirmava o PIN).
 // 2) A qualquer momento, depois de 5 minutos sem nenhuma interação:
 //    versão leve, só frase + versículo — some ao primeiro mexer do mouse.
 export default function TelaDescanso() {
@@ -79,17 +82,6 @@ export default function TelaDescanso() {
       clearInterval(intervalo);
     };
   }, []);
-
-  // Versão cheia some com qualquer clique (no botão "Amém" ou em qualquer
-  // outro lugar, inclusive um item do menu lateral).
-  useEffect(() => {
-    if (modo !== "cheia") return;
-    function sumir() {
-      setModo(null);
-    }
-    window.addEventListener("click", sumir, { once: true });
-    return () => window.removeEventListener("click", sumir);
-  }, [modo]);
 
   // Versão leve some ao primeiro mexer do mouse — bem baixo atrito, de
   // propósito, pra nunca atrapalhar um trabalho em andamento.
@@ -161,7 +153,7 @@ export default function TelaDescanso() {
         </div>
       )}
 
-      <div className="td-dica">clique em qualquer lugar pra começar</div>
+      <div className="td-dica">clique em "Amém" pra começar</div>
     </div>
   );
 }

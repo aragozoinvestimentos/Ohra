@@ -184,6 +184,29 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
     return c?.id || null;
   }
 
+  // Imposto e custos fixos normalmente são os mesmos pra toda venda naquele
+  // canal (é config de loja, não de produto) — já ficam cadastrados em
+  // Cadastros → Canais. Em vez de digitar de novo pra cada produto, o botão
+  // abaixo puxa o que já está cadastrado; continua editável na mão depois,
+  // pro caso raro de um produto específico precisar de outro valor.
+  function usarConfigDoCanal() {
+    const canalId = resolverCanalId();
+    const canalRegistrado = canais.find((x) => x.id === canalId);
+    if (!canalRegistrado) {
+      onToast(
+        f.canal === "outro"
+          ? "Escolha qual canal próprio é esse acima primeiro"
+          : `Cadastre o canal ${canalLabel} em Cadastros → Canais primeiro`
+      );
+      return;
+    }
+    setF((prev) => ({
+      ...prev,
+      imposto: arredondarPreco((canalRegistrado.imposto_pct || 0) * 100),
+      custosFixos: arredondarPreco((canalRegistrado.custos_fixos_pct || 0) * 100),
+    }));
+  }
+
   // Se o produto/kit + canal escolhidos já têm um preço salvo, mostra pra não
   // sobrescrever sem avisar — o "Salvar" abaixo sempre substitui o que já
   // existia (upsert), então vale deixar claro antes de clicar.
@@ -375,6 +398,9 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
               <input type="number" step="0.1" value={f.custosFixos} onChange={set("custosFixos")} />
             </div>
           </div>
+          <button type="button" className="btn" style={{ marginTop: -8, marginBottom: 14, fontWeight: 400 }} onClick={usarConfigDoCanal}>
+            Usar imposto/custos fixos já cadastrados nesse canal
+          </button>
           <div className="field">
             <label>Lucratividade líquida desejada (%)</label>
             <input type="number" step="1" value={f.lucratividade} onChange={set("lucratividade")} />

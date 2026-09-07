@@ -134,15 +134,15 @@ a:hover { color: var(--accent); }
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 
-.side-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-.side-nav-grupo { margin-bottom: 6px; }
+.side-nav { display: flex; flex-direction: column; gap: 1px; flex: 1; }
+.side-nav-grupo { margin-bottom: 4px; }
 .side-nav-label {
   font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
-  color: var(--ink-faint); padding: 10px 12px 4px;
+  color: var(--ink-faint); padding: 8px 12px 4px;
 }
 .side-nav button {
   display: flex; align-items: center; gap: 10px; text-align: left; background: none; border: none;
-  padding: 10px 12px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: var(--ink-soft);
+  padding: 7px 12px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: var(--ink-soft);
 }
 .side-nav button .side-nav-icon { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
 .side-nav button:hover { background: var(--surface-2); color: var(--ink); }
