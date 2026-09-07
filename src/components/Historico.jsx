@@ -22,6 +22,7 @@ export default function Historico({ onToast }) {
   const [edicao, setEdicao] = useState({ preco: "", lucro: "", margem: "" });
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [recemSalvoId, setRecemSalvoId] = useState(null);
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -106,6 +107,10 @@ export default function Historico({ onToast }) {
   }
 
   const carregando = carregandoBase || carregandoPrecos;
+  const alvoBusca = busca.trim().toLowerCase();
+  const itensFiltrados = alvoBusca
+    ? itens.filter((item) => item.nome.toLowerCase().includes(alvoBusca) || (item.sku || "").toLowerCase().includes(alvoBusca))
+    : itens;
 
   return (
     <div className="panel">
@@ -113,6 +118,11 @@ export default function Historico({ onToast }) {
         Preços por canal
         <Ajuda texto="Cada célula mostra o preço, lucro e margem salvos pra esse produto/kit nesse canal. Célula vazia significa que ainda não foi salvo nada pra essa combinação — preencha em Precificação por Canal. Já salvo, use o ✎ pra corrigir na mão ou o × pra excluir (com confirmação)." />
       </h3>
+      {itens.length > 0 && (
+        <div className="field" style={{ maxWidth: 320 }}>
+          <input type="text" placeholder="Buscar por nome ou SKU…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        </div>
+      )}
       {!supabase ? (
         <div className="empty">Preços por Canal indisponível — configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para ativar.</div>
       ) : carregando ? (
@@ -121,6 +131,8 @@ export default function Historico({ onToast }) {
         <div className="empty">Nenhum produto ou kit cadastrado ainda. Cadastre em Cadastros → Produtos ou Kits.</div>
       ) : canais.length === 0 ? (
         <div className="empty">Nenhum canal cadastrado ainda. Cadastre em Cadastros → Canais.</div>
+      ) : itensFiltrados.length === 0 ? (
+        <div className="empty">Nenhum produto ou kit encontrado pra essa busca.</div>
       ) : (
         <div className="table-wrap">
           <table>
@@ -134,10 +146,10 @@ export default function Historico({ onToast }) {
               </tr>
             </thead>
             <tbody>
-              {itens.map((item) => (
+              {itensFiltrados.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    {item.nome} <span className="campo-anterior">({item.tipo})</span>
+                    {item.nome} <span className="campo-anterior">({item.tipo}{item.sku ? ` · SKU ${item.sku}` : ""})</span>
                   </td>
                   <td className="num">{BRL(item.custoTotal)}</td>
                   {canais.map((c) => {

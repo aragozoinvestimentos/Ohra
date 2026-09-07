@@ -6,7 +6,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import Ajuda from "./Ajuda.jsx";
 
-const VAZIO = { nome: "", observacao: "", produtosItens: [], embalagemItens: [] };
+const VAZIO = { nome: "", sku: "", observacao: "", produtosItens: [], embalagemItens: [] };
 
 export default function Kits({ onToast }) {
   const { lojaId } = useLoja();
@@ -22,6 +22,7 @@ export default function Kits({ onToast }) {
   const [salvando, setSalvando] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const [markup, setMarkup] = useState(100);
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -133,7 +134,12 @@ export default function Kits({ onToast }) {
       return;
     }
     setSalvando(true);
-    const payload = { nome, observacao: form.observacao.trim() || null, atualizado_em: new Date().toISOString() };
+    const payload = {
+      nome,
+      sku: form.sku.trim() || null,
+      observacao: form.observacao.trim() || null,
+      atualizado_em: new Date().toISOString(),
+    };
     let kitId = editandoId;
     let error;
     if (editandoId) {
@@ -184,6 +190,7 @@ export default function Kits({ onToast }) {
     setEditandoId(k.id);
     setForm({
       nome: k.nome,
+      sku: k.sku || "",
       observacao: k.observacao || "",
       produtosItens: kitProdutosTodos
         .filter((r) => r.kit_id === k.id)
@@ -229,10 +236,17 @@ export default function Kits({ onToast }) {
     <div>
       <div className="panel">
         <h3 className="section-title">{editandoId ? "Editar kit" : "Montar kit"}</h3>
-        <div className="row2">
+        <div className="row3">
           <div className="field">
             <label>Nome do kit</label>
             <input type="text" placeholder="ex: Combo Vaso + Suporte" value={form.nome} onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>
+              SKU (opcional)
+              <Ajuda texto="Código próprio seu pra identificar o kit (o mesmo que você usa no Shopee/ML/etc, se tiver). Não é obrigatório — dá pra deixar em branco e preencher depois. Serve pra buscar mais rápido e vincular métricas a esse código." />
+            </label>
+            <input type="text" placeholder="ex: KIT-01" value={form.sku} onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))} />
           </div>
           <div className="field">
             <label>Observação (opcional)</label>
@@ -291,6 +305,11 @@ export default function Kits({ onToast }) {
 
       <div className="panel">
         <h3>Kits cadastrados</h3>
+        {kits.length > 0 && (
+          <div className="field" style={{ maxWidth: 320 }}>
+            <input type="text" placeholder="Buscar por nome ou SKU…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          </div>
+        )}
         {carregando ? (
           <div className="empty">Carregando…</div>
         ) : kits.length === 0 ? (
@@ -301,6 +320,7 @@ export default function Kits({ onToast }) {
               <thead>
                 <tr>
                   <th>Kit</th>
+                  <th>SKU</th>
                   <th className="num">Peças</th>
                   <th className="num">Fabricação</th>
                   <th className="num">Embalagem</th>
@@ -309,22 +329,29 @@ export default function Kits({ onToast }) {
                 </tr>
               </thead>
               <tbody>
-                {kits.map((k) => {
-                  const c = custoKit(k);
-                  return (
-                    <tr key={k.id}>
-                      <td>{k.nome}</td>
-                      <td className="num">{c.nPecas}</td>
-                      <td className="num">{BRL(c.fab)}</td>
-                      <td className="num">{BRL(c.emb)}</td>
-                      <td className="num" style={{ fontWeight: 600 }}>{BRL(c.total)}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <button className="del" title="Editar" onClick={() => editar(k)}>✎</button>
-                        <button className="del" title="Excluir" onClick={() => setExcluirAlvo(k)}>×</button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {kits
+                  .filter((k) => {
+                    const alvo = busca.trim().toLowerCase();
+                    if (!alvo) return true;
+                    return k.nome.toLowerCase().includes(alvo) || (k.sku || "").toLowerCase().includes(alvo);
+                  })
+                  .map((k) => {
+                    const c = custoKit(k);
+                    return (
+                      <tr key={k.id}>
+                        <td>{k.nome}</td>
+                        <td>{k.sku || <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
+                        <td className="num">{c.nPecas}</td>
+                        <td className="num">{BRL(c.fab)}</td>
+                        <td className="num">{BRL(c.emb)}</td>
+                        <td className="num" style={{ fontWeight: 600 }}>{BRL(c.total)}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <button className="del" title="Editar" onClick={() => editar(k)}>✎</button>
+                          <button className="del" title="Excluir" onClick={() => setExcluirAlvo(k)}>×</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>

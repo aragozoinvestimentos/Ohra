@@ -160,12 +160,14 @@ export function useRankingData() {
     const doProdutos = produtos.map((p) => ({
       id: `p:${p.id}`,
       nome: p.nome,
+      sku: p.sku || "",
       tipo: "Produto",
       custoTotal: arredondarPreco((Number(p.custo_producao) || 0) + (Number(p.frete_padrao) || 0) + (Number(p.embalagem_padrao) || 0)),
     }));
     const doKits = kits.map((k) => ({
       id: `k:${k.id}`,
       nome: k.nome,
+      sku: k.sku || "",
       tipo: "Kit",
       custoTotal: arredondarPreco(custoKitTotal(k)),
     }));

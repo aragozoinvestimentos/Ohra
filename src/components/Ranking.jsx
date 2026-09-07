@@ -16,6 +16,7 @@ export default function Ranking() {
   const { itens, canais, carregando } = useRankingData();
   const [canalFiltro, setCanalFiltro] = useState("melhor"); // "melhor" ou o id de um canal específico
   const [tipoFiltro, setTipoFiltro] = useState("todos"); // "todos" | "produtos" | "kits"
+  const [busca, setBusca] = useState("");
 
   // Troca de loja invalida o filtro de canal escolhido (o canal pode nem
   // existir na loja nova).
@@ -23,7 +24,11 @@ export default function Ranking() {
     setCanalFiltro("melhor");
   }, [lojaId]);
 
-  const ranking = calcularRanking(itens, canais, { canalFiltro, tipoFiltro });
+  const ranking = calcularRanking(itens, canais, { canalFiltro, tipoFiltro }).filter((linha) => {
+    const alvo = busca.trim().toLowerCase();
+    if (!alvo) return true;
+    return linha.item.nome.toLowerCase().includes(alvo) || (linha.item.sku || "").toLowerCase().includes(alvo);
+  });
 
   if (!supabase) {
     return (
@@ -42,25 +47,30 @@ export default function Ranking() {
           <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade (a ${LUCRATIVIDADE_PADRAO}% de lucratividade, o padrão do app) — não é ranking de venda/popularidade, isso fica pro ERP futuro. É só análise: pra simular outras metas de lucratividade, use Precificação por Canal ou Comparativo. Use "Mostrar" pra enxugar a lista só pra Produtos ou só pra Kits, e "Marketplace" pra ver o retorno num canal específico (ou deixe em 'Melhor canal' pra ver o teto de cada item).`} />
         </h3>
         {canais.length > 0 ? (
-          <div className="row2" style={{ marginBottom: 0, maxWidth: 560 }}>
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label>Mostrar</label>
-              <select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)}>
-                <option value="todos">Produtos e Kits</option>
-                <option value="produtos">Somente Produtos</option>
-                <option value="kits">Somente Kits</option>
-              </select>
+          <>
+            <div className="row2" style={{ marginBottom: 0, maxWidth: 560 }}>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Mostrar</label>
+                <select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)}>
+                  <option value="todos">Produtos e Kits</option>
+                  <option value="produtos">Somente Produtos</option>
+                  <option value="kits">Somente Kits</option>
+                </select>
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Marketplace</label>
+                <select value={canalFiltro} onChange={(e) => setCanalFiltro(e.target.value)}>
+                  <option value="melhor">Melhor canal (recomendado)</option>
+                  {canais.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label>Marketplace</label>
-              <select value={canalFiltro} onChange={(e) => setCanalFiltro(e.target.value)}>
-                <option value="melhor">Melhor canal (recomendado)</option>
-                {canais.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nome}</option>
-                ))}
-              </select>
+            <div className="field" style={{ maxWidth: 320, marginTop: 12, marginBottom: 0 }}>
+              <input type="text" placeholder="Buscar por nome ou SKU…" value={busca} onChange={(e) => setBusca(e.target.value)} />
             </div>
-          </div>
+          </>
         ) : (
           <div className="empty">Nenhum canal ativo cadastrado ainda — vá em Cadastros → Canais.</div>
         )}
@@ -72,7 +82,9 @@ export default function Ranking() {
             <div className="empty">Carregando…</div>
           ) : ranking.length === 0 ? (
             <div className="empty">
-              Nenhum produto ou kit com custo cadastrado ainda — cadastre em Cadastros → Produtos ou Cadastros → Kits.
+              {busca.trim()
+                ? "Nenhum produto ou kit encontrado pra essa busca."
+                : "Nenhum produto ou kit com custo cadastrado ainda — cadastre em Cadastros → Produtos ou Cadastros → Kits."}
             </div>
           ) : (
             <div className="table-wrap">
@@ -81,6 +93,7 @@ export default function Ranking() {
                   <tr>
                     <th>#</th>
                     <th>Item</th>
+                    <th>SKU</th>
                     <th>Tipo</th>
                     <th className="num">Custo total</th>
                     <th>{canalFiltro === "melhor" ? "Melhor canal" : "Canal"}</th>
@@ -93,6 +106,7 @@ export default function Ranking() {
                     <tr key={linha.item.id}>
                       <td>{idx + 1}º</td>
                       <td>{linha.item.nome}</td>
+                      <td>{linha.item.sku || <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
                       <td><span className="campo-anterior">{linha.item.tipo}</span></td>
                       <td className="num">{BRL(linha.item.custoTotal)}</td>
                       <td>{linha.canal.nome}</td>

@@ -10,6 +10,7 @@ import Ajuda from "./Ajuda.jsx";
 
 const VAZIO = {
   nome: "",
+  sku: "",
   material_nome: "",
   custo_producao: "",
   frete_padrao: "",
@@ -32,6 +33,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
   const [pecasPorImpressaoSalvo, setPecasPorImpressaoSalvo] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -130,6 +132,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
         setEditandoId(produtoRecebido.id);
         setForm({
           nome: produtoRecebido.nome || pExistente?.nome || "",
+          sku: pExistente?.sku || "",
           material_nome: produtoRecebido.materialNome || pExistente?.material_nome || "",
           custo_producao: arredondarPreco(produtoRecebido.custo),
           frete_padrao: arredondarPreco(pExistente?.frete_padrao || 0),
@@ -229,6 +232,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
     }
     const payload = {
       nome,
+      sku: form.sku.trim() || null,
       material_nome: form.material_nome.trim() || null,
       custo_producao: arredondarPreco(resultadoDetalhe ? resultadoDetalhe.total : parseFloat(form.custo_producao) || 0),
       frete_padrao: arredondarPreco(parseFloat(form.frete_padrao) || 0),
@@ -288,6 +292,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
     }
     setForm({
       nome: p.nome,
+      sku: p.sku || "",
       material_nome: p.material_nome || "",
       custo_producao: arredondarPreco(p.custo_producao),
       frete_padrao: arredondarPreco(p.frete_padrao),
@@ -339,10 +344,17 @@ export default function Produtos({ produtoRecebido, onToast }) {
     <div>
       <div className="panel">
         <h3 className="section-title">{editandoId ? "Editar produto" : "Cadastrar produto"}</h3>
-        <div className="row2">
+        <div className="row3">
           <div className="field">
             <label>Nome do produto</label>
             <input type="text" placeholder="ex: Vaso decorativo médio" value={form.nome} onChange={setCampo("nome")} />
+          </div>
+          <div className="field">
+            <label>
+              SKU (opcional)
+              <Ajuda texto="Código próprio seu pra identificar o produto (o mesmo que você usa no Shopee/ML/etc, se tiver). Não é obrigatório — dá pra deixar em branco e preencher depois. Serve pra buscar mais rápido e, no futuro, vincular qualquer métrica a esse código." />
+            </label>
+            <input type="text" placeholder="ex: VS-MED-01" value={form.sku} onChange={setCampo("sku")} />
           </div>
           <div className="field">
             <label>Material</label>
@@ -429,6 +441,11 @@ export default function Produtos({ produtoRecebido, onToast }) {
           Produtos cadastrados
           <Ajuda texto="Custo total já soma produção + frete + embalagem. Pra ver o lucro por canal de tudo que está cadastrado, use o Ranking por retorno (aba Gestão) — e pra ver preços reais já definidos por canal, use Preços por Canal (aba Gestão)." />
         </h3>
+        {produtos.length > 0 && (
+          <div className="field" style={{ maxWidth: 320 }}>
+            <input type="text" placeholder="Buscar por nome ou SKU…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          </div>
+        )}
         {carregando ? (
           <div className="empty">Carregando…</div>
         ) : produtos.length === 0 ? (
@@ -439,29 +456,37 @@ export default function Produtos({ produtoRecebido, onToast }) {
               <thead>
                 <tr>
                   <th>Produto</th>
+                  <th>SKU</th>
                   <th className="num">Custo total</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {produtos.map((p) => {
-                  const custoTotal = arredondarPreco(
-                    (Number(p.custo_producao) || 0) + (Number(p.frete_padrao) || 0) + (Number(p.embalagem_padrao) || 0)
-                  );
-                  return (
-                    <tr key={p.id}>
-                      <td>
-                        {p.nome}
-                        {p.material_nome && <div className="campo-anterior">{p.material_nome}</div>}
-                      </td>
-                      <td className="num">{BRL(custoTotal)}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <button className="del" title="Editar" onClick={() => editar(p)}>✎</button>
-                        <button className="del" title="Excluir" onClick={() => pedirExclusao(p)}>×</button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {produtos
+                  .filter((p) => {
+                    const alvo = busca.trim().toLowerCase();
+                    if (!alvo) return true;
+                    return p.nome.toLowerCase().includes(alvo) || (p.sku || "").toLowerCase().includes(alvo);
+                  })
+                  .map((p) => {
+                    const custoTotal = arredondarPreco(
+                      (Number(p.custo_producao) || 0) + (Number(p.frete_padrao) || 0) + (Number(p.embalagem_padrao) || 0)
+                    );
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          {p.nome}
+                          {p.material_nome && <div className="campo-anterior">{p.material_nome}</div>}
+                        </td>
+                        <td>{p.sku || <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
+                        <td className="num">{BRL(custoTotal)}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <button className="del" title="Editar" onClick={() => editar(p)}>✎</button>
+                          <button className="del" title="Excluir" onClick={() => pedirExclusao(p)}>×</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
