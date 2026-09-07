@@ -31,12 +31,14 @@ export default function Comparativo() {
   const [mlCategoria, setMlCategoria] = useState(ML_CATEGORIAS[0]);
   const [mlTipoAnuncio, setMlTipoAnuncio] = useState("classico");
   const [lucratividade, setLucratividade] = useState(20);
+  const [canalFiltroId, setCanalFiltroId] = useState(""); // "" = todos os canais
 
   // Troca de loja invalida as seleções anteriores — sem isso, o item de
   // outra loja continuava "selecionado" (ainda que a lista já fosse outra).
   useEffect(() => {
     setItemAId("");
     setItemBId("");
+    setCanalFiltroId("");
   }, [lojaId]);
 
   useEffect(() => {
@@ -221,6 +223,15 @@ export default function Comparativo() {
   const { melhorOrganico: melhorOrganicoA, melhorComAds: melhorComAdsA } = useMemo(() => melhoresDeLinhas(linhasA), [linhasA]);
   const { melhorOrganico: melhorOrganicoB, melhorComAds: melhorComAdsB } = useMemo(() => melhoresDeLinhas(linhasB), [linhasB]);
 
+  // Com um canal escolhido em "Parâmetros gerais", as tabelas mostram só
+  // aquela linha — útil pra comparar os dois itens exatamente no mesmo
+  // canal, em vez de olhar o melhor canal (às vezes diferente) de cada um.
+  const linhasAExibidas = canalFiltroId ? linhasA.filter((l) => l.canal.id === canalFiltroId) : linhasA;
+  const linhasBExibidas = canalFiltroId ? linhasB.filter((l) => l.canal.id === canalFiltroId) : linhasB;
+  const canalFiltro = canalFiltroId ? canais.find((c) => c.id === canalFiltroId) || null : null;
+  const linhaFiltradaA = canalFiltroId ? linhasA.find((l) => l.canal.id === canalFiltroId) || null : null;
+  const linhaFiltradaB = canalFiltroId ? linhasB.find((l) => l.canal.id === canalFiltroId) || null : null;
+
   if (!supabase) {
     return (
       <div className="panel">
@@ -356,6 +367,18 @@ export default function Comparativo() {
             <Ajuda texto="Lucratividade desejada é a margem líquida usada como meta pra colorir o termômetro de cada canal (não muda o preço aqui, que já vem do custo do produto). Frete e embalagem abaixo são do primeiro item — o segundo tem os próprios campos, logo acima." />
           </h3>
           <div className="field">
+            <label>
+              Canal
+              <Ajuda texto="Por padrão o comparativo mostra TODOS os canais cadastrados, um por linha. Escolha um canal específico aqui pra ver só ele — útil pra comparar os dois itens exatamente no mesmo canal, em vez do melhor canal (que pode ser diferente) de cada um." />
+            </label>
+            <select value={canalFiltroId} onChange={(e) => setCanalFiltroId(e.target.value)}>
+              <option value="">Todos os canais</option>
+              {canais.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
             <label>Lucratividade líquida desejada (%)</label>
             <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
           </div>
@@ -398,34 +421,60 @@ export default function Comparativo() {
       </div>
 
       <div>
-        {itemB && melhorOrganicoA && melhorOrganicoB && (
-          <div className="panel" style={{ background: "var(--surface-2)" }}>
-            <h3 className="section-title">Resumo — qual compensa mais</h3>
-            <div className="kv">
-              <span className="k">{itemA?.nome || "Custo manual"} — melhor canal ({melhorOrganicoA.canal.nome})</span>
-              <span className="v">{BRL(melhorOrganicoA.resultado.lucro)}</span>
-            </div>
-            <div className="kv">
-              <span className="k">{itemB.nome} — melhor canal ({melhorOrganicoB.canal.nome})</span>
-              <span className="v">{BRL(melhorOrganicoB.resultado.lucro)}</span>
-            </div>
-            <div className="kv total">
-              <span className="k">Diferença de lucro (melhor canal de cada um)</span>
-              <span className="v">
-                {BRL(Math.abs(melhorOrganicoA.resultado.lucro - melhorOrganicoB.resultado.lucro))}{" "}
-                {melhorOrganicoA.resultado.lucro >= melhorOrganicoB.resultado.lucro
-                  ? `a mais vendendo ${itemA?.nome || "o primeiro"}`
-                  : `a mais vendendo ${itemB.nome}`}
-              </span>
-            </div>
-            <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
-              Compara o melhor cenário de cada um (podem ser canais diferentes) — pra ver lado a lado no MESMO canal, confira as duas tabelas abaixo.
-            </div>
-          </div>
-        )}
+        {itemB &&
+          (canalFiltro
+            ? linhaFiltradaA &&
+              linhaFiltradaB && (
+                <div className="panel" style={{ background: "var(--surface-2)" }}>
+                  <h3 className="section-title">Resumo — qual compensa mais em {canalFiltro.nome}</h3>
+                  <div className="kv">
+                    <span className="k">{itemA?.nome || "Custo manual"}</span>
+                    <span className="v">{BRL(linhaFiltradaA.resultado.lucro)}</span>
+                  </div>
+                  <div className="kv">
+                    <span className="k">{itemB.nome}</span>
+                    <span className="v">{BRL(linhaFiltradaB.resultado.lucro)}</span>
+                  </div>
+                  <div className="kv total">
+                    <span className="k">Diferença de lucro nesse canal</span>
+                    <span className="v">
+                      {BRL(Math.abs(linhaFiltradaA.resultado.lucro - linhaFiltradaB.resultado.lucro))}{" "}
+                      {linhaFiltradaA.resultado.lucro >= linhaFiltradaB.resultado.lucro
+                        ? `a mais vendendo ${itemA?.nome || "o primeiro"}`
+                        : `a mais vendendo ${itemB.nome}`}
+                    </span>
+                  </div>
+                </div>
+              )
+            : melhorOrganicoA &&
+              melhorOrganicoB && (
+                <div className="panel" style={{ background: "var(--surface-2)" }}>
+                  <h3 className="section-title">Resumo — qual compensa mais</h3>
+                  <div className="kv">
+                    <span className="k">{itemA?.nome || "Custo manual"} — melhor canal ({melhorOrganicoA.canal.nome})</span>
+                    <span className="v">{BRL(melhorOrganicoA.resultado.lucro)}</span>
+                  </div>
+                  <div className="kv">
+                    <span className="k">{itemB.nome} — melhor canal ({melhorOrganicoB.canal.nome})</span>
+                    <span className="v">{BRL(melhorOrganicoB.resultado.lucro)}</span>
+                  </div>
+                  <div className="kv total">
+                    <span className="k">Diferença de lucro (melhor canal de cada um)</span>
+                    <span className="v">
+                      {BRL(Math.abs(melhorOrganicoA.resultado.lucro - melhorOrganicoB.resultado.lucro))}{" "}
+                      {melhorOrganicoA.resultado.lucro >= melhorOrganicoB.resultado.lucro
+                        ? `a mais vendendo ${itemA?.nome || "o primeiro"}`
+                        : `a mais vendendo ${itemB.nome}`}
+                    </span>
+                  </div>
+                  <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+                    Compara o melhor cenário de cada um (podem ser canais diferentes) — escolha um canal específico em "Parâmetros gerais" pra comparar os dois no mesmo canal.
+                  </div>
+                </div>
+              ))}
 
-        {renderTabela(itemA?.nome || "Preço e lucro por canal", custoProdutoA, linhasA, melhorOrganicoA, melhorComAdsA)}
-        {itemB && renderTabela(itemB.nome, custoProdutoB, linhasB, melhorOrganicoB, melhorComAdsB)}
+        {renderTabela(itemA?.nome || "Preço e lucro por canal", custoProdutoA, linhasAExibidas, melhorOrganicoA, melhorComAdsA)}
+        {itemB && renderTabela(itemB.nome, custoProdutoB, linhasBExibidas, melhorOrganicoB, melhorComAdsB)}
 
         <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
           O preço de venda não muda com Ads — só o lucro daquela venda específica, pelo % que você configurou em Cadastros → Canais.
