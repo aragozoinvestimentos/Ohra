@@ -380,28 +380,6 @@ export default function Produtos({ produtoRecebido, onToast }) {
     return calcCanalCustom(canal, base);
   }
 
-  // Ranking por retorno: pra cada produto, olha o MELHOR canal (maior lucro
-  // líquido por unidade) e ordena do que mais deixa dinheiro no bolso pro
-  // que menos deixa. Não é ranking de venda/popularidade (isso é assunto pro
-  // futuro ERP) — só quanto cada peça realmente rende pra você quando vendida.
-  const rankingRetorno = useMemo(() => {
-    if (canais.length === 0) return [];
-    return produtos
-      .map((p) => {
-        let melhor = null;
-        for (const c of canais) {
-          const r = lucroPorCanal(p, c);
-          if (r?.lucro != null && (melhor == null || r.lucro > melhor.lucro)) {
-            melhor = { canal: c, lucro: r.lucro, margem: r.margem };
-          }
-        }
-        return melhor ? { produto: p, ...melhor } : null;
-      })
-      .filter(Boolean)
-      .sort((a, b) => b.lucro - a.lucro);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produtos, canais, lucratividadeVisao, mlCategoriaVisao, mlTipoAnuncioVisao]);
-
   if (!supabase) {
     return (
       <div className="panel">
@@ -509,7 +487,7 @@ export default function Produtos({ produtoRecebido, onToast }) {
         <div className="panel">
           <h3 className="section-title">
             Simulação de lucratividade
-            <Ajuda texto="Essa lucratividade desejada (e categoria/tipo de anúncio do ML) alimenta tanto o Ranking por retorno quanto a coluna de lucro por canal na lista de produtos abaixo — ajuste aqui pra simular outras metas nos dois de uma vez." />
+            <Ajuda texto="Essa lucratividade desejada (e categoria/tipo de anúncio do ML) alimenta a coluna de lucro por canal na lista de produtos abaixo — ajuste aqui pra simular outra meta. O Ranking por retorno (aba Gestão) tem sua própria simulação, independente dessa." />
           </h3>
           <div className="row3" style={{ marginBottom: 0 }}>
             <div className="field">
@@ -540,41 +518,6 @@ export default function Produtos({ produtoRecebido, onToast }) {
                 </div>
               </>
             )}
-          </div>
-        </div>
-      )}
-
-      {canais.length > 0 && rankingRetorno.length > 0 && (
-        <div className="panel">
-          <h3 className="section-title">
-            Ranking por retorno
-            <Ajuda texto="Ordena seus produtos pelo que mais deixa dinheiro no seu bolso por unidade vendida (lucro líquido no melhor canal, com a lucratividade simulada acima) — não é ranking de venda/popularidade, isso fica pro ERP futuro. Serve pra você decidir onde vale mais a pena focar produção e divulgação." />
-          </h3>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Produto</th>
-                  <th>Melhor canal</th>
-                  <th className="num">Lucro/un.</th>
-                  <th className="num">Margem</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rankingRetorno.map((linha, idx) => (
-                  <tr key={linha.produto.id}>
-                    <td>{idx + 1}º</td>
-                    <td>{linha.produto.nome}</td>
-                    <td>{linha.canal.nome}</td>
-                    <td className="num" style={{ color: linha.lucro >= 0 ? "var(--good)" : "var(--bad)", fontWeight: 600 }}>
-                      {BRL(linha.lucro)}
-                    </td>
-                    <td className="num">{linha.margem != null ? PCT(linha.margem) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         </div>
       )}
