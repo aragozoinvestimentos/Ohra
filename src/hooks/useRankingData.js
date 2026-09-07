@@ -20,6 +20,13 @@ export const LUCRATIVIDADE_PADRAO = 20;
 export const ML_CATEGORIA_PADRAO = Object.keys(ML_CATEGORY_PCT)[0];
 export const ML_TIPO_ANUNCIO_PADRAO = "classico";
 
+// O Supabase Realtime identifica canais pelo nome — dois `.channel()` com o
+// mesmo nome colidem (o segundo tenta registrar listeners num canal que o
+// primeiro já deixou "subscribed", e isso quebra com um erro não tratado).
+// Como mais de um componente usa este hook ao mesmo tempo (Ranking e a
+// tela de descanso), cada instância precisa do seu próprio nome único.
+let proximoIdInstancia = 0;
+
 function lucroPorCanal(custoTotal, canal) {
   if (custoTotal <= 0) return null;
   const base = {
@@ -72,6 +79,7 @@ export function useRankingData() {
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [canais, setCanais] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  const [idInstancia] = useState(() => proximoIdInstancia++);
 
   useEffect(() => {
     if (!supabase) {
@@ -114,7 +122,7 @@ export function useRankingData() {
     }
     carregar();
     const canal = supabase
-      .channel("ranking-data-realtime")
+      .channel(`ranking-data-realtime-${idInstancia}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregar)
@@ -126,7 +134,7 @@ export function useRankingData() {
       ativo = false;
       supabase.removeChannel(canal);
     };
-  }, [lojaId]);
+  }, [lojaId, idInstancia]);
 
   const catalogoProdutosBase = useMemo(
     () => produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" })),
