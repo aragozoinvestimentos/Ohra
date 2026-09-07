@@ -270,9 +270,27 @@ th.num { text-align: right; }
   display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
   padding: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px;
 }
-.seletor-linha select { flex: 1; min-width: 0; }
-.seletor-linha select, .seletor-linha input { background: var(--bg); }
+.seletor-linha input { background: var(--bg); }
 .seletor-linha .del { flex-shrink: 0; }
+
+.seletor-item-busca { position: relative; flex: 1; min-width: 0; }
+.seletor-item-busca input[type="text"] { width: 100%; }
+.seletor-item-escolhido {
+  width: 100%; display: block; text-align: left; border: 1px solid var(--border-strong); border-radius: 8px;
+  padding: 7px 9px; font-size: 13.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.seletor-item-sugestoes {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px;
+  box-shadow: var(--shadow); padding: 4px; max-height: 220px; overflow-y: auto;
+}
+.seletor-item-sugestoes button {
+  width: 100%; display: block; text-align: left; background: none; border: none;
+  padding: 7px 8px; border-radius: 6px; color: var(--ink); font-size: 12.5px;
+}
+.seletor-item-sugestoes button:hover { background: var(--surface-2); }
+.seletor-item-sku { color: var(--ink-faint); }
+.seletor-item-vazio { padding: 8px; font-size: 12.5px; color: var(--ink-faint); }
 
 .calc-preco-toggle {
   background: none; border: none; padding: 0; margin: -8px 0 14px; display: block;

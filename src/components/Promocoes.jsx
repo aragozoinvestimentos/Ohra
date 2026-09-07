@@ -320,8 +320,8 @@ export default function Promocoes() {
   // marcados na hora de exibir; o "preço" aqui é o custo de cada um (mesma
   // convenção usada em Kits.jsx), só pra calcular o subtotal em custo.
   const catalogoCombinacao = useMemo(() => {
-    const p = produtos.map((x) => ({ id: `p:${x.id}`, nome: x.nome, preco: Number(x.custo_producao) || 0, unidade: "un" }));
-    const k = kits.map((x) => ({ id: `k:${x.id}`, nome: `[Kit] ${x.nome}`, preco: custoKitTotal(x), unidade: "un" }));
+    const p = produtos.map((x) => ({ id: `p:${x.id}`, nome: x.nome, sku: x.sku || "", preco: Number(x.custo_producao) || 0, unidade: "un" }));
+    const k = kits.map((x) => ({ id: `k:${x.id}`, nome: `[Kit] ${x.nome}`, sku: x.sku || "", preco: custoKitTotal(x), unidade: "un" }));
     return [...p, ...k];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtos, kits, kitProdutosTodos, kitEmbalagensTodos, embalagensCatalogo]);

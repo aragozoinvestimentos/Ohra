@@ -128,7 +128,7 @@ export default function Kits({ abrirKitId, onToast }) {
     return null;
   }
 
-  const catalogoProdutos = produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" }));
+  const catalogoProdutos = produtos.map((p) => ({ id: p.id, nome: p.nome, sku: p.sku || "", preco: Number(p.custo_producao) || 0, unidade: "un" }));
   const catalogoEmbalagens = embalagensCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade }));
 
   const custoFabricacao = totalItens(catalogoProdutos, form.produtosItens);
