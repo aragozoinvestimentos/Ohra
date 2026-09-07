@@ -122,13 +122,25 @@ export default function OrcamentoAvulso({ onToast }) {
     setF((prev) => ({ ...prev, nome: "" }));
   }
 
+  // Zera o formulário inteiro de volta pros padrões — desmarca o produto
+  // cadastrado escolhido e todos os campos preenchidos na mão.
+  function limparTudo() {
+    setProdutoId("");
+    setF(DEFAULTS);
+  }
+
   return (
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title">
-            Pedido personalizado
-            <Ajuda texto="Pra encomendas vendidas direto (fora de marketplace) — sem comissão nem taxa fixa de plataforma. Escolha um produto já cadastrado pra puxar o custo automaticamente, ou preencha manualmente pra algo sob medida." />
+          <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>
+              Pedido personalizado
+              <Ajuda texto="Pra encomendas vendidas direto (fora de marketplace) — sem comissão nem taxa fixa de plataforma. Escolha um produto já cadastrado pra puxar o custo automaticamente, ou preencha manualmente pra algo sob medida." />
+            </span>
+            <button type="button" className="btn" onClick={limparTudo} style={{ fontWeight: 400 }}>
+              Limpar formulário
+            </button>
           </h3>
           <div className="field">
             <label>Produto cadastrado (opcional)</label>

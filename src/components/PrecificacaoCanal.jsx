@@ -223,13 +223,26 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
     onToast(`Preço salvo em Preços por Canal (${canalLabel})`);
   }
 
+  // Zera o formulário inteiro de volta pro estado inicial — canal, produto/kit
+  // escolhido e todos os campos preenchidos na mão.
+  function limparTudo() {
+    setF(DEFAULTS);
+    setBaseSelecionada("");
+    setCanalProprioId("");
+  }
+
   return (
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title">
-            Canal
-            <Ajuda texto="Comissão e taxa fixa são o que Shopee/Mercado Livre descontam de cada venda (calculadas pelas faixas oficiais). Imposto é o % que você recolhe sobre a venda (MEI com DAS fixo pode deixar em 0%). Custos fixos adicionais é qualquer % extra recorrente (embalagens, ferramentas, assinaturas). Lucratividade desejada é a margem líquida que você quer garantir — é ela que define o preço calculado." />
+          <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>
+              Canal
+              <Ajuda texto="Comissão e taxa fixa são o que Shopee/Mercado Livre descontam de cada venda (calculadas pelas faixas oficiais). Imposto é o % que você recolhe sobre a venda (MEI com DAS fixo pode deixar em 0%). Custos fixos adicionais é qualquer % extra recorrente (embalagens, ferramentas, assinaturas). Lucratividade desejada é a margem líquida que você quer garantir — é ela que define o preço calculado." />
+            </span>
+            <button type="button" className="btn" onClick={limparTudo} style={{ fontWeight: 400 }}>
+              Limpar formulário
+            </button>
           </h3>
           <div className="field">
             <label>Canal de venda</label>

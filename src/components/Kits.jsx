@@ -385,7 +385,9 @@ export default function Kits({ abrirKitId, onToast }) {
           <button className="btn primary" onClick={salvar} disabled={salvando}>
             {salvando ? "Salvando…" : editandoId ? "Salvar alterações" : "+ Cadastrar kit"}
           </button>
-          {editandoId && <button className="btn" onClick={limpar}>Cancelar</button>}
+          <button type="button" className="btn" onClick={limpar} disabled={salvando}>
+            {editandoId ? "Cancelar" : "Limpar"}
+          </button>
         </div>
         <div className="hint" style={{ marginBottom: 0, marginTop: 10 }}>
           {carregando

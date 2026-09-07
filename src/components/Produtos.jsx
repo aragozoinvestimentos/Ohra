@@ -531,9 +531,9 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
           <button className="btn primary" onClick={salvar} disabled={salvando}>
             {salvando ? "Salvando…" : editandoId ? "Salvar alterações" : "+ Cadastrar produto"}
           </button>
-          {editandoId && (
-            <button className="btn" onClick={limpar}>Cancelar</button>
-          )}
+          <button type="button" className="btn" onClick={limpar} disabled={salvando}>
+            {editandoId ? "Cancelar" : "Limpar"}
+          </button>
         </div>
         <div className="hint" style={{ marginBottom: 0, marginTop: 10 }}>
           Dica: na aba Custo de Produção, o botão "Salvar como Produto" já traz o custo calculado pra cá. Pra ver, buscar, clonar, editar ou excluir os

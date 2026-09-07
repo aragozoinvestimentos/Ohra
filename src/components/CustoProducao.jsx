@@ -136,6 +136,13 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     return isFinite(x) ? x : 0;
   };
 
+  // Zera o formulário inteiro de volta pros padrões — desmarca o produto
+  // cadastrado escolhido e todos os campos preenchidos na mão.
+  function limparTudo() {
+    setProdutoId("");
+    setF(DEFAULTS);
+  }
+
   const filamentos = materiais.filter((m) => (m.tipo || "filamento") === "filamento");
   const consumiveisCatalogo = materiais.filter((m) => m.tipo === "consumivel");
 
@@ -198,9 +205,14 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title">
-            Peça (dados do fatiador)
-            <Ajuda texto="Dados que o fatiador (slicer) mostra antes de imprimir. Comprimento é o total de filamento gasto (em metros); diâmetro e densidade dependem do filamento (1.75mm e ~1.24 g/cm³ pra PLA/PETG são padrão); tempo é a duração da impressão. Se você imprime várias peças de uma vez na mesma chapa (aproveitando o espaço da mesa), aumente 'Peças por impressão/chapa' e informe comprimento/tempo do TOTAL da chapa — o app divide tudo automaticamente pra achar o custo de cada peça." />
+          <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>
+              Peça (dados do fatiador)
+              <Ajuda texto="Dados que o fatiador (slicer) mostra antes de imprimir. Comprimento é o total de filamento gasto (em metros); diâmetro e densidade dependem do filamento (1.75mm e ~1.24 g/cm³ pra PLA/PETG são padrão); tempo é a duração da impressão. Se você imprime várias peças de uma vez na mesma chapa (aproveitando o espaço da mesa), aumente 'Peças por impressão/chapa' e informe comprimento/tempo do TOTAL da chapa — o app divide tudo automaticamente pra achar o custo de cada peça." />
+            </span>
+            <button type="button" className="btn" onClick={limparTudo} style={{ fontWeight: 400 }}>
+              Limpar formulário
+            </button>
           </h3>
           {supabase && (
             <div className="field">

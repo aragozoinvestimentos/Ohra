@@ -7,6 +7,8 @@ import Ajuda from "./Ajuda.jsx";
 
 const QUANTIDADES_COMPARACAO = [1, 3, 5, 10, 20, 50];
 
+const PADROES = { quantidade: 10, imposto: 0, custosFixos: 2, lucratividade: 30 };
+
 // Venda direta em volume de um produto já cadastrado: sem comissão de
 // marketplace, e o frete (cobrado uma vez por pedido) é diluído entre as
 // unidades — por isso o preço unitário cai conforme a quantidade sobe,
@@ -15,10 +17,10 @@ export default function OrcamentoVolume() {
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
   const [produtoId, setProdutoId] = useState("");
-  const [quantidade, setQuantidade] = useState(10);
-  const [imposto, setImposto] = useState(0);
-  const [custosFixos, setCustosFixos] = useState(2);
-  const [lucratividade, setLucratividade] = useState(30);
+  const [quantidade, setQuantidade] = useState(PADROES.quantidade);
+  const [imposto, setImposto] = useState(PADROES.imposto);
+  const [custosFixos, setCustosFixos] = useState(PADROES.custosFixos);
+  const [lucratividade, setLucratividade] = useState(PADROES.lucratividade);
 
   useEffect(() => {
     if (!supabase) return;
@@ -92,13 +94,27 @@ export default function OrcamentoVolume() {
     );
   }
 
+  // Zera quantidade e parâmetros de volta pros padrões — não mexe no produto
+  // escolhido, já que aqui sempre precisa ter um selecionado.
+  function limparTudo() {
+    setQuantidade(PADROES.quantidade);
+    setImposto(PADROES.imposto);
+    setCustosFixos(PADROES.custosFixos);
+    setLucratividade(PADROES.lucratividade);
+  }
+
   return (
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title">
-            Produto e quantidade
-            <Ajuda texto="O frete do produto cadastrado é cobrado uma vez por pedido (não por unidade) — quanto mais peças no lote, mais ele se dilui e menor fica o preço unitário, mesmo mantendo a mesma margem." />
+          <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>
+              Produto e quantidade
+              <Ajuda texto="O frete do produto cadastrado é cobrado uma vez por pedido (não por unidade) — quanto mais peças no lote, mais ele se dilui e menor fica o preço unitário, mesmo mantendo a mesma margem." />
+            </span>
+            <button type="button" className="btn" onClick={limparTudo} style={{ fontWeight: 400 }}>
+              Limpar formulário
+            </button>
           </h3>
           {produtos.length === 0 ? (
             <div className="empty">Cadastre um produto em Cadastros → Produtos primeiro.</div>
