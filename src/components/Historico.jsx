@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
+import { resultadoNoPreco } from "../lib/calc.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
-import { useRankingData } from "../hooks/useRankingData.js";
+import { useRankingData, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../hooks/useRankingData.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -31,6 +32,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [clonarForm, setClonarForm] = useState({ nome: "", sku: "" });
   const [salvandoClone, setSalvandoClone] = useState(false);
   const [excluirCompletoAlvo, setExcluirCompletoAlvo] = useState(null); // { item, aviso }
+  const [clonarPrecoAlvo, setClonarPrecoAlvo] = useState(null); // { item, canalDestino } — clonar preço já salvo de outro canal
+  const [canalOrigemId, setCanalOrigemId] = useState("");
+  const [salvandoClonePreco, setSalvandoClonePreco] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -101,6 +105,78 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const [tipo, id] = item.id.split(":");
     const itemTipo = tipo === "k" ? "kit" : "produto";
     return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalObj.id) || null;
+  }
+
+  // Canais onde esse item já tem preço salvo — são as opções válidas de
+  // "origem" pra clonar preço pra outro canal ainda vazio.
+  function canaisComPrecoSalvo(item) {
+    return canais.filter((c) => precoDe(item, c));
+  }
+
+  function abrirClonarPreco(item, canalDestino) {
+    const origens = canaisComPrecoSalvo(item);
+    if (origens.length === 0) return;
+    setClonarPrecoAlvo({ item, canalDestino });
+    setCanalOrigemId(origens[0].id);
+  }
+
+  // Preço igual ao do canal de origem, mas lucro/margem recalculados com a
+  // comissão/taxa fixa/imposto do canal de DESTINO (cada canal cobra
+  // diferente) — mesma lógica de resultadoNoPreco usada em Promoções e em
+  // "Comparar com outro preço" na Precificação por Canal.
+  const previaClonePreco = useMemo(() => {
+    if (!clonarPrecoAlvo) return null;
+    const canalOrigem = canais.find((c) => c.id === canalOrigemId);
+    const precoOrigem = canalOrigem ? precoDe(clonarPrecoAlvo.item, canalOrigem) : null;
+    if (!precoOrigem) return null;
+    const base = {
+      custoProduto: clonarPrecoAlvo.item.custoTotal,
+      frete: 0,
+      embalagem: 0,
+      imposto: clonarPrecoAlvo.canalDestino.imposto_pct || 0,
+      custosFixosPct: clonarPrecoAlvo.canalDestino.custos_fixos_pct || 0,
+    };
+    return resultadoNoPreco(clonarPrecoAlvo.canalDestino, base, Number(precoOrigem.preco), ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clonarPrecoAlvo, canalOrigemId, canais, precos]);
+
+  async function confirmarClonarPreco() {
+    if (!previaClonePreco) {
+      onToast("Escolha um canal de origem com preço já salvo");
+      return;
+    }
+    const { item, canalDestino } = clonarPrecoAlvo;
+    const [tipoLetra, id] = item.id.split(":");
+    setSalvandoClonePreco(true);
+    const { data, error } = await supabase
+      .from("precos_canal")
+      .upsert(
+        {
+          loja_id: lojaId || null,
+          item_tipo: tipoLetra === "k" ? "kit" : "produto",
+          item_id: id,
+          canal_id: canalDestino.id,
+          preco: arredondarPreco(previaClonePreco.preco),
+          custo_total: arredondarPreco(previaClonePreco.custoTotal),
+          lucro: previaClonePreco.lucro != null ? arredondarPreco(previaClonePreco.lucro) : null,
+          margem: previaClonePreco.margem,
+          atualizado_em: new Date().toISOString(),
+        },
+        { onConflict: "item_tipo,item_id,canal_id" }
+      )
+      .select()
+      .single();
+    setSalvandoClonePreco(false);
+    if (error) {
+      onToast(`Não foi possível clonar o preço: ${error.message}`);
+      return;
+    }
+    setPrecos((prev) => [...prev.filter((p) => p.id !== data.id), data]);
+    setClonarPrecoAlvo(null);
+    setRecemSalvoId(data.id);
+    setTimeout(() => setRecemSalvoId((atual) => (atual === data.id ? null : atual)), 1000);
+    const nomeOrigem = canais.find((c) => c.id === canalOrigemId)?.nome || "outro canal";
+    onToast(`Preço clonado de ${nomeOrigem} pra ${canalDestino.nome}`);
   }
 
   async function excluir(precoId) {
@@ -356,6 +432,10 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 {p.margem != null ? PCT(p.margem) : "—"}
                               </div>
                             </div>
+                          ) : canaisComPrecoSalvo(item).length > 0 ? (
+                            <button className="del" title={`Clonar preço de outro canal pra ${c.nome}`} onClick={() => abrirClonarPreco(item, c)}>
+                              ⇄
+                            </button>
                           ) : (
                             <span style={{ color: "var(--ink-faint)" }}>—</span>
                           )}
@@ -370,8 +450,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
         </>
       )}
       <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-        Pra preencher uma célula vazia, vá em Precificação por Canal, escolha o produto/kit e o canal, calcule e clique em "Salvar". Pra corrigir um valor já
-        salvo, use o ✎ na própria célula — ou o × pra excluir (pede confirmação antes).
+        Pra preencher uma célula vazia, vá em Precificação por Canal, escolha o produto/kit e o canal, calcule e clique em "Salvar" — ou, se esse item já tem
+        preço salvo em outro canal, use o ⇄ na própria célula vazia pra clonar o mesmo preço de venda (o lucro/margem é recalculado pra taxa desse canal).
+        Pra corrigir um valor já salvo, use o ✎ na própria célula — ou o × pra excluir (pede confirmação antes).
       </div>
 
       {editAlvo && (
@@ -478,6 +559,52 @@ export default function Historico({ onEditarCompleto, onToast }) {
               </div>
             )}
           </div>
+        </EditarDialog>
+      )}
+
+      {clonarPrecoAlvo && (
+        <EditarDialog
+          titulo={`Clonar preço pra ${clonarPrecoAlvo.canalDestino.nome}`}
+          salvando={salvandoClonePreco}
+          onSalvar={confirmarClonarPreco}
+          onCancelar={() => setClonarPrecoAlvo(null)}
+          salvarLabel="Clonar preço"
+          salvandoLabel="Clonando…"
+        >
+          <div className="hint" style={{ marginTop: 0 }}>
+            Usa o mesmo preço de venda já salvo em outro canal pra <strong>{clonarPrecoAlvo.item.nome}</strong> — o lucro e a margem são recalculados com a
+            comissão/taxa fixa/imposto de {clonarPrecoAlvo.canalDestino.nome} (cada canal cobra diferente, então o lucro muda mesmo com o preço igual).
+            Depois é só ajustar na mão se quiser um preço diferente.
+          </div>
+          <div className="field">
+            <label>Copiar preço de</label>
+            <select value={canalOrigemId} onChange={(e) => setCanalOrigemId(e.target.value)}>
+              {canaisComPrecoSalvo(clonarPrecoAlvo.item).map((c) => {
+                const p = precoDe(clonarPrecoAlvo.item, c);
+                return (
+                  <option key={c.id} value={c.id}>
+                    {c.nome} — {BRL(p.preco)}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          {previaClonePreco && (
+            <>
+              <div className="kv">
+                <span className="k">Preço em {clonarPrecoAlvo.canalDestino.nome}</span>
+                <span className="v">{BRL(previaClonePreco.preco)}</span>
+              </div>
+              <div className="kv total">
+                <span className="k">Lucro</span>
+                <span className="v">{BRL(previaClonePreco.lucro)}</span>
+              </div>
+              <div className="kv">
+                <span className="k">Margem</span>
+                <span className="v">{previaClonePreco.margem != null ? PCT(previaClonePreco.margem) : "—"}</span>
+              </div>
+            </>
+          )}
         </EditarDialog>
       )}
 
