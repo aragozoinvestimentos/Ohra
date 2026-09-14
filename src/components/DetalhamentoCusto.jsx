@@ -90,15 +90,22 @@ export default function DetalhamentoCusto({
         <CampoNum label="Acabamento (%)" valor={detalhe.acabamentoPct} anterior={salvo?.acabamentoPct} onChange={set("acabamentoPct")} />
       </div>
 
-      <div className="field">
+      {/* Label num "field" próprio, mas o SeletorItens fica FORA dele — "field
+          input, field select { width: 100% }" (pensada pra campo comum) tem
+          mais especificidade que ".seletor-qtd { width: 64px }" e vencia,
+          esticando o campo de quantidade e empurrando preço/excluir pra fora
+          da caixa. Único lugar do app que tinha o SeletorItens dentro de um
+          "field" — os outros (Kits, Custo de Produção, Promoções) já usam
+          esse mesmo padrão de label solto + SeletorItens ao lado. */}
+      <div className="field" style={{ marginBottom: 6 }}>
         <label>Consumíveis usados</label>
-        <SeletorItens
-          catalogo={consumiveisCatalogo}
-          itens={detalhe.consumiveisItens || []}
-          onChange={(itens) => set("consumiveisItens")(itens)}
-          rotuloVazio="Nenhum consumível nessa peça."
-        />
       </div>
+      <SeletorItens
+        catalogo={consumiveisCatalogo}
+        itens={detalhe.consumiveisItens || []}
+        onChange={(itens) => set("consumiveisItens")(itens)}
+        rotuloVazio="Nenhum consumível nessa peça."
+      />
 
       <div className="row2">
         <CampoNum label="Valor da máquina (R$)" valor={detalhe.maquina} anterior={salvo?.maquina} onChange={set("maquina")} />
