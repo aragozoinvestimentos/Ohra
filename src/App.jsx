@@ -244,7 +244,7 @@ export default function App() {
         </section>
 
         <section className={`view ${tab === "promocoes" ? "active" : ""}`}>
-          <Promocoes />
+          <Promocoes onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "ranking" ? "active" : ""}`}>
