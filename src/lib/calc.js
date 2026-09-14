@@ -182,8 +182,17 @@ export function resolverFaixaShein(base) {
 // só dá o resultado certo se os dois preços caírem na MESMA faixa. Shopee, ML
 // e TikTok têm comissão e/ou taxa fixa diferentes por faixa de preço final —
 // essa função acha a faixa certa pro preço informado, não pra um preço
-// diferente calculado antes. Shein (faixa única) e canal customizado não têm
-// esse risco — devolve null pra esses (quem chama usa a taxa fixa do canal).
+// diferente calculado antes. Shein tem faixa única (16%, sem taxa fixa) —
+// sem risco de cair na faixa errada, mas ainda assim resolvida aqui (e não
+// deixada pro "usa a taxa fixa do canal") porque o canal Shein cadastrado
+// não guarda comissao_pct/taxa_fixa na tabela `canais` (esses campos só
+// existem de verdade pra canal "custom" — Shein usa SHEIN_TIERS direto,
+// igual Shopee/ML/TikTok, ver useRankingData.js); devolver null aqui fazia
+// `resultadoNoPreco` cair no fallback `canal?.comissao_pct || 0`, ou seja,
+// 0% de comissão pra Shein em qualquer lugar que reavalie um preço (clonar
+// preço pra outro canal, Promoções, editar preço em Preços por Canal). Só
+// canal customizado de verdade não tem faixa nenhuma — devolve null só pra
+// esse (quem chama usa a taxa fixa cadastrada no próprio canal).
 export function resolverTaxasNoPreco(canalTipo, preco, mlCategoria, mlTipoAnuncio = "classico") {
   if (canalTipo === "shopee") {
     const tier = SHOPEE_TIERS.find((t) => preco >= t.min && preco <= t.max) || SHOPEE_TIERS[SHOPEE_TIERS.length - 1];
@@ -196,6 +205,10 @@ export function resolverTaxasNoPreco(canalTipo, preco, mlCategoria, mlTipoAnunci
   }
   if (canalTipo === "tiktok") {
     const tier = TIKTOK_TIERS.find((t) => preco >= t.min && preco <= t.max) || TIKTOK_TIERS[TIKTOK_TIERS.length - 1];
+    return { comissaoPct: tier.pct, taxaFixa: tier.fixo };
+  }
+  if (canalTipo === "shein") {
+    const tier = SHEIN_TIERS[0];
     return { comissaoPct: tier.pct, taxaFixa: tier.fixo };
   }
   return null;

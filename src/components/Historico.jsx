@@ -23,8 +23,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [precos, setPrecos] = useState([]);
   const [carregandoPrecos, setCarregandoPrecos] = useState(true);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
-  const [editAlvo, setEditAlvo] = useState(null); // { id, nomeItem, nomeCanal, custoTotal }
-  const [edicao, setEdicao] = useState({ preco: "", lucro: "", margem: "" });
+  const [editAlvo, setEditAlvo] = useState(null); // { id, nomeItem, nomeCanal, custoTotal, canal }
+  const [edicao, setEdicao] = useState({ preco: "" });
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [recemSalvoId, setRecemSalvoId] = useState(null);
   const [busca, setBusca] = useState("");
@@ -71,35 +71,34 @@ export default function Historico({ onEditarCompleto, onToast }) {
     return isFinite(n) ? n : null;
   }
 
-  // Preço e Margem são as duas entradas editáveis; o Lucro é sempre
-  // CALCULADO a partir delas (lucro = preço × margem) — igual aos outros
-  // calculadores do app (Precificação por Canal, Orçamento). Não dá pra
-  // deixar os três "soltos" ao mesmo tempo: com só uma fórmula ligando os
-  // três (margem = lucro / preço), editar um teria que assumir qual dos
-  // outros dois fica fixo — então travamos o Lucro como resultado, nunca
-  // como entrada, pra não ter ambiguidade. Editar o Preço recalcula o Lucro
-  // mantendo a Margem; editar a Margem recalcula o Lucro mantendo o Preço.
+  // Preço é a ÚNICA entrada editável aqui — Lucro e Margem são sempre
+  // CALCULADOS a partir dele com a fórmula real do canal (a mesma de
+  // Precificação por Canal, Promoções e "Clonar preço"): resolve a faixa de
+  // comissão que esse preço realmente cai (Shopee/ML/TikTok têm faixas
+  // diferentes por preço) e desconta taxa fixa, imposto e custos fixos
+  // cadastrados nesse canal. Antes essa janela deixava editar Preço E Margem
+  // como campos soltos e só multiplicava um pelo outro pra achar o Lucro
+  // (lucro = preço × margem) — dava pra "salvar" qualquer combinação, mesmo
+  // uma que o canal escolhido jamais entregaria de verdade naquele preço, e
+  // o valor ficava sem relação nenhuma com Precificação por Canal.
   function editarPreco(valor) {
-    setEdicao((prev) => {
-      const precoNum = numOuNull(valor);
-      const margemNum = numOuNull(prev.margem);
-      if (precoNum != null && margemNum != null) {
-        return { ...prev, preco: valor, lucro: (precoNum * (margemNum / 100)).toFixed(2) };
-      }
-      return { ...prev, preco: valor };
-    });
+    setEdicao((prev) => ({ ...prev, preco: valor }));
   }
 
-  function editarMargem(valor) {
-    setEdicao((prev) => {
-      const margemNum = numOuNull(valor);
-      const precoNum = numOuNull(prev.preco);
-      if (margemNum != null && precoNum != null) {
-        return { ...prev, margem: valor, lucro: (precoNum * (margemNum / 100)).toFixed(2) };
-      }
-      return { ...prev, margem: valor };
-    });
-  }
+  const resultadoEdicao = useMemo(() => {
+    if (!editAlvo) return null;
+    const precoNum = numOuNull(edicao.preco);
+    if (precoNum == null || precoNum <= 0) return null;
+    const base = {
+      custoProduto: editAlvo.custoTotal,
+      frete: 0,
+      embalagem: 0,
+      imposto: editAlvo.canal?.imposto_pct || 0,
+      custosFixosPct: editAlvo.canal?.custos_fixos_pct || 0,
+    };
+    return resultadoNoPreco(editAlvo.canal, base, precoNum, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editAlvo, edicao.preco]);
 
   function precoDe(item, canalObj) {
     const [tipo, id] = item.id.split(":");
@@ -190,12 +189,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
   }
 
   function iniciarEdicao(p, item, canalObj) {
-    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal });
-    setEdicao({
-      preco: Number(p.preco || 0).toFixed(2),
-      lucro: p.lucro != null ? Number(p.lucro).toFixed(2) : "",
-      margem: p.margem != null ? (Number(p.margem) * 100).toFixed(1) : "",
-    });
+    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal, canal: canalObj });
+    setEdicao({ preco: Number(p.preco || 0).toFixed(2) });
   }
 
   async function salvarEdicao() {
@@ -205,10 +200,12 @@ export default function Historico({ onEditarCompleto, onToast }) {
       onToast("Informe um preço válido");
       return;
     }
-    const lucroNum = parseFloat(String(edicao.lucro).replace(",", "."));
-    const margemNum = parseFloat(String(edicao.margem).replace(",", "."));
-    const lucro = isFinite(lucroNum) ? arredondarPreco(lucroNum) : null;
-    const margem = isFinite(margemNum) ? margemNum / 100 : null;
+    if (!resultadoEdicao) {
+      onToast("Não foi possível calcular o lucro pra esse preço — tente de novo");
+      return;
+    }
+    const lucro = arredondarPreco(resultadoEdicao.lucro);
+    const margem = resultadoEdicao.margem;
     setSalvandoEdicao(true);
     const { error } = await supabase
       .from("precos_canal")
@@ -469,39 +466,29 @@ export default function Historico({ onEditarCompleto, onToast }) {
             </span>
             <span className="v">{BRL(editAlvo.custoTotal)}</span>
           </div>
-          <div className="row2">
-            <div className="field">
-              <label>
-                Preço de venda (R$)
-                <Ajuda texto="O preço final que aparece pro cliente nesse canal." />
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                autoFocus
-                value={edicao.preco}
-                onChange={(e) => editarPreco(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label>
-                Margem (%)
-                <Ajuda texto="O lucro dividido pelo preço de venda, em porcentagem — a meta líquida que você quer garantir nessa venda." />
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                value={edicao.margem}
-                onChange={(e) => editarMargem(e.target.value)}
-              />
-            </div>
+          <div className="field">
+            <label>
+              Preço de venda (R$)
+              <Ajuda texto="O preço final que aparece pro cliente nesse canal — o único campo editável aqui. Lucro e Margem abaixo são recalculados na hora pra esse preço, com a comissão/taxa fixa/imposto reais desse canal (a mesma conta de Precificação por Canal)." />
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              autoFocus
+              value={edicao.preco}
+              onChange={(e) => editarPreco(e.target.value)}
+            />
           </div>
           <div className="destaque-lucro">
             <span className="k">
               Lucro
-              <span className="k-sub">calculado a partir do preço e da margem acima</span>
+              <span className="k-sub">recalculado pra esse preço, com a comissão/taxa/imposto desse canal</span>
             </span>
-            <span className="v">{numOuNull(edicao.lucro) != null ? BRL(numOuNull(edicao.lucro)) : "—"}</span>
+            <span className="v">{resultadoEdicao ? BRL(resultadoEdicao.lucro) : "—"}</span>
+          </div>
+          <div className="kv">
+            <span className="k">Margem</span>
+            <span className="v">{resultadoEdicao?.margem != null ? PCT(resultadoEdicao.margem) : "—"}</span>
           </div>
         </EditarDialog>
       )}
