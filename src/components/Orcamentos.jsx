@@ -96,13 +96,14 @@ export default function Orcamentos({ onToast }) {
       ) : carregando ? (
         <div className="empty">Carregando…</div>
       ) : orcamentos.length === 0 ? (
-        <div className="empty">Nenhum orçamento salvo ainda. Calcule um em "Encomenda avulsa" e clique em "Salvar".</div>
+        <div className="empty">Nenhum orçamento salvo ainda. Calcule um em "Encomenda avulsa" ou "Encomenda em volume" e clique em "Salvar".</div>
       ) : (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Pedido</th>
+                <th className="num">Qtd.</th>
                 <th className="num">Custo total</th>
                 <th className="num">Preço</th>
                 <th className="num">Lucro</th>
@@ -117,8 +118,17 @@ export default function Orcamentos({ onToast }) {
                     {o.nome || "—"}
                     {recemSalvoId === o.id && <span className="salvo-check">✓</span>}
                   </td>
-                  <td className="num">{BRL(o.custo_total)}</td>
-                  <td className="num">{BRL(o.preco)}</td>
+                  <td className="num">{o.quantidade > 1 ? `${o.quantidade} un.` : "1 un."}</td>
+                  <td className="num">
+                    {BRL(o.custo_total)}
+                    {o.quantidade > 1 && <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>total do lote</div>}
+                  </td>
+                  <td className="num">
+                    {BRL(o.preco)}
+                    {o.quantidade > 1 && (
+                      <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>{BRL(o.preco / o.quantidade)}/un.</div>
+                    )}
+                  </td>
                   <td className="num">{BRL(o.lucro)}</td>
                   <td className="num">{PCT(o.margem)}</td>
                   <td style={{ whiteSpace: "nowrap" }}>

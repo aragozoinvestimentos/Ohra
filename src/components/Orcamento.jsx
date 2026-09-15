@@ -28,7 +28,7 @@ export default function Orcamento({ onToast }) {
       </div>
 
       {sub === "avulso" && <OrcamentoAvulso onToast={onToast} />}
-      {sub === "volume" && <OrcamentoVolume />}
+      {sub === "volume" && <OrcamentoVolume onToast={onToast} />}
       {sub === "salvos" && <Orcamentos onToast={onToast} />}
     </div>
   );

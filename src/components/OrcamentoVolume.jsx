@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { calcCanal } from "../lib/calc.js";
-import { BRL, PCT } from "../lib/format.js";
+import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -13,7 +13,7 @@ const PADROES = { quantidade: 10, imposto: 0, custosFixos: 2, lucratividade: 30 
 // marketplace, e o frete (cobrado uma vez por pedido) é diluído entre as
 // unidades — por isso o preço unitário cai conforme a quantidade sobe,
 // mantendo a mesma lucratividade desejada.
-export default function OrcamentoVolume() {
+export default function OrcamentoVolume({ onToast }) {
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
   const [produtoId, setProdutoId] = useState("");
@@ -21,6 +21,8 @@ export default function OrcamentoVolume() {
   const [imposto, setImposto] = useState(PADROES.imposto);
   const [custosFixos, setCustosFixos] = useState(PADROES.custosFixos);
   const [lucratividade, setLucratividade] = useState(PADROES.lucratividade);
+  const [nomePedido, setNomePedido] = useState("");
+  const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -84,6 +86,45 @@ export default function OrcamentoVolume() {
     () => QUANTIDADES_COMPARACAO.map((q) => ({ q, r: calcularLote(q) })),
     [produto, imposto, custosFixos, lucratividade] // eslint-disable-line react-hooks/exhaustive-deps
   );
+
+  // Salva o lote atual (preço/custo/lucro TOTAIS do pedido, mais a
+  // quantidade) na mesma lista de "Orçamentos salvos" da Encomenda avulsa —
+  // só ganha uma coluna "Qtd." a mais lá, pra diferenciar de um pedido de
+  // uma peça só. Guardar a quantidade junto evita ambiguidade depois: sem
+  // ela, um preço salvo de um lote de 10 pareceria (errado) o preço de uma
+  // unidade só.
+  async function salvar() {
+    const nome = nomePedido.trim();
+    if (!nome) {
+      onToast?.("Dê um nome ao pedido antes de salvar");
+      return;
+    }
+    if (!supabase) {
+      onToast?.("Histórico indisponível (Supabase não configurado)");
+      return;
+    }
+    if (!resultadoAtual) {
+      onToast?.("Escolha um produto cadastrado antes de salvar");
+      return;
+    }
+    setSalvando(true);
+    const { error } = await supabase.from("orcamentos_avulsos").insert({
+      nome,
+      quantidade: Math.round(n(quantidade)) || 1,
+      custo_total: arredondarPreco(resultadoAtual.custoTotal),
+      preco: arredondarPreco(resultadoAtual.preco),
+      lucro: arredondarPreco(resultadoAtual.lucro),
+      margem: resultadoAtual.margem,
+      ...(lojaId ? { loja_id: lojaId } : {}),
+    });
+    setSalvando(false);
+    if (error) {
+      onToast?.("Não foi possível salvar agora — tente de novo");
+      return;
+    }
+    onToast?.("Orçamento salvo em Orçamentos salvos");
+    setNomePedido("");
+  }
 
   if (!supabase) {
     return (
@@ -169,6 +210,32 @@ export default function OrcamentoVolume() {
             </>
           )}
         </div>
+
+        {resultadoAtual && (
+          <div className="panel">
+            <h3 className="section-title">Salvar em Orçamentos</h3>
+            <div className="save-row">
+              <div className="field">
+                <label>Nome do pedido</label>
+                <input
+                  type="text"
+                  placeholder={`ex: Encomenda ${Math.round(n(quantidade)) || 1}x ${produto?.nome || ""}`}
+                  value={nomePedido}
+                  onChange={(e) => setNomePedido(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") salvar();
+                  }}
+                />
+              </div>
+              <button className="btn primary" onClick={salvar} disabled={salvando}>
+                {salvando ? "Salvando…" : "Salvar"}
+              </button>
+            </div>
+            <div className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
+              Salva o preço, custo e lucro TOTAIS desse lote de {Math.round(n(quantidade)) || 1} unidades — não o valor por unidade.
+            </div>
+          </div>
+        )}
 
         {produto && (
           <div className="panel">
