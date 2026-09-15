@@ -7,6 +7,7 @@ import Cadastros from "./components/Cadastros.jsx";
 import Orcamento from "./components/Orcamento.jsx";
 import Promocoes from "./components/Promocoes.jsx";
 import Otimizacao from "./components/Otimizacao.jsx";
+import Metas from "./components/Metas.jsx";
 import Ranking from "./components/Ranking.jsx";
 import TelaDescanso from "./components/TelaDescanso.jsx";
 import Historico from "./components/Historico.jsx";
@@ -63,6 +64,7 @@ const GRUPOS = [
   {
     titulo: "Gestão",
     tabs: [
+      { key: "metas", label: "Metas", icon: "🎯" },
       { key: "ranking", label: "Ranking por Retorno", icon: "🏆" },
       { key: "otimizacao", label: "Otimização", icon: "📈" },
     ],
@@ -245,6 +247,10 @@ export default function App() {
 
         <section className={`view ${tab === "promocoes" ? "active" : ""}`}>
           <Promocoes onToast={showToast} />
+        </section>
+
+        <section className={`view ${tab === "metas" ? "active" : ""}`}>
+          <Metas onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "ranking" ? "active" : ""}`}>
