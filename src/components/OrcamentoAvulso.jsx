@@ -260,15 +260,16 @@ export default function OrcamentoAvulso({ onToast }) {
       <div>
         <div className="panel">
           <h3>Preço sugerido</h3>
+          <div className="kv"><span className="k">Custo de produção</span><span className="v">{BRL(n(f.custoProduto))}</span></div>
+          <div className="kv"><span className="k">Frete</span><span className="v">{BRL(n(f.frete))}</span></div>
+          <div className="kv"><span className="k">Embalagem</span><span className="v">{BRL(n(f.embalagem))}</span></div>
+          {taxaProjeto > 0 && (
+            <div className="kv"><span className="k">Taxa de projeto ({n(f.horasModelagem)}h × {BRL(n(f.valorHoraModelagem))}/h)</span><span className="v">{BRL(taxaProjeto)}</span></div>
+          )}
           <div className="destaque-custo">
             <span className="k">Custo total</span>
             <span className="v">{BRL(resultado.custoTotal)}</span>
           </div>
-          {taxaProjeto > 0 && (
-            <div className="hint" style={{ marginTop: -8 }}>
-              Inclui {BRL(taxaProjeto)} de taxa de projeto ({n(f.horasModelagem)}h × {BRL(n(f.valorHoraModelagem))}/h).
-            </div>
-          )}
           <div className="destaque-preco">
             <span className="k">
               Preço definido para o pedido

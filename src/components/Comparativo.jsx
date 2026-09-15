@@ -17,6 +17,7 @@ export default function Comparativo() {
   const [kitEmbalagensTodos, setKitEmbalagensTodos] = useState([]);
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [canais, setCanais] = useState([]);
+  const [precos, setPrecos] = useState([]); // precos_canal já salvos — preço "real" pra comparar com o teórico calculado aqui
   const [carregando, setCarregando] = useState(true);
 
   const [itemAId, setItemAId] = useState(""); // "" (custo manual) | `p:<id>` | `k:<id>`
@@ -53,18 +54,21 @@ export default function Comparativo() {
         let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
         let qk = supabase.from("kits").select("*").order("nome");
         let qe = supabase.from("embalagens").select("*").order("nome");
+        let qpc = supabase.from("precos_canal").select("*");
         if (lojaId) {
           qp = qp.eq("loja_id", lojaId);
           qc = qc.eq("loja_id", lojaId);
           qk = qk.eq("loja_id", lojaId);
           qe = qe.eq("loja_id", lojaId);
+          qpc = qpc.eq("loja_id", lojaId);
         }
-        const [rp, rc, rk, re] = await Promise.all([qp, qc, qk, qe]);
+        const [rp, rc, rk, re, rpc] = await Promise.all([qp, qc, qk, qe, qpc]);
         if (!ativo) return;
         if (!rp.error) setProdutos(rp.data || []);
         if (!rc.error) setCanais(rc.data || []);
         if (!rk.error) setKits(rk.data || []);
         if (!re.error) setEmbalagensCatalogo(re.data || []);
+        if (!rpc.error) setPrecos(rpc.data || []);
 
         const kitIds = (rk.data || []).map((k) => k.id);
         const [kpResp, keResp] = await Promise.all([
@@ -89,6 +93,7 @@ export default function Comparativo() {
       .on("postgres_changes", { event: "*", schema: "public", table: "kit_produtos" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
@@ -139,6 +144,35 @@ export default function Comparativo() {
     const k = kits.find((x) => x.id === alvo);
     if (!k) return null;
     return { nome: `[Kit] ${k.nome}`, tipo: "kit", custo: arredondarPreco(custoKitTotal(k)), freteDefault: 0, embalagemDefault: 0 };
+  }
+
+  // Preço real já salvo (Precificação por Canal) pra um item+canal — só
+  // existe pra produto/kit cadastrado (não pra "custo manual", que não tem
+  // id pra procurar). Serve de referência: o valor calculado aqui é sempre
+  // teórico (custo + lucratividade desejada), pode ter ficado desatualizado
+  // se o preço real foi ajustado manualmente depois.
+  function precoSalvoPara(idPrefixado, canalId) {
+    if (!idPrefixado) return null;
+    const [t, id] = idPrefixado.split(":");
+    const itemTipo = t === "k" ? "kit" : "produto";
+    return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalId) || null;
+  }
+
+  // Ordena as linhas por lucro orgânico decrescente — antes só o "melhor
+  // canal" ganhava um selo, mas a ordem da tabela continuava sendo a mesma
+  // de Cadastros → Canais, obrigando a comparar linha por linha. Linha
+  // inconsistente (faixa não confere) ou sem lucro calculável vai pro fim,
+  // não disputa a ordenação com as confiáveis.
+  function ordenarPorLucro(linhas) {
+    const confiavel = (l) => l.canal.tipo === "custom" || l.resultado.faixaOk !== false;
+    return [...linhas].sort((a, b) => {
+      const okA = confiavel(a) && a.resultado.lucro != null;
+      const okB = confiavel(b) && b.resultado.lucro != null;
+      if (okA && okB) return b.resultado.lucro - a.resultado.lucro;
+      if (okA) return -1;
+      if (okB) return 1;
+      return 0;
+    });
   }
 
   const itemA = resolverItem(itemAId);
@@ -226,8 +260,8 @@ export default function Comparativo() {
   // Com um canal escolhido em "Parâmetros gerais", as tabelas mostram só
   // aquela linha — útil pra comparar os dois itens exatamente no mesmo
   // canal, em vez de olhar o melhor canal (às vezes diferente) de cada um.
-  const linhasAExibidas = canalFiltroId ? linhasA.filter((l) => l.canal.id === canalFiltroId) : linhasA;
-  const linhasBExibidas = canalFiltroId ? linhasB.filter((l) => l.canal.id === canalFiltroId) : linhasB;
+  const linhasAExibidas = ordenarPorLucro(canalFiltroId ? linhasA.filter((l) => l.canal.id === canalFiltroId) : linhasA);
+  const linhasBExibidas = ordenarPorLucro(canalFiltroId ? linhasB.filter((l) => l.canal.id === canalFiltroId) : linhasB);
   const canalFiltro = canalFiltroId ? canais.find((c) => c.id === canalFiltroId) || null : null;
   const linhaFiltradaA = canalFiltroId ? linhasA.find((l) => l.canal.id === canalFiltroId) || null : null;
   const linhaFiltradaB = canalFiltroId ? linhasB.find((l) => l.canal.id === canalFiltroId) || null : null;
@@ -241,7 +275,7 @@ export default function Comparativo() {
     );
   }
 
-  function renderTabela(titulo, custoProduto, linhas, melhorOrganico, melhorComAds) {
+  function renderTabela(titulo, custoProduto, linhas, melhorOrganico, melhorComAds, idPrefixado) {
     return (
       <div className="panel">
         <h3>{titulo}</h3>
@@ -267,6 +301,8 @@ export default function Comparativo() {
               <tbody>
                 {linhas.map(({ canal, resultado, ads }) => {
                   const inconsistente = canal.tipo !== "custom" && resultado.faixaOk === false;
+                  const precoSalvo = precoSalvoPara(idPrefixado, canal.id);
+                  const bateComSalvo = precoSalvo && resultado.preco != null && Math.abs(precoSalvo.preco - resultado.preco) < 0.005;
                   return (
                     <tr key={canal.id}>
                       <td>
@@ -283,7 +319,14 @@ export default function Comparativo() {
                           </span>
                         )}
                       </td>
-                      <td className="num">{BRL(resultado.preco)}</td>
+                      <td className="num">
+                        {BRL(resultado.preco)}
+                        {precoSalvo && (
+                          <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>
+                            {bateComSalvo ? "= preço salvo" : `salvo: ${BRL(precoSalvo.preco)}`}
+                          </div>
+                        )}
+                      </td>
                       <td className="num">{BRL(resultado.lucro)}</td>
                       <td className="num">
                         {PCT(resultado.margem)}
@@ -473,11 +516,11 @@ export default function Comparativo() {
                 </div>
               ))}
 
-        {renderTabela(itemA?.nome || "Preço e lucro por canal", custoProdutoA, linhasAExibidas, melhorOrganicoA, melhorComAdsA)}
-        {itemB && renderTabela(itemB.nome, custoProdutoB, linhasBExibidas, melhorOrganicoB, melhorComAdsB)}
+        {renderTabela(itemA?.nome || "Preço e lucro por canal", custoProdutoA, linhasAExibidas, melhorOrganicoA, melhorComAdsA, itemAId)}
+        {itemB && renderTabela(itemB.nome, custoProdutoB, linhasBExibidas, melhorOrganicoB, melhorComAdsB, itemBId)}
 
         <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-          O preço de venda não muda com Ads — só o lucro daquela venda específica, pelo % que você configurou em Cadastros → Canais.
+          Canais ordenados do maior pro menor lucro orgânico. Quando o item já tem um preço salvo em Precificação por Canal, ele aparece embaixo do preço calculado — se forem diferentes, o preço real de venda é o salvo, não o teórico daqui. O preço de venda não muda com Ads — só o lucro daquela venda específica, pelo % que você configurou em Cadastros → Canais.
         </div>
       </div>
     </div>

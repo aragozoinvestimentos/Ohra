@@ -32,6 +32,33 @@ function DeltaAvulso({ delta, sufixo = "" }) {
   );
 }
 
+// Ponto de equilíbrio: uma promoção quase sempre reduz o lucro POR PEÇA em
+// troca de vender mais peças — mas nenhum painel respondia "vender mais
+// quanto, exatamente, pra não sair perdendo?". Não dá pra responder em
+// unidades absolutas (o app não sabe quantas vendas você faria no preço
+// normal), mas dá pra responder em múltiplo/porcentagem: se o lucro por
+// peça cai pela metade, por exemplo, precisa vender o dobro só pra empatar
+// o lucro TOTAL de vender menos peças no preço cheio.
+function Breakeven({ lucroNormal, lucroPromo }) {
+  if (lucroNormal == null || !isFinite(lucroNormal) || lucroNormal <= 0) return null;
+  if (lucroPromo == null || !isFinite(lucroPromo)) return null;
+  if (lucroPromo <= 0) {
+    return (
+      <div className="hint" style={{ marginTop: 4, marginBottom: 0, color: "var(--bad)" }}>
+        Ponto de equilíbrio: essa promoção não dá lucro por peça — nenhum volume de venda extra compensa sozinho (só vale se trouxer ganho indireto: giro de estoque, ranking no canal, atrair um cliente novo etc.).
+      </div>
+    );
+  }
+  const mult = lucroNormal / lucroPromo;
+  const pctExtra = (mult - 1) * 100;
+  return (
+    <div className="hint" style={{ marginTop: 4, marginBottom: 0 }}>
+      Ponto de equilíbrio: precisa vender {mult.toFixed(2)}× mais peças nessa promoção ({pctExtra >= 0 ? "+" : ""}
+      {pctExtra.toFixed(0)}%) pra igualar o lucro total de vender no preço normal.
+    </div>
+  );
+}
+
 export default function PromocaoSimulador({ onToast }) {
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
@@ -290,6 +317,55 @@ export default function PromocaoSimulador({ onToast }) {
       lucroEm,
     };
   }, [normalCalculado, precoOriginalNum, canal, base, mlCategoria, mlTipoAnuncio]);
+
+  // Resultado do desconto direto — extraído num memo próprio (em vez de só
+  // calcular dentro do JSX) porque o comparativo entre promoções, abaixo,
+  // também precisa desse número, sem duplicar a conta.
+  const descontoResultado = useMemo(() => {
+    if (!normal) return null;
+    const preco = normal.preco * (1 - (n(desconto) || 0) / 100);
+    const lucro = normal.lucroEm(preco);
+    return { preco, lucro, margem: preco > 0 ? lucro / preco : null };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [normal, desconto]);
+
+  // Comparativo entre todos os tipos de promoção configurados agora, lado a
+  // lado — sem precisar trocar de aba pra ver qual rende mais lucro. Só
+  // entra na lista o tipo que já tem uma configuração válida (ex: brinde só
+  // depois de escolher um produto-brinde). "Progressivo" fica de fora porque
+  // já tem sua própria tabela de faixas (não é um resultado único) e "Venda
+  // combinada" fica de fora porque parte de uma seleção de itens diferente
+  // (não é o mesmo produto/canal único dos outros tipos).
+  const resumoComparativo = useMemo(() => {
+    if (!normal) return null;
+    const linhas = [{ key: "normal", label: "Preço normal", preco: normal.preco, lucro: normal.lucro, margem: normal.margem }];
+    if (descontoResultado) {
+      linhas.push({ key: "desconto", label: `Desconto direto (${n(desconto)}%)`, preco: descontoResultado.preco, lucro: descontoResultado.lucro, margem: descontoResultado.margem });
+    }
+    if (combo) {
+      linhas.push({ key: "combo", label: `Combo (leve ${combo.L}, pague ${combo.P})`, preco: combo.precoUnidadeEfetivo, lucro: combo.lucroUnidadeEfetivo, margem: combo.margemKit });
+    }
+    if (liquidacao?.possivel) {
+      linhas.push({
+        key: "liquidacao",
+        label: `Liquidação (margem mín. ${n(margemMinima)}%)`,
+        preco: liquidacao.precoMinimo,
+        lucro: liquidacao.lucroNoPiso,
+        margem: liquidacao.precoMinimo > 0 ? liquidacao.lucroNoPiso / liquidacao.precoMinimo : null,
+      });
+    }
+    if (brindeResultado) {
+      linhas.push({ key: "brinde", label: `Brinde: ${brinde?.nome || "—"}`, preco: normal.preco, lucro: brindeResultado.lucroComBrinde, margem: brindeResultado.margemComBrinde });
+    }
+    if (freteGratis) {
+      linhas.push({ key: "frete", label: "Frete grátis subsidiado", preco: normal.preco, lucro: freteGratis.lucro, margem: freteGratis.margem });
+    }
+    return linhas.map((l) => ({
+      ...l,
+      deltaVsNormal: l.key === "normal" ? null : l.lucro - normal.lucro,
+      mult: l.key !== "normal" && normal.lucro > 0 && l.lucro > 0 ? normal.lucro / l.lucro : null,
+    }));
+  }, [normal, descontoResultado, desconto, combo, liquidacao, margemMinima, brindeResultado, brinde, freteGratis]);
 
   function atualizarTier(idx, campo, valor) {
     setTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, [campo]: valor } : t)));
@@ -793,6 +869,7 @@ export default function PromocaoSimulador({ onToast }) {
                       </div>
                       <Termometro valor={combinada.margemCombinado || 0} meta={n(lucratividade) / 100} />
                       <DeltaAvulso delta={combinada.deltaVsAvulso} sufixo=" (total do pedido, vs. vender tudo separado)" />
+                      <Breakeven lucroNormal={combinada.lucroSomaAvulso / combinada.totalPecas} lucroPromo={combinada.lucroUnidadeEfetivo} />
                     </>
                   )}
                 </>
@@ -807,20 +884,16 @@ export default function PromocaoSimulador({ onToast }) {
                 <label>Desconto sobre o preço normal (%)</label>
                 <input type="number" step="1" value={desconto} onChange={(e) => setDesconto(e.target.value)} />
               </div>
-              {(() => {
-                const precoPromo = normal.preco * (1 - (n(desconto) || 0) / 100);
-                const lucroPromo = normal.lucroEm(precoPromo);
-                const margemPromo = precoPromo > 0 ? lucroPromo / precoPromo : null;
-                return (
-                  <>
-                    <div className="kv"><span className="k">Preço com desconto</span><span className="v">{BRL(precoPromo)}</span></div>
-                    <div className="kv total"><span className="k">Lucro com desconto</span><span className="v">{BRL(lucroPromo)}</span></div>
-                    <div className="kv"><span className="k">Margem com desconto</span><span className="v">{margemPromo != null ? PCT(margemPromo) : "—"}</span></div>
-                    <Termometro valor={margemPromo || 0} meta={n(lucratividade) / 100} />
-                    <DeltaAvulso delta={lucroPromo - normal.lucro} />
-                  </>
-                );
-              })()}
+              {descontoResultado && (
+                <>
+                  <div className="kv"><span className="k">Preço com desconto</span><span className="v">{BRL(descontoResultado.preco)}</span></div>
+                  <div className="kv total"><span className="k">Lucro com desconto</span><span className="v">{BRL(descontoResultado.lucro)}</span></div>
+                  <div className="kv"><span className="k">Margem com desconto</span><span className="v">{descontoResultado.margem != null ? PCT(descontoResultado.margem) : "—"}</span></div>
+                  <Termometro valor={descontoResultado.margem || 0} meta={n(lucratividade) / 100} />
+                  <DeltaAvulso delta={descontoResultado.lucro - normal.lucro} />
+                  <Breakeven lucroNormal={normal.lucro} lucroPromo={descontoResultado.lucro} />
+                </>
+              )}
             </div>
           ) : tipo === "progressivo" ? (
             <div className="panel">
@@ -838,6 +911,7 @@ export default function PromocaoSimulador({ onToast }) {
                       <th className="num">Lucro/un.</th>
                       <th className="num">Margem</th>
                       <th className="num">Vs. avulso</th>
+                      <th className="num">Equilíbrio</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -868,10 +942,17 @@ export default function PromocaoSimulador({ onToast }) {
                         <td className="num" style={{ color: t.deltaVsAvulso >= 0 ? "var(--good)" : "var(--bad)" }}>
                           {t.deltaVsAvulso >= 0 ? "+" : ""}{BRL(t.deltaVsAvulso)}
                         </td>
+                        <td className="num">
+                          {normal.lucro > 0 && t.lucroUnit > 0 ? `${(normal.lucro / t.lucroUnit).toFixed(2)}×` : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+                "Equilíbrio" é quantas vezes mais peças você precisa vender NESSA faixa (em vez de vender avulso, no preço normal) pra igualar o lucro
+                total — quanto maior o desconto da faixa, mais volume ela exige pra compensar.
               </div>
             </div>
           ) : tipo === "combo" ? (
@@ -894,6 +975,12 @@ export default function PromocaoSimulador({ onToast }) {
                 <>
                   <div className="kv"><span className="k">Preço do kit ({combo.L} un.)</span><span className="v">{BRL(combo.precoKit)}</span></div>
                   <div className="kv"><span className="k">Preço efetivo por unidade</span><span className="v">{BRL(combo.precoUnidadeEfetivo)}</span></div>
+                  {normal.preco > 0 && (
+                    <div className="kv">
+                      <span className="k">Desconto equivalente vs. preço normal</span>
+                      <span className="v">{PCT(Math.max(0, 1 - combo.precoUnidadeEfetivo / normal.preco))}</span>
+                    </div>
+                  )}
                   <div className="kv total"><span className="k">Lucro do kit</span><span className="v">{BRL(combo.lucroKit)}</span></div>
                   <div className="kv"><span className="k">Lucro efetivo por unidade</span><span className="v">{BRL(combo.lucroUnidadeEfetivo)}</span></div>
                   <div className="kv">
@@ -905,6 +992,7 @@ export default function PromocaoSimulador({ onToast }) {
                     Economia de taxa fixa por vender junto: {BRL(combo.economiaTaxaFixa)} (comparado a vender as {combo.L} unidades em pedidos separados).
                   </div>
                   <DeltaAvulso delta={combo.deltaVsAvulso} sufixo={` (total do pedido, vs. vender ${combo.L} unidades avulsas)`} />
+                  <Breakeven lucroNormal={normal.lucro} lucroPromo={combo.lucroUnidadeEfetivo} />
                 </>
               )}
             </div>
@@ -929,6 +1017,7 @@ export default function PromocaoSimulador({ onToast }) {
                   </div>
                   <div className="kv total"><span className="k">Lucro nesse piso</span><span className="v">{BRL(liquidacao.lucroNoPiso)}</span></div>
                   <DeltaAvulso delta={liquidacao.delta} />
+                  <Breakeven lucroNormal={normal.lucro} lucroPromo={liquidacao.lucroNoPiso} />
                 </>
               ) : null}
             </div>
@@ -958,6 +1047,7 @@ export default function PromocaoSimulador({ onToast }) {
                   </div>
                   <Termometro valor={brindeResultado.margemComBrinde || 0} meta={n(lucratividade) / 100} />
                   <DeltaAvulso delta={brindeResultado.delta} />
+                  <Breakeven lucroNormal={normal.lucro} lucroPromo={brindeResultado.lucroComBrinde} />
                 </>
               )}
             </div>
@@ -981,6 +1071,7 @@ export default function PromocaoSimulador({ onToast }) {
                     Frete grátis costuma aumentar conversão e ranking no marketplace — vale comparar esse lucro com o ganho esperado em volume de vendas.
                   </div>
                   <DeltaAvulso delta={freteGratis.delta} />
+                  <Breakeven lucroNormal={normal.lucro} lucroPromo={freteGratis.lucro} />
                 </>
               )}
             </div>
@@ -1013,6 +1104,46 @@ export default function PromocaoSimulador({ onToast }) {
           )}
         </div>
       </div>
+
+      {resumoComparativo && resumoComparativo.length > 1 && (
+        <div className="panel">
+          <h3 className="section-title">
+            Comparativo entre promoções
+            <Ajuda texto="Lado a lado, o resultado de cada tipo de promoção configurada acima pra esse mesmo produto e canal — pra decidir qual vale mais a pena sem ficar trocando de aba. Só entra na lista o tipo que já tem uma configuração válida (ex: brinde só aparece depois de escolher um produto-brinde)." />
+          </h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th className="num">Preço</th>
+                  <th className="num">Lucro</th>
+                  <th className="num">Margem</th>
+                  <th className="num">Vs. normal</th>
+                  <th className="num">Equilíbrio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resumoComparativo.map((l) => (
+                  <tr key={l.key} style={l.key === "normal" ? { fontWeight: 600 } : undefined}>
+                    <td>{l.label}</td>
+                    <td className="num">{BRL(l.preco)}</td>
+                    <td className="num">{BRL(l.lucro)}</td>
+                    <td className="num">{l.margem != null ? PCT(l.margem) : "—"}</td>
+                    <td className="num" style={l.deltaVsNormal != null ? { color: l.deltaVsNormal >= 0 ? "var(--good)" : "var(--bad)" } : undefined}>
+                      {l.deltaVsNormal != null ? `${l.deltaVsNormal >= 0 ? "+" : ""}${BRL(l.deltaVsNormal)}` : "—"}
+                    </td>
+                    <td className="num">{l.mult != null ? `${l.mult.toFixed(2)}×` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+            "Progressivo por quantidade" não entra aqui porque tem uma faixa por quantidade (veja a própria aba) e "Venda combinada" parte de uma seleção de itens diferente do produto único comparado acima.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
