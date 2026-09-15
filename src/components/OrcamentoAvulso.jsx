@@ -14,7 +14,25 @@ const DEFAULTS = {
   imposto: 0,
   custosFixos: 2,
   lucratividade: 30,
+  nivel: "padrao",
+  horasModelagem: 0,
+  valorHoraModelagem: 0,
 };
+
+// Ponto de partida pra precificar personalizado — não é uma regra fixa, é
+// só um jeito de não começar do zero toda vez: um projeto sob medida tem
+// mais valor agregado que um produto de catálogo por dois motivos, cada um
+// com seu próprio campo aqui embaixo — o TEMPO de modelagem/projeto (que
+// vira uma taxa própria, horas × seu valor-hora de projeto, separada do
+// custo de produção) e o RISCO/exclusividade de ser uma peça única, sem
+// tiragem pra diluir o esforço depois (refletido numa margem-alvo maior).
+// Escolher um nível só preenche os três campos abaixo com uma sugestão —
+// TODOS continuam editáveis na mão, e ajustar um não muda os outros.
+const NIVEIS_DIFICULDADE = [
+  { key: "padrao", label: "Padrão (cor/tamanho, sem modelagem nova)", lucratividade: 30, horasModelagem: 0, valorHoraModelagem: 0 },
+  { key: "complexo", label: "Complexo (modelagem nova ou adaptação grande)", lucratividade: 40, horasModelagem: 1, valorHoraModelagem: 40 },
+  { key: "exclusivo", label: "Exclusivo / protótipo (peça única, do zero)", lucratividade: 50, horasModelagem: 2, valorHoraModelagem: 60 },
+];
 
 // Venda direta pra um pedido personalizado (encomenda): sem comissão nem
 // taxa fixa de marketplace, já que não passa pela Shopee/ML.
@@ -80,6 +98,25 @@ export default function OrcamentoAvulso({ onToast }) {
     return isFinite(x) ? x : 0;
   };
 
+  // Aplica a sugestão de um nível de dificuldade — só preenche lucratividade
+  // e as horas/valor-hora de modelagem, não mexe em custo/frete/embalagem
+  // nem no nome do pedido. Escolher de novo (ou trocar de nível) sobrescreve
+  // esses três campos com a sugestão nova; entre uma escolha e outra, os tres
+  // continuam livres pra editar na mão a qualquer momento.
+  function aplicarNivel(chave) {
+    const nivel = NIVEIS_DIFICULDADE.find((nv) => nv.key === chave);
+    if (!nivel) return;
+    setF((prev) => ({
+      ...prev,
+      nivel: chave,
+      lucratividade: nivel.lucratividade,
+      horasModelagem: nivel.horasModelagem,
+      valorHoraModelagem: nivel.valorHoraModelagem,
+    }));
+  }
+
+  const taxaProjeto = arredondarPreco(n(f.horasModelagem) * n(f.valorHoraModelagem));
+
   const resultado = useMemo(() => {
     return calcCanal({
       imposto: n(f.imposto) / 100,
@@ -87,12 +124,12 @@ export default function OrcamentoAvulso({ onToast }) {
       taxaFixa: 0,
       custosFixosPct: n(f.custosFixos) / 100,
       lucratividadePct: n(f.lucratividade) / 100,
-      custoProduto: n(f.custoProduto),
+      custoProduto: n(f.custoProduto) + taxaProjeto,
       frete: n(f.frete),
       embalagem: n(f.embalagem),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f]);
+  }, [f, taxaProjeto]);
 
   async function salvar() {
     const nome = f.nome.trim();
@@ -173,6 +210,35 @@ export default function OrcamentoAvulso({ onToast }) {
         </div>
 
         <div className="panel">
+          <h3 className="section-title">
+            Complexidade do projeto
+            <Ajuda texto="Personalizado tem mais valor agregado que produto de catálogo por dois motivos: o TEMPO de modelagem/projeto (horas × seu valor-hora de projeto, uma taxa própria, separada do custo de produção) e o RISCO de ser peça única, sem tiragem pra diluir esforço depois (margem-alvo maior). Escolher um nível aqui é só um ponto de partida — preenche Lucratividade (no painel Parâmetros) e as horas/valor-hora abaixo, mas os três continuam livres pra ajustar na mão quando você achar que precisa reajustar." />
+          </h3>
+          <div className="field">
+            <label>Nível de dificuldade</label>
+            <select value={f.nivel} onChange={(e) => aplicarNivel(e.target.value)}>
+              {NIVEIS_DIFICULDADE.map((nv) => (
+                <option key={nv.key} value={nv.key}>{nv.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="row2" style={{ marginBottom: 0 }}>
+            <div className="field">
+              <label>Horas de modelagem/projeto</label>
+              <input type="number" step="0.5" min="0" value={f.horasModelagem} onChange={set("horasModelagem")} />
+            </div>
+            <div className="field">
+              <label>Seu valor-hora de projeto (R$)</label>
+              <input type="number" step="1" min="0" value={f.valorHoraModelagem} onChange={set("valorHoraModelagem")} />
+            </div>
+          </div>
+          <div className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
+            Taxa de projeto: {BRL(taxaProjeto)} {taxaProjeto > 0 && "(entra no custo total, cobrada mesmo se ainda não fabricou nada)"} — os
+            valores sugeridos por nível são só um ponto de partida, ajuste como achar melhor a qualquer momento.
+          </div>
+        </div>
+
+        <div className="panel">
           <h3 className="section-title">Parâmetros</h3>
           <div className="row2">
             <div className="field">
@@ -198,6 +264,11 @@ export default function OrcamentoAvulso({ onToast }) {
             <span className="k">Custo total</span>
             <span className="v">{BRL(resultado.custoTotal)}</span>
           </div>
+          {taxaProjeto > 0 && (
+            <div className="hint" style={{ marginTop: -8 }}>
+              Inclui {BRL(taxaProjeto)} de taxa de projeto ({n(f.horasModelagem)}h × {BRL(n(f.valorHoraModelagem))}/h).
+            </div>
+          )}
           <div className="destaque-preco">
             <span className="k">
               Preço definido para o pedido
