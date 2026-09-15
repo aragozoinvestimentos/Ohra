@@ -32,10 +32,15 @@ export default function OrcamentoVolume({ onToast }) {
   const [nomePedido, setNomePedido] = useState("");
   const [salvando, setSalvando] = useState(false);
 
-  // Troca de loja invalida o carrinho anterior (produtos de outra loja).
-  useEffect(() => {
+  // Troca de loja invalida o carrinho anterior (produtos de outra loja) —
+  // ajustado durante a renderização (padrão React de "adjusting state while
+  // rendering"), não num useEffect, porque aqui é só zerar o carrinho no
+  // exato render em que lojaId muda, sem precisar de um efeito à parte.
+  const [lojaAnterior, setLojaAnterior] = useState(lojaId);
+  if (lojaId !== lojaAnterior) {
+    setLojaAnterior(lojaId);
     setItensLote([]);
-  }, [lojaId]);
+  }
 
   useEffect(() => {
     if (!supabase) return;

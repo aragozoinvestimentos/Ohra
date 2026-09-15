@@ -329,44 +329,6 @@ export default function PromocaoSimulador({ onToast }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [normal, desconto]);
 
-  // Comparativo entre todos os tipos de promoção configurados agora, lado a
-  // lado — sem precisar trocar de aba pra ver qual rende mais lucro. Só
-  // entra na lista o tipo que já tem uma configuração válida (ex: brinde só
-  // depois de escolher um produto-brinde). "Progressivo" fica de fora porque
-  // já tem sua própria tabela de faixas (não é um resultado único) e "Venda
-  // combinada" fica de fora porque parte de uma seleção de itens diferente
-  // (não é o mesmo produto/canal único dos outros tipos).
-  const resumoComparativo = useMemo(() => {
-    if (!normal) return null;
-    const linhas = [{ key: "normal", label: "Preço normal", preco: normal.preco, lucro: normal.lucro, margem: normal.margem }];
-    if (descontoResultado) {
-      linhas.push({ key: "desconto", label: `Desconto direto (${n(desconto)}%)`, preco: descontoResultado.preco, lucro: descontoResultado.lucro, margem: descontoResultado.margem });
-    }
-    if (combo) {
-      linhas.push({ key: "combo", label: `Combo (leve ${combo.L}, pague ${combo.P})`, preco: combo.precoUnidadeEfetivo, lucro: combo.lucroUnidadeEfetivo, margem: combo.margemKit });
-    }
-    if (liquidacao?.possivel) {
-      linhas.push({
-        key: "liquidacao",
-        label: `Liquidação (margem mín. ${n(margemMinima)}%)`,
-        preco: liquidacao.precoMinimo,
-        lucro: liquidacao.lucroNoPiso,
-        margem: liquidacao.precoMinimo > 0 ? liquidacao.lucroNoPiso / liquidacao.precoMinimo : null,
-      });
-    }
-    if (brindeResultado) {
-      linhas.push({ key: "brinde", label: `Brinde: ${brinde?.nome || "—"}`, preco: normal.preco, lucro: brindeResultado.lucroComBrinde, margem: brindeResultado.margemComBrinde });
-    }
-    if (freteGratis) {
-      linhas.push({ key: "frete", label: "Frete grátis subsidiado", preco: normal.preco, lucro: freteGratis.lucro, margem: freteGratis.margem });
-    }
-    return linhas.map((l) => ({
-      ...l,
-      deltaVsNormal: l.key === "normal" ? null : l.lucro - normal.lucro,
-      mult: l.key !== "normal" && normal.lucro > 0 && l.lucro > 0 ? normal.lucro / l.lucro : null,
-    }));
-  }, [normal, descontoResultado, desconto, combo, liquidacao, margemMinima, brindeResultado, brinde, freteGratis]);
-
   function atualizarTier(idx, campo, valor) {
     setTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, [campo]: valor } : t)));
   }
@@ -433,6 +395,44 @@ export default function PromocaoSimulador({ onToast }) {
       delta: lucroComBrinde - normal.lucro,
     };
   }, [normal, brinde]);
+
+  // Comparativo entre todos os tipos de promoção configurados agora, lado a
+  // lado — sem precisar trocar de aba pra ver qual rende mais lucro. Só
+  // entra na lista o tipo que já tem uma configuração válida (ex: brinde só
+  // depois de escolher um produto-brinde). "Progressivo" fica de fora porque
+  // já tem sua própria tabela de faixas (não é um resultado único) e "Venda
+  // combinada" fica de fora porque parte de uma seleção de itens diferente
+  // (não é o mesmo produto/canal único dos outros tipos).
+  const resumoComparativo = useMemo(() => {
+    if (!normal) return null;
+    const linhas = [{ key: "normal", label: "Preço normal", preco: normal.preco, lucro: normal.lucro, margem: normal.margem }];
+    if (descontoResultado) {
+      linhas.push({ key: "desconto", label: `Desconto direto (${n(desconto)}%)`, preco: descontoResultado.preco, lucro: descontoResultado.lucro, margem: descontoResultado.margem });
+    }
+    if (combo) {
+      linhas.push({ key: "combo", label: `Combo (leve ${combo.L}, pague ${combo.P})`, preco: combo.precoUnidadeEfetivo, lucro: combo.lucroUnidadeEfetivo, margem: combo.margemKit });
+    }
+    if (liquidacao?.possivel) {
+      linhas.push({
+        key: "liquidacao",
+        label: `Liquidação (margem mín. ${n(margemMinima)}%)`,
+        preco: liquidacao.precoMinimo,
+        lucro: liquidacao.lucroNoPiso,
+        margem: liquidacao.precoMinimo > 0 ? liquidacao.lucroNoPiso / liquidacao.precoMinimo : null,
+      });
+    }
+    if (brindeResultado) {
+      linhas.push({ key: "brinde", label: `Brinde: ${brinde?.nome || "—"}`, preco: normal.preco, lucro: brindeResultado.lucroComBrinde, margem: brindeResultado.margemComBrinde });
+    }
+    if (freteGratis) {
+      linhas.push({ key: "frete", label: "Frete grátis subsidiado", preco: normal.preco, lucro: freteGratis.lucro, margem: freteGratis.margem });
+    }
+    return linhas.map((l) => ({
+      ...l,
+      deltaVsNormal: l.key === "normal" ? null : l.lucro - normal.lucro,
+      mult: l.key !== "normal" && normal.lucro > 0 && l.lucro > 0 ? normal.lucro / l.lucro : null,
+    }));
+  }, [normal, descontoResultado, desconto, combo, liquidacao, margemMinima, brindeResultado, brinde, freteGratis]);
 
   // Catálogo pro seletor de "Venda combinada" — produtos e kits juntos,
   // marcados na hora de exibir; o "preço" aqui é o custo de cada um (mesma
