@@ -12,6 +12,7 @@ const VAZIO = {
   nome: "",
   sku: "",
   material_nome: "",
+  material_id: null,
   custo_producao: "",
   frete_padrao: "",
   embalagem_padrao: "",
@@ -21,10 +22,10 @@ const VAZIO = {
   pecas_por_impressao: 1,
 };
 
-export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
+export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onProdutoCriado }) {
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
-  const [, setCarregando] = useState(true);
+  const [carregando, setCarregando] = useState(true);
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [materiais, setMateriais] = useState([]);
   const [kitsSku, setKitsSku] = useState([]); // só id/nome/sku, pra conferir SKU duplicado contra Kits também
@@ -34,6 +35,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
   const [pecasPorImpressaoSalvo, setPecasPorImpressaoSalvo] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
+  const [produtoCriado, setProdutoCriado] = useState(null); // { id, nome } — só depois de CADASTRAR um produto novo (não numa edição), pro atalho "Ir para Precificação por Canal"
 
   useEffect(() => {
     if (!supabase) {
@@ -163,6 +165,19 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
     return null;
   }
 
+  // Tenta achar o id do material no catálogo a partir de um nome solto (ex:
+  // vindo de Simular Custo de Produção, que ainda escolhe o material por
+  // nome) — comparação sem diferenciar maiúscula/minúscula nem espaço nas
+  // pontas. Só um "melhor esforço": se não achar (nome digitado à mão, ou
+  // material já renomeado/excluído do catálogo), devolve null e o nome
+  // continua exibido do jeito que veio, sem vínculo — nunca chuta.
+  function acharMaterialIdPorNome(nome) {
+    const alvo = (nome || "").trim().toLowerCase();
+    if (!alvo) return null;
+    const achado = materiais.find((m) => (m.nome || "").trim().toLowerCase() === alvo);
+    return achado?.id || null;
+  }
+
   // Quando "Salvar como Produto"/"Atualizar produto cadastrado" é clicado na
   // aba de Simular Custo de Produção.
   useEffect(() => {
@@ -187,6 +202,9 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
           nome: produtoRecebido.nome || pExistente?.nome || "",
           sku: pExistente?.sku || "",
           material_nome: produtoRecebido.materialNome || pExistente?.material_nome || "",
+          // Se veio um material novo de Simular Custo de Produção, tenta
+          // religar pelo nome; senão mantém o vínculo que o produto já tinha.
+          material_id: produtoRecebido.materialNome ? acharMaterialIdPorNome(produtoRecebido.materialNome) : pExistente?.material_id ?? null,
           custo_producao: arredondarPreco(produtoRecebido.custo),
           frete_padrao: arredondarPreco(pExistente?.frete_padrao || 0),
           embalagem_padrao: arredondarPreco(pExistente?.embalagem_padrao || 0),
@@ -204,6 +222,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
     setForm({
       ...VAZIO,
       material_nome: produtoRecebido.materialNome || "",
+      material_id: acharMaterialIdPorNome(produtoRecebido.materialNome || ""),
       custo_producao: arredondarPreco(produtoRecebido.custo),
       producao_detalhe: produtoRecebido.detalhe || null,
       pecas_por_impressao: produtoRecebido.pecasPorImpressao ?? 1,
@@ -287,10 +306,15 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
       onToast("Dê um nome ao produto");
       return;
     }
+    // Guarda se era cadastro novo ANTES de qualquer coisa mudar editandoId —
+    // só um produto recém-criado (não uma edição) ganha o atalho "Ir para
+    // Precificação por Canal" depois de salvar.
+    const eraNovo = !editandoId;
     const payload = {
       nome,
       sku: form.sku.trim() || null,
       material_nome: form.material_nome.trim() || null,
+      material_id: form.material_id || null,
       custo_producao: arredondarPreco(resultadoDetalhe ? resultadoDetalhe.total : parseFloat(form.custo_producao) || 0),
       frete_padrao: arredondarPreco(parseFloat(form.frete_padrao) || 0),
       embalagem_padrao: arredondarPreco(usaReceitaEmbalagem ? custoEmbalagemReceita : parseFloat(form.embalagem_padrao) || 0),
@@ -339,12 +363,14 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
       salvarUltimosPercentuais(form.producao_detalhe);
     }
     setSalvando(false);
-    onToast(editandoId ? "Produto atualizado" : "Produto cadastrado");
+    onToast(eraNovo ? "Produto cadastrado" : "Produto atualizado");
+    setProdutoCriado(eraNovo && produtoId ? { id: produtoId, nome } : null);
     limpar();
   }
 
   async function editar(p) {
     setEditandoId(p.id);
+    setProdutoCriado(null);
     let itens = [];
     if (supabase) {
       const { data } = await supabase.from("produto_embalagens").select("*").eq("produto_id", p.id);
@@ -354,6 +380,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
       nome: p.nome,
       sku: p.sku || "",
       material_nome: p.material_nome || "",
+      material_id: p.material_id || null,
       custo_producao: arredondarPreco(p.custo_producao),
       frete_padrao: arredondarPreco(p.frete_padrao),
       embalagem_padrao: arredondarPreco(p.embalagem_padrao),
@@ -372,6 +399,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
   // ficam do jeito que a pessoa já tinha digitado (é o que diferencia essa
   // variação da original), só o resto vem copiado.
   async function usarComoBase(p) {
+    setProdutoCriado(null);
     let itens = [];
     if (supabase) {
       const { data } = await supabase.from("produto_embalagens").select("*").eq("produto_id", p.id);
@@ -380,6 +408,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
     setForm((prev) => ({
       ...prev,
       material_nome: p.material_nome || "",
+      material_id: p.material_id || null,
       custo_producao: arredondarPreco(p.custo_producao),
       frete_padrao: arredondarPreco(p.frete_padrao),
       embalagem_padrao: arredondarPreco(p.embalagem_padrao),
@@ -420,6 +449,11 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
 
   return (
     <div>
+      {carregando && produtos.length === 0 && (
+        <div className="panel">
+          <div className="empty">Carregando…</div>
+        </div>
+      )}
       <div className="panel">
         <h3 className="section-title">{editandoId ? "Editar produto" : "Cadastrar produto"}</h3>
         <div className="row3">
@@ -456,8 +490,31 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
             )}
           </div>
           <div className="field">
-            <label>Material</label>
-            <input type="text" placeholder="ex: PLA (seu custo real)" value={form.material_nome} onChange={setCampo("material_nome")} />
+            <label>
+              Material
+              <Ajuda texto="Vinculado ao catálogo de Materiais (Cadastros → Materiais) por id, não só pelo nome — assim, se você renomear o material lá, esse produto continua apontando pro mesmo registro em vez de perder o vínculo." />
+            </label>
+            <select
+              value={form.material_id || ""}
+              onChange={(e) => {
+                const id = e.target.value;
+                const escolhido = materiais.find((m) => String(m.id) === id) || null;
+                setForm((prev) => ({ ...prev, material_id: id || null, material_nome: escolhido ? escolhido.nome : prev.material_nome }));
+              }}
+            >
+              <option value="">{form.material_nome ? `Sem vínculo — mantém "${form.material_nome}"` : "Selecione um material"}</option>
+              {materiais.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nome}
+                  {m.tipo === "consumivel" ? " (consumível)" : ""}
+                </option>
+              ))}
+            </select>
+            {!form.material_id && form.material_nome && (
+              <div className="hint" style={{ marginTop: 4, marginBottom: 0 }}>
+                Cadastrado como "{form.material_nome}", sem vínculo com o catálogo — escolha um item acima pra vincular (o nome digitado continua exibido enquanto isso).
+              </div>
+            )}
           </div>
         </div>
         {sugestoes.length > 0 && (
@@ -539,7 +596,15 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
           <button className="btn primary" onClick={salvar} disabled={salvando}>
             {salvando ? "Salvando…" : editandoId ? "Salvar alterações" : "+ Cadastrar produto"}
           </button>
-          <button type="button" className="btn" onClick={limpar} disabled={salvando}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              limpar();
+              setProdutoCriado(null);
+            }}
+            disabled={salvando}
+          >
             {editandoId ? "Cancelar" : "Limpar"}
           </button>
         </div>
@@ -548,6 +613,24 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast }) {
           produtos já cadastrados, use Preços por Canal (aba Cadastros).
         </div>
       </div>
+
+      {produtoCriado && (
+        <div className="panel" style={{ background: "var(--surface-2)" }}>
+          <div className="hint" style={{ marginTop: 0 }}>
+            Produto "{produtoCriado.nome}" cadastrado. Próxima etapa: definir o preço de venda em cada canal.
+          </div>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => {
+              onProdutoCriado?.(produtoCriado.id, produtoCriado.nome);
+              setProdutoCriado(null);
+            }}
+          >
+            Ir para Precificação por Canal →
+          </button>
+        </div>
+      )}
     </div>
   );
 }

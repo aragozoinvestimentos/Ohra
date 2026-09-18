@@ -72,7 +72,7 @@ export default function Ranking() {
             </div>
           </>
         ) : (
-          <div className="empty">Nenhum canal ativo cadastrado ainda — vá em Cadastros → Canais.</div>
+          <div className="empty">Nenhum canal ativo cadastrado ainda — vá em Configuração → Canais.</div>
         )}
       </div>
 

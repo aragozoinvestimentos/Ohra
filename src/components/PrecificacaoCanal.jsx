@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, SHEIN_TIERS, calcCanal, resultadoNoPreco } from "../lib/calc.js";
+import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -29,7 +29,7 @@ const DEFAULTS = {
   nome: "",
 };
 
-export default function PrecificacaoCanal({ custoRecebido, onToast }) {
+export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar, onToast }) {
   const { lojaId } = useLoja();
   const [f, setF] = useState(DEFAULTS);
   const [salvando, setSalvando] = useState(false);
@@ -82,6 +82,16 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [custoRecebido?.seq]);
 
+  // Quando "Ir para Precificação por Canal" é clicado em Produtos logo depois
+  // de cadastrar um produto NOVO, seleciona esse produto automaticamente em
+  // "Produto ou kit cadastrado" — o efeito de baseSelecionada acima cuida de
+  // puxar custo/frete/embalagem dele.
+  useEffect(() => {
+    if (!produtoParaSelecionar?.id) return;
+    setBaseSelecionada(`p:${produtoParaSelecionar.id}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produtoParaSelecionar?.seq]);
+
   // Escolher um canal próprio específico (quando o canal de venda é "outro")
   // preenche comissão/taxa fixa com o que já está cadastrado nele.
   useEffect(() => {
@@ -124,7 +134,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
       return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
     if (f.canal === "shein") {
-      const tier = SHEIN_TIERS[0];
+      const tier = resolverTaxasShein();
       return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: false };
     }
     return { pct: n(f.outroComissao) / 100, fixo: n(f.outroFixo), temFaixa: false };
@@ -164,8 +174,8 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
   };
   const canalParaComparacao = {
     tipo: f.canal,
-    comissao_pct: f.canal === "shein" ? SHEIN_TIERS[0].pct : n(f.outroComissao) / 100,
-    taxa_fixa: f.canal === "shein" ? SHEIN_TIERS[0].fixo : n(f.outroFixo),
+    comissao_pct: f.canal === "shein" ? resolverTaxasShein().pct : n(f.outroComissao) / 100,
+    taxa_fixa: f.canal === "shein" ? resolverTaxasShein().fixo : n(f.outroFixo),
   };
   const concorrenteLucro =
     n(f.concorrente) > 0 ? resultadoNoPreco(canalParaComparacao, baseSemComissao, n(f.concorrente), f.mlCategoria, f.mlTipoAnuncio)?.lucro ?? null : null;
@@ -186,7 +196,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
 
   // Imposto e custos fixos normalmente são os mesmos pra toda venda naquele
   // canal (é config de loja, não de produto) — já ficam cadastrados em
-  // Cadastros → Canais. Em vez de digitar de novo pra cada produto, o botão
+  // Configuração → Canais. Em vez de digitar de novo pra cada produto, o botão
   // abaixo puxa o que já está cadastrado; continua editável na mão depois,
   // pro caso raro de um produto específico precisar de outro valor.
   function usarConfigDoCanal() {
@@ -196,7 +206,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
       onToast(
         f.canal === "outro"
           ? "Escolha qual canal próprio é esse acima primeiro"
-          : `Cadastre o canal ${canalLabel} em Cadastros → Canais primeiro`
+          : `Cadastre o canal ${canalLabel} em Configuração → Canais primeiro`
       );
       return;
     }
@@ -238,8 +248,8 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
     if (!canalId) {
       onToast(
         f.canal === "outro"
-          ? "Selecione qual canal próprio é esse, ou cadastre um em Cadastros → Canais"
-          : `Cadastre o canal ${canalLabel} em Cadastros → Canais pra poder salvar`
+          ? "Selecione qual canal próprio é esse, ou cadastre um em Configuração → Canais"
+          : `Cadastre o canal ${canalLabel} em Configuração → Canais pra poder salvar`
       );
       return;
     }
@@ -382,7 +392,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
               </div>
               {canaisProprios.length === 0 && (
                 <div className="hint" style={{ marginTop: -4 }}>
-                  Pra salvar em Preços por Canal, cadastre esse canal em Cadastros → Canais primeiro.
+                  Pra salvar em Preços por Canal, cadastre esse canal em Configuração → Canais primeiro.
                 </div>
               )}
             </>
@@ -480,7 +490,7 @@ export default function PrecificacaoCanal({ custoRecebido, onToast }) {
         <div className="panel">
           <h3 className="section-title">
             Resultado
-            <Ajuda texto="'Taxas descontadas por venda' mostra exatamente o que o canal tira do preço calculado: comissão % (proporcional ao preço) + taxa fixa (mesmo valor em R$ não importa o preço). Imposto e custos fixos aparecem separados porque são configurados por você (Cadastros → Canais), não pela plataforma." />
+            <Ajuda texto="'Taxas descontadas por venda' mostra exatamente o que o canal tira do preço calculado: comissão % (proporcional ao preço) + taxa fixa (mesmo valor em R$ não importa o preço). Imposto e custos fixos aparecem separados porque são configurados por você (Configuração → Canais), não pela plataforma." />
           </h3>
           <div className="destaque-custo">
             <span className="k">Custo total do produto</span>

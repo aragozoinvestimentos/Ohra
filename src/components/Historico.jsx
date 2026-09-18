@@ -354,7 +354,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
         <>
           {canais.length === 0 && (
             <div className="hint" style={{ marginBottom: 10 }}>
-              Nenhum canal cadastrado ainda — cadastre em Cadastros → Canais pra começar a salvar preços aqui. Enquanto isso, dá pra clonar, editar ou
+              Nenhum canal cadastrado ainda — cadastre em Configuração → Canais pra começar a salvar preços aqui. Enquanto isso, dá pra clonar, editar ou
               excluir os produtos/kits abaixo.
             </div>
           )}

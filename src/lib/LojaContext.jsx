@@ -178,7 +178,7 @@ export function LojaProvider({ children }) {
       ]);
     } catch {
       // falha de rede ao semear os canais padrão — a loja já foi criada;
-      // dá pra cadastrar os canais manualmente em Cadastros → Canais.
+      // dá pra cadastrar os canais manualmente em Configuração → Canais.
     }
     return { ok: true, loja: data };
   }

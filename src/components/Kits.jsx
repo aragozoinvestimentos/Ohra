@@ -114,6 +114,7 @@ export default function Kits({ abrirKitId, onToast }) {
         produtosItens: (kp || []).map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade })),
         embalagemItens: (ke || []).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade })),
       });
+      setMarkup(kitData.markup_desejado ?? 100);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirKitId?.seq]);
@@ -139,6 +140,7 @@ export default function Kits({ abrirKitId, onToast }) {
   function limpar() {
     setForm(VAZIO);
     setEditandoId(null);
+    setMarkup(100);
   }
 
   // Soma a embalagem de cada produto escolhido (vezes a quantidade dele no
@@ -174,10 +176,17 @@ export default function Kits({ abrirKitId, onToast }) {
       return;
     }
     setSalvando(true);
+    // markup_desejado/preco_sugerido: sem eles aqui, o markup digitado e o
+    // preço sugerido calculado na tela somem assim que o kit é reaberto —
+    // ver schema_v23.sql.
+    const markupNumero = Number(markup);
+    const markupValido = markup !== "" && Number.isFinite(markupNumero) ? markupNumero : null;
     const payload = {
       nome,
       sku: form.sku.trim() || null,
       observacao: form.observacao.trim() || null,
+      markup_desejado: markupValido,
+      preco_sugerido: markupValido !== null ? custoTotal * (1 + markupValido / 100) : null,
       atualizado_em: new Date().toISOString(),
     };
     let kitId = editandoId;
@@ -239,6 +248,7 @@ export default function Kits({ abrirKitId, onToast }) {
         .filter((r) => r.kit_id === k.id)
         .map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade })),
     });
+    setMarkup(k.markup_desejado ?? 100);
   }
 
   // Puxa a composição de um kit já cadastrado como ponto de partida pra um

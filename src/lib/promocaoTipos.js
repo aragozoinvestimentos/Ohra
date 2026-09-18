@@ -9,6 +9,5 @@ export const TIPOS = [
   { key: "combo", label: "Combo (leve mais, pague menos)" },
   { key: "combinada", label: "Venda combinada" },
   { key: "frete", label: "Frete grátis" },
-  { key: "brinde", label: "Brinde / order bump" },
   { key: "liquidacao", label: "Liquidação com piso de margem" },
 ];

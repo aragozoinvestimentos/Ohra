@@ -4,6 +4,8 @@ import CustoProducao from "./components/CustoProducao.jsx";
 import PrecificacaoCanal from "./components/PrecificacaoCanal.jsx";
 import Comparativo from "./components/Comparativo.jsx";
 import Cadastros from "./components/Cadastros.jsx";
+import Canais from "./components/Canais.jsx";
+import TaxasMarketplace from "./components/TaxasMarketplace.jsx";
 import Orcamento from "./components/Orcamento.jsx";
 import Promocoes from "./components/Promocoes.jsx";
 import Otimizacao from "./components/Otimizacao.jsx";
@@ -37,13 +39,17 @@ function loadTheme() {
 const GRUPOS = [
   {
     titulo: "Configuração",
-    tabs: [{ key: "lojas", label: "Lojas", icon: "🏬" }],
+    tabs: [
+      { key: "lojas", label: "Lojas", icon: "🏬" },
+      { key: "canais", label: "Canais", icon: "🛒" },
+      { key: "taxas", label: "Taxas Marketplace", icon: "📋" },
+    ],
   },
   {
     titulo: "Cadastros",
     tabs: [
       { key: "cadastros", label: "Cadastros", icon: "🗂️" },
-      { key: "historico", label: "Preços por Canal", icon: "💰" },
+      { key: "historico", label: "Produtos precificados", icon: "💰" },
     ],
   },
   {
@@ -98,6 +104,7 @@ export default function App() {
   const [custoRecebido, setCustoRecebido] = useState(null);
   const [produtoRecebido, setProdutoRecebido] = useState(null);
   const [abrirItem, setAbrirItem] = useState(null); // { tipo: "produto"|"kit", id, seq } — vindo de "editar completo" em Preços por Canal
+  const [produtoParaPrecificar, setProdutoParaPrecificar] = useState(null); // { id, seq } — vindo de "Ir para Precificação por Canal" logo depois de cadastrar um produto novo em Produtos
   const [toast, setToast] = useState({ msg: "", show: false });
   const [tema, setTema] = useState(loadTheme);
   const [menuAberto, setMenuAberto] = useState(false);
@@ -153,6 +160,16 @@ export default function App() {
   function editarItemCompleto(tipo, id) {
     setAbrirItem((prev) => ({ tipo, id, seq: (prev?.seq || 0) + 1 }));
     setTab("cadastros");
+  }
+
+  // Depois de cadastrar um produto NOVO em Cadastros → Produtos, o botão "Ir
+  // para Precificação por Canal" pula direto pra lá com esse produto já
+  // selecionado em "Produto ou kit cadastrado" — mesma ideia de usarCusto,
+  // só que seleciona um item do catálogo em vez de levar um valor solto.
+  function irParaPrecificarProduto(id) {
+    setProdutoParaPrecificar((prev) => ({ id, seq: (prev?.seq || 0) + 1 }));
+    setTab("canal");
+    showToast("Produto levado para a Precificação por Canal");
   }
 
   function irPara(key) {
@@ -225,8 +242,16 @@ export default function App() {
           <Lojas onToast={showToast} />
         </section>
 
+        <section className={`view ${tab === "canais" ? "active" : ""}`}>
+          <Canais onToast={showToast} />
+        </section>
+
+        <section className={`view ${tab === "taxas" ? "active" : ""}`}>
+          <TaxasMarketplace />
+        </section>
+
         <section className={`view ${tab === "cadastros" ? "active" : ""}`}>
-          <Cadastros produtoRecebido={produtoRecebido} abrirItem={abrirItem} onToast={showToast} />
+          <Cadastros produtoRecebido={produtoRecebido} abrirItem={abrirItem} onToast={showToast} onProdutoCriado={irParaPrecificarProduto} />
         </section>
 
         <section className={`view ${tab === "producao" ? "active" : ""}`}>
@@ -234,7 +259,7 @@ export default function App() {
         </section>
 
         <section className={`view ${tab === "canal" ? "active" : ""}`}>
-          <PrecificacaoCanal custoRecebido={custoRecebido} onToast={showToast} />
+          <PrecificacaoCanal custoRecebido={custoRecebido} produtoParaSelecionar={produtoParaPrecificar} onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "comparativo" ? "active" : ""}`}>

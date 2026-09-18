@@ -134,12 +134,12 @@ export default function TaxasMarketplace() {
       <div className="panel">
         <h3 className="section-title">
           Canais próprios cadastrados
-          <Ajuda texto="Comissão, taxa fixa, imposto e custos fixos desses canais são definidos manualmente por você em Cadastros → Canais — aqui é só uma conferência rápida." />
+          <Ajuda texto="Comissão, taxa fixa, imposto e custos fixos desses canais são definidos manualmente por você em Configuração → Canais — aqui é só uma conferência rápida." />
         </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
         ) : canaisProprios.length === 0 ? (
-          <div className="empty">Nenhum canal próprio cadastrado ainda. Cadastre em Cadastros → Canais.</div>
+          <div className="empty">Nenhum canal próprio cadastrado ainda. Cadastre em Configuração → Canais.</div>
         ) : (
           <div className="table-wrap">
             <table>

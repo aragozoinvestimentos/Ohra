@@ -15,6 +15,20 @@ const TIPO_LABEL = {
   custom: "Canal próprio",
 };
 
+// Campos percentuais do canal "custom" (comissão/taxa fixa das faixas
+// oficiais não entram aqui — só o que o Gustavo digita à mão). Mesma soma que
+// entra no `denom` de `calcCanal` (src/lib/calc.js): se comissão + imposto +
+// custos fixos + Ads somar 100% ou mais, não sobra preço nenhum que feche a
+// conta e a tela vira "—" mais na frente sem explicação — por isso a validação
+// já barra aqui, antes de salvar.
+const CAMPOS_PCT = ["comissao_pct", "imposto_pct", "custos_fixos_pct", "ads_pct"];
+const SOMA_PCT_MAXIMA = 100;
+
+function somaPctExcede(valoresPct) {
+  const soma = CAMPOS_PCT.reduce((acc, campo) => acc + (Number(valoresPct[campo]) || 0), 0);
+  return soma >= SOMA_PCT_MAXIMA;
+}
+
 // Componente fora do Canais() de propósito: se ficasse dentro, seria recriado
 // a cada tecla digitada e o input perderia o foco a cada caractere.
 function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSalvar }) {
@@ -28,6 +42,8 @@ function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSal
       <input
         type="number"
         step="0.01"
+        min={isPct ? 0 : undefined}
+        max={isPct ? 100 : undefined}
         style={{ width: 64, textAlign: "right" }}
         value={valorExibido}
         onChange={(e) => setEdicoes((prev) => ({ ...prev, [k]: e.target.value }))}
@@ -94,6 +110,24 @@ export default function Canais({ onToast }) {
     const raw = edicoes[chave(id, campo)];
     const valor = parseFloat(String(raw).replace(",", "."));
     const valorFinal = isFinite(valor) ? (isPct ? valor / 100 : valor) : 0;
+    if (isPct) {
+      const valorPct = isFinite(valor) ? valor : 0;
+      if (valorPct < 0 || valorPct > 100) {
+        onToast("Percentual precisa ficar entre 0% e 100%");
+        return false;
+      }
+      if (CAMPOS_PCT.includes(campo)) {
+        const canal = canais.find((c) => c.id === id) || {};
+        const valoresPct = CAMPOS_PCT.reduce((acc, c) => {
+          acc[c] = c === campo ? valorPct : Number(canal[c] || 0) * 100;
+          return acc;
+        }, {});
+        if (somaPctExcede(valoresPct)) {
+          onToast("Comissão + imposto + custos fixos + Ads não podem somar 100% ou mais — não sobra espaço pra margem");
+          return false;
+        }
+      }
+    }
     const { error } = await supabase.from("canais").update({ [campo]: valorFinal }).eq("id", id);
     if (error) {
       onToast("Não foi possível atualizar — tente de novo");
@@ -113,14 +147,26 @@ export default function Canais({ onToast }) {
       onToast("Dê um nome ao canal");
       return;
     }
+    const comissaoPct = parseFloat(novo.comissao_pct) || 0;
+    const impostoPct = parseFloat(novo.imposto_pct) || 0;
+    const custosFixosPct = parseFloat(novo.custos_fixos_pct) || 0;
+    if ([comissaoPct, impostoPct, custosFixosPct].some((v) => v < 0 || v > 100)) {
+      onToast("Percentual precisa ficar entre 0% e 100%");
+      return;
+    }
+    // ads_pct só existe pra edição depois de criado (nasce em 0 aqui).
+    if (somaPctExcede({ comissao_pct: comissaoPct, imposto_pct: impostoPct, custos_fixos_pct: custosFixosPct, ads_pct: 0 })) {
+      onToast("Comissão + imposto + custos fixos + Ads não podem somar 100% ou mais — não sobra espaço pra margem");
+      return;
+    }
     setSalvandoNovo(true);
     const { error } = await supabase.from("canais").insert({
       nome,
       tipo: "custom",
-      comissao_pct: (parseFloat(novo.comissao_pct) || 0) / 100,
+      comissao_pct: comissaoPct / 100,
       taxa_fixa: parseFloat(novo.taxa_fixa) || 0,
-      imposto_pct: (parseFloat(novo.imposto_pct) || 0) / 100,
-      custos_fixos_pct: (parseFloat(novo.custos_fixos_pct) || 0) / 100,
+      imposto_pct: impostoPct / 100,
+      custos_fixos_pct: custosFixosPct / 100,
       ...(lojaId ? { loja_id: lojaId } : {}),
     });
     setSalvandoNovo(false);
@@ -264,7 +310,7 @@ export default function Canais({ onToast }) {
           </div>
           <div className="field">
             <label>Comissão (%)</label>
-            <input type="number" step="0.1" value={novo.comissao_pct} onChange={(e) => setNovo((p) => ({ ...p, comissao_pct: e.target.value }))} />
+            <input type="number" step="0.1" min="0" max="100" value={novo.comissao_pct} onChange={(e) => setNovo((p) => ({ ...p, comissao_pct: e.target.value }))} />
           </div>
         </div>
         <div className="row3">
@@ -274,11 +320,14 @@ export default function Canais({ onToast }) {
           </div>
           <div className="field">
             <label>Imposto (seu CNPJ/MEI) (%)</label>
-            <input type="number" step="0.1" value={novo.imposto_pct} onChange={(e) => setNovo((p) => ({ ...p, imposto_pct: e.target.value }))} />
+            <input type="number" step="0.1" min="0" max="100" value={novo.imposto_pct} onChange={(e) => setNovo((p) => ({ ...p, imposto_pct: e.target.value }))} />
           </div>
           <div className="field">
-            <label>Custos fixos (%)</label>
-            <input type="number" step="0.1" value={novo.custos_fixos_pct} onChange={(e) => setNovo((p) => ({ ...p, custos_fixos_pct: e.target.value }))} />
+            <label>
+              Custos fixos (%)
+              <Ajuda texto="Outros custos fixos que você tem por venda (não é imposto nem comissão do canal), como % sobre o preço de venda — ex: taxa de gateway de pagamento, embalagem extra etc." />
+            </label>
+            <input type="number" step="0.1" min="0" max="100" value={novo.custos_fixos_pct} onChange={(e) => setNovo((p) => ({ ...p, custos_fixos_pct: e.target.value }))} />
           </div>
         </div>
         <button className="btn primary" onClick={adicionar} disabled={salvandoNovo}>

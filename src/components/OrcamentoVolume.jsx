@@ -195,6 +195,9 @@ export default function OrcamentoVolume({ onToast }) {
               Limpar formulário
             </button>
           </h3>
+          <div className="hint" style={{ marginTop: -8 }}>
+            É pra pedido direto, fora do marketplace (sem comissão de canal) — quando o cliente combina a compra de um lote direto com você. Desconto por faixa de quantidade ou combo dentro de uma venda no marketplace ficam em Promoções → Progressivo/Combo.
+          </div>
           {produtos.length === 0 ? (
             <div className="empty">Cadastre um produto em Cadastros → Produtos primeiro.</div>
           ) : (

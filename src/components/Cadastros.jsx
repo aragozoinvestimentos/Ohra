@@ -3,19 +3,15 @@ import Materiais from "./Materiais.jsx";
 import Embalagens from "./Embalagens.jsx";
 import Produtos from "./Produtos.jsx";
 import Kits from "./Kits.jsx";
-import Canais from "./Canais.jsx";
-import TaxasMarketplace from "./TaxasMarketplace.jsx";
 
 const SUBABAS = [
   { key: "materiais", label: "Materiais (Fabricação)" },
   { key: "embalagens", label: "Embalagens" },
   { key: "produtos", label: "Produtos" },
   { key: "kits", label: "Kits" },
-  { key: "canais", label: "Canais" },
-  { key: "taxas", label: "Taxas Marketplace" },
 ];
 
-export default function Cadastros({ produtoRecebido, abrirItem, onToast }) {
+export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdutoCriado }) {
   const [sub, setSub] = useState("materiais");
 
   // Veio de "Salvar como Produto" (Simular Custo de Produção) — troca pra
@@ -58,10 +54,10 @@ export default function Cadastros({ produtoRecebido, abrirItem, onToast }) {
 
       {sub === "materiais" && <Materiais onToast={onToast} />}
       {sub === "embalagens" && <Embalagens onToast={onToast} />}
-      {sub === "produtos" && <Produtos produtoRecebido={produtoRecebido} abrirProdutoId={abrirProdutoId} onToast={onToast} />}
+      {sub === "produtos" && (
+        <Produtos produtoRecebido={produtoRecebido} abrirProdutoId={abrirProdutoId} onToast={onToast} onProdutoCriado={onProdutoCriado} />
+      )}
       {sub === "kits" && <Kits abrirKitId={abrirKitId} onToast={onToast} />}
-      {sub === "canais" && <Canais onToast={onToast} />}
-      {sub === "taxas" && <TaxasMarketplace />}
     </div>
   );
 }

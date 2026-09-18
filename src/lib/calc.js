@@ -167,11 +167,20 @@ export function resolverFaixaML(categoria, base, tipoAnuncio = "classico") {
   return { tier, resultado: calcCanal({ ...base, comissaoPct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
 }
 
+// Única fonte da comissão/taxa fixa da Shein (faixa única, sem categoria) —
+// qualquer lugar que precise só do valor "cru" (sem montar um preço via
+// calcCanal) chama isso em vez de indexar SHEIN_TIERS[0] direto, pra não
+// duplicar a mesma faixa espalhada pelos componentes (Precificação por
+// Canal, resolverFaixaShein logo abaixo, resolverTaxasNoPreco).
+export function resolverTaxasShein() {
+  return SHEIN_TIERS[0];
+}
+
 // Shein: uma faixa só, sem categoria — resolve trivial, mas mantido no
 // mesmo formato de resolverFaixaX pra encaixar direto onde os outros três
-// já são usados (Ranking, Promoções, Produtos, Taxas Marketplace).
+// já são usados (Ranking, Comparativo, Promoções, Taxas Marketplace).
 export function resolverFaixaShein(base) {
-  const tier = SHEIN_TIERS[0];
+  const tier = resolverTaxasShein();
   return { tier, resultado: calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
 }
 
@@ -208,7 +217,7 @@ export function resolverTaxasNoPreco(canalTipo, preco, mlCategoria, mlTipoAnunci
     return { comissaoPct: tier.pct, taxaFixa: tier.fixo };
   }
   if (canalTipo === "shein") {
-    const tier = SHEIN_TIERS[0];
+    const tier = resolverTaxasShein();
     return { comissaoPct: tier.pct, taxaFixa: tier.fixo };
   }
   return null;

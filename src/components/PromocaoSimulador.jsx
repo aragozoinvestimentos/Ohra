@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ML_CATEGORY_PCT, calcCanalCustom, resolverFaixaML, resolverFaixaShopee, resolverFaixaTikTok, resultadoNoPreco } from "../lib/calc.js";
+import { ML_CATEGORY_PCT, calcCanalCustom, resolverFaixaML, resolverFaixaShein, resolverFaixaShopee, resolverFaixaTikTok, resultadoNoPreco } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -20,7 +20,7 @@ const TIERS_PADRAO = [
 // Linha de comparação padrão em toda promoção: quanto essa configuração
 // deixa a mais (ou a menos) do que vender a(s) mesma(s) peça(s) avulsa(s),
 // no preço/margem normal. Um desconto isolado (Desconto direto, Frete
-// grátis, Brinde) SEMPRE dá negativo aqui — isso é esperado, é o preço de
+// grátis) SEMPRE dá negativo aqui — isso é esperado, é o preço de
 // atrair a venda. Já Combo/Venda combinada podem dar positivo, porque a
 // taxa fixa do canal é cobrada uma vez só em vez de uma vez por peça.
 function DeltaAvulso({ delta, sufixo = "" }) {
@@ -103,9 +103,6 @@ export default function PromocaoSimulador({ onToast }) {
 
   // Liquidação com piso de margem
   const [margemMinima, setMargemMinima] = useState(10);
-
-  // Brinde / order bump
-  const [brindeId, setBrindeId] = useState("");
 
   useEffect(() => {
     if (!supabase) {
@@ -280,6 +277,10 @@ export default function PromocaoSimulador({ onToast }) {
       const r = resolverFaixaTikTok(baseObj);
       return { resultado: r.resultado, comissaoPct: r.tier.pct, taxaFixa: r.tier.fixo };
     }
+    if (canalObj.tipo === "shein") {
+      const r = resolverFaixaShein(baseObj);
+      return { resultado: r.resultado, comissaoPct: r.tier.pct, taxaFixa: r.tier.fixo };
+    }
     return { resultado: calcCanalCustom(canalObj, baseObj), comissaoPct: canalObj.comissao_pct || 0, taxaFixa: canalObj.taxa_fixa || 0 };
   }
 
@@ -448,26 +449,13 @@ export default function PromocaoSimulador({ onToast }) {
     return { possivel: true, precoMinimo, lucroNoPiso, descontoMaximo, delta: lucroNoPiso - normal.lucro };
   }, [normal, feeInfo, margemMinima]);
 
-  const brinde = produtos.find((p) => p.id === brindeId) || null;
-  const brindeResultado = useMemo(() => {
-    if (!normal || !brinde) return null;
-    const custoBrinde = arredondarPreco((Number(brinde.custo_producao) || 0) + (Number(brinde.embalagem_padrao) || 0));
-    const lucroComBrinde = normal.lucro - custoBrinde;
-    return {
-      custoBrinde,
-      lucroComBrinde,
-      margemComBrinde: normal.preco > 0 ? lucroComBrinde / normal.preco : null,
-      delta: lucroComBrinde - normal.lucro,
-    };
-  }, [normal, brinde]);
-
   // Comparativo entre todos os tipos de promoção configurados agora, lado a
   // lado — sem precisar trocar de aba pra ver qual rende mais lucro. Só
-  // entra na lista o tipo que já tem uma configuração válida (ex: brinde só
-  // depois de escolher um produto-brinde). "Progressivo" fica de fora porque
-  // já tem sua própria tabela de faixas (não é um resultado único) e "Venda
-  // combinada" fica de fora porque parte de uma seleção de itens diferente
-  // (não é o mesmo produto/canal único dos outros tipos).
+  // entra na lista o tipo que já tem uma configuração válida (ex: liquidação
+  // só depois que o piso de margem informado for viável). "Progressivo" fica
+  // de fora porque já tem sua própria tabela de faixas (não é um resultado
+  // único) e "Venda combinada" fica de fora porque parte de uma seleção de
+  // itens diferente (não é o mesmo produto/canal único dos outros tipos).
   const resumoComparativo = useMemo(() => {
     if (!normal) return null;
     const linhas = [{ key: "normal", label: "Preço normal", preco: normal.preco, lucro: normal.lucro, margem: normal.margem }];
@@ -486,9 +474,6 @@ export default function PromocaoSimulador({ onToast }) {
         margem: liquidacao.precoMinimo > 0 ? liquidacao.lucroNoPiso / liquidacao.precoMinimo : null,
       });
     }
-    if (brindeResultado) {
-      linhas.push({ key: "brinde", label: `Brinde: ${brinde?.nome || "—"}`, preco: normal.preco, lucro: brindeResultado.lucroComBrinde, margem: brindeResultado.margemComBrinde });
-    }
     if (freteGratis) {
       linhas.push({ key: "frete", label: "Frete grátis subsidiado", preco: normal.preco, lucro: freteGratis.lucro, margem: freteGratis.margem });
     }
@@ -497,7 +482,7 @@ export default function PromocaoSimulador({ onToast }) {
       deltaVsNormal: l.key === "normal" ? null : l.lucro - normal.lucro,
       mult: l.key !== "normal" && normal.lucro > 0 && l.lucro > 0 ? normal.lucro / l.lucro : null,
     }));
-  }, [normal, descontoResultado, desconto, combo, liquidacao, margemMinima, brindeResultado, brinde, freteGratis]);
+  }, [normal, descontoResultado, desconto, combo, liquidacao, margemMinima, freteGratis]);
 
   // Catálogo pro seletor de "Venda combinada" — produtos e kits juntos,
   // marcados na hora de exibir; o "preço" aqui é o custo de cada um (mesma
@@ -688,19 +673,6 @@ export default function PromocaoSimulador({ onToast }) {
         resumo: `Frete grátis — você absorve ${BRL(n(freteAbsorvido))}.`,
       };
     }
-    if (tipo === "brinde") {
-      if (!brindeResultado) return null;
-      return {
-        itemNome: itemNomeAtual,
-        canalNome: canalNomeAtual,
-        preco: normal.preco,
-        lucro: brindeResultado.lucroComBrinde,
-        margem: brindeResultado.margemComBrinde,
-        precoReferencia: null,
-        descontoPct: null,
-        resumo: `Brinde incluso: ${brinde?.nome || "—"} (custo ${BRL(brindeResultado.custoBrinde)}).`,
-      };
-    }
     if (tipo === "liquidacao") {
       if (!liquidacao || !liquidacao.possivel) return null;
       return {
@@ -716,7 +688,7 @@ export default function PromocaoSimulador({ onToast }) {
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo, normal, combinada, combo, freteGratis, brindeResultado, liquidacao, linhasProgressivo, desconto, descontoResultado, modoDesconto, precoOriginalSugerido, descontoCombinada, freteAbsorvido, margemMinima, brinde, itemNomeAtual, canalNomeAtual]);
+  }, [tipo, normal, combinada, combo, freteGratis, liquidacao, linhasProgressivo, desconto, descontoResultado, modoDesconto, precoOriginalSugerido, descontoCombinada, freteAbsorvido, margemMinima, itemNomeAtual, canalNomeAtual]);
 
   const [nomePromo, setNomePromo] = useState("");
   const [salvandoPromo, setSalvandoPromo] = useState(false);
@@ -818,7 +790,7 @@ export default function PromocaoSimulador({ onToast }) {
           <div className="panel">
             <h3 className="section-title">
               {tipo === "combinada" ? "Canal" : "Produto e canal"}
-              <Ajuda texto="Simula o impacto de uma promoção no lucro, a partir do preço normal calculado pro canal escolhido (mesmas taxas de Cadastros → Canais)." />
+              <Ajuda texto="Simula o impacto de uma promoção no lucro, a partir do preço normal calculado pro canal escolhido (mesmas taxas de Configuração → Canais)." />
             </h3>
             {carregando ? (
               <div className="empty">Carregando…</div>
@@ -1087,6 +1059,9 @@ export default function PromocaoSimulador({ onToast }) {
                 Progressivo por quantidade
                 <Ajuda texto="Cada faixa aplica um desconto % maior conforme a quantidade comprada — a taxa fixa do canal continua sendo cobrada por unidade (é assim que Shopee/ML tratam item por item, mesmo em um pedido só)." />
               </h3>
+              <div className="hint" style={{ marginTop: -4 }}>
+                É pra venda dentro do marketplace (o desconto aparece nas faixas de quantidade do próprio anúncio). Pra um pedido combinado direto com o cliente, fora do marketplace, use "Encomenda em volume" em Orçamento.
+              </div>
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -1147,6 +1122,9 @@ export default function PromocaoSimulador({ onToast }) {
                 Combo — leve mais, pague menos
                 <Ajuda texto="Vendido como um único pedido/kit: a taxa fixa do canal é cobrada uma vez só (não por unidade), então quanto maior o kit, mais essa economia ajuda a bancar o desconto." />
               </h3>
+              <div className="hint" style={{ marginTop: -4 }}>
+                É um desconto por levar um combo fechado (leve X, pague Y) numa venda no marketplace — diferente do "Progressivo", que dá desconto crescente por faixa de quantidade.
+              </div>
               <div className="row2">
                 <div className="field">
                   <label>Leva (unidades)</label>
@@ -1206,36 +1184,6 @@ export default function PromocaoSimulador({ onToast }) {
                   <Breakeven lucroNormal={normal.lucro} lucroPromo={liquidacao.lucroNoPiso} />
                 </>
               ) : null}
-            </div>
-          ) : tipo === "brinde" ? (
-            <div className="panel">
-              <h3 className="section-title">
-                Brinde / order bump
-                <Ajuda texto="Vende o produto principal pelo preço normal, mas inclui de brinde outro produto cadastrado (geralmente um item barato) — calcula o quanto isso reduz o lucro, sem mudar o preço nem a taxa do canal." />
-              </h3>
-              <div className="field">
-                <label>Brinde (produto cadastrado)</label>
-                <select value={brindeId} onChange={(e) => setBrindeId(e.target.value)}>
-                  <option value="">— escolha —</option>
-                  {produtos.filter((p) => p.id !== produtoBase?.id).map((p) => (
-                    <option key={p.id} value={p.id}>{p.nome}</option>
-                  ))}
-                </select>
-              </div>
-              {brindeResultado && (
-                <>
-                  <div className="kv"><span className="k">Custo do brinde</span><span className="v">{BRL(brindeResultado.custoBrinde)}</span></div>
-                  <div className="kv"><span className="k">Preço (não muda)</span><span className="v">{BRL(normal.preco)}</span></div>
-                  <div className="kv total"><span className="k">Lucro com o brinde incluso</span><span className="v">{BRL(brindeResultado.lucroComBrinde)}</span></div>
-                  <div className="kv">
-                    <span className="k">Margem com o brinde</span>
-                    <span className="v">{brindeResultado.margemComBrinde != null ? PCT(brindeResultado.margemComBrinde) : "—"}</span>
-                  </div>
-                  <Termometro valor={brindeResultado.margemComBrinde || 0} meta={n(lucratividade) / 100} />
-                  <DeltaAvulso delta={brindeResultado.delta} />
-                  <Breakeven lucroNormal={normal.lucro} lucroPromo={brindeResultado.lucroComBrinde} />
-                </>
-              )}
             </div>
           ) : (
             <div className="panel">
@@ -1332,7 +1280,7 @@ export default function PromocaoSimulador({ onToast }) {
         <div className="panel">
           <h3 className="section-title">
             Comparativo entre promoções
-            <Ajuda texto="Lado a lado, o resultado de cada tipo de promoção configurada acima pra esse mesmo produto e canal — pra decidir qual vale mais a pena sem ficar trocando de aba. Só entra na lista o tipo que já tem uma configuração válida (ex: brinde só aparece depois de escolher um produto-brinde)." />
+            <Ajuda texto="Lado a lado, o resultado de cada tipo de promoção configurada acima pra esse mesmo produto e canal — pra decidir qual vale mais a pena sem ficar trocando de aba. Só entra na lista o tipo que já tem uma configuração válida (ex: liquidação só aparece quando o piso de margem informado é viável)." />
           </h3>
           <div className="table-wrap">
             <table>

@@ -9,6 +9,30 @@ import CalculadoraPreco from "./CalculadoraPreco.jsx";
 
 const VAZIO = { nome: "", preco: "", unidade: "un", observacao: "" };
 
+// Lista fixa de unidades — antes era texto livre e virava "un", "UN", "uni",
+// "unidade" pra dizer a mesma coisa, o que fragmentava qualquer relatório
+// que agrupasse por unidade. Cobre o que uma loja pequena de produto 3D
+// impresso costuma vender/embalar (peça avulsa, filamento por peso, fita/
+// cordão por comprimento, calçado/luva em par, embalagem em rolo).
+const UNIDADES = [
+  { value: "un", label: "un — unidade" },
+  { value: "kg", label: "kg — quilograma" },
+  { value: "g", label: "g — grama" },
+  { value: "m", label: "m — metro" },
+  { value: "cm", label: "cm — centímetro" },
+  { value: "par", label: "par" },
+  { value: "rolo", label: "rolo" },
+];
+
+// Monta as opções do <select> a partir da lista fixa, preservando um valor
+// antigo que não bateu com nenhuma opção (ex.: algo que a migração de
+// normalização não reconheceu) — assim a linha continua mostrando o que já
+// estava salvo em vez de trocar o dado sozinha assim que o menu de edição abre.
+function opcoesUnidade(atual) {
+  if (!atual || UNIDADES.some((u) => u.value === atual)) return UNIDADES;
+  return [...UNIDADES, { value: atual, label: `${atual} (valor antigo, fora do padrão)` }];
+}
+
 // Fora do Embalagens() de propósito: se ficasse dentro, seria recriado a
 // cada tecla digitada e o input perderia o foco a cada caractere.
 function CampoPreco({ item, edicoes, setEdicoes, onSalvar }) {
@@ -18,6 +42,7 @@ function CampoPreco({ item, edicoes, setEdicoes, onSalvar }) {
       <input
         type="number"
         step="0.01"
+        min="0"
         style={{ width: 90, textAlign: "right" }}
         value={edicoes[item.id] ?? arredondarPreco(item.preco)}
         onChange={(e) => setEdicoes((prev) => ({ ...prev, [item.id]: e.target.value }))}
@@ -88,6 +113,10 @@ export default function Embalagens({ onToast }) {
       onToast("Preencha nome e preço");
       return;
     }
+    if (precoBruto <= 0) {
+      onToast("Preço deve ser maior que zero");
+      return;
+    }
     setSalvandoNovo(true);
     const { error } = await supabase.from("embalagens").insert({
       nome,
@@ -109,6 +138,10 @@ export default function Embalagens({ onToast }) {
     const valor = parseFloat(edicoes[id]);
     if (!isFinite(valor)) {
       onToast("Preço inválido");
+      return false;
+    }
+    if (valor <= 0) {
+      onToast("Preço deve ser maior que zero");
       return false;
     }
     const { error } = await supabase
@@ -145,6 +178,10 @@ export default function Embalagens({ onToast }) {
     const precoBruto = parseFloat(edicaoForm.preco);
     if (!nome || !isFinite(precoBruto)) {
       onToast("Preencha nome e preço");
+      return;
+    }
+    if (precoBruto <= 0) {
+      onToast("Preço deve ser maior que zero");
       return;
     }
     setSalvandoEdicao(true);
@@ -223,18 +260,21 @@ export default function Embalagens({ onToast }) {
             <input
               type="number"
               step="0.01"
+              min="0"
               value={novo.preco}
               onChange={(e) => setNovo((p) => ({ ...p, preco: e.target.value }))}
             />
           </div>
           <div className="field">
-            <label>Unidade (un, m...)</label>
-            <input
-              type="text"
-              placeholder="un"
+            <label>Unidade</label>
+            <select
               value={novo.unidade}
               onChange={(e) => setNovo((p) => ({ ...p, unidade: e.target.value }))}
-            />
+            >
+              {opcoesUnidade(novo.unidade).map((u) => (
+                <option key={u.value} value={u.value}>{u.label}</option>
+              ))}
+            </select>
           </div>
         </div>
         <CalculadoraPreco
@@ -330,17 +370,21 @@ export default function Embalagens({ onToast }) {
               <input
                 type="number"
                 step="0.01"
+                min="0"
                 value={edicaoForm.preco}
                 onChange={(e) => setEdicaoForm((p) => ({ ...p, preco: e.target.value }))}
               />
             </div>
             <div className="field">
-              <label>Unidade (un, m...)</label>
-              <input
-                type="text"
+              <label>Unidade</label>
+              <select
                 value={edicaoForm.unidade}
                 onChange={(e) => setEdicaoForm((p) => ({ ...p, unidade: e.target.value }))}
-              />
+              >
+                {opcoesUnidade(edicaoForm.unidade).map((u) => (
+                  <option key={u.value} value={u.value}>{u.label}</option>
+                ))}
+              </select>
             </div>
           </div>
           <CalculadoraPreco

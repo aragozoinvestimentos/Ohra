@@ -131,6 +131,10 @@ export default function Materiais({ onToast }) {
       onToast("Preencha nome e preço");
       return;
     }
+    if (precoBruto <= 0) {
+      onToast("Preço deve ser maior que zero");
+      return;
+    }
     setSalvandoNovo(true);
     const { error } = await supabase.from("materiais").insert({
       nome,
@@ -193,6 +197,10 @@ export default function Materiais({ onToast }) {
       onToast("Preencha nome e preço");
       return;
     }
+    if (precoBruto <= 0) {
+      onToast("Preço deve ser maior que zero");
+      return;
+    }
     setSalvandoEdicao(true);
     const { error } = await supabase
       .from("materiais")
@@ -212,6 +220,23 @@ export default function Materiais({ onToast }) {
     }
     setEditItem(null);
     onToast("Material atualizado");
+  }
+
+  // Antes de excluir, confere se o material está em uso em algum produto
+  // cadastrado (material é referenciado por nome em produtos_cadastro.material_nome,
+  // não por id) — mesma ideia do aviso de uso que Embalagens já faz, mas aqui
+  // bloqueia mesmo a exclusão, já que sumir o material de baixo de um produto
+  // já cadastrado quebraria o cálculo de custo dele silenciosamente.
+  async function pedirExclusao(item) {
+    const { count } = await supabase
+      .from("produtos_cadastro")
+      .select("id", { count: "exact", head: true })
+      .eq("material_nome", item.nome);
+    if (count) {
+      onToast(`"${item.nome}" está em uso em ${count} produto(s). Não é possível excluir enquanto estiver em uso.`);
+      return;
+    }
+    setExcluirAlvo(item);
   }
 
   async function excluir(id) {
@@ -261,6 +286,7 @@ export default function Materiais({ onToast }) {
             <input
               type="number"
               step="0.01"
+              min="0"
               value={novo.preco}
               onChange={(e) => setNovo((p) => ({ ...p, preco: e.target.value }))}
             />
@@ -318,7 +344,7 @@ export default function Materiais({ onToast }) {
             setEdicoes={setEdicoes}
             onSalvarPreco={salvarPreco}
             onEditar={abrirEdicao}
-            onExcluir={setExcluirAlvo}
+            onExcluir={pedirExclusao}
           />
           <TabelaMateriais
             titulo="Consumíveis"
@@ -329,7 +355,7 @@ export default function Materiais({ onToast }) {
             setEdicoes={setEdicoes}
             onSalvarPreco={salvarPreco}
             onEditar={abrirEdicao}
-            onExcluir={setExcluirAlvo}
+            onExcluir={pedirExclusao}
           />
           {materiais.length > 0 && (
             <div className="hint" style={{ marginTop: -6, marginBottom: 18 }}>
@@ -381,6 +407,7 @@ export default function Materiais({ onToast }) {
               <input
                 type="number"
                 step="0.01"
+                min="0"
                 value={edicaoForm.preco}
                 onChange={(e) => setEdicaoForm((p) => ({ ...p, preco: e.target.value }))}
               />

@@ -5,6 +5,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
+import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
 
 const MESES_PT = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -45,6 +46,11 @@ export default function Metas({ onToast }) {
   const [salvandoMeta, setSalvandoMeta] = useState(false);
 
   const [itensVenda, setItensVenda] = useState([]); // [{ itemId, quantidade }] — itemId = id da linha em precos_canal
+
+  // Mesma base de dados do Ranking (produtos+kits com custo total, canais e
+  // preços salvos) só pra achar os melhores desempenhos — evita duplicar a
+  // lógica de "qual o melhor canal de cada item" aqui.
+  const { itens: itensRanking, canais: canaisRanking, precos: precosRanking } = useRankingData();
 
   // Mês corrente no formato 'YYYY-MM' — cada mês é uma linha própria em
   // metas_mensais, então virar o mês não apaga nada: só passa a ler/gravar
@@ -152,6 +158,45 @@ export default function Metas({ onToast }) {
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   }, [precos, produtos, kits, canais]);
 
+  // Top 5 melhores desempenhos (mesmo critério do Ranking: maior lucro,
+  // considerando o melhor canal de cada produto/kit) que já têm preço
+  // salvo — só esses têm uma linha correspondente em catalogoVendas pra
+  // poder entrar no simulador com um clique.
+  const topPerformers = useMemo(() => {
+    const ranking = calcularRanking(itensRanking, canaisRanking, { precos: precosRanking });
+    return ranking
+      .filter((linha) => linha.origem === "salvo")
+      .map((linha) => {
+        const [tipo, id] = linha.item.id.split(":");
+        const itemTipo = tipo === "k" ? "kit" : "produto";
+        const linhaPreco = precosRanking.find(
+          (p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === linha.canal.id
+        );
+        if (!linhaPreco) return null;
+        const noCatalogo = catalogoVendas.find((c) => c.id === linhaPreco.id);
+        if (!noCatalogo) return null;
+        return { catalogoId: linhaPreco.id, nome: noCatalogo.nome, lucro: linha.lucro };
+      })
+      .filter(Boolean)
+      .slice(0, 5);
+  }, [itensRanking, canaisRanking, precosRanking, catalogoVendas]);
+
+  // Adiciona (ou soma +1 unidade, se já estiver no cenário) um item do
+  // topPerformers ao simulador — mesmo formato { itemId, quantidade } que o
+  // SeletorItens já usa, então o resto da tela (totais, termômetros) nem
+  // percebe a diferença entre um item adicionado na mão ou por aqui.
+  function adicionarTopPerformer(catalogoId) {
+    setItensVenda((prev) => {
+      const idx = prev.findIndex((it) => it.itemId === catalogoId);
+      if (idx >= 0) {
+        const copia = prev.slice();
+        copia[idx] = { ...copia[idx], quantidade: (Number(copia[idx].quantidade) || 0) + 1 };
+        return copia;
+      }
+      return [...prev, { itemId: catalogoId, quantidade: 1 }];
+    });
+  }
+
   const itensVendaValidos = itensVenda.filter((it) => it.itemId && (Number(it.quantidade) || 0) > 0);
   const totalPecasSimuladas = itensVendaValidos.reduce((soma, it) => soma + (Number(it.quantidade) || 0), 0);
   const faturamentoSimulado = totalItens(catalogoVendas, itensVendaValidos);
@@ -247,12 +292,32 @@ export default function Metas({ onToast }) {
               Nenhum preço salvo ainda — salve preços em Precificação por Canal (aparecem em Preços por Canal) pra poder simular vendas com valores reais.
             </div>
           ) : (
-            <SeletorItens
-              catalogo={catalogoVendas}
-              itens={itensVenda}
-              onChange={setItensVenda}
-              rotuloVazio="Nenhum preço salvo ainda."
-            />
+            <>
+              {topPerformers.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <label>Adicionar melhores desempenhos (Ranking)</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                    {topPerformers.map((tp) => (
+                      <button
+                        type="button"
+                        key={tp.catalogoId}
+                        className="btn"
+                        title={`Lucro: ${BRL(tp.lucro)}/un.`}
+                        onClick={() => adicionarTopPerformer(tp.catalogoId)}
+                      >
+                        + {tp.nome} ({BRL(tp.lucro)})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <SeletorItens
+                catalogo={catalogoVendas}
+                itens={itensVenda}
+                onChange={setItensVenda}
+                rotuloVazio="Nenhum preço salvo ainda."
+              />
+            </>
           )}
         </div>
 

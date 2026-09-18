@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, calcCanalCustom, aplicarAds } from "../lib/calc.js";
+import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, aplicarAds } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -160,7 +160,7 @@ export default function Comparativo() {
 
   // Ordena as linhas por lucro orgânico decrescente — antes só o "melhor
   // canal" ganhava um selo, mas a ordem da tabela continuava sendo a mesma
-  // de Cadastros → Canais, obrigando a comparar linha por linha. Linha
+  // de Configuração → Canais, obrigando a comparar linha por linha. Linha
   // inconsistente (faixa não confere) ou sem lucro calculável vai pro fim,
   // não disputa a ordenação com as confiáveis.
   function ordenarPorLucro(linhas) {
@@ -206,7 +206,7 @@ export default function Comparativo() {
         embalagem: parseFloat(embalagem) || 0,
       };
       return canais.map((canal) => {
-        // Imposto e custos fixos são por canal (Cadastros → Canais) — cada
+        // Imposto e custos fixos são por canal (Configuração → Canais) — cada
         // linha usa o valor daquele canal, não um input compartilhado.
         const baseCanal = { ...base, imposto: canal.imposto_pct || 0, custosFixosPct: canal.custos_fixos_pct || 0 };
         let resultado;
@@ -216,6 +216,8 @@ export default function Comparativo() {
           resultado = resolverFaixaML(mlCategoria, baseCanal, mlTipoAnuncio).resultado;
         } else if (canal.tipo === "tiktok") {
           resultado = resolverFaixaTikTok(baseCanal).resultado;
+        } else if (canal.tipo === "shein") {
+          resultado = resolverFaixaShein(baseCanal).resultado;
         } else {
           resultado = calcCanalCustom(canal, baseCanal);
         }
@@ -282,7 +284,7 @@ export default function Comparativo() {
         {carregando ? (
           <div className="empty">Carregando…</div>
         ) : linhas.length === 0 ? (
-          <div className="empty">Nenhum canal cadastrado ainda — vá em Cadastros → Canais.</div>
+          <div className="empty">Nenhum canal cadastrado ainda — vá em Configuração → Canais.</div>
         ) : custoProduto <= 0 ? (
           <div className="empty">Escolha um produto/kit cadastrado ou informe um custo de produção pra comparar os canais.</div>
         ) : (
@@ -458,7 +460,7 @@ export default function Comparativo() {
             </div>
           </div>
           <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-            Imposto e custos fixos de cada canal vêm de Cadastros → Canais — edite lá se algum percentual mudar.
+            Imposto e custos fixos de cada canal vêm de Configuração → Canais — edite lá se algum percentual mudar.
           </div>
         </div>
       </div>
@@ -520,7 +522,7 @@ export default function Comparativo() {
         {itemB && renderTabela(itemB.nome, custoProdutoB, linhasBExibidas, melhorOrganicoB, melhorComAdsB, itemBId)}
 
         <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-          Canais ordenados do maior pro menor lucro orgânico. Quando o item já tem um preço salvo em Precificação por Canal, ele aparece embaixo do preço calculado — se forem diferentes, o preço real de venda é o salvo, não o teórico daqui. O preço de venda não muda com Ads — só o lucro daquela venda específica, pelo % que você configurou em Cadastros → Canais.
+          Canais ordenados do maior pro menor lucro orgânico. Quando o item já tem um preço salvo em Precificação por Canal, ele aparece embaixo do preço calculado — se forem diferentes, o preço real de venda é o salvo, não o teórico daqui. O preço de venda não muda com Ads — só o lucro daquela venda específica, pelo % que você configurou em Configuração → Canais.
         </div>
       </div>
     </div>
