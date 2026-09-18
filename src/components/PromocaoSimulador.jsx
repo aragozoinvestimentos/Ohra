@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ML_CATEGORY_PCT, calcCanalCustom, resolverFaixaML, resolverFaixaShopee, resolverFaixaTikTok, resultadoNoPreco } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -277,16 +277,39 @@ export default function PromocaoSimulador({ onToast }) {
   }, [precos, baseSelecionada, canalId]);
 
   // "Preço original de venda" — editável. Vem preenchido com o preço salvo
-  // (ou, na falta dele, com o calculado pela margem desejada) toda vez que
-  // o item ou o canal mudam, mas fica parado enquanto você só ajusta
-  // margem/custo/frete, pra não brigar com um valor que você já digitou.
+  // (ou, na falta dele, com o calculado pela margem desejada) e ACOMPANHA AO
+  // VIVO qualquer mudança nesse valor (preço salvo em Preços por Canal, ou
+  // custo do produto/frete/embalagem que muda o teórico) enquanto você não
+  // tiver digitado nada diferente na mão — sem isso, o campo ficava
+  // "congelado" no valor de quando o produto foi selecionado, e a promoção
+  // inteira (lucro, margem, ponto de equilíbrio) continuava calculando em
+  // cima de um preço/custo desatualizado mesmo depois de editar o produto ou
+  // salvar um preço novo em outra aba/aparelho. `ultimoAutoRef` guarda o
+  // último valor preenchido automaticamente — se o campo ainda for igual a
+  // ele, é seguro atualizar; se for diferente, é porque você editou na mão,
+  // e nesse caso a troca de item/canal (chaveRef) ainda reseta do jeito
+  // antigo, pra não carregar o ajuste manual de um produto pro outro.
   const [precoOriginalOverride, setPrecoOriginalOverride] = useState("");
+  const chaveItemCanalRef = useRef("");
+  const ultimoAutoRef = useRef(null);
 
   useEffect(() => {
+    const chave = `${baseSelecionada}|${canalId}`;
     const valor = precoSalvo?.preco ?? normalCalculado?.preco ?? null;
-    setPrecoOriginalOverride(valor != null ? String(arredondarPreco(valor)) : "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseSelecionada, canalId]);
+    const valorStr = valor != null ? String(arredondarPreco(valor)) : "";
+    const trocouItemOuCanal = chave !== chaveItemCanalRef.current;
+    chaveItemCanalRef.current = chave;
+    if (trocouItemOuCanal) {
+      ultimoAutoRef.current = valorStr;
+      setPrecoOriginalOverride(valorStr);
+      return;
+    }
+    setPrecoOriginalOverride((atual) => {
+      if (atual !== ultimoAutoRef.current) return atual; // editado na mão — não sobrescreve
+      ultimoAutoRef.current = valorStr;
+      return valorStr;
+    });
+  }, [baseSelecionada, canalId, precoSalvo, normalCalculado]);
 
   const precoOriginalNum = parseFloat(precoOriginalOverride);
   // Reavalia lucro/margem com a faixa de comissão certa pro preço original
