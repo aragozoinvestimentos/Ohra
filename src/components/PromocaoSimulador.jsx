@@ -7,6 +7,7 @@ import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { TIPOS } from "../lib/promocaoTipos.js";
+import { normalizarTexto, nomesParecidos } from "../lib/texto.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -68,6 +69,7 @@ export default function PromocaoSimulador({ onToast }) {
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [canais, setCanais] = useState([]);
   const [precos, setPrecos] = useState([]); // precos_canal já salvos — base do "preço original de venda" abaixo
+  const [nomesPromocoesSalvas, setNomesPromocoesSalvas] = useState([]); // pro autocomplete/sugestão ao salvar
   const [carregando, setCarregando] = useState(true);
 
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | `p:<id>` | `k:<id>`
@@ -118,14 +120,16 @@ export default function PromocaoSimulador({ onToast }) {
         let qk = supabase.from("kits").select("*").order("nome");
         let qe = supabase.from("embalagens").select("*").order("nome");
         let qpc = supabase.from("precos_canal").select("*");
+        let qps = supabase.from("promocoes_salvas").select("nome");
         if (lojaId) {
           qp = qp.eq("loja_id", lojaId);
           qc = qc.eq("loja_id", lojaId);
           qk = qk.eq("loja_id", lojaId);
           qe = qe.eq("loja_id", lojaId);
           qpc = qpc.eq("loja_id", lojaId);
+          qps = qps.eq("loja_id", lojaId);
         }
-        const [rp, rc, rk, re, rpc] = await Promise.all([qp, qc, qk, qe, qpc]);
+        const [rp, rc, rk, re, rpc, rps] = await Promise.all([qp, qc, qk, qe, qpc, qps]);
         if (!ativo) return;
         // Troca de loja invalida seleções antigas — se o produto/canal/kit
         // escolhido não existir mais na lista desta loja, volta pro padrão
@@ -139,6 +143,18 @@ export default function PromocaoSimulador({ onToast }) {
         if (!rk.error) setKits(rk.data || []);
         if (!re.error) setEmbalagensCatalogo(re.data || []);
         if (!rpc.error) setPrecos(rpc.data || []);
+        // Nomes já usados em promoções salvas — só pra sugerir/autocompletar
+        // na hora de salvar (dedupe por texto normalizado, guarda a 1ª grafia).
+        if (!rps.error) {
+          const vistos = new Map();
+          for (const row of rps.data || []) {
+            const nome = (row.nome || "").trim();
+            if (!nome) continue;
+            const chave = normalizarTexto(nome);
+            if (!vistos.has(chave)) vistos.set(chave, nome);
+          }
+          setNomesPromocoesSalvas([...vistos.values()].sort((a, b) => a.localeCompare(b, "pt-BR")));
+        }
 
         const kitIds = (rk.data || []).map((k) => k.id);
         const [kpResp, keResp] = await Promise.all([
@@ -176,6 +192,7 @@ export default function PromocaoSimulador({ onToast }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "promocoes_salvas" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
@@ -607,12 +624,15 @@ export default function PromocaoSimulador({ onToast }) {
         preco: combinada.precoCombinado,
         lucro: combinada.lucroCombinado,
         margem: combinada.margemCombinado,
+        precoReferencia: combinada.precoSomaAvulso,
+        descontoPct: null,
         resumo: `Venda combinada: desconto de ${n(descontoCombinada)}% sobre a soma dos preços avulsos.`,
       };
     }
     if (!normal) return null;
     if (tipo === "desconto") {
       if (!descontoResultado) return null;
+      const precoReferencia = modoDesconto === "precoFinal" ? precoOriginalSugerido : normal.preco;
       const resumo =
         modoDesconto === "precoFinal"
           ? `Desconto direto de ${n(desconto)}% — preço final fixado em ${BRL(descontoResultado.preco)}${
@@ -625,6 +645,8 @@ export default function PromocaoSimulador({ onToast }) {
         preco: descontoResultado.preco,
         lucro: descontoResultado.lucro,
         margem: descontoResultado.margem,
+        precoReferencia,
+        descontoPct: n(desconto),
         resumo,
       };
     }
@@ -635,6 +657,8 @@ export default function PromocaoSimulador({ onToast }) {
         preco: null,
         lucro: null,
         margem: null,
+        precoReferencia: null,
+        descontoPct: null,
         resumo: linhasProgressivo.map((t) => `${t.qtd}un -${n(t.desconto)}%: ${BRL(t.precoUnit)} (lucro ${BRL(t.lucroUnit)})`).join(" · "),
       };
     }
@@ -646,6 +670,8 @@ export default function PromocaoSimulador({ onToast }) {
         preco: combo.precoKit,
         lucro: combo.lucroKit,
         margem: combo.margemKit,
+        precoReferencia: normal.preco,
+        descontoPct: null,
         resumo: `Leve ${combo.L}, pague ${combo.P} — preço efetivo por unidade ${BRL(combo.precoUnidadeEfetivo)}.`,
       };
     }
@@ -657,6 +683,8 @@ export default function PromocaoSimulador({ onToast }) {
         preco: normal.preco,
         lucro: freteGratis.lucro,
         margem: freteGratis.margem,
+        precoReferencia: null,
+        descontoPct: null,
         resumo: `Frete grátis — você absorve ${BRL(n(freteAbsorvido))}.`,
       };
     }
@@ -668,6 +696,8 @@ export default function PromocaoSimulador({ onToast }) {
         preco: normal.preco,
         lucro: brindeResultado.lucroComBrinde,
         margem: brindeResultado.margemComBrinde,
+        precoReferencia: null,
+        descontoPct: null,
         resumo: `Brinde incluso: ${brinde?.nome || "—"} (custo ${BRL(brindeResultado.custoBrinde)}).`,
       };
     }
@@ -679,6 +709,8 @@ export default function PromocaoSimulador({ onToast }) {
         preco: liquidacao.precoMinimo,
         lucro: liquidacao.lucroNoPiso,
         margem: liquidacao.precoMinimo > 0 ? liquidacao.lucroNoPiso / liquidacao.precoMinimo : null,
+        precoReferencia: normal.preco,
+        descontoPct: null,
         resumo: `Margem mínima de ${n(margemMinima)}% — desconto máximo ${liquidacao.descontoMaximo != null ? PCT(liquidacao.descontoMaximo) : "—"}.`,
       };
     }
@@ -688,6 +720,37 @@ export default function PromocaoSimulador({ onToast }) {
 
   const [nomePromo, setNomePromo] = useState("");
   const [salvandoPromo, setSalvandoPromo] = useState(false);
+  const [sugestaoNomeAberta, setSugestaoNomeAberta] = useState(false);
+  const nomePromoRef = useRef(null);
+
+  useEffect(() => {
+    if (!sugestaoNomeAberta) return;
+    function aoClicarFora(e) {
+      if (nomePromoRef.current && !nomePromoRef.current.contains(e.target)) setSugestaoNomeAberta(false);
+    }
+    document.addEventListener("mousedown", aoClicarFora);
+    return () => document.removeEventListener("mousedown", aoClicarFora);
+  }, [sugestaoNomeAberta]);
+
+  // Sugestões de nomes já usados que combinam com o que está sendo digitado
+  // — autocomplete pra reaproveitar o nome de uma promoção já cadastrada em
+  // vez de criar sem querer uma nova com um nome quase igual.
+  const sugestoesNomePromo = useMemo(() => {
+    const alvo = normalizarTexto(nomePromo);
+    if (!alvo) return [];
+    return nomesPromocoesSalvas.filter((n) => normalizarTexto(n).includes(alvo)).slice(0, 8);
+  }, [nomePromo, nomesPromocoesSalvas]);
+
+  // "Nome parecido, mas não igual" — só dispara quando o texto digitado não
+  // bate exatamente com nenhum nome já existente, pra avisar antes de criar
+  // sem querer uma promoção duplicada por causa de um erro de digitação.
+  const nomePromoParecido = useMemo(() => {
+    const alvo = nomePromo.trim();
+    if (!alvo) return null;
+    const alvoNorm = normalizarTexto(alvo);
+    if (nomesPromocoesSalvas.some((n) => normalizarTexto(n) === alvoNorm)) return null;
+    return nomesPromocoesSalvas.find((n) => nomesParecidos(n, alvo)) || null;
+  }, [nomePromo, nomesPromocoesSalvas]);
 
   async function salvarPromocao() {
     const nome = nomePromo.trim();
@@ -712,6 +775,8 @@ export default function PromocaoSimulador({ onToast }) {
       preco: resumoParaSalvar.preco != null ? arredondarPreco(resumoParaSalvar.preco) : null,
       lucro: resumoParaSalvar.lucro != null ? arredondarPreco(resumoParaSalvar.lucro) : null,
       margem: resumoParaSalvar.margem,
+      preco_referencia: resumoParaSalvar.precoReferencia != null ? arredondarPreco(resumoParaSalvar.precoReferencia) : null,
+      desconto_pct: resumoParaSalvar.descontoPct,
       resumo: resumoParaSalvar.resumo,
       ...(lojaId ? { loja_id: lojaId } : {}),
     });
@@ -1200,26 +1265,63 @@ export default function PromocaoSimulador({ onToast }) {
 
           {resumoParaSalvar && (
             <div className="panel">
-              <h3 className="section-title">Salvar essa promoção</h3>
+              <h3 className="section-title">
+                Salvar essa promoção
+                <Ajuda texto="Promoções com o mesmo nome ficam agrupadas em Promoções salvas — por isso, se essa é mais um produto de uma promoção que você já vem cadastrando (ex: 'Black Friday 15%'), reaproveite o mesmo nome em vez de criar um novo." />
+              </h3>
               <div className="save-row">
-                <div className="field">
+                <div className="field" ref={nomePromoRef} style={{ position: "relative" }}>
                   <label>Nome da promoção</label>
                   <input
                     type="text"
                     placeholder="ex: Black Friday 15%"
                     value={nomePromo}
-                    onChange={(e) => setNomePromo(e.target.value)}
+                    onChange={(e) => {
+                      setNomePromo(e.target.value);
+                      setSugestaoNomeAberta(true);
+                    }}
+                    onFocus={() => setSugestaoNomeAberta(true)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") salvarPromocao();
                     }}
                   />
+                  {sugestaoNomeAberta && sugestoesNomePromo.length > 0 && (
+                    <div className="seletor-item-sugestoes">
+                      {sugestoesNomePromo.map((n) => (
+                        <button
+                          type="button"
+                          key={n}
+                          onClick={() => {
+                            setNomePromo(n);
+                            setSugestaoNomeAberta(false);
+                          }}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <button className="btn primary" onClick={salvarPromocao} disabled={salvandoPromo}>
                   {salvandoPromo ? "Salvando…" : "Salvar"}
                 </button>
               </div>
+              {nomePromoParecido && (
+                <div className="hint" style={{ marginTop: -4, marginBottom: 8 }}>
+                  Já existe uma promoção parecida: "{nomePromoParecido}".{" "}
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ padding: "2px 8px", fontSize: 12, fontWeight: 400 }}
+                    onClick={() => setNomePromo(nomePromoParecido)}
+                  >
+                    Usar esse nome
+                  </button>{" "}
+                  ou continue pra salvar "{nomePromo.trim()}" como uma promoção nova mesmo.
+                </div>
+              )}
               <div className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
-                Guarda esse resultado em "Promoções salvas" pra consultar depois — não muda nada no cadastro do produto/canal.
+                Guarda esse resultado em "Promoções salvas" pra consultar depois — não muda nada no cadastro do produto/canal. Promoções com o mesmo nome ficam agrupadas lá.
               </div>
             </div>
           )}
