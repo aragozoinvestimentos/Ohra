@@ -81,6 +81,13 @@ export default function PromocaoSimulador({ onToast }) {
 
   const [tipo, setTipo] = useState("desconto");
   const [desconto, setDesconto] = useState(10);
+  // Desconto direto tem dois jeitos de calcular: "percentual" (o de sempre —
+  // desconto% reduz o preço normal) ou "precoFinal" — ao contrário: você diz
+  // o preço final que quer cobrar e o desconto que quer anunciar, e o app
+  // calcula o preço "de" que precisa marcar pra esse desconto bater certinho
+  // nesse valor final, sem precisar fazer a conta na mão.
+  const [modoDesconto, setModoDesconto] = useState("percentual");
+  const [precoFinalDesejado, setPrecoFinalDesejado] = useState("");
   const [tiers, setTiers] = useState(TIERS_PADRAO);
   const [levar, setLevar] = useState(3);
   const [pagar, setPagar] = useState(2);
@@ -346,11 +353,29 @@ export default function PromocaoSimulador({ onToast }) {
   // também precisa desse número, sem duplicar a conta.
   const descontoResultado = useMemo(() => {
     if (!normal) return null;
+    if (modoDesconto === "precoFinal") {
+      const preco = n(precoFinalDesejado);
+      if (preco <= 0) return null;
+      const lucro = normal.lucroEm(preco);
+      return { preco, lucro, margem: preco > 0 ? lucro / preco : null };
+    }
     const preco = normal.preco * (1 - (n(desconto) || 0) / 100);
     const lucro = normal.lucroEm(preco);
     return { preco, lucro, margem: preco > 0 ? lucro / preco : null };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normal, desconto]);
+  }, [normal, desconto, modoDesconto, precoFinalDesejado]);
+
+  // Modo "preço final": pura regra de três a partir do que você digitou (não
+  // depende do preço normal calculado) — preço "de" = preço final ÷ (1 −
+  // desconto), que é exatamente o preço que, descontado nessa porcentagem,
+  // bate no valor final desejado.
+  const precoOriginalSugerido = useMemo(() => {
+    if (modoDesconto !== "precoFinal") return null;
+    const precoFinal = n(precoFinalDesejado);
+    const pct = n(desconto) / 100;
+    if (precoFinal <= 0 || pct >= 1) return null;
+    return precoFinal / (1 - pct);
+  }, [modoDesconto, precoFinalDesejado, desconto]);
 
   function atualizarTier(idx, campo, valor) {
     setTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, [campo]: valor } : t)));
@@ -587,15 +612,20 @@ export default function PromocaoSimulador({ onToast }) {
     }
     if (!normal) return null;
     if (tipo === "desconto") {
-      const precoPromo = normal.preco * (1 - (n(desconto) || 0) / 100);
-      const lucroPromo = normal.lucroEm(precoPromo);
+      if (!descontoResultado) return null;
+      const resumo =
+        modoDesconto === "precoFinal"
+          ? `Desconto direto de ${n(desconto)}% — preço final fixado em ${BRL(descontoResultado.preco)}${
+              precoOriginalSugerido != null ? ` (marque "de" ${BRL(precoOriginalSugerido)})` : ""
+            }.`
+          : `Desconto direto de ${n(desconto)}% sobre o preço normal (${BRL(normal.preco)}).`;
       return {
         itemNome: itemNomeAtual,
         canalNome: canalNomeAtual,
-        preco: precoPromo,
-        lucro: lucroPromo,
-        margem: precoPromo > 0 ? lucroPromo / precoPromo : null,
-        resumo: `Desconto direto de ${n(desconto)}% sobre o preço normal (${BRL(normal.preco)}).`,
+        preco: descontoResultado.preco,
+        lucro: descontoResultado.lucro,
+        margem: descontoResultado.margem,
+        resumo,
       };
     }
     if (tipo === "progressivo") {
@@ -654,7 +684,7 @@ export default function PromocaoSimulador({ onToast }) {
     }
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo, normal, combinada, combo, freteGratis, brindeResultado, liquidacao, linhasProgressivo, desconto, descontoCombinada, freteAbsorvido, margemMinima, brinde, itemNomeAtual, canalNomeAtual]);
+  }, [tipo, normal, combinada, combo, freteGratis, brindeResultado, liquidacao, linhasProgressivo, desconto, descontoResultado, modoDesconto, precoOriginalSugerido, descontoCombinada, freteAbsorvido, margemMinima, brinde, itemNomeAtual, canalNomeAtual]);
 
   const [nomePromo, setNomePromo] = useState("");
   const [salvandoPromo, setSalvandoPromo] = useState(false);
@@ -902,11 +932,79 @@ export default function PromocaoSimulador({ onToast }) {
             <div className="panel"><div className="empty">Escolha um canal cadastrado pra simular.</div></div>
           ) : tipo === "desconto" ? (
             <div className="panel">
-              <h3 className="section-title">Desconto direto</h3>
-              <div className="field">
-                <label>Desconto sobre o preço normal (%)</label>
-                <input type="number" step="1" value={desconto} onChange={(e) => setDesconto(e.target.value)} />
+              <h3 className="section-title">
+                Desconto direto
+                <Ajuda texto="'Por desconto %' é o de sempre: você diz o desconto e o app aplica sobre o preço normal. 'Por preço final' é ao contrário: você diz o preço que quer cobrar e o desconto que quer anunciar, e o app calcula o preço 'de' que precisa marcar pra esse desconto bater certinho — sem fazer conta na mão." />
+              </h3>
+              <div className="save-row" style={{ marginBottom: 12, gap: 6 }}>
+                <button
+                  type="button"
+                  className={`btn${modoDesconto === "percentual" ? " primary" : ""}`}
+                  onClick={() => setModoDesconto("percentual")}
+                >
+                  Por desconto %
+                </button>
+                <button
+                  type="button"
+                  className={`btn${modoDesconto === "precoFinal" ? " primary" : ""}`}
+                  onClick={() => setModoDesconto("precoFinal")}
+                >
+                  Por preço final
+                </button>
               </div>
+
+              {modoDesconto === "percentual" ? (
+                <div className="field">
+                  <label>Desconto sobre o preço normal (%)</label>
+                  <input type="number" step="1" value={desconto} onChange={(e) => setDesconto(e.target.value)} />
+                </div>
+              ) : (
+                <>
+                  <div className="row2">
+                    <div className="field">
+                      <label>Preço final que você quer cobrar (R$)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={precoFinalDesejado}
+                        onChange={(e) => setPrecoFinalDesejado(e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Desconto que quer anunciar (%)</label>
+                      <input type="number" step="1" value={desconto} onChange={(e) => setDesconto(e.target.value)} />
+                    </div>
+                  </div>
+                  {n(desconto) >= 100 ? (
+                    <div className="hint" style={{ marginTop: -4, color: "var(--bad)" }}>
+                      Desconto de 100% ou mais não dá pra calcular um preço "de" (seria infinito).
+                    </div>
+                  ) : precoOriginalSugerido != null ? (
+                    <>
+                      <div className="destaque-preco">
+                        <span className="k">Marque o preço "de" como</span>
+                        <span className="v">{BRL(precoOriginalSugerido)}</span>
+                      </div>
+                      <div className="hint" style={{ marginTop: -4 }}>
+                        Assim o anúncio fica "de {BRL(precoOriginalSugerido)} por {BRL(n(precoFinalDesejado))}" — {n(desconto)}% de desconto batendo certinho no preço final que você quer.
+                      </div>
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ marginTop: 8 }}
+                        onClick={() => setPrecoOriginalOverride(String(arredondarPreco(precoOriginalSugerido)))}
+                      >
+                        Usar esse valor como preço normal
+                      </button>
+                    </>
+                  ) : (
+                    <div className="hint" style={{ marginTop: -4 }}>
+                      Preencha o preço final desejado pra calcular o preço "de".
+                    </div>
+                  )}
+                </>
+              )}
+
               {descontoResultado && (
                 <>
                   <div className="kv"><span className="k">Preço com desconto</span><span className="v">{BRL(descontoResultado.preco)}</span></div>
