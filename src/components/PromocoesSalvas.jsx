@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { BRL, PCT } from "../lib/format.js";
+import { useEffect, useMemo, useState } from "react";
+import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -19,8 +19,8 @@ export default function PromocoesSalvas({ onToast }) {
   const { lojaId } = useLoja();
   const [promocoes, setPromocoes] = useState([]);
   const [carregando, setCarregando] = useState(true);
-  const [editandoId, setEditandoId] = useState(null);
-  const [nomeEditado, setNomeEditado] = useState("");
+  const [editAlvo, setEditAlvo] = useState(null); // linha inteira sendo editada
+  const [edicao, setEdicao] = useState({ nome: "", preco: "", lucro: "", resumo: "" });
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [recemSalvoId, setRecemSalvoId] = useState(null);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
@@ -69,30 +69,74 @@ export default function PromocoesSalvas({ onToast }) {
     setPromocoes((prev) => prev.filter((p) => p.id !== id));
   }
 
+  // Editar aqui é editar o RESULTADO já salvo (preço/lucro/resumo) — não tem
+  // como recalcular a partir de custo+canal porque a promoção salva só
+  // guarda o resultado final (cada tipo de promoção chega nesse número de
+  // um jeito diferente, ver PromocaoSimulador.jsx), sem o custo nem o canal
+  // por trás. Por isso Preço e Lucro são dois campos livres, e a Margem é só
+  // derivada dos dois pra sempre bater (igual Preços por Canal, mas sem uma
+  // faixa de comissão real pra reavaliar).
   function iniciarEdicao(p) {
-    setEditandoId(p.id);
-    setNomeEditado(p.nome || "");
+    setEditAlvo(p);
+    setEdicao({
+      nome: p.nome || "",
+      preco: p.preco != null ? String(p.preco) : "",
+      lucro: p.lucro != null ? String(p.lucro) : "",
+      resumo: p.resumo || "",
+    });
   }
 
-  async function salvarNome() {
-    const id = editandoId;
-    const nome = nomeEditado.trim();
+  const margemEdicao = useMemo(() => {
+    const preco = parseFloat(String(edicao.preco).replace(",", "."));
+    const lucro = parseFloat(String(edicao.lucro).replace(",", "."));
+    if (!isFinite(preco) || preco <= 0 || !isFinite(lucro)) return null;
+    return lucro / preco;
+  }, [edicao.preco, edicao.lucro]);
+
+  async function salvarEdicao() {
+    const id = editAlvo.id;
+    const nome = edicao.nome.trim();
     if (!nome) {
       onToast?.("O nome não pode ficar vazio");
       return;
     }
+    const precoNum = parseFloat(String(edicao.preco).replace(",", "."));
+    const lucroNum = parseFloat(String(edicao.lucro).replace(",", "."));
+    const resumo = edicao.resumo.trim();
     setSalvandoEdicao(true);
-    const { error } = await supabase.from("promocoes_salvas").update({ nome }).eq("id", id);
+    const { error } = await supabase
+      .from("promocoes_salvas")
+      .update({
+        nome,
+        preco: isFinite(precoNum) ? arredondarPreco(precoNum) : null,
+        lucro: isFinite(lucroNum) ? arredondarPreco(lucroNum) : null,
+        margem: margemEdicao,
+        resumo: resumo || null,
+      })
+      .eq("id", id);
     setSalvandoEdicao(false);
     if (error) {
       onToast?.("Não foi possível salvar — tente de novo");
       return;
     }
-    setPromocoes((prev) => prev.map((p) => (p.id === id ? { ...p, nome } : p)));
-    setEditandoId(null);
+    setPromocoes((prev) =>
+      prev.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              nome,
+              preco: isFinite(precoNum) ? arredondarPreco(precoNum) : null,
+              lucro: isFinite(lucroNum) ? arredondarPreco(lucroNum) : null,
+              margem: margemEdicao,
+              resumo: resumo || null,
+            }
+          : p
+      )
+    );
+    setEditAlvo(null);
     setRecemSalvoId(id);
     setTimeout(() => setRecemSalvoId((atual) => (atual === id ? null : atual)), 1000);
-    onToast?.("Nome atualizado");
+    onToast?.("Promoção atualizada");
   }
 
   return (
@@ -139,7 +183,7 @@ export default function PromocoesSalvas({ onToast }) {
                   <td className="num">{p.lucro != null ? BRL(p.lucro) : "—"}</td>
                   <td className="num">{p.margem != null ? PCT(p.margem) : "—"}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <button className="del" title="Editar nome" onClick={() => iniciarEdicao(p)}>✎</button>
+                    <button className="del" title="Editar" onClick={() => iniciarEdicao(p)}>✎</button>
                     <button className="del" title="Excluir" onClick={() => setExcluirAlvo(p)}>×</button>
                   </td>
                 </tr>
@@ -149,24 +193,56 @@ export default function PromocoesSalvas({ onToast }) {
         </div>
       )}
 
-      {editandoId && (
+      {editAlvo && (
         <EditarDialog
-          titulo="Editar nome da promoção"
+          titulo={`Editar promoção — ${editAlvo.item_nome || "—"}${editAlvo.canal_nome ? ` em ${editAlvo.canal_nome}` : ""}`}
           salvando={salvandoEdicao}
-          onSalvar={salvarNome}
-          onCancelar={() => setEditandoId(null)}
+          onSalvar={salvarEdicao}
+          onCancelar={() => setEditAlvo(null)}
         >
           <div className="field">
             <label>Nome da promoção</label>
             <input
               type="text"
               autoFocus
-              value={nomeEditado}
-              onChange={(e) => setNomeEditado(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") salvarNome();
-              }}
+              value={edicao.nome}
+              onChange={(e) => setEdicao((prev) => ({ ...prev, nome: e.target.value }))}
             />
+          </div>
+          <div className="row2">
+            <div className="field">
+              <label>Preço</label>
+              <input
+                type="number"
+                step="0.01"
+                value={edicao.preco}
+                onChange={(e) => setEdicao((prev) => ({ ...prev, preco: e.target.value }))}
+              />
+            </div>
+            <div className="field">
+              <label>Lucro</label>
+              <input
+                type="number"
+                step="0.01"
+                value={edicao.lucro}
+                onChange={(e) => setEdicao((prev) => ({ ...prev, lucro: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="destaque-lucro" style={{ marginBottom: 12 }}>
+            <span className="k">Margem</span>
+            <span className="v">{margemEdicao != null ? PCT(margemEdicao) : "—"}</span>
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Resumo (texto livre — configuração usada)</label>
+            <textarea
+              rows={3}
+              value={edicao.resumo}
+              onChange={(e) => setEdicao((prev) => ({ ...prev, resumo: e.target.value }))}
+            />
+          </div>
+          <div className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
+            Preço e lucro aqui são só o resultado guardado — editar não refaz a conta a partir do custo/canal (a promoção não guarda esses dados), a margem é sempre lucro ÷ preço dos dois valores acima.
           </div>
         </EditarDialog>
       )}
