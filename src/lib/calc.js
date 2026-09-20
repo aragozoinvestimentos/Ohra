@@ -1,5 +1,6 @@
 // Lógica de custo e precificação — mesma validada na planilha "Precificador Ohra 2.0"
 // e no protótipo Claude. Mantida como funções puras para ser fácil de testar.
+import { totalItens } from "../components/SeletorItens.jsx";
 
 // Faixas oficiais Shopee (vendedor CNPJ) vigentes desde 01/03/2026 — validado
 // em 06/09/2026 contra o artigo oficial do Centro de Educação do Vendedor
@@ -103,6 +104,46 @@ export function calcProducao(i) {
   const total = material + energia + manutencao + falhas + acabamento + i.consumiveis + roiPeca + i.modelagem;
   const precoRapido = total * (1 + i.markupRapido);
   return { peso, material, energia, manutencao, falhas, acabamento, roiPeca, total, precoRapido };
+}
+
+// Custo de produção por peça de um produto JÁ CADASTRADO (com detalhamento
+// salvo), recalculado ao vivo com o preço ATUAL do material — mesma fórmula
+// usada em Produtos.jsx e Custo de Produção, só que reaproveitável por
+// qualquer tela que precise só do número final (ex: Registro de Impressões).
+// Retorna null se o produto não tiver detalhamento de produção salvo.
+export function custoProdutoPorPeca(produto, materiais) {
+  const detalhe = produto?.producao_detalhe;
+  if (!detalhe) return null;
+  const n = (v) => {
+    const x = Number(v);
+    return isFinite(x) ? x : 0;
+  };
+  const filamentos = (materiais || []).filter((m) => (m.tipo || "filamento") === "filamento");
+  const material = filamentos.find((m) => m.nome === detalhe.materialNome) || filamentos[0] || null;
+  const consumiveisCatalogo = (materiais || [])
+    .filter((m) => m.tipo === "consumivel")
+    .map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade }));
+  const custoConsumiveis = totalItens(consumiveisCatalogo, detalhe.consumiveisItens || []);
+  return calcProducao({
+    comprimento: n(detalhe.comprimento),
+    diametro: n(detalhe.diametro),
+    densidade: n(detalhe.densidade),
+    tempo: n(detalhe.tempo),
+    precoKg: material?.preco ?? 0,
+    kwh: n(detalhe.kwh),
+    consumo: n(detalhe.consumo),
+    falhasPct: n(detalhe.falhasPct) / 100,
+    manutencaoPct: n(detalhe.manutencaoPct) / 100,
+    acabamentoPct: n(detalhe.acabamentoPct) / 100,
+    consumiveis: custoConsumiveis,
+    maquina: n(detalhe.maquina),
+    prazoMeses: n(detalhe.prazoMeses),
+    horasDia: n(detalhe.horasDia),
+    diasMes: n(detalhe.diasMes),
+    modelagem: n(detalhe.modelagem),
+    markupRapido: 0,
+    pecasPorPlaca: n(produto.pecas_por_impressao) || 1,
+  });
 }
 
 // comissao/fixo já resolvidos (pct 0-1, fixo em R$); min/max só existem quando a faixa é conhecida (Shopee/ML)

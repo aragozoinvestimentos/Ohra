@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import logo from "./assets/logo.png";
 import CustoProducao from "./components/CustoProducao.jsx";
+import RegistroImpressoes from "./components/RegistroImpressoes.jsx";
 import PrecificacaoCanal from "./components/PrecificacaoCanal.jsx";
 import Comparativo from "./components/Comparativo.jsx";
 import Cadastros from "./components/Cadastros.jsx";
@@ -56,6 +57,7 @@ const GRUPOS = [
     titulo: "Precificar",
     tabs: [
       { key: "producao", label: "Simular Custo de Produção", icon: "🧮" },
+      { key: "registroImpressoes", label: "Registro de Impressões", icon: "🖨️" },
       { key: "canal", label: "Precificação por Canal", icon: "🏷️" },
       { key: "comparativo", label: "Comparativo", icon: "📊" },
     ],
@@ -256,6 +258,10 @@ export default function App() {
 
         <section className={`view ${tab === "producao" ? "active" : ""}`}>
           <CustoProducao onUsarCusto={usarCusto} onSalvarProduto={salvarComoProduto} onIrParaMateriais={irParaMateriais} />
+        </section>
+
+        <section className={`view ${tab === "registroImpressoes" ? "active" : ""}`}>
+          <RegistroImpressoes onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "canal" ? "active" : ""}`}>
