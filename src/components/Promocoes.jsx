@@ -12,7 +12,7 @@ export default function Promocoes({ onToast }) {
 
   return (
     <div>
-      <div className="save-row" style={{ marginBottom: 18, gap: 6 }}>
+      <div className="save-row" style={{ marginBottom: 18, gap: 6, flexWrap: "wrap" }}>
         {SUBABAS.map((s) => (
           <button
             key={s.key}
