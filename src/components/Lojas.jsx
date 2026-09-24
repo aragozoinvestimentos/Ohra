@@ -128,20 +128,32 @@ const BACKUP_TABELAS = [
   "kit_produtos",
   "kit_embalagens",
   "canais",
+  "precos_canal",
+  "orcamentos_avulsos",
+  "promocoes_salvas",
+  "metas_mensais",
+  "registros_impressao",
   "produtos",
 ];
 
 async function exportarBackup(onToast) {
   const dados = {};
+  const falhas = [];
   for (const tabela of BACKUP_TABELAS) {
     const { data, error } = await supabase.from(tabela).select("*");
     if (error) {
-      onToast(`Backup interrompido na tabela "${tabela}": ${error.message}`);
-      return false;
+      // Uma tabela com problema (ex.: schema novo ainda não rodado no
+      // Supabase) não impede o backup do resto — fica registrada no arquivo.
+      falhas.push({ tabela, erro: error.message });
+      continue;
     }
     dados[tabela] = data || [];
   }
-  const payload = { geradoEm: new Date().toISOString(), app: "Precificador Ohra", tabelas: dados };
+  if (Object.keys(dados).length === 0) {
+    onToast(`Backup falhou: ${falhas[0]?.erro || "nenhuma tabela lida"}`);
+    return false;
+  }
+  const payload = { geradoEm: new Date().toISOString(), app: "Precificador Ohra", tabelas: dados, ...(falhas.length ? { tabelasComErro: falhas } : {}) };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -151,7 +163,7 @@ async function exportarBackup(onToast) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  return true;
+  return { falhas };
 }
 
 export default function Lojas({ onToast }) {
@@ -170,7 +182,12 @@ export default function Lojas({ onToast }) {
     setBackupBaixando(true);
     const ok = await exportarBackup(onToast);
     setBackupBaixando(false);
-    if (ok) onToast("Backup baixado — arquivo .json com todas as lojas");
+    if (ok)
+      onToast(
+        ok.falhas.length
+          ? `Backup baixado, mas sem: ${ok.falhas.map((f) => f.tabela).join(", ")}`
+          : "Backup baixado — arquivo .json com todas as lojas"
+      );
   }
 
   function abrirEdicao(loja) {
