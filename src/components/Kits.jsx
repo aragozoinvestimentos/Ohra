@@ -86,7 +86,7 @@ export default function Kits({ abrirKitId, onToast }) {
     };
   }, [lojaId]);
 
-  // Veio de "Editar completo" em Preços por Canal — carrega o kit certo pra
+  // Veio de "Editar completo" em Produtos precificados — carrega o kit certo pra
   // edição. Essa sub-aba pode acabar de montar (troca vinda de outra aba de
   // Cadastros), então o catálogo local ainda pode não ter carregado — sem
   // isso, o efeito rodava uma vez só, achava a lista vazia e desistia,
@@ -297,7 +297,11 @@ export default function Kits({ abrirKitId, onToast }) {
   return (
     <div>
       <div className="panel">
-        <h3 className="section-title">{editandoId ? "Editar kit" : "Montar kit"}</h3>
+        <h3 className="section-title">
+          {editandoId ? "Editar kit" : "Montar kit"}
+          {!carregando && <span className="h3-contagem">{kits.length} {kits.length === 1 ? "kit cadastrado" : "kits cadastrados"}</span>}
+          <Ajuda texto="Pra ver, buscar, clonar, editar ou excluir os kits já cadastrados, use Catálogo → Produtos precificados." />
+        </h3>
         <div className="row3">
           <div className="field">
             <label>Nome do kit</label>
@@ -350,7 +354,7 @@ export default function Kits({ abrirKitId, onToast }) {
           </div>
         )}
 
-        <h3 className="section-title" style={{ marginTop: 4 }}>
+        <h3 className="section-title">
           Produtos no kit
           <Ajuda texto="Escolha quais produtos já cadastrados entram nesse kit e quantos de cada. O custo de fabricação do kit é a soma do custo de cada produto incluso — a embalagem fica separada, na seção abaixo." />
         </h3>
@@ -361,7 +365,7 @@ export default function Kits({ abrirKitId, onToast }) {
           rotuloVazio="Nenhum produto cadastrado ainda — vá em Cadastros → Produtos."
         />
 
-        <h3 className="section-title" style={{ marginTop: 18 }}>
+        <h3 className="section-title">
           Embalagem do kit
           <Ajuda texto="A embalagem de um combo raramente é a soma exata da embalagem de cada produto sozinho — às vezes cabe tudo numa caixa só, às vezes precisa de mais plástico bolha. Por isso o kit tem sua própria receita, independente. Use 'Sugerir' como ponto de partida e ajuste à mão." />
         </h3>
@@ -398,11 +402,6 @@ export default function Kits({ abrirKitId, onToast }) {
           <button type="button" className="btn" onClick={limpar} disabled={salvando}>
             {editandoId ? "Cancelar" : "Limpar"}
           </button>
-        </div>
-        <div className="hint" style={{ marginBottom: 0, marginTop: 10 }}>
-          {carregando
-            ? "Carregando…"
-            : `${kits.length} kit${kits.length === 1 ? "" : "s"} cadastrado${kits.length === 1 ? "" : "s"}. Pra ver, buscar, clonar, editar ou excluir os kits já cadastrados, use Preços por Canal (aba Cadastros).`}
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import { arredondarPreco } from "../lib/format.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
+import Ajuda from "./Ajuda.jsx";
 import CalculadoraPreco from "./CalculadoraPreco.jsx";
 
 const VAZIO = { nome: "", preco: "", unidade: "un", observacao: "" };
@@ -295,7 +296,10 @@ export default function Embalagens({ onToast }) {
       </div>
 
       <div className="panel">
-        <h3>Embalagens cadastradas</h3>
+        <h3>
+          Embalagens cadastradas
+          <Ajuda texto="Esses itens aparecem na ficha do Produto (seção “Itens de embalagem”) e na montagem de Kits." />
+        </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
         ) : itens.length === 0 ? (
@@ -331,11 +335,6 @@ export default function Embalagens({ onToast }) {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-        {itens.length > 0 && (
-          <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-            Esses itens aparecem na ficha do Produto (seção "Itens de embalagem") e na montagem de Kits.
           </div>
         )}
       </div>

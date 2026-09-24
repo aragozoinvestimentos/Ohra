@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco } from "../lib/calc.js";
+import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -7,6 +7,7 @@ import { useRankingData } from "../hooks/useRankingData.js";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
+import TopbarAcoes from "./TopbarAcoes.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -183,6 +184,41 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const negociadoLucro =
     n(f.negociado) > 0 ? resultadoNoPreco(canalParaComparacao, baseSemComissao, n(f.negociado), f.mlCategoria, f.mlTipoAnuncio)?.lucro ?? null : null;
 
+  // "Mesmo produto nos outros canais": o mesmo custo + margem desejada em
+  // cada canal cadastrado, com o imposto/custos fixos configurados em cada
+  // um (Configuração → Canais) e a faixa de comissão resolvida sozinha —
+  // mesma conta do Comparativo, só que já em cima do item desta tela.
+  const outrosCanais = useMemo(() => {
+    if (n(f.custoProduto) <= 0) return [];
+    const base = {
+      lucratividadePct: n(f.lucratividade) / 100,
+      custoProduto: n(f.custoProduto),
+      frete: n(f.frete),
+      embalagem: n(f.embalagem),
+    };
+    return canais
+      .filter((c) => c.ativo !== false)
+      .map((canal) => {
+        const b = { ...base, imposto: canal.imposto_pct || 0, custosFixosPct: canal.custos_fixos_pct || 0 };
+        let r;
+        if (canal.tipo === "shopee") r = resolverFaixaShopee(b).resultado;
+        else if (canal.tipo === "ml") r = resolverFaixaML(f.mlCategoria, b, f.mlTipoAnuncio).resultado;
+        else if (canal.tipo === "tiktok") r = resolverFaixaTikTok(b).resultado;
+        else if (canal.tipo === "shein") r = resolverFaixaShein(b).resultado;
+        else r = calcCanalCustom(canal, b);
+        let salvo = null;
+        if (baseSelecionada) {
+          const [t, id] = baseSelecionada.split(":");
+          const itemTipo = t === "k" ? "kit" : "produto";
+          salvo = precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canal.id) || null;
+        }
+        const confiavel = canal.tipo === "custom" || r.faixaOk !== false;
+        return { canal, r, salvo, confiavel };
+      })
+      .sort((a, b) => (b.confiavel && b.r.lucro != null ? b.r.lucro : -Infinity) - (a.confiavel && a.r.lucro != null ? a.r.lucro : -Infinity));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, f.lucratividade, f.mlCategoria, f.mlTipoAnuncio]);
+
   const canalLabel =
     f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : "Outro canal";
 
@@ -238,7 +274,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
 
   async function salvar() {
     if (!supabase) {
-      onToast("Preços por Canal indisponível (Supabase não configurado)");
+      onToast("Produtos precificados indisponível (Supabase não configurado)");
       return;
     }
     if (!baseSelecionada) {
@@ -275,7 +311,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       onToast(`Não foi possível salvar: ${error.message}`);
       return;
     }
-    onToast(`Preço salvo em Preços por Canal (${canalLabel})`);
+    onToast(`Preço salvo em Produtos precificados (${canalLabel})`);
   }
 
   // Zera o formulário inteiro de volta pro estado inicial — canal, produto/kit
@@ -288,6 +324,20 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
 
   return (
     <>
+    <TopbarAcoes aba="canal">
+      <button type="button" className="btn" onClick={limparTudo}>
+        Limpar
+      </button>
+      <button
+        type="button"
+        className="btn primary"
+        onClick={salvar}
+        disabled={salvando || !baseSelecionada}
+        title={baseSelecionada ? "Salvar esse preço em Produtos precificados" : "Escolha um produto ou kit cadastrado pra poder salvar"}
+      >
+        {salvando ? "Salvando…" : "Salvar preço"}
+      </button>
+    </TopbarAcoes>
     <Kpis
       itens={[
         { label: "Custo total", valor: BRL(resultado.custoTotal), sub: "produção + frete + embalagem" },
@@ -317,14 +367,11 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <h3 className="section-title">
             <span>
               Canal
               <Ajuda texto="Comissão e taxa fixa são o que Shopee/Mercado Livre descontam de cada venda (calculadas pelas faixas oficiais). Imposto é o % que você recolhe sobre a venda (MEI com DAS fixo pode deixar em 0%). Custos fixos adicionais é qualquer % extra recorrente (embalagens, ferramentas, assinaturas). Lucratividade desejada é a margem líquida que você quer garantir — é ela que define o preço calculado." />
             </span>
-            <button type="button" className="btn" onClick={limparTudo} style={{ fontWeight: 400 }}>
-              Limpar formulário
-            </button>
           </h3>
           <div className="field">
             <label>Canal de venda</label>
@@ -420,7 +467,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               </div>
               {canaisProprios.length === 0 && (
                 <div className="hint" style={{ marginTop: -4 }}>
-                  Pra salvar em Preços por Canal, cadastre esse canal em Configuração → Canais primeiro.
+                  Pra salvar em Produtos precificados, cadastre esse canal em Configuração → Canais primeiro.
                 </div>
               )}
             </>
@@ -560,10 +607,46 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           </div>
         </div>
 
+        {outrosCanais.length > 0 && (
+          <div className="panel">
+            <h3 className="section-title">
+              Mesmo produto nos outros canais
+              <Ajuda texto="Preço que cada canal precisaria pra dar a mesma margem desejada, com o imposto/custos fixos cadastrados em cada canal (Configuração → Canais) e a faixa de comissão escolhida automaticamente. Ordenado do maior pro menor lucro. 'Preço salvo' é o que já está gravado em Produtos precificados pra esse item." />
+            </h3>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Canal</th>
+                    <th className="num">Preço sugerido</th>
+                    <th className="num">Lucro</th>
+                    <th className="num">Margem</th>
+                    {baseSelecionada && <th className="num">Preço salvo</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {outrosCanais.map(({ canal, r, salvo, confiavel }) => (
+                    <tr key={canal.id} className={canal.tipo === f.canal || canal.id === canalProprioId ? "linha-atual" : ""}>
+                      <td>
+                        <strong style={{ fontWeight: 600 }}>{canal.nome}</strong>
+                        {!confiavel && <span className="badge warn" style={{ marginLeft: 6 }}>faixa não fecha</span>}
+                      </td>
+                      <td className="num">{r.preco != null ? BRL(r.preco) : "—"}</td>
+                      <td className="num">{r.lucro != null ? BRL(r.lucro) : "—"}</td>
+                      <td className="num">{r.margem != null ? <span className={`badge ${r.margem >= lucratividadeFrac - 0.001 ? "good" : "bad"}`}>{PCT(r.margem)}</span> : "—"}</td>
+                      {baseSelecionada && <td className="num">{salvo ? BRL(salvo.preco) : <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         <div className="panel">
           <h3 className="section-title">
-            Salvar em Preços por Canal
-            <Ajuda texto="Salva o preço, custo e lucro calculados aqui pra esse produto/kit + canal — depois é só consultar em Preços por Canal, sem precisar recalcular tudo de novo. Se já existir um preço salvo pra essa mesma combinação, salvar de novo substitui o valor anterior (por isso avisamos antes)." />
+            Salvar em Produtos precificados
+            <Ajuda texto="Salva o preço, custo e lucro calculados aqui pra esse produto/kit + canal — depois é só consultar em Produtos precificados, sem precisar recalcular tudo de novo. Se já existir um preço salvo pra essa mesma combinação, salvar de novo substitui o valor anterior (por isso avisamos antes)." />
           </h3>
           {!baseSelecionada ? (
             <div className="hint" style={{ marginBottom: 0 }}>
@@ -586,9 +669,6 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                   . Salvar agora vai substituir esse valor.
                 </div>
               )}
-              <button className="btn primary" onClick={salvar} disabled={salvando}>
-                {salvando ? "Salvando…" : "Salvar"}
-              </button>
             </div>
           )}
         </div>

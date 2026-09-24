@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import TopbarAcoes from "./TopbarAcoes.jsx";
+import Ajuda from "./Ajuda.jsx";
 import PinPrompt from "./PinPrompt.jsx";
 
 const BUCKET = "loja-icones";
@@ -296,18 +298,27 @@ export default function Lojas({ onToast }) {
     );
   }
 
+  function abrirNovaLoja() {
+    cancelarEdicao();
+    setNovo(NOVO_VAZIO);
+    setCriando(true);
+  }
+
   return (
     <div>
+      <TopbarAcoes aba="config">
+        <button className="btn" onClick={baixarBackup} disabled={backupBaixando} title="Baixa um .json com tudo cadastrado de TODAS as lojas — guarde como cópia de segurança">
+          {backupBaixando ? "Gerando backup…" : "Backup"}
+        </button>
+        <button className="btn primary" onClick={abrirNovaLoja}>
+          + Nova loja
+        </button>
+      </TopbarAcoes>
       <div className="panel">
-        <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span>Suas lojas</span>
-          <button className="btn" onClick={baixarBackup} disabled={backupBaixando} style={{ fontWeight: 400 }}>
-            {backupBaixando ? "Gerando backup…" : "⬇ Baixar backup completo (todas as lojas)"}
-          </button>
+        <h3 className="section-title">
+          Suas lojas
+          <Ajuda texto="“Baixar backup” (no topo) gera um arquivo .json com tudo que está cadastrado — materiais, embalagens, produtos, kits, canais, orçamentos/histórico — de TODAS as lojas, não só a selecionada agora. Guarde esse arquivo em lugar seguro (Drive, e-mail etc.) como cópia de segurança." />
         </h3>
-        <div className="hint" style={{ marginTop: -4 }}>
-          Baixa um arquivo .json com tudo que está cadastrado — materiais, embalagens, produtos, kits, canais, orçamentos/histórico — de TODAS as lojas, não só a selecionada agora. Guarde esse arquivo em lugar seguro (Drive, e-mail etc.) como cópia de segurança.
-        </div>
         {lojas.length === 0 ? (
           <div className="empty">Nenhuma loja cadastrada ainda.</div>
         ) : (
@@ -340,19 +351,8 @@ export default function Lojas({ onToast }) {
         )}
       </div>
 
+      {criando && (
       <div className="panel">
-        {!criando ? (
-          <button
-            className="btn primary"
-            onClick={() => {
-              cancelarEdicao();
-              setNovo(NOVO_VAZIO);
-              setCriando(true);
-            }}
-          >
-            + Nova loja
-          </button>
-        ) : (
           <>
             <h3 className="section-title">Nova loja</h3>
             <FormLoja
@@ -364,8 +364,8 @@ export default function Lojas({ onToast }) {
               tituloBotao="Criar loja"
             />
           </>
-        )}
       </div>
+      )}
 
       {confirmacao === "nova" && (
         <ConfirmDialog

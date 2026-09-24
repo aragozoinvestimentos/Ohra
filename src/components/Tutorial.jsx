@@ -62,7 +62,7 @@ function useChecklist() {
       titulo: "Produto cadastrado com custo calculado",
       feito: produtos.some((p) => Number(p.custo_producao) > 0),
       detalhe: "Simule o custo de uma peça e salve como produto (ou preencha o custo na mão em Produtos).",
-      onde: 'Simular Custo de Produção → "Salvar como Produto", ou Cadastros → Produtos',
+      onde: 'Custo de Produção → "Salvar como Produto", ou Cadastros → Produtos',
     },
     {
       key: "canal",
@@ -202,7 +202,7 @@ const ETAPAS = [
         icone: "💰",
         nome: "Produtos precificados",
         texto:
-          'Fica no menu logo abaixo de "Cadastros", mas é sobre preço, não sobre cadastro-base — por isso vale um destaque à parte (o nome anterior dessa tela era "Preços por Canal"). É uma grade: cada linha é um produto ou kit cadastrado, cada coluna é um canal cadastrado, e cada célula mostra o preço, lucro e margem mais recentes salvos pra essa combinação. Ela se preenche sozinha quando você clica em "Salvar" na Precificação por Canal — célula vazia é só uma combinação que ainda não foi calculada/salva. Em cada célula já preenchida dá pra usar o ✎ pra corrigir o valor na mão, ou o × pra excluir (sempre pede confirmação antes).',
+          'Fica no menu logo abaixo de "Cadastros", mas é sobre preço, não sobre cadastro-base — por isso vale um destaque à parte (o nome anterior dessa tela era "Produtos precificados"). É uma grade: cada linha é um produto ou kit cadastrado, cada coluna é um canal cadastrado, e cada célula mostra o preço, lucro e margem mais recentes salvos pra essa combinação. Ela se preenche sozinha quando você clica em "Salvar" na Precificação por Canal — célula vazia é só uma combinação que ainda não foi calculada/salva. Em cada célula já preenchida dá pra usar o ✎ pra corrigir o valor na mão, ou o × pra excluir (sempre pede confirmação antes).',
       },
     ],
   },
@@ -212,7 +212,7 @@ const ETAPAS = [
     passos: [
       {
         icone: "🧮",
-        nome: "Simular Custo de Produção",
+        nome: "Custo de Produção",
         texto:
           "Ponto de partida de tudo: digite os dados que o fatiador (slicer) mostra antes de imprimir — comprimento de filamento, tempo de impressão etc. O app calcula o peso da peça e soma material, energia, manutenção, falhas, consumíveis e o rateio (ROI) da impressora até chegar no custo de produção total. Dá pra escolher um produto já cadastrado no topo pra carregar o detalhamento dele e reajustar, ou simular do zero. Dali dá pra levar o custo direto pra Precificação por Canal, ou salvar a peça como Produto (se veio de um produto já cadastrado, isso atualiza ele em vez de criar um novo).",
       },
@@ -220,7 +220,7 @@ const ETAPAS = [
         icone: "🏷️",
         nome: "Precificação por Canal",
         texto:
-          'Pega um custo (escolhendo um produto ou kit já cadastrado, vindo da Simular Custo de Produção, ou digitado na mão) e calcula o preço de venda pra um canal específico — Shopee, Mercado Livre, TikTok Shop, Shein ou um canal próprio seu — dada a margem líquida que você quer garantir. O app já desconta comissão, taxa fixa, imposto (o seu, sobre a venda) e custos extras daquele canal antes de sugerir o preço. O resultado destaca três números: custo total do produto, preço definido para a plataforma e quanto cai no seu bolso. Escolhendo um produto/kit cadastrado, o botão "Salvar" grava esse preço em Produtos precificados — se já existir um preço salvo pra essa mesma combinação, o app avisa antes, porque salvar de novo substitui o valor anterior.',
+          'Pega um custo (escolhendo um produto ou kit já cadastrado, vindo da Custo de Produção, ou digitado na mão) e calcula o preço de venda pra um canal específico — Shopee, Mercado Livre, TikTok Shop, Shein ou um canal próprio seu — dada a margem líquida que você quer garantir. O app já desconta comissão, taxa fixa, imposto (o seu, sobre a venda) e custos extras daquele canal antes de sugerir o preço. O resultado destaca três números: custo total do produto, preço definido para a plataforma e quanto cai no seu bolso. Escolhendo um produto/kit cadastrado, o botão "Salvar" grava esse preço em Produtos precificados — se já existir um preço salvo pra essa mesma combinação, o app avisa antes, porque salvar de novo substitui o valor anterior.',
       },
       {
         icone: "📊",
@@ -299,10 +299,10 @@ export default function Tutorial() {
       <div className="panel">
         <h3>Como usar o Ohra</h3>
         <p style={{ margin: "0 0 4px", fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.6 }}>
-          O app segue o mesmo fluxo do menu lateral, de cima pra baixo: primeiro você configura a loja e os canais de
-          venda, depois cadastra os dados que se repetem (materiais, embalagens, produtos, kits) e consulta os preços
-          já calculados por canal em Produtos precificados, depois calcula o custo e o preço de uma peça, depois usa
-          isso pra vender e, por fim, acompanha onde vale mais a pena focar e sua capacidade de produção. Abaixo vai
+          O menu lateral é organizado pelo uso do dia a dia (Precificar primeiro, Configuração por último), mas na
+          primeira vez o caminho é outro: configure a loja e os canais (Configuração → Lojas, canais e taxas), cadastre
+          os dados que se repetem (materiais, embalagens, produtos, kits), calcule o custo e o preço de uma peça, use
+          isso pra vender e, por fim, acompanhe onde vale mais a pena focar e sua capacidade de produção. Abaixo vai
           um passo a passo rápido de cada etapa — o checklist acima já mostra, na prática, onde você está nessa
           cadeia agora.
         </p>

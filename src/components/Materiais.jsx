@@ -5,6 +5,7 @@ import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import { arredondarPreco } from "../lib/format.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
+import Ajuda from "./Ajuda.jsx";
 import CalculadoraPreco from "./CalculadoraPreco.jsx";
 
 const VAZIO = { nome: "", preco: "", unidade: "un", tipo: "filamento", observacao: "" };
@@ -263,7 +264,10 @@ export default function Materiais({ onToast }) {
   return (
     <div>
       <div className="panel">
-        <h3 className="section-title">Adicionar material</h3>
+        <h3 className="section-title">
+          Adicionar material
+          <Ajuda texto="Pra atualizar um preço já cadastrado: clique no valor na tabela, edite e aperte Enter (ou clique fora). Filamentos aparecem na lista de Custo de Produção; consumíveis aparecem na seção “Consumíveis” da mesma aba." />
+        </h3>
         <div className="field">
           <label>Tipo</label>
           <select value={novo.tipo} onChange={(e) => setNovo((p) => ({ ...p, tipo: e.target.value }))}>
@@ -357,11 +361,6 @@ export default function Materiais({ onToast }) {
             onEditar={abrirEdicao}
             onExcluir={pedirExclusao}
           />
-          {materiais.length > 0 && (
-            <div className="hint" style={{ marginTop: -6, marginBottom: 18 }}>
-              Pra atualizar um preço: clique no valor, edite e aperte Enter (ou clique fora) para salvar. Filamentos aparecem no dropdown da aba Simular Custo de Produção; consumíveis aparecem na seção "Consumíveis" da mesma aba.
-            </div>
-          )}
         </>
       )}
 

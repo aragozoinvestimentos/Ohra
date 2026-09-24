@@ -210,11 +210,11 @@ export default function PromocoesSalvas({ onToast }) {
         <div className="empty">Nenhuma promoção salva ainda. Configure uma em "Simular promoção" e clique em "Salvar".</div>
       ) : (
         <>
-          <div className="field" style={{ maxWidth: 420 }}>
-            <label>Buscar por promoção, produto ou canal</label>
+          <div className="toolbar">
             <input
               type="text"
-              placeholder="ex: Black Friday, nome do produto…"
+              aria-label="Buscar por promoção, produto ou canal"
+              placeholder="Buscar promoção, produto ou canal…"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
             />

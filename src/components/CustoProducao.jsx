@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
+import TopbarAcoes from "./TopbarAcoes.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 
 const STORAGE_KEY = "ohra:custo-producao:v2";
@@ -203,10 +204,50 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     );
   }
 
+  function salvarComoProdutoAtual() {
+    salvarUltimosPercentuais({ falhasPct: n(f.falhasPct), manutencaoPct: n(f.manutencaoPct), acabamentoPct: n(f.acabamentoPct) });
+    onSalvarProduto({
+      id: produtoId || null,
+      nome: produtoSelecionado?.nome || "",
+      custo: resultado.total,
+      materialNome: materialSelecionado?.nome || "",
+      pecasPorImpressao: Math.max(1, n(f.pecasPorPlaca) || 1),
+      detalhe: {
+        comprimento: n(f.comprimento),
+        diametro: n(f.diametro),
+        densidade: n(f.densidade),
+        tempo: n(f.tempo),
+        materialNome: materialSelecionado?.nome || "",
+        kwh: n(f.kwh),
+        consumo: n(f.consumo),
+        falhasPct: n(f.falhasPct),
+        manutencaoPct: n(f.manutencaoPct),
+        acabamentoPct: n(f.acabamentoPct),
+        consumiveisItens: f.consumiveisItens,
+        maquina: n(f.maquina),
+        prazoMeses: n(f.prazoMeses),
+        horasDia: n(f.horasDia),
+        diasMes: n(f.diasMes),
+        modelagem: n(f.modelagem),
+      },
+    });
+  }
+
   const pesoTxt = isFinite(Number(resultado.peso)) ? Number(resultado.peso).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " g" : "—";
 
   return (
     <>
+    <TopbarAcoes aba="producao">
+      <button type="button" className="btn" onClick={limparTudo}>
+        Limpar
+      </button>
+      <button type="button" className="btn so-pc" onClick={salvarComoProdutoAtual}>
+        {produtoId ? "Atualizar produto" : "Salvar como produto"}
+      </button>
+      <button type="button" className="btn primary" onClick={() => onUsarCusto(resultado.total)}>
+        Precificar nos canais →
+      </button>
+    </TopbarAcoes>
     <Kpis
       itens={[
         { label: "Custo por peça", valor: BRL(resultado.total), tom: "destaque", sub: n(f.pecasPorPlaca) > 1 ? `chapa com ${n(f.pecasPorPlaca)} peças` : "custo de produção total" },
@@ -218,14 +259,11 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <h3 className="section-title">
             <span>
               Peça (dados do fatiador)
               <Ajuda texto="Dados que o fatiador (slicer) mostra antes de imprimir. Comprimento é o total de filamento gasto (em metros); diâmetro e densidade dependem do filamento (1.75mm e ~1.24 g/cm³ pra PLA/PETG são padrão); tempo é a duração da impressão. Se você imprime várias peças de uma vez na mesma chapa (aproveitando o espaço da mesa), aumente 'Peças por impressão/chapa' e informe comprimento/tempo do TOTAL da chapa — o app divide tudo automaticamente pra achar o custo de cada peça." />
             </span>
-            <button type="button" className="btn" onClick={limparTudo} style={{ fontWeight: 400 }}>
-              Limpar formulário
-            </button>
           </h3>
           <div className="row2">
           {supabase && (
@@ -403,34 +441,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           <button
             className="btn"
             style={{ marginTop: 8, width: "100%" }}
-            onClick={() => {
-              salvarUltimosPercentuais({ falhasPct: n(f.falhasPct), manutencaoPct: n(f.manutencaoPct), acabamentoPct: n(f.acabamentoPct) });
-              onSalvarProduto({
-                id: produtoId || null,
-                nome: produtoSelecionado?.nome || "",
-                custo: resultado.total,
-                materialNome: materialSelecionado?.nome || "",
-                pecasPorImpressao: Math.max(1, n(f.pecasPorPlaca) || 1),
-                detalhe: {
-                  comprimento: n(f.comprimento),
-                  diametro: n(f.diametro),
-                  densidade: n(f.densidade),
-                  tempo: n(f.tempo),
-                  materialNome: materialSelecionado?.nome || "",
-                  kwh: n(f.kwh),
-                  consumo: n(f.consumo),
-                  falhasPct: n(f.falhasPct),
-                  manutencaoPct: n(f.manutencaoPct),
-                  acabamentoPct: n(f.acabamentoPct),
-                  consumiveisItens: f.consumiveisItens,
-                  maquina: n(f.maquina),
-                  prazoMeses: n(f.prazoMeses),
-                  horasDia: n(f.horasDia),
-                  diasMes: n(f.diasMes),
-                  modelagem: n(f.modelagem),
-                },
-              });
-            }}
+            onClick={salvarComoProdutoAtual}
           >
             {produtoId ? "Atualizar produto cadastrado →" : "Salvar como Produto →"}
           </button>

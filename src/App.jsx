@@ -5,8 +5,6 @@ import RegistroImpressoes from "./components/RegistroImpressoes.jsx";
 import PrecificacaoCanal from "./components/PrecificacaoCanal.jsx";
 import Comparativo from "./components/Comparativo.jsx";
 import Cadastros from "./components/Cadastros.jsx";
-import Canais from "./components/Canais.jsx";
-import TaxasMarketplace from "./components/TaxasMarketplace.jsx";
 import Orcamento from "./components/Orcamento.jsx";
 import Promocoes from "./components/Promocoes.jsx";
 import Otimizacao from "./components/Otimizacao.jsx";
@@ -15,7 +13,7 @@ import Ranking from "./components/Ranking.jsx";
 import TelaDescanso from "./components/TelaDescanso.jsx";
 import Historico from "./components/Historico.jsx";
 import Tutorial from "./components/Tutorial.jsx";
-import Lojas from "./components/Lojas.jsx";
+import Configuracao from "./components/Configuracao.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
 import LojaGate from "./components/LojaGate.jsx";
 import Icone from "./components/Icone.jsx";
@@ -73,9 +71,7 @@ const GRUPOS = [
   {
     titulo: "Configuração",
     tabs: [
-      { key: "lojas", label: "Lojas", sub: "Lojas, ícones e PIN" },
-      { key: "canais", label: "Canais", sub: "Canais de venda e custos de cada um" },
-      { key: "taxas", label: "Taxas Marketplace", sub: "Tabela oficial de comissões e taxas" },
+      { key: "config", label: "Lojas, canais e taxas", sub: "Configurações da loja e dos marketplaces" },
     ],
   },
 ];
@@ -92,6 +88,8 @@ const TAB_KEY = "ohra:ultima-aba";
 function loadTab() {
   try {
     const saved = localStorage.getItem(TAB_KEY);
+    // "lojas"/"canais"/"taxas" viraram sub-abas de "config" (set/2026)
+    if (saved === "lojas" || saved === "canais" || saved === "taxas") return "config";
     if (saved && TABS.some((t) => t.key === saved)) return saved;
   } catch {
     // sem problema, usa o padrão
@@ -102,6 +100,7 @@ function loadTab() {
 export default function App() {
   const { lojas, disponivel: lojasDisponivel, carregando: carregandoLoja, lojaId, precisaPin } = useLoja();
   const [tab, setTab] = useState(loadTab);
+  const [configSub, setConfigSub] = useState("lojas");
   const [custoRecebido, setCustoRecebido] = useState(null);
   const [produtoRecebido, setProdutoRecebido] = useState(null);
   const [abrirItem, setAbrirItem] = useState(null); // { tipo: "produto"|"kit", id, seq } — vindo de "editar completo" em Preços por Canal
@@ -174,6 +173,10 @@ export default function App() {
   }
 
   function irPara(key) {
+    if (key === "lojas" || key === "canais" || key === "taxas") {
+      setConfigSub(key);
+      key = "config";
+    }
     setTab(key);
     setMenuAberto(false);
   }
@@ -251,19 +254,16 @@ export default function App() {
             <h1>{tabAtual?.label}</h1>
           </div>
           {tabAtual?.sub && <div className="topbar-sub">{tabAtual.sub}</div>}
+          <div className="topbar-acoes">
+            {TABS.map((t) => (
+              <div key={t.key} id={`acoes-${t.key}`} className="topbar-acoes-slot" hidden={t.key !== tab} />
+            ))}
+          </div>
         </header>
 
         <div className="content">
-        <section className={`view ${tab === "lojas" ? "active" : ""}`}>
-          <Lojas onToast={showToast} />
-        </section>
-
-        <section className={`view ${tab === "canais" ? "active" : ""}`}>
-          <Canais onToast={showToast} />
-        </section>
-
-        <section className={`view ${tab === "taxas" ? "active" : ""}`}>
-          <TaxasMarketplace />
+        <section className={`view ${tab === "config" ? "active" : ""}`}>
+          <Configuracao sub={configSub} onSub={setConfigSub} onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "cadastros" ? "active" : ""}`}>

@@ -14,7 +14,7 @@ const SUBABAS = [
 export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdutoCriado }) {
   const [sub, setSub] = useState("materiais");
 
-  // Veio de "Salvar como Produto" (Simular Custo de Produção) — troca pra
+  // Veio de "Salvar como Produto" (Custo de Produção) — troca pra
   // sub-aba Produtos automaticamente, mesmo se Cadastros já estava aberto
   // numa outra sub-aba (sem isso, o efeito que carrega o produto em
   // Produtos.jsx só dispara se ele já estiver montado).
@@ -25,7 +25,7 @@ export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtoRecebido?.seq]);
 
-  // Veio de "Editar completo" em Preços por Canal — troca pra Produtos ou
+  // Veio de "Editar completo" em Produtos precificados — troca pra Produtos ou
   // Kits conforme o tipo do item.
   useEffect(() => {
     (() => {

@@ -44,7 +44,7 @@ export default function Ranking() {
       <div className="panel">
         <h3 className="section-title">
           Ranking por retorno
-          <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade. Quando o item já tem um preço salvo em Preços por Canal pra aquele canal, usa o lucro/margem REAIS desse preço (marcado "salvo"); quando ainda não tem, estima a ${LUCRATIVIDADE_PADRAO}% de lucratividade padrão (marcado "estimado") só pra dar uma referência — não é ranking de venda/popularidade, isso fica pro ERP futuro. Use "Mostrar" pra enxugar a lista só pra Produtos ou só pra Kits, e "Marketplace" pra ver o retorno num canal específico (ou deixe em 'Melhor canal' pra ver o teto de cada item).`} />
+          <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade. Quando o item já tem um preço salvo em Produtos precificados pra aquele canal, usa o lucro/margem REAIS desse preço (marcado "salvo"); quando ainda não tem, estima a ${LUCRATIVIDADE_PADRAO}% de lucratividade padrão (marcado "estimado") só pra dar uma referência — não é ranking de venda/popularidade, isso fica pro ERP futuro. Use "Mostrar" pra enxugar a lista só pra Produtos ou só pra Kits, e "Marketplace" pra ver o retorno num canal específico (ou deixe em 'Melhor canal' pra ver o teto de cada item).`} />
         </h3>
         {canais.length > 0 ? (
           <>
@@ -104,7 +104,7 @@ export default function Ranking() {
                       <td>
                         {linha.canal.nome}{" "}
                         {linha.origem === "salvo" ? (
-                          <span className="badge good" title="Preço realmente salvo em Preços por Canal">salvo</span>
+                          <span className="badge good" title="Preço realmente salvo em Produtos precificados">salvo</span>
                         ) : (
                           <span className="campo-anterior" title={`Ainda não tem preço salvo pra esse canal — estimativa a ${LUCRATIVIDADE_PADRAO}% de lucratividade`}>
                             (estimado {LUCRATIVIDADE_PADRAO}%)

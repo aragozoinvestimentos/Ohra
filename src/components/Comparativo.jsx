@@ -6,6 +6,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { totalItens } from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
+import Kpis from "./Kpis.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -102,7 +103,7 @@ export default function Comparativo() {
   }, [lojaId]);
 
   // Lista única de produtos + kits pros dois seletores (A e "Comparar com")
-  // — mesmo padrão usado em Preços por Canal/Promoções/Ranking.
+  // — mesmo padrão usado em Produtos precificados/Promoções/Ranking.
   const itensDisponiveis = useMemo(() => {
     const p = produtos.map((x) => ({ id: `p:${x.id}`, nome: x.nome, tipo: "produto" }));
     const k = kits.map((x) => ({ id: `k:${x.id}`, nome: `[Kit] ${x.nome}`, tipo: "kit" }));
@@ -280,7 +281,10 @@ export default function Comparativo() {
   function renderTabela(titulo, custoProduto, linhas, melhorOrganico, melhorComAds, idPrefixado) {
     return (
       <div className="panel">
-        <h3>{titulo}</h3>
+        <h3>
+          {titulo}
+          <Ajuda texto="Canais ordenados do maior pro menor lucro orgânico. Quando o item já tem um preço salvo em Precificação por Canal, ele aparece embaixo do preço calculado — se forem diferentes, o preço real de venda é o salvo, não o teórico daqui. O preço de venda não muda com Ads — só o lucro daquela venda específica, pelo % configurado em Configuração → Canais." />
+        </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
         ) : linhas.length === 0 ? (
@@ -347,13 +351,18 @@ export default function Comparativo() {
     );
   }
 
+  const melhorA = melhorOrganicoA;
+
   return (
-    <div className="grid2">
-      <div>
-        <div className="panel">
-          <h3 className="section-title">Item</h3>
-          <div className="field">
-            <label>Escolha um produto ou kit cadastrado</label>
+    <div>
+      <div className="panel">
+        <h3 className="section-title">
+          Parâmetros
+          <Ajuda texto="Escolha um produto/kit (ou informe um custo) e, se quiser, um segundo item pra comparar lado a lado — por exemplo, um produto avulso contra o kit que o contém. Lucratividade desejada é a margem usada pra calcular o preço em cada canal. Frete e embalagem vêm do cadastro do item (só altere pra simular outro cenário). Imposto e custos fixos de cada canal vêm de Configuração → Canais. Com um canal escolhido em “Canal”, as tabelas mostram só ele." />
+        </h3>
+        <div className="grid-auto">
+          <div className="field span2">
+            <label>Produto ou kit</label>
             <select value={itemAId} onChange={(e) => setItemAId(e.target.value)}>
               <option value="">— usar custo manual —</option>
               {itensDisponiveis.map((it) => (
@@ -361,25 +370,58 @@ export default function Comparativo() {
               ))}
             </select>
           </div>
-          {!itemAId && (
+          {!itemAId ? (
             <div className="field">
               <label>Custo de produção (R$)</label>
               <input type="number" step="0.01" value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
             </div>
-          )}
-          {itemA && (
-            <div className="hint" style={{ marginBottom: 0 }}>
-              Custo {itemA.tipo === "kit" ? "total do kit" : "de produção"}: {BRL(itemA.custo)}
+          ) : (
+            <div className="field">
+              <label>Custo {itemA?.tipo === "kit" ? "total do kit" : "de produção"}</label>
+              <input type="text" value={itemA ? BRL(itemA.custo) : ""} disabled />
             </div>
           )}
+          <div className="field">
+            <label>Frete extra (R$)</label>
+            <input type="number" step="0.01" value={freteA} onChange={(e) => setFreteA(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Embalagem (R$)</label>
+            <input type="number" step="0.01" value={embalagemA} onChange={(e) => setEmbalagemA(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Margem desejada (%)</label>
+            <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Canal</label>
+            <select value={canalFiltroId} onChange={(e) => setCanalFiltroId(e.target.value)}>
+              <option value="">Todos os canais</option>
+              {canais.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Categoria (Mercado Livre)</label>
+            <select value={mlCategoria} onChange={(e) => setMlCategoria(e.target.value)}>
+              {ML_CATEGORIAS.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Anúncio (Mercado Livre)</label>
+            <select value={mlTipoAnuncio} onChange={(e) => setMlTipoAnuncio(e.target.value)}>
+              <option value="classico">Clássico</option>
+              <option value="premium">Premium</option>
+            </select>
+          </div>
         </div>
-
-        <div className="panel">
-          <h3 className="section-title">
-            Comparar com (opcional)
-            <Ajuda texto="Escolha um segundo produto ou kit pra ver os dois lado a lado — por exemplo, um produto avulso contra o kit que o contém, pra decidir onde vale mais a pena vender." />
-          </h3>
-          <div className="field" style={{ marginBottom: itemB ? undefined : 0 }}>
+        <div className="divisor" />
+        <div className="grid-auto">
+          <div className="field span2">
+            <label>Comparar com (opcional)</label>
             <select value={itemBId} onChange={(e) => setItemBId(e.target.value)}>
               <option value="">— não comparar —</option>
               {itensDisponiveis.filter((it) => it.id !== itemAId).map((it) => (
@@ -389,88 +431,48 @@ export default function Comparativo() {
           </div>
           {itemB && (
             <>
-              <div className="hint" style={{ marginTop: -4 }}>
-                Custo {itemB.tipo === "kit" ? "total do kit" : "de produção"}: {BRL(itemB.custo)}
+              <div className="field">
+                <label>Custo {itemB.tipo === "kit" ? "total do kit" : "de produção"}</label>
+                <input type="text" value={BRL(itemB.custo)} disabled />
               </div>
-              <div className="row2" style={{ marginBottom: 0 }}>
-                <div className="field" style={{ marginBottom: 0 }}>
-                  <label>Frete extra (R$)</label>
-                  <input type="number" step="0.01" value={freteB} onChange={(e) => setFreteB(e.target.value)} />
-                </div>
-                <div className="field" style={{ marginBottom: 0 }}>
-                  <label>Embalagem (R$)</label>
-                  <input type="number" step="0.01" value={embalagemB} onChange={(e) => setEmbalagemB(e.target.value)} />
-                </div>
+              <div className="field">
+                <label>Frete extra (R$)</label>
+                <input type="number" step="0.01" value={freteB} onChange={(e) => setFreteB(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Embalagem (R$)</label>
+                <input type="number" step="0.01" value={embalagemB} onChange={(e) => setEmbalagemB(e.target.value)} />
               </div>
             </>
           )}
         </div>
-
-        <div className="panel">
-          <h3 className="section-title">
-            Parâmetros gerais
-            <Ajuda texto="Lucratividade desejada é a margem líquida usada como meta pra colorir o termômetro de cada canal (não muda o preço aqui, que já vem do custo do produto). Frete e embalagem abaixo são do primeiro item — o segundo tem os próprios campos, logo acima." />
-          </h3>
-          <div className="field">
-            <label>
-              Canal
-              <Ajuda texto="Por padrão o comparativo mostra TODOS os canais cadastrados, um por linha. Escolha um canal específico aqui pra ver só ele — útil pra comparar os dois itens exatamente no mesmo canal, em vez do melhor canal (que pode ser diferente) de cada um." />
-            </label>
-            <select value={canalFiltroId} onChange={(e) => setCanalFiltroId(e.target.value)}>
-              <option value="">Todos os canais</option>
-              {canais.map((c) => (
-                <option key={c.id} value={c.id}>{c.nome}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Lucratividade líquida desejada (%)</label>
-            <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
-          </div>
-          <div className="row2">
-            <div className="field">
-              <label>Frete extra por sua conta (R$)</label>
-              <input type="number" step="0.01" value={freteA} onChange={(e) => setFreteA(e.target.value)} />
-            </div>
-            <div className="field">
-              <label>Embalagem (R$)</label>
-              <input type="number" step="0.01" value={embalagemA} onChange={(e) => setEmbalagemA(e.target.value)} />
-            </div>
-          </div>
-          {itemA && (
-            <div className="hint" style={{ marginTop: -8 }}>
-              Preenchido automaticamente com o que já está cadastrado — não precisa somar de novo. Só altere aqui se quiser simular um cenário diferente.
-            </div>
-          )}
-          <div className="row2" style={{ marginBottom: 0 }}>
-            <div className="field">
-              <label>Categoria (só afeta o Mercado Livre)</label>
-              <select value={mlCategoria} onChange={(e) => setMlCategoria(e.target.value)}>
-                {ML_CATEGORIAS.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label>Tipo de anúncio (ML)</label>
-              <select value={mlTipoAnuncio} onChange={(e) => setMlTipoAnuncio(e.target.value)}>
-                <option value="classico">Clássico</option>
-                <option value="premium">Premium</option>
-              </select>
-            </div>
-          </div>
-          <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-            Imposto e custos fixos de cada canal vêm de Configuração → Canais — edite lá se algum percentual mudar.
-          </div>
-        </div>
       </div>
 
-      <div>
+      {melhorA && custoProdutoA > 0 && (
+        <Kpis
+          itens={[
+            { label: "Melhor canal", valor: melhorA.canal.nome, tom: "destaque", sub: canalFiltro ? "canal escolhido" : "maior lucro orgânico" },
+            { label: "Preço nesse canal", valor: BRL(melhorA.resultado.preco), sub: `pra ${lucratividade}% de margem` },
+            { label: "Lucro líquido / un.", valor: BRL(melhorA.resultado.lucro), tom: melhorA.resultado.lucro >= 0 ? "good" : "bad", sub: "sem Ads" },
+            {
+              label: "Diferença pro pior canal",
+              valor: (() => {
+                const ok = linhasA.filter((l) => l.resultado.lucro != null && (l.canal.tipo === "custom" || l.resultado.faixaOk !== false));
+                if (ok.length < 2) return "—";
+                const pior = Math.min(...ok.map((l) => l.resultado.lucro));
+                return BRL(melhorA.resultado.lucro - pior);
+              })(),
+              sub: "a mais por unidade vendendo no melhor",
+            },
+          ]}
+        />
+      )}
+
         {itemB &&
           (canalFiltro
             ? linhaFiltradaA &&
               linhaFiltradaB && (
-                <div className="panel" style={{ background: "var(--surface-2)" }}>
+                <div className="panel">
                   <h3 className="section-title">Resumo — qual compensa mais em {canalFiltro.nome}</h3>
                   <div className="kv">
                     <span className="k">{itemA?.nome || "Custo manual"}</span>
@@ -493,8 +495,11 @@ export default function Comparativo() {
               )
             : melhorOrganicoA &&
               melhorOrganicoB && (
-                <div className="panel" style={{ background: "var(--surface-2)" }}>
-                  <h3 className="section-title">Resumo — qual compensa mais</h3>
+                <div className="panel">
+                  <h3 className="section-title">
+                    Resumo — qual compensa mais
+                    <Ajuda texto='Compara o melhor cenário de cada um (podem ser canais diferentes) — escolha um canal específico em "Canal" pra comparar os dois no mesmo canal.' />
+                  </h3>
                   <div className="kv">
                     <span className="k">{itemA?.nome || "Custo manual"} — melhor canal ({melhorOrganicoA.canal.nome})</span>
                     <span className="v">{BRL(melhorOrganicoA.resultado.lucro)}</span>
@@ -512,19 +517,13 @@ export default function Comparativo() {
                         : `a mais vendendo ${itemB.nome}`}
                     </span>
                   </div>
-                  <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
-                    Compara o melhor cenário de cada um (podem ser canais diferentes) — escolha um canal específico em "Parâmetros gerais" pra comparar os dois no mesmo canal.
-                  </div>
                 </div>
               ))}
 
-        {renderTabela(itemA?.nome || "Preço e lucro por canal", custoProdutoA, linhasAExibidas, melhorOrganicoA, melhorComAdsA, itemAId)}
-        {itemB && renderTabela(itemB.nome, custoProdutoB, linhasBExibidas, melhorOrganicoB, melhorComAdsB, itemBId)}
-
-        <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-          Canais ordenados do maior pro menor lucro orgânico. Quando o item já tem um preço salvo em Precificação por Canal, ele aparece embaixo do preço calculado — se forem diferentes, o preço real de venda é o salvo, não o teórico daqui. O preço de venda não muda com Ads — só o lucro daquela venda específica, pelo % que você configurou em Configuração → Canais.
+        <div className={`bloco-seguinte${itemB ? " grid2" : ""}`}>
+          {renderTabela(itemA?.nome || "Preço e lucro por canal", custoProdutoA, linhasAExibidas, melhorOrganicoA, melhorComAdsA, itemAId)}
+          {itemB && renderTabela(itemB.nome, custoProdutoB, linhasBExibidas, melhorOrganicoB, melhorComAdsB, itemBId)}
         </div>
-      </div>
     </div>
   );
 }

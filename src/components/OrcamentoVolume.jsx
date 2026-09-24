@@ -4,6 +4,7 @@ import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
+import TopbarAcoes from "./TopbarAcoes.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 // Multiplicadores do lote atual (não quantidades fixas) — assim funciona
@@ -183,21 +184,21 @@ export default function OrcamentoVolume({ onToast }) {
   }
 
   return (
+    <>
+    <TopbarAcoes aba="orcamento">
+      <button type="button" className="btn" onClick={limparTudo}>
+        Limpar
+      </button>
+    </TopbarAcoes>
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <h3 className="section-title">
             <span>
               Produtos e quantidades
-              <Ajuda texto="Adicione um ou mais produtos já cadastrados, cada um com sua quantidade — o mesmo pedido pode misturar produtos diferentes. O frete do pedido é um valor só (ajuste manualmente abaixo), cobrado uma vez não importa quantas peças — quanto mais peças no lote, mais ele se dilui e menor fica o preço unitário médio." />
+              <Ajuda texto="Adicione um ou mais produtos já cadastrados, cada um com sua quantidade — o mesmo pedido pode misturar produtos diferentes. O frete do pedido é um valor só (ajuste manualmente abaixo), cobrado uma vez não importa quantas peças — quanto mais peças no lote, mais ele se dilui e menor fica o preço unitário médio. É pra pedido direto, fora do marketplace (sem comissão de canal); desconto por faixa de quantidade ou combo dentro do marketplace fica em Promoções → Progressivo/Combo." />
             </span>
-            <button type="button" className="btn" onClick={limparTudo} style={{ fontWeight: 400 }}>
-              Limpar formulário
-            </button>
           </h3>
-          <div className="hint" style={{ marginTop: -8 }}>
-            É pra pedido direto, fora do marketplace (sem comissão de canal) — quando o cliente combina a compra de um lote direto com você. Desconto por faixa de quantidade ou combo dentro de uma venda no marketplace ficam em Promoções → Progressivo/Combo.
-          </div>
           {produtos.length === 0 ? (
             <div className="empty">Cadastre um produto em Cadastros → Produtos primeiro.</div>
           ) : (
@@ -215,20 +216,23 @@ export default function OrcamentoVolume({ onToast }) {
         </div>
 
         <div className="panel">
-          <h3 className="section-title">Parâmetros</h3>
-          <div className="row2">
-            <div className="field">
-              <label>Imposto sobre a venda — seu CNPJ/MEI (%)</label>
+          <h3 className="section-title">
+            Parâmetros
+            <Ajuda texto="Imposto é o % que você recolhe sobre a venda (MEI com DAS fixo pode deixar em 0%). Custos fixos é qualquer % extra recorrente. Margem desejada é a lucratividade líquida que define o preço sugerido." />
+          </h3>
+          <div className="row3">
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Imposto (%)</label>
               <input type="number" step="0.1" value={imposto} onChange={(e) => setImposto(e.target.value)} />
             </div>
-            <div className="field">
-              <label>Custos fixos adicionais (%)</label>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Custos fixos (%)</label>
               <input type="number" step="0.1" value={custosFixos} onChange={(e) => setCustosFixos(e.target.value)} />
             </div>
-          </div>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label>Lucratividade líquida desejada (%)</label>
-            <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Margem desejada (%)</label>
+              <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
+            </div>
           </div>
         </div>
       </div>
@@ -314,5 +318,6 @@ export default function OrcamentoVolume({ onToast }) {
         )}
       </div>
     </div>
+    </>
   );
 }

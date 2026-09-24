@@ -5,6 +5,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
+import Kpis from "./Kpis.jsx";
 import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
 
 const MESES_PT = [
@@ -26,7 +27,7 @@ function totalLucroItens(catalogo, itens) {
 
 // Meta mensal (faturamento/lucro objetivo) + simulador de vendas: "se eu
 // vender X, Y e Z, bate a meta desse mês?" — usando o preço e lucro REAIS já
-// salvos em Preços por Canal pra cada produto/kit × canal, não uma conta
+// salvos em Produtos precificados pra cada produto/kit × canal, não uma conta
 // teórica de custo + margem desejada (o objetivo é responder "quanto falta
 // vender" com números que já refletem taxa de canal, imposto etc. de verdade).
 export default function Metas({ onToast }) {
@@ -125,7 +126,7 @@ export default function Metas({ onToast }) {
   }
 
   // Catálogo do simulador: uma linha por combinação produto/kit × canal que
-  // JÁ tem preço salvo (Preços por Canal) — preco/lucro aqui são os valores
+  // JÁ tem preço salvo (Produtos precificados) — preco/lucro aqui são os valores
   // reais salvos, não recalculados. Sem preço salvo, não entra na lista (não
   // dá pra simular uma venda sem saber por quanto ela sai).
   const catalogoVendas = useMemo(() => {
@@ -239,7 +240,28 @@ export default function Metas({ onToast }) {
     );
   }
 
+  const pctDe = (v, meta) => (meta > 0 ? ` · ${Math.round((v / meta) * 100)}% da meta` : "");
+
   return (
+    <>
+    <Kpis
+      itens={[
+        { label: `Meta de faturamento`, valor: faturamentoObjetivoNum > 0 ? BRL(faturamentoObjetivoNum) : "—", sub: mesLabel },
+        {
+          label: "Faturamento simulado",
+          valor: BRL(faturamentoSimulado),
+          tom: faturamentoObjetivoNum > 0 ? (faturamentoSimulado >= faturamentoObjetivoNum ? "good" : "warn") : undefined,
+          sub: `${totalPecasSimuladas} ${totalPecasSimuladas === 1 ? "peça" : "peças"}${pctDe(faturamentoSimulado, faturamentoObjetivoNum)}`,
+        },
+        { label: "Meta de lucro líquido", valor: lucroObjetivoNum > 0 ? BRL(lucroObjetivoNum) : "—", sub: mesLabel },
+        {
+          label: "Lucro simulado",
+          valor: BRL(lucroSimulado),
+          tom: lucroObjetivoNum > 0 ? (lucroSimulado >= lucroObjetivoNum ? "good" : "warn") : lucroSimulado > 0 ? "good" : undefined,
+          sub: lucroObjetivoNum > 0 ? pctDe(lucroSimulado, lucroObjetivoNum).replace(" · ", "") : "monte o cenário no simulador",
+        },
+      ]}
+    />
     <div className="grid2">
       <div>
         <div className="panel">
@@ -285,11 +307,11 @@ export default function Metas({ onToast }) {
         <div className="panel">
           <h3 className="section-title">
             Simulador de vendas
-            <Ajuda texto="Monte um cenário de vendas do mês escolhendo combinações produto/kit + canal que já têm preço salvo em Preços por Canal — usa o preço e o lucro REAIS de lá, não uma conta teórica, pra ver se esse cenário bateria a meta." />
+            <Ajuda texto="Monte um cenário de vendas do mês escolhendo combinações produto/kit + canal que já têm preço salvo em Produtos precificados — usa o preço e o lucro REAIS de lá, não uma conta teórica, pra ver se esse cenário bateria a meta." />
           </h3>
           {catalogoVendas.length === 0 ? (
             <div className="empty">
-              Nenhum preço salvo ainda — salve preços em Precificação por Canal (aparecem em Preços por Canal) pra poder simular vendas com valores reais.
+              Nenhum preço salvo ainda — salve preços em Precificação por Canal (aparecem em Produtos precificados) pra poder simular vendas com valores reais.
             </div>
           ) : (
             <>
@@ -367,5 +389,6 @@ export default function Metas({ onToast }) {
         )}
       </div>
     </div>
+    </>
   );
 }

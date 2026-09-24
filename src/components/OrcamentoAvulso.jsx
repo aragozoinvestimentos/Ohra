@@ -4,6 +4,7 @@ import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Termometro from "./Termometro.jsx";
+import TopbarAcoes from "./TopbarAcoes.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 const DEFAULTS = {
@@ -167,17 +168,20 @@ export default function OrcamentoAvulso({ onToast }) {
   }
 
   return (
+    <>
+    <TopbarAcoes aba="orcamento">
+      <button type="button" className="btn" onClick={limparTudo}>
+        Limpar
+      </button>
+    </TopbarAcoes>
     <div className="grid2">
       <div>
         <div className="panel">
-          <h3 className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <h3 className="section-title">
             <span>
               Pedido personalizado
               <Ajuda texto="Pra encomendas vendidas direto (fora de marketplace) — sem comissão nem taxa fixa de plataforma. Escolha um produto já cadastrado pra puxar o custo automaticamente, ou preencha manualmente pra algo sob medida." />
             </span>
-            <button type="button" className="btn" onClick={limparTudo} style={{ fontWeight: 400 }}>
-              Limpar formulário
-            </button>
           </h3>
           <div className="field">
             <label>Produto cadastrado (opcional)</label>
@@ -239,20 +243,23 @@ export default function OrcamentoAvulso({ onToast }) {
         </div>
 
         <div className="panel">
-          <h3 className="section-title">Parâmetros</h3>
-          <div className="row2">
-            <div className="field">
-              <label>Imposto sobre a venda — seu CNPJ/MEI (%)</label>
+          <h3 className="section-title">
+            Parâmetros
+            <Ajuda texto="Imposto é o % que você recolhe sobre a venda (MEI com DAS fixo pode deixar em 0%). Custos fixos é qualquer % extra recorrente. Margem desejada é a lucratividade líquida que define o preço sugerido." />
+          </h3>
+          <div className="row3">
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Imposto (%)</label>
               <input type="number" step="0.1" value={f.imposto} onChange={set("imposto")} />
             </div>
-            <div className="field">
-              <label>Custos fixos adicionais (%)</label>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Custos fixos (%)</label>
               <input type="number" step="0.1" value={f.custosFixos} onChange={set("custosFixos")} />
             </div>
-          </div>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label>Lucratividade líquida desejada (%)</label>
-            <input type="number" step="1" value={f.lucratividade} onChange={set("lucratividade")} />
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Margem desejada (%)</label>
+              <input type="number" step="1" value={f.lucratividade} onChange={set("lucratividade")} />
+            </div>
           </div>
         </div>
       </div>
@@ -305,5 +312,6 @@ export default function OrcamentoAvulso({ onToast }) {
         </div>
       </div>
     </div>
+    </>
   );
 }

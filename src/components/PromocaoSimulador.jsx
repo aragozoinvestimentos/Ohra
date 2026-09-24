@@ -303,7 +303,7 @@ export default function PromocaoSimulador({ onToast }) {
 
   // "Preço original de venda" — editável. Vem preenchido com o preço salvo
   // (ou, na falta dele, com o calculado pela margem desejada) e ACOMPANHA AO
-  // VIVO qualquer mudança nesse valor (preço salvo em Preços por Canal, ou
+  // VIVO qualquer mudança nesse valor (preço salvo em Produtos precificados, ou
   // custo do produto/frete/embalagem que muda o teórico) enquanto você não
   // tiver digitado nada diferente na mão — sem isso, o campo ficava
   // "congelado" no valor de quando o produto foi selecionado, e a promoção
@@ -856,14 +856,18 @@ export default function PromocaoSimulador({ onToast }) {
                 )}
                 {tipo !== "combinada" && (
                   <>
-                    <div className="row2">
+                    <div className="row3">
                       <div className="field">
-                        <label>Frete extra por sua conta (R$)</label>
+                        <label title="Frete extra por sua conta">Frete extra (R$)</label>
                         <input type="number" step="0.01" value={frete} onChange={(e) => setFrete(e.target.value)} />
                       </div>
                       <div className="field">
                         <label>Embalagem (R$)</label>
                         <input type="number" step="0.01" value={embalagem} onChange={(e) => setEmbalagem(e.target.value)} />
+                      </div>
+                      <div className="field">
+                        <label>Margem desejada (%)</label>
+                        <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
                       </div>
                     </div>
                     {(produtoBase || kitBase) && (
@@ -875,10 +879,12 @@ export default function PromocaoSimulador({ onToast }) {
                     )}
                   </>
                 )}
-                <div className="field" style={{ marginBottom: 0 }}>
-                  <label>Lucratividade líquida desejada (%)</label>
-                  <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
-                </div>
+                {tipo === "combinada" && (
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Margem desejada (%)</label>
+                    <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -887,7 +893,7 @@ export default function PromocaoSimulador({ onToast }) {
             <div className="panel">
               <h3 className="section-title">
                 Preço normal (sem promoção)
-                <Ajuda texto="Preço original de venda: vem do que você já salvou em Preços por Canal pra esse item+canal (ou, se ainda não salvou nada, de um cálculo por margem desejada) — mas pode ajustar aqui na mão pra testar um valor diferente antes de aplicar o desconto. O desconto da promoção é sempre calculado em cima desse número." />
+                <Ajuda texto="Preço original de venda: vem do que você já salvou em Produtos precificados pra esse item+canal (ou, se ainda não salvou nada, de um cálculo por margem desejada) — mas pode ajustar aqui na mão pra testar um valor diferente antes de aplicar o desconto. O desconto da promoção é sempre calculado em cima desse número." />
               </h3>
               <div className="field" style={{ marginBottom: 8 }}>
                 <label>Preço original de venda (R$)</label>
@@ -900,9 +906,9 @@ export default function PromocaoSimulador({ onToast }) {
               </div>
               <div className="hint" style={{ marginTop: -4 }}>
                 {precoSalvo && Math.abs(precoOriginalNum - precoSalvo.preco) < 0.005
-                  ? "Preenchido com o preço já salvo em Preços por Canal pra esse item nesse canal."
+                  ? "Preenchido com o preço já salvo em Produtos precificados pra esse item nesse canal."
                   : precoSalvo
-                  ? `Ajustado na mão — o preço salvo em Preços por Canal pra esse item é ${BRL(precoSalvo.preco)}.`
+                  ? `Ajustado na mão — o preço salvo em Produtos precificados pra esse item é ${BRL(precoSalvo.preco)}.`
                   : "Nenhum preço salvo ainda pra esse item+canal — preenchido pelo cálculo de margem desejada abaixo. Ajuste aqui se seu preço real for outro."}
               </div>
               <div className="kv"><span className="k">Lucro</span><span className="v">{BRL(normal.lucro)}</span></div>
@@ -1057,11 +1063,8 @@ export default function PromocaoSimulador({ onToast }) {
             <div className="panel">
               <h3 className="section-title">
                 Progressivo por quantidade
-                <Ajuda texto="Cada faixa aplica um desconto % maior conforme a quantidade comprada — a taxa fixa do canal continua sendo cobrada por unidade (é assim que Shopee/ML tratam item por item, mesmo em um pedido só)." />
+                <Ajuda texto="Cada faixa aplica um desconto % maior conforme a quantidade comprada — a taxa fixa do canal continua sendo cobrada por unidade (é assim que Shopee/ML tratam item por item, mesmo em um pedido só). “Equilíbrio” é quantas vezes mais peças você precisa vender NESSA faixa (em vez de vender avulso, no preço normal) pra igualar o lucro total — quanto maior o desconto da faixa, mais volume ela exige pra compensar. É pra venda dentro do marketplace (o desconto aparece nas faixas de quantidade do próprio anúncio). Pra um pedido combinado direto com o cliente, fora do marketplace, use “Encomenda em volume” em Orçamento." />
               </h3>
-              <div className="hint" style={{ marginTop: -4 }}>
-                É pra venda dentro do marketplace (o desconto aparece nas faixas de quantidade do próprio anúncio). Pra um pedido combinado direto com o cliente, fora do marketplace, use "Encomenda em volume" em Orçamento.
-              </div>
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -1111,20 +1114,13 @@ export default function PromocaoSimulador({ onToast }) {
                   </tbody>
                 </table>
               </div>
-              <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
-                "Equilíbrio" é quantas vezes mais peças você precisa vender NESSA faixa (em vez de vender avulso, no preço normal) pra igualar o lucro
-                total — quanto maior o desconto da faixa, mais volume ela exige pra compensar.
-              </div>
             </div>
           ) : tipo === "combo" ? (
             <div className="panel">
               <h3 className="section-title">
                 Combo — leve mais, pague menos
-                <Ajuda texto="Vendido como um único pedido/kit: a taxa fixa do canal é cobrada uma vez só (não por unidade), então quanto maior o kit, mais essa economia ajuda a bancar o desconto." />
+                <Ajuda texto="Vendido como um único pedido/kit: a taxa fixa do canal é cobrada uma vez só (não por unidade), então quanto maior o kit, mais essa economia ajuda a bancar o desconto. É um desconto por levar um combo fechado (leve X, pague Y) numa venda no marketplace — diferente do “Progressivo”, que dá desconto crescente por faixa de quantidade." />
               </h3>
-              <div className="hint" style={{ marginTop: -4 }}>
-                É um desconto por levar um combo fechado (leve X, pague Y) numa venda no marketplace — diferente do "Progressivo", que dá desconto crescente por faixa de quantidade.
-              </div>
               <div className="row2">
                 <div className="field">
                   <label>Leva (unidades)</label>
@@ -1187,7 +1183,10 @@ export default function PromocaoSimulador({ onToast }) {
             </div>
           ) : (
             <div className="panel">
-              <h3 className="section-title">Frete grátis subsidiado</h3>
+              <h3 className="section-title">
+                Frete grátis subsidiado
+                <Ajuda texto="Frete grátis costuma aumentar conversão e ranking no marketplace — vale comparar esse lucro com o ganho esperado em volume de vendas." />
+              </h3>
               <div className="field">
                 <label>Frete que você vai absorver (R$)</label>
                 <input type="number" step="0.01" value={freteAbsorvido} onChange={(e) => setFreteAbsorvido(e.target.value)} />
@@ -1201,9 +1200,6 @@ export default function PromocaoSimulador({ onToast }) {
                     <span className="v">{freteGratis.margem != null ? PCT(freteGratis.margem) : "—"}</span>
                   </div>
                   <Termometro valor={freteGratis.margem || 0} meta={n(lucratividade) / 100} />
-                  <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
-                    Frete grátis costuma aumentar conversão e ranking no marketplace — vale comparar esse lucro com o ganho esperado em volume de vendas.
-                  </div>
                   <DeltaAvulso delta={freteGratis.delta} />
                   <Breakeven lucroNormal={normal.lucro} lucroPromo={freteGratis.lucro} />
                 </>
@@ -1215,7 +1211,7 @@ export default function PromocaoSimulador({ onToast }) {
             <div className="panel">
               <h3 className="section-title">
                 Salvar essa promoção
-                <Ajuda texto="Promoções com o mesmo nome ficam agrupadas em Promoções salvas — por isso, se essa é mais um produto de uma promoção que você já vem cadastrando (ex: 'Black Friday 15%'), reaproveite o mesmo nome em vez de criar um novo." />
+                <Ajuda texto="Promoções com o mesmo nome ficam agrupadas em Promoções salvas — por isso, se essa é mais um produto de uma promoção que você já vem cadastrando (ex: 'Black Friday 15%'), reaproveite o mesmo nome em vez de criar um novo. Guarda esse resultado em “Promoções salvas” pra consultar depois — não muda nada no cadastro do produto/canal. Promoções com o mesmo nome ficam agrupadas lá." />
               </h3>
               <div className="save-row">
                 <div className="field" ref={nomePromoRef} style={{ position: "relative" }}>
@@ -1268,9 +1264,6 @@ export default function PromocaoSimulador({ onToast }) {
                   ou continue pra salvar "{nomePromo.trim()}" como uma promoção nova mesmo.
                 </div>
               )}
-              <div className="hint" style={{ marginTop: 8, marginBottom: 0 }}>
-                Guarda esse resultado em "Promoções salvas" pra consultar depois — não muda nada no cadastro do produto/canal. Promoções com o mesmo nome ficam agrupadas lá.
-              </div>
             </div>
           )}
         </div>
@@ -1280,7 +1273,7 @@ export default function PromocaoSimulador({ onToast }) {
         <div className="panel">
           <h3 className="section-title">
             Comparativo entre promoções
-            <Ajuda texto="Lado a lado, o resultado de cada tipo de promoção configurada acima pra esse mesmo produto e canal — pra decidir qual vale mais a pena sem ficar trocando de aba. Só entra na lista o tipo que já tem uma configuração válida (ex: liquidação só aparece quando o piso de margem informado é viável)." />
+            <Ajuda texto="Lado a lado, o resultado de cada tipo de promoção configurada acima pra esse mesmo produto e canal — pra decidir qual vale mais a pena sem ficar trocando de aba. Só entra na lista o tipo que já tem uma configuração válida (ex: liquidação só aparece quando o piso de margem informado é viável). “Progressivo por quantidade” não entra aqui porque tem uma faixa por quantidade (veja a própria aba) e “Venda combinada” parte de uma seleção de itens diferente do produto único comparado acima." />
           </h3>
           <div className="table-wrap">
             <table>
@@ -1309,9 +1302,6 @@ export default function PromocaoSimulador({ onToast }) {
                 ))}
               </tbody>
             </table>
-          </div>
-          <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
-            "Progressivo por quantidade" não entra aqui porque tem uma faixa por quantidade (veja a própria aba) e "Venda combinada" parte de uma seleção de itens diferente do produto único comparado acima.
           </div>
         </div>
       )}

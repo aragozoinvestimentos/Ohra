@@ -284,9 +284,6 @@ export default function Canais({ onToast }) {
             </table>
           </div>
         )}
-        <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-          Shopee, Mercado Livre e TikTok Shop usam as faixas oficiais de comissão/taxa (calculadas na hora). Imposto e custos fixos agora são por canal — o Comparativo usa automaticamente o valor daqui. O % de Ads é o que você costuma investir em anúncio patrocinado nesse canal.
-        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
           {!temTiktok && (
             <button className="btn" onClick={adicionarTiktok}>

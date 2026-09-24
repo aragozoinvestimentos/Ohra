@@ -6,7 +6,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 
 // Lista dos orçamentos avulsos (encomendas diretas) salvos em "Encomenda
-// avulsa" — separada de Preços por Canal porque não tem comissão de
+// avulsa" — separada de Produtos precificados porque não tem comissão de
 // marketplace nem um canal cadastrado por trás, é só um preço de venda direta.
 export default function Orcamentos({ onToast }) {
   const { lojaId } = useLoja();

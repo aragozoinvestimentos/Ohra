@@ -137,7 +137,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   }, [lojaId]);
 
   // Abre um produto específico pra edição vindo de outra aba (hoje: o ✎ de
-  // "editar cadastro completo" em Preços por Canal) — mesma ação de clicar
+  // "editar cadastro completo" em Produtos precificados) — mesma ação de clicar
   // no ✎ da lista, só que disparada de fora.
   useEffect(() => {
     if (!abrirProdutoId?.id) return;
@@ -166,7 +166,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   }
 
   // Tenta achar o id do material no catálogo a partir de um nome solto (ex:
-  // vindo de Simular Custo de Produção, que ainda escolhe o material por
+  // vindo de Custo de Produção, que ainda escolhe o material por
   // nome) — comparação sem diferenciar maiúscula/minúscula nem espaço nas
   // pontas. Só um "melhor esforço": se não achar (nome digitado à mão, ou
   // material já renomeado/excluído do catálogo), devolve null e o nome
@@ -179,7 +179,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   }
 
   // Quando "Salvar como Produto"/"Atualizar produto cadastrado" é clicado na
-  // aba de Simular Custo de Produção.
+  // aba de Custo de Produção.
   useEffect(() => {
     if (produtoRecebido == null) return;
     // Veio de um produto já cadastrado (escolhido lá em Simular Custo de
@@ -202,7 +202,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           nome: produtoRecebido.nome || pExistente?.nome || "",
           sku: pExistente?.sku || "",
           material_nome: produtoRecebido.materialNome || pExistente?.material_nome || "",
-          // Se veio um material novo de Simular Custo de Produção, tenta
+          // Se veio um material novo de Custo de Produção, tenta
           // religar pelo nome; senão mantém o vínculo que o produto já tinha.
           material_id: produtoRecebido.materialNome ? acharMaterialIdPorNome(produtoRecebido.materialNome) : pExistente?.material_id ?? null,
           custo_producao: arredondarPreco(produtoRecebido.custo),
@@ -455,7 +455,10 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
         </div>
       )}
       <div className="panel">
-        <h3 className="section-title">{editandoId ? "Editar produto" : "Cadastrar produto"}</h3>
+        <h3 className="section-title">
+          {editandoId ? "Editar produto" : "Cadastrar produto"}
+          <Ajuda texto="Dica: em Custo de Produção, o botão “Salvar como produto” já traz o custo calculado pra cá. Pra ver, buscar, clonar, editar ou excluir os produtos já cadastrados, use Catálogo → Produtos precificados." />
+        </h3>
         <div className="row3">
           <div className="field">
             <label>Nome do produto</label>
@@ -563,7 +566,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           <input type="text" value={form.observacao} onChange={setCampo("observacao")} />
         </div>
 
-        <h3 className="section-title" style={{ marginTop: 4 }}>
+        <h3 className="section-title">
           Itens de embalagem
           <Ajuda texto="Escolha os itens (cadastrados em Cadastros → Embalagens) que esse produto gasta pra ser enviado, e quantos de cada. O total substitui o campo manual 'Embalagem' acima e atualiza sozinho se o preço de um item mudar. Deixe vazio pra usar o campo manual." />
         </h3>
@@ -574,7 +577,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           rotuloVazio='Nenhuma embalagem cadastrada — cadastre em Cadastros → Embalagens (caixa, plástico bolha...), ou use o campo manual acima.'
         />
 
-        <h3 className="section-title" style={{ marginTop: 4 }}>
+        <h3 className="section-title">
           Detalhamento do custo de produção
           <Ajuda texto="As métricas que geraram o custo de produção desse produto (filamento, tempo de impressão, consumíveis, ROI da máquina etc.), pra você consultar ou ajustar depois. Recalcula ao vivo com os preços ATUAIS de material. Ao lado de um campo que você mudou aparece '(era X)' com o valor salvo antes dessa edição." />
         </h3>
@@ -607,10 +610,6 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           >
             {editandoId ? "Cancelar" : "Limpar"}
           </button>
-        </div>
-        <div className="hint" style={{ marginBottom: 0, marginTop: 10 }}>
-          Dica: na aba Custo de Produção, o botão "Salvar como Produto" já traz o custo calculado pra cá. Pra ver, buscar, clonar, editar ou excluir os
-          produtos já cadastrados, use Preços por Canal (aba Cadastros).
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
+import TopbarAcoes from "./TopbarAcoes.jsx";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
 // instantâneo do que foi salvo em Precificação por Canal, sem ligação real
@@ -356,8 +357,55 @@ export default function Historico({ onEditarCompleto, onToast }) {
   })();
   const conflitoSkuClone = clonarAlvo ? achaConflitoSkuClone(clonarForm.sku) : null;
 
+  function abrirCadastro(item) {
+    const [tipoLetra, id] = item.id.split(":");
+    onEditarCompleto?.(tipoLetra === "k" ? "kit" : "produto", id);
+  }
+
+  // Exporta a grade (com os filtros atuais) em CSV — abre direto no Excel/
+  // Google Planilhas. Separador ";" e vírgula decimal, padrão brasileiro.
+  function exportarCsv() {
+    const num = (v) => (v == null || !isFinite(Number(v)) ? "" : Number(v).toFixed(2).replace(".", ","));
+    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const cab = ["Produto/Kit", "Tipo", "SKU", "Custo total", ...canais.flatMap((c) => [`${c.nome} preço`, `${c.nome} lucro`, `${c.nome} margem %`])];
+    const linhas = itensFiltrados.map((item) => [
+      esc(item.nome),
+      esc(item.tipo),
+      esc(item.sku || ""),
+      num(item.custoTotal),
+      ...canais.flatMap((c) => {
+        const p = precoDe(item, c);
+        return p ? [num(p.preco), num(p.lucro), p.margem != null ? num(Number(p.margem) * 100) : ""] : ["", "", ""];
+      }),
+    ]);
+    const csv = "\uFEFF" + [cab.map(esc).join(";"), ...linhas.map((l) => l.join(";"))].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `produtos-precificados-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const iniciais = (nome) =>
+    nome
+      .replace(/[^\p{L}\p{N} ]/gu, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0].toUpperCase())
+      .join("");
+
   return (
     <>
+    <TopbarAcoes aba="historico">
+      <button type="button" className="btn so-pc" onClick={exportarCsv} disabled={!itensFiltrados.length}>
+        Exportar CSV
+      </button>
+      <button type="button" className="btn primary" onClick={() => onEditarCompleto?.("produto", null)}>
+        + Novo produto
+      </button>
+    </TopbarAcoes>
     {supabase && !carregando && itens.length > 0 && (
       <Kpis
         itens={[
@@ -371,7 +419,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     <div className="panel">
       <h3>
         Preços por canal
-        <Ajuda texto="Cada célula mostra o preço, lucro e margem salvos pra esse produto/kit nesse canal. Célula vazia significa que ainda não foi salvo nada pra essa combinação — preencha em Precificação por Canal (escolha o item e o canal e clique em Salvar), ou use o ⇄ da célula vazia pra clonar o preço de outro canal (lucro/margem são recalculados pra taxa desse canal). Os botões aparecem ao passar o mouse na linha. Já salvo, use o ✎ pra corrigir na mão ou o × pra excluir (com confirmação). No nome do produto/kit: ⧉ clona tudo (inclusive os preços já salvos em outros canais) pra criar uma variação rapidamente, ✎ abre o cadastro completo pra editar, e × exclui o produto/kit por completo (não só um preço)." />
+        <Ajuda texto="Cada célula mostra o preço, lucro e margem salvos pra esse produto/kit nesse canal. Célula vazia significa que ainda não foi salvo nada pra essa combinação — preencha em Precificação por Canal (escolha o item e o canal e clique em Salvar), ou use o ⇄ da célula vazia pra clonar o preço de outro canal (lucro/margem são recalculados pra taxa desse canal). Os botões aparecem ao passar o mouse na linha. Já salvo, use o ✎ pra corrigir na mão ou o × pra excluir (com confirmação). No nome do produto/kit: ⧉ clona tudo (inclusive os preços já salvos em outros canais) pra criar uma variação rapidamente e × exclui o produto/kit por completo (não só um preço); o botão “Abrir” no fim da linha abre o cadastro completo pra editar." />
       </h3>
       {itens.length > 0 && (
         <div className="toolbar">
@@ -391,7 +439,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
         </div>
       )}
       {!supabase ? (
-        <div className="empty">Preços por Canal indisponível — configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para ativar.</div>
+        <div className="empty">Produtos precificados indisponível — configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY para ativar.</div>
       ) : carregando ? (
         <div className="empty">Carregando…</div>
       ) : itens.length === 0 ? (
@@ -416,6 +464,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                   {canais.map((c) => (
                     <th key={c.id} className="num">{c.nome}</th>
                   ))}
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -423,6 +472,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                   <tr key={item.id}>
                     <td>
                       <div className="item-cel">
+                      <span className={`item-thumb${item.tipo === "Kit" ? " kit" : ""}`}>{iniciais(item.nome)}</span>
                       <div className="item-cel-nome">
                         {item.nome}
                         <small>{item.tipo}</small>
@@ -430,16 +480,6 @@ export default function Historico({ onEditarCompleto, onToast }) {
                       <span className="acoes-linha">
                         <button className="del" title="Clonar produto/kit" onClick={() => abrirClonar(item)}>
                           ⧉
-                        </button>
-                        <button
-                          className="del"
-                          title="Editar cadastro completo"
-                          onClick={() => {
-                            const [tipoLetra, id] = item.id.split(":");
-                            onEditarCompleto?.(tipoLetra === "k" ? "kit" : "produto", id);
-                          }}
-                        >
-                          ✎
                         </button>
                         <button className="del" title="Excluir produto/kit por completo" onClick={() => pedirExclusaoCompleta(item)}>
                           ×
@@ -487,6 +527,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
                         </td>
                       );
                     })}
+                    <td className="num">
+                      <button className="btn btn-mini" onClick={() => abrirCadastro(item)}>
+                        Abrir
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

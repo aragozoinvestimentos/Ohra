@@ -42,7 +42,7 @@ export default function TaxasMarketplace() {
   }
 
   return (
-    <div>
+    <div className="grid-cards">
       {CANAIS_OFICIAIS.map((canal) => (
         <div className="panel" key={canal.tipo}>
           <h3 className="section-title">
