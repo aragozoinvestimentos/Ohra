@@ -48,27 +48,19 @@ export default function Ranking() {
         </h3>
         {canais.length > 0 ? (
           <>
-            <div className="row2" style={{ marginBottom: 0, maxWidth: 560 }}>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Mostrar</label>
-                <select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)}>
-                  <option value="todos">Produtos e Kits</option>
-                  <option value="produtos">Somente Produtos</option>
-                  <option value="kits">Somente Kits</option>
-                </select>
-              </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Marketplace</label>
-                <select value={canalFiltro} onChange={(e) => setCanalFiltro(e.target.value)}>
-                  <option value="melhor">Melhor canal (recomendado)</option>
-                  {canais.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nome}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="field" style={{ maxWidth: 320, marginTop: 12, marginBottom: 0 }}>
+            <div className="toolbar" style={{ marginBottom: 0 }}>
               <input type="text" placeholder="Buscar por nome ou SKU…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+              <select value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} aria-label="Mostrar" style={{ width: "auto" }}>
+                <option value="todos">Produtos e Kits</option>
+                <option value="produtos">Somente Produtos</option>
+                <option value="kits">Somente Kits</option>
+              </select>
+              <select value={canalFiltro} onChange={(e) => setCanalFiltro(e.target.value)} aria-label="Marketplace" style={{ width: "auto" }}>
+                <option value="melhor">Melhor canal (recomendado)</option>
+                {canais.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nome}</option>
+                ))}
+              </select>
             </div>
           </>
         ) : (

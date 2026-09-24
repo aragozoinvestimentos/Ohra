@@ -39,7 +39,7 @@ export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdu
 
   return (
     <div>
-      <div className="save-row" style={{ marginBottom: 18, gap: 6, flexWrap: "wrap" }}>
+      <div className="subabas">
         {SUBABAS.map((s) => (
           <button
             key={s.key}

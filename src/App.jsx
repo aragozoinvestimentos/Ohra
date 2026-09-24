@@ -18,6 +18,7 @@ import Tutorial from "./components/Tutorial.jsx";
 import Lojas from "./components/Lojas.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
 import LojaGate from "./components/LojaGate.jsx";
+import Icone from "./components/Icone.jsx";
 import { useLoja } from "./lib/LojaContext.jsx";
 
 const THEME_KEY = "ohra:theme";
@@ -32,58 +33,56 @@ function loadTheme() {
   return "light";
 }
 
-// A barra lateral é agrupada em etapas do fluxo de uso: primeiro configura
-// a loja, depois cadastra os dados-base, depois precifica um produto,
-// depois usa isso pra vender, e por fim gerencia/analisa. A ordem dentro
-// de cada grupo também segue a etapa (calcula custo → preço por canal →
-// compara canais, por exemplo).
+// A barra lateral é agrupada em etapas do fluxo de uso do dia a dia:
+// precificar vem primeiro (é o que mais se usa), depois o catálogo, vender e
+// gestão; a configuração da loja (feita uma vez só) fica por último. Cada
+// aba tem um ícone de traço (Icone.jsx) e um subtítulo curto mostrado no
+// cabeçalho da tela.
 const GRUPOS = [
-  {
-    titulo: "Configuração",
-    tabs: [
-      { key: "lojas", label: "Lojas", icon: "🏬" },
-      { key: "canais", label: "Canais", icon: "🛒" },
-      { key: "taxas", label: "Taxas Marketplace", icon: "📋" },
-    ],
-  },
-  {
-    titulo: "Cadastros",
-    tabs: [
-      { key: "cadastros", label: "Cadastros", icon: "🗂️" },
-      { key: "historico", label: "Produtos precificados", icon: "💰" },
-    ],
-  },
   {
     titulo: "Precificar",
     tabs: [
-      { key: "producao", label: "Simular Custo de Produção", icon: "🧮" },
-      { key: "registroImpressoes", label: "Registro de Impressões", icon: "🖨️" },
-      { key: "canal", label: "Precificação por Canal", icon: "🏷️" },
-      { key: "comparativo", label: "Comparativo", icon: "📊" },
+      { key: "producao", label: "Custo de Produção", sub: "Simule o custo de uma peça a partir do fatiador" },
+      { key: "registroImpressoes", label: "Registro de Impressões", sub: "Taxa de falha real e lote máximo seguro" },
+      { key: "canal", label: "Precificação por Canal", sub: "Preço, taxas e lucro em cada marketplace" },
+      { key: "comparativo", label: "Comparativo", sub: "O mesmo item lado a lado em todos os canais" },
+    ],
+  },
+  {
+    titulo: "Catálogo",
+    tabs: [
+      { key: "historico", label: "Produtos precificados", sub: "Preços salvos por produto/kit e canal" },
+      { key: "cadastros", label: "Cadastros", sub: "Materiais, embalagens, produtos e kits" },
     ],
   },
   {
     titulo: "Vender",
     tabs: [
-      { key: "orcamento", label: "Orçamento", icon: "🧾" },
-      { key: "promocoes", label: "Promoções", icon: "🎁" },
+      { key: "orcamento", label: "Orçamento", sub: "Encomendas avulsas e em volume" },
+      { key: "promocoes", label: "Promoções", sub: "Simule descontos antes de publicar" },
     ],
   },
   {
     titulo: "Gestão",
     tabs: [
-      { key: "metas", label: "Metas", icon: "🎯" },
-      { key: "ranking", label: "Ranking por Retorno", icon: "🏆" },
-      { key: "otimizacao", label: "Otimização", icon: "📈" },
+      { key: "metas", label: "Metas", sub: "Faturamento e lucro do mês" },
+      { key: "ranking", label: "Ranking por Retorno", sub: "Quais itens dão mais lucro por hora" },
+      { key: "otimizacao", label: "Otimização", sub: "Capacidade de produção da loja" },
     ],
   },
   {
-    titulo: "Ajuda",
-    tabs: [{ key: "tutorial", label: "Tutorial", icon: "📘" }],
+    titulo: "Configuração",
+    tabs: [
+      { key: "lojas", label: "Lojas", sub: "Lojas, ícones e PIN" },
+      { key: "canais", label: "Canais", sub: "Canais de venda e custos de cada um" },
+      { key: "taxas", label: "Taxas Marketplace", sub: "Tabela oficial de comissões e taxas" },
+    ],
   },
 ];
 
-const TABS = GRUPOS.flatMap((g) => g.tabs);
+const TUTORIAL = { key: "tutorial", label: "Tutorial", sub: "Checklist de primeiros passos" };
+
+const TABS = [...GRUPOS.flatMap((g) => g.tabs), TUTORIAL];
 
 const TAB_KEY = "ohra:ultima-aba";
 
@@ -184,6 +183,7 @@ export default function App() {
   }
 
   const tabAtual = TABS.find((t) => t.key === tab);
+  const grupoAtual = GRUPOS.find((g) => g.tabs.some((t) => t.key === tab))?.titulo || "Ajuda";
   const lojaAtual = lojas.find((l) => l.id === lojaId) || null;
 
   // Nenhuma aba pode montar (e nenhum dado pode ser buscado) enquanto a
@@ -197,15 +197,15 @@ export default function App() {
 
   return (
     <div className={`shell ${menuAberto ? "menu-aberto" : ""}`}>
-      <button className="menu-toggle" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">
-        ☰
-      </button>
-
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <img src={lojaAtual?.icone_url || logo} alt="Ohra" />
+          {lojaAtual?.icone_url ? (
+            <img className="brand-foto" src={lojaAtual.icone_url} alt="" />
+          ) : (
+            <img className="brand-logo" src={logo} alt="" />
+          )}
           <div>
-            <div className="word">{lojaAtual?.nome || "OHRA"}</div>
+            <div className="word">OHRA</div>
             <div className="tagline">Precificador</div>
           </div>
         </div>
@@ -217,29 +217,43 @@ export default function App() {
             <div className="side-nav-grupo" key={g.titulo}>
               <div className="side-nav-label">{g.titulo}</div>
               {g.tabs.map((t) => (
-                <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => irPara(t.key)}>
-                  <span className="side-nav-icon">{t.icon}</span>
-                  {t.label}
+                <button key={t.key} data-tab={t.key} className={tab === t.key ? "active" : ""} onClick={() => irPara(t.key)} title={t.label}>
+                  <Icone nome={t.key} />
+                  <span>{t.label}</span>
                 </button>
               ))}
             </div>
           ))}
         </nav>
 
-        <button className="btn theme-toggle" onClick={alternarTema} title="Trocar tema">
-          {tema === "dark" ? "☀️ Tema claro" : "🌙 Tema escuro"}
-        </button>
+        <div className="sidebar-foot">
+          <button data-tab="tutorial" className={`sidebar-foot-link${tab === "tutorial" ? " active" : ""}`} onClick={() => irPara("tutorial")}>
+            <Icone nome="tutorial" size={14} /> Tutorial
+          </button>
+          <button className="sidebar-foot-btn" onClick={alternarTema} title="Trocar tema">
+            <Icone nome={tema === "dark" ? "sol" : "lua"} size={13} />
+            {tema === "dark" ? "Claro" : "Escuro"}
+          </button>
+        </div>
       </aside>
 
       {menuAberto && <div className="sidebar-overlay" onClick={() => setMenuAberto(false)} />}
 
-      <div className="content">
+      <div className="main">
         <TelaDescanso />
 
-        <header className="top">
-          <div className="mobile-title">{tabAtual?.label}</div>
+        <header className="topbar">
+          <button className="menu-toggle" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">
+            <Icone nome="menu" size={18} />
+          </button>
+          <div className="topbar-titulo">
+            <div className="topbar-crumb">{grupoAtual}</div>
+            <h1>{tabAtual?.label}</h1>
+          </div>
+          {tabAtual?.sub && <div className="topbar-sub">{tabAtual.sub}</div>}
         </header>
 
+        <div className="content">
         <section className={`view ${tab === "lojas" ? "active" : ""}`}>
           <Lojas onToast={showToast} />
         </section>
@@ -301,9 +315,9 @@ export default function App() {
         </section>
 
         <footer className="note">
-          Taxas vigentes a partir de mar/2026. Confira periodicamente na Shopee e no Mercado Livre se os percentuais mudaram.
-          O histórico fica salvo na nuvem — abra este app em qualquer aparelho para consultar ou testar um novo produto.
+          Taxas vigentes a partir de mar/2026 — confira periodicamente na Shopee e no Mercado Livre. Dados salvos na nuvem, acessíveis de qualquer aparelho.
         </footer>
+        </div>
       </div>
 
       <div className={`toast ${toast.show ? "show" : ""}`}>{toast.msg}</div>

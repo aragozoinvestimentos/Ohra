@@ -185,7 +185,7 @@ export default function Otimizacao({ onToast }) {
           Recursos disponíveis
           <Ajuda texto="Impressão roda sozinha — o limite é só o nº de impressoras e as horas que elas podem ficar ligadas. Mão de obra é o seu tempo de verdade: trocar a impressão, dar acabamento, embalar e separar pedido. Preencher isso aqui é o que permite calcular quanto você realmente consegue produzir por dia, e se o gargalo é impressora ou é você." />
         </h3>
-        <div className="row2">
+        <div className="grid-auto">
           <div className="field">
             <label>Impressoras disponíveis</label>
             <CampoTempo valor={loja?.impressoras} sufixo="" onSalvar={(v) => salvarConfigLoja("impressoras", v)} />
@@ -194,20 +194,18 @@ export default function Otimizacao({ onToast }) {
             <label>Horas de impressora por dia</label>
             <CampoTempo valor={loja?.horas_impressora_dia} sufixo="h" onSalvar={(v) => salvarConfigLoja("horas_impressora_dia", v)} />
           </div>
-        </div>
-        <div className="row2">
           <div className="field">
-            <label>Suas horas disponíveis por dia (mão de obra)</label>
+            <label title="Suas horas disponíveis por dia (mão de obra)">Suas horas por dia</label>
             <CampoTempo valor={loja?.horas_mao_obra_dia} sufixo="h" onSalvar={(v) => salvarConfigLoja("horas_mao_obra_dia", v)} />
           </div>
           <div className="field">
             <label>Tempo de separação por pedido</label>
             <CampoTempo valor={loja?.tempo_separacao_pedido_min} sufixo="min" onSalvar={(v) => salvarConfigLoja("tempo_separacao_pedido_min", v)} />
           </div>
-        </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Pedidos estimados por dia (pra descontar o tempo de separação das suas horas)</label>
-          <CampoTempo valor={pedidosDia} sufixo="" onSalvar={salvarPedidosDia} />
+          <div className="field">
+            <label title="Pedidos estimados por dia (pra descontar o tempo de separação das suas horas)">Pedidos por dia</label>
+            <CampoTempo valor={pedidosDia} sufixo="" onSalvar={salvarPedidosDia} />
+          </div>
         </div>
       </div>
 

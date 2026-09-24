@@ -5,6 +5,7 @@ import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Ajuda from "./Ajuda.jsx";
+import Kpis from "./Kpis.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 
 const STORAGE_KEY = "ohra:custo-producao:v2";
@@ -202,7 +203,18 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     );
   }
 
+  const pesoTxt = isFinite(Number(resultado.peso)) ? Number(resultado.peso).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " g" : "—";
+
   return (
+    <>
+    <Kpis
+      itens={[
+        { label: "Custo por peça", valor: BRL(resultado.total), tom: "destaque", sub: n(f.pecasPorPlaca) > 1 ? `chapa com ${n(f.pecasPorPlaca)} peças` : "custo de produção total" },
+        { label: "Material", valor: BRL(resultado.material), sub: `${pesoTxt} de ${materialSelecionado?.nome || "filamento"}` },
+        { label: "Máquina e energia", valor: BRL(resultado.energia + resultado.manutencao + resultado.roiPeca), sub: "energia + manutenção + ROI" },
+        { label: "Preço sugerido", valor: BRL(resultado.precoRapido), tom: "good", sub: `markup de ${n(f.markupRapido)}% sobre o custo` },
+      ]}
+    />
     <div className="grid2">
       <div>
         <div className="panel">
@@ -215,6 +227,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
               Limpar formulário
             </button>
           </h3>
+          <div className="row2">
           {supabase && (
             <div className="field">
               <label>Produto cadastrado (opcional)</label>
@@ -226,17 +239,18 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
               </select>
             </div>
           )}
+          <div className="field">
+            <label>Peças por impressão/chapa</label>
+            <input type="number" step="1" min="1" value={f.pecasPorPlaca} onChange={set("pecasPorPlaca")} />
+          </div>
+          </div>
           {produtoSelecionado && (
-            <div className="hint" style={{ marginTop: -8 }}>
+            <div className="hint" style={{ marginTop: -4 }}>
               {produtoSelecionado.producao_detalhe
                 ? 'Detalhamento desse produto carregado abaixo — ajuste o que quiser e use "Salvar como Produto" pra atualizar ele (não cria um novo).'
                 : 'Esse produto não tem detalhamento salvo ainda — os campos abaixo continuam como estavam. Ao salvar, isso preenche o detalhamento dele.'}
             </div>
           )}
-          <div className="field">
-            <label>Peças por impressão/chapa</label>
-            <input type="number" step="1" min="1" style={{ maxWidth: 160 }} value={f.pecasPorPlaca} onChange={set("pecasPorPlaca")} />
-          </div>
           {n(f.pecasPorPlaca) > 1 && (
             <div className="hint" style={{ marginTop: -8 }}>
               Imprimindo {n(f.pecasPorPlaca)} peças de uma vez na mesma chapa: informe comprimento e tempo de impressão do TOTAL da chapa abaixo — o app divide material, energia, manutenção, falhas, acabamento e ROI da máquina por essa quantidade pra chegar no custo de cada peça.
@@ -244,22 +258,22 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           )}
           <div className="row2">
             <div className="field">
-              <label>Comprimento de filamento (m){n(f.pecasPorPlaca) > 1 ? " — total da chapa" : ""}</label>
+              <label>Filamento (m){n(f.pecasPorPlaca) > 1 ? " — total da chapa" : ""}</label>
               <input type="number" step="0.01" value={f.comprimento} onChange={set("comprimento")} />
-            </div>
-            <div className="field">
-              <label>Diâmetro do filamento (mm)</label>
-              <input type="number" step="0.01" value={f.diametro} onChange={set("diametro")} />
-            </div>
-          </div>
-          <div className="row2">
-            <div className="field">
-              <label>Densidade (g/cm³)</label>
-              <input type="number" step="0.01" value={f.densidade} onChange={set("densidade")} />
             </div>
             <div className="field">
               <label>Tempo de impressão (min){n(f.pecasPorPlaca) > 1 ? " — total da chapa" : ""}</label>
               <input type="number" step="1" value={f.tempo} onChange={set("tempo")} />
+            </div>
+          </div>
+          <div className="row2">
+            <div className="field">
+              <label>Diâmetro (mm)</label>
+              <input type="number" step="0.01" value={f.diametro} onChange={set("diametro")} />
+            </div>
+            <div className="field">
+              <label>Densidade (g/cm³)</label>
+              <input type="number" step="0.01" value={f.densidade} onChange={set("densidade")} />
             </div>
           </div>
           <div className="field">
@@ -272,11 +286,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
               ))}
             </select>
           </div>
-          {supabase && (
-            <div className="hint" style={{ marginBottom: 0 }}>
-              Lista puxada da aba Materiais — cadastre ou atualize preços por lá.
-            </div>
-          )}
+
         </div>
 
         <div className="panel">
@@ -284,19 +294,19 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
             Custos de produção
             <Ajuda texto="Preço do kWh e consumo da máquina (em Watts) calculam o custo de energia da impressão. Falhas é a % de peças que costuma dar problema e ser perdida — esse custo é diluído nas que dão certo. Consumíveis é o gasto com cola, spray, lixa etc. (cadastrados em Materiais). Manutenção e acabamento são % aplicados sobre o custo do material, cobrindo desgaste da máquina e pós-processamento." />
           </h3>
-          <div className="row2">
+          <div className="row3">
             <div className="field">
               <label>Preço do kWh (R$)</label>
               <input type="number" step="0.01" value={f.kwh} onChange={set("kwh")} />
             </div>
             <div className="field">
-              <label>Consumo da máquina (W)</label>
+              <label>Consumo (W)</label>
               <input type="number" step="1" value={f.consumo} onChange={set("consumo")} />
             </div>
-          </div>
-          <div className="field">
-            <label>Média de falhas (%)</label>
-            <input type="number" step="1" style={{ maxWidth: 160 }} value={f.falhasPct} onChange={set("falhasPct")} />
+            <div className="field">
+              <label>Média de falhas (%)</label>
+              <input type="number" step="1" value={f.falhasPct} onChange={set("falhasPct")} />
+            </div>
           </div>
           <div className="row2">
             <div className="field">
@@ -427,5 +437,6 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         </div>
       </div>
     </div>
+    </>
   );
 }

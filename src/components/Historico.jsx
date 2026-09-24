@@ -7,6 +7,7 @@ import { useRankingData, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
+import Kpis from "./Kpis.jsx";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
 // instantâneo do que foi salvo em Precificação por Canal, sem ligação real
@@ -28,6 +29,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [recemSalvoId, setRecemSalvoId] = useState(null);
   const [busca, setBusca] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("todos"); // todos | Produto | Kit
   const [clonarAlvo, setClonarAlvo] = useState(null); // item original sendo clonado
   const [clonarForm, setClonarForm] = useState({ nome: "", sku: "" });
   const [salvandoClone, setSalvandoClone] = useState(false);
@@ -326,20 +328,66 @@ export default function Historico({ onEditarCompleto, onToast }) {
 
   const carregando = carregandoBase || carregandoPrecos;
   const alvoBusca = busca.trim().toLowerCase();
-  const itensFiltrados = alvoBusca
-    ? itens.filter((item) => item.nome.toLowerCase().includes(alvoBusca) || (item.sku || "").toLowerCase().includes(alvoBusca))
-    : itens;
+  const itensFiltrados = itens
+    .filter((item) => filtroTipo === "todos" || item.tipo === filtroTipo)
+    .filter((item) => !alvoBusca || item.nome.toLowerCase().includes(alvoBusca) || (item.sku || "").toLowerCase().includes(alvoBusca));
+
+  // Resumo do topo: quantos itens já têm preço, margem média dos preços
+  // salvos, quantos preços dão prejuízo e quantos itens ainda têm canal vazio.
+  const resumo = (() => {
+    let comPreco = 0;
+    let incompletos = 0;
+    let negativos = 0;
+    let somaMargem = 0;
+    let qtdMargem = 0;
+    for (const item of itens) {
+      const salvos = canais.map((c) => precoDe(item, c)).filter(Boolean);
+      if (salvos.length > 0) comPreco++;
+      if (canais.length > 0 && salvos.length < canais.length) incompletos++;
+      for (const p of salvos) {
+        if (p.margem == null) continue;
+        somaMargem += Number(p.margem);
+        qtdMargem++;
+        if (Number(p.margem) < 0) negativos++;
+      }
+    }
+    const qtdKits = itens.filter((i) => i.tipo === "Kit").length;
+    return { comPreco, incompletos, negativos, margemMedia: qtdMargem ? somaMargem / qtdMargem : null, qtdKits };
+  })();
   const conflitoSkuClone = clonarAlvo ? achaConflitoSkuClone(clonarForm.sku) : null;
 
   return (
+    <>
+    {supabase && !carregando && itens.length > 0 && (
+      <Kpis
+        itens={[
+          { label: "Itens com preço salvo", valor: `${resumo.comPreco} de ${itens.length}`, sub: `${itens.length - resumo.qtdKits} produtos · ${resumo.qtdKits} kits` },
+          { label: "Margem média", valor: resumo.margemMedia != null ? PCT(resumo.margemMedia) : "—", sub: "de todos os preços salvos" },
+          { label: "Preços com prejuízo", valor: resumo.negativos, tom: resumo.negativos > 0 ? "bad" : "good", sub: "margem líquida abaixo de 0%" },
+          { label: "Com canal sem preço", valor: resumo.incompletos, tom: resumo.incompletos > 0 ? "warn" : "good", sub: "itens com pelo menos 1 canal vazio" },
+        ]}
+      />
+    )}
     <div className="panel">
       <h3>
         Preços por canal
-        <Ajuda texto="Cada célula mostra o preço, lucro e margem salvos pra esse produto/kit nesse canal. Célula vazia significa que ainda não foi salvo nada pra essa combinação — preencha em Precificação por Canal. Já salvo, use o ✎ pra corrigir na mão ou o × pra excluir (com confirmação). No nome do produto/kit: ⧉ clona tudo (inclusive os preços já salvos em outros canais) pra criar uma variação rapidamente, ✎ abre o cadastro completo pra editar, e × exclui o produto/kit por completo (não só um preço)." />
+        <Ajuda texto="Cada célula mostra o preço, lucro e margem salvos pra esse produto/kit nesse canal. Célula vazia significa que ainda não foi salvo nada pra essa combinação — preencha em Precificação por Canal (escolha o item e o canal e clique em Salvar), ou use o ⇄ da célula vazia pra clonar o preço de outro canal (lucro/margem são recalculados pra taxa desse canal). Os botões aparecem ao passar o mouse na linha. Já salvo, use o ✎ pra corrigir na mão ou o × pra excluir (com confirmação). No nome do produto/kit: ⧉ clona tudo (inclusive os preços já salvos em outros canais) pra criar uma variação rapidamente, ✎ abre o cadastro completo pra editar, e × exclui o produto/kit por completo (não só um preço)." />
       </h3>
       {itens.length > 0 && (
-        <div className="field" style={{ maxWidth: 320 }}>
+        <div className="toolbar">
           <input type="text" placeholder="Buscar por nome ou SKU…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <div className="subabas subabas-compacta">
+            {[
+              ["todos", "Todos"],
+              ["Produto", "Produtos"],
+              ["Kit", "Kits"],
+            ].map(([k, label]) => (
+              <button key={k} className={`btn${filtroTipo === k ? " primary" : ""}`} onClick={() => setFiltroTipo(k)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="toolbar-info">{itensFiltrados.length} de {itens.length}</span>
         </div>
       )}
       {!supabase ? (
@@ -363,7 +411,6 @@ export default function Historico({ onEditarCompleto, onToast }) {
               <thead>
                 <tr>
                   <th>Produto/Kit</th>
-                  <th>Tipo</th>
                   <th>SKU</th>
                   <th className="num">Custo total</th>
                   {canais.map((c) => (
@@ -375,8 +422,12 @@ export default function Historico({ onEditarCompleto, onToast }) {
                 {itensFiltrados.map((item) => (
                   <tr key={item.id}>
                     <td>
-                      {item.nome}
-                      <span style={{ whiteSpace: "nowrap", marginLeft: 6 }}>
+                      <div className="item-cel">
+                      <div className="item-cel-nome">
+                        {item.nome}
+                        <small>{item.tipo}</small>
+                      </div>
+                      <span className="acoes-linha">
                         <button className="del" title="Clonar produto/kit" onClick={() => abrirClonar(item)}>
                           ⧉
                         </button>
@@ -394,8 +445,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
                           ×
                         </button>
                       </span>
+                      </div>
                     </td>
-                    <td>{item.tipo}</td>
                     <td>{item.sku || <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
                     <td className="num">{BRL(item.custoTotal)}</td>
                     {canais.map((c) => {
@@ -409,6 +460,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                   {BRL(p.preco)}
                                   {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
                                 </span>
+                                <span className="acoes-linha">
                                 <button className="del" title="Editar preço salvo" onClick={() => iniciarEdicao(p, item, c)}>
                                   ✎
                                 </button>
@@ -419,14 +471,10 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 >
                                   ×
                                 </button>
+                                </span>
                               </div>
-                              <div className="preco-canal-linha">
-                                <span className="rotulo">Lucro</span>
-                                {p.lucro != null ? BRL(p.lucro) : "—"}
-                              </div>
-                              <div className="preco-canal-linha">
-                                <span className="rotulo">Margem</span>
-                                {p.margem != null ? PCT(p.margem) : "—"}
+                              <div className={`preco-canal-linha ${p.margem == null ? "" : Number(p.margem) < 0 ? "ruim" : Number(p.margem) < 0.1 ? "atencao" : "boa"}`}>
+                                {p.lucro != null ? BRL(p.lucro) : "—"} · {p.margem != null ? PCT(p.margem) : "—"}
                               </div>
                             </div>
                           ) : canaisComPrecoSalvo(item).length > 0 ? (
@@ -446,11 +494,6 @@ export default function Historico({ onEditarCompleto, onToast }) {
           </div>
         </>
       )}
-      <div className="hint" style={{ marginTop: 12, marginBottom: 0 }}>
-        Pra preencher uma célula vazia, vá em Precificação por Canal, escolha o produto/kit e o canal, calcule e clique em "Salvar" — ou, se esse item já tem
-        preço salvo em outro canal, use o ⇄ na própria célula vazia pra clonar o mesmo preço de venda (o lucro/margem é recalculado pra taxa desse canal).
-        Pra corrigir um valor já salvo, use o ✎ na própria célula — ou o × pra excluir (pede confirmação antes).
-      </div>
 
       {editAlvo && (
         <EditarDialog
@@ -609,5 +652,6 @@ export default function Historico({ onEditarCompleto, onToast }) {
         />
       )}
     </div>
+    </>
   );
 }

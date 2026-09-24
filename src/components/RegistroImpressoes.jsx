@@ -12,6 +12,7 @@ import {
 } from "../lib/registroImpressao.js";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import Kpis from "./Kpis.jsx";
 
 const TETO_STORAGE_KEY = "ohra:registro-impressao:teto-prejuizo";
 const TETO_PADRAO = 50;
@@ -258,6 +259,15 @@ export default function RegistroImpressoes({ onToast }) {
   }
 
   return (
+    <>
+    <Kpis
+      itens={[
+        { label: "Taxa de falha atual", valor: PCT(taxaFalha.taxa), tom: "destaque", sub: "começa em 12,5% e se ajusta com os registros" },
+        { label: "Impressões registradas", valor: taxaFalha.total, sub: `${taxaFalha.falhas} ${taxaFalha.falhas === 1 ? "falha" : "falhas"}` },
+        { label: "Prejuízo médio por falha", valor: prejuizoMedioPorFalha != null ? BRL(prejuizoMedioPorFalha) : "—", tom: prejuizoMedioPorFalha != null ? "bad" : undefined, sub: prejuizoMedioPorFalha != null ? "custo perdido por impressão que falhou" : "sem falhas registradas ainda" },
+        { label: "Avanço médio até falhar", valor: taxaFalha.falhas > 0 ? PCT(fracaoMediaFalha) : "—", sub: taxaFalha.falhas > 0 ? "quanto a impressão anda antes de dar errado" : "sem falhas registradas ainda" },
+      ]}
+    />
     <div className="grid2">
       <div>
         <div className="panel">
@@ -285,7 +295,7 @@ export default function RegistroImpressoes({ onToast }) {
 
           <div className="row2">
             <div className="field">
-              <label>Quantidade no lote (peças nessa impressão)</label>
+              <label title="Quantas peças nessa impressão">Peças no lote</label>
               <input type="number" step="1" min="1" value={form.quantidadeLote} onChange={set("quantidadeLote")} />
             </div>
             <div className="field">
@@ -303,7 +313,7 @@ export default function RegistroImpressoes({ onToast }) {
 
           <div className="field">
             <label>Resultado</label>
-            <div className="save-row" style={{ gap: 6 }}>
+            <div className="subabas" style={{ marginBottom: 0 }}>
               <button type="button" className={`btn${form.status === "sucesso" ? " primary" : ""}`} style={{ flex: "none" }} onClick={() => setForm((prev) => ({ ...prev, status: "sucesso" }))}>
                 ✓ Deu certo
               </button>
@@ -383,16 +393,6 @@ export default function RegistroImpressoes({ onToast }) {
       <div>
         <div className="panel">
           <h3 className="section-title">
-            Taxa de falha
-            <Ajuda texto="Começa em 12,5% (estimativa conservadora) e vai puxando pra taxa real conforme os registros entram — com poucos registros, ainda pesa bastante a estimativa inicial; com muitos, fica quase só nos dados reais." />
-          </h3>
-          <div className="kv total"><span className="k">Taxa de falha atual</span><span className="v">{PCT(taxaFalha.taxa)}</span></div>
-          <div className="kv"><span className="k">Registros no histórico</span><span className="v">{taxaFalha.total} ({taxaFalha.falhas} falhas)</span></div>
-          <div className="kv"><span className="k">Prejuízo médio por impressão perdida</span><span className="v">{prejuizoMedioPorFalha != null ? BRL(prejuizoMedioPorFalha) : "— (sem falhas registradas ainda)"}</span></div>
-        </div>
-
-        <div className="panel">
-          <h3 className="section-title">
             Simulador de lote
             <Ajuda texto='Escolha um produto pra ver o prejuízo esperado (e o "se falhar dessa vez") em cada tamanho de lote, e o maior lote recomendado dado o quanto você toparia perder de uma vez.' />
           </h3>
@@ -464,5 +464,6 @@ export default function RegistroImpressoes({ onToast }) {
         />
       )}
     </div>
+    </>
   );
 }

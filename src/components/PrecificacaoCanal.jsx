@@ -6,6 +6,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
+import Kpis from "./Kpis.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -286,6 +287,33 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   }
 
   return (
+    <>
+    <Kpis
+      itens={[
+        { label: "Custo total", valor: BRL(resultado.custoTotal), sub: "produção + frete + embalagem" },
+        {
+          label: "Preço no canal",
+          valor: BRL(resultado.preco),
+          tom: "destaque",
+          sub: comissaoFixo.temFaixa
+            ? resultado.faixaOk
+              ? `${canalLabel} · confere com a faixa`
+              : `${canalLabel} · fora da faixa — teste outra`
+            : canalLabel,
+        },
+        { label: "Lucro líquido / un.", valor: BRL(resultado.lucro), tom: resultado.lucro >= 0 ? "good" : "bad", sub: "depois de todas as taxas" },
+        {
+          label: "Margem líquida",
+          valor: (
+            <>
+              {PCT(resultado.margem)}{" "}
+              <span className={`badge ${lucrativo ? "good" : "bad"}`} style={{ verticalAlign: 4 }}>{lucrativo ? "lucrativo" : "abaixo da meta"}</span>
+            </>
+          ),
+          extra: <Termometro valor={resultado.margem} meta={lucratividadeFrac} />,
+        },
+      ]}
+    />
     <div className="grid2">
       <div>
         <div className="panel">
@@ -398,34 +426,30 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
             </>
           )}
 
-          <div className="row2">
+          <div className="row3">
             <div className="field">
-              <label>Imposto sobre a venda — seu CNPJ/MEI (%)</label>
+              <label title="Imposto sobre a venda do seu CNPJ/MEI — MEI com DAS fixo deixa em 0%">Imposto (%)</label>
               <input type="number" step="0.1" value={f.imposto} onChange={set("imposto")} />
             </div>
             <div className="field">
-              <label>Custos fixos adicionais (%)</label>
+              <label>Custos fixos (%)</label>
               <input type="number" step="0.1" value={f.custosFixos} onChange={set("custosFixos")} />
             </div>
+            <div className="field">
+              <label>Margem desejada (%)</label>
+              <input type="number" step="1" value={f.lucratividade} onChange={set("lucratividade")} />
+            </div>
           </div>
-          <button type="button" className="btn" style={{ marginTop: -8, marginBottom: 14, fontWeight: 400 }} onClick={usarConfigDoCanal}>
+          <button type="button" className="link-btn" onClick={usarConfigDoCanal}>
             Usar imposto/custos fixos já cadastrados nesse canal
           </button>
-          <div className="field">
-            <label>Lucratividade líquida desejada (%)</label>
-            <input type="number" step="1" value={f.lucratividade} onChange={set("lucratividade")} />
-          </div>
-          <div className="hint">MEI: o DAS é fixo mensal, não por venda — deixe o imposto em 0%.</div>
         </div>
 
         <div className="panel">
           <h3 className="section-title">
             Custo do produto
-            <Ajuda texto="Escolha um produto já cadastrado pra puxar custo, frete e embalagem automaticamente — ou preencha na mão pra simular algo que ainda não existe no catálogo." />
+            <Ajuda texto='Três formas de preencher: na mão; escolhendo um produto/kit cadastrado (puxa custo, frete e embalagem); ou em "Custo de Produção" usando o botão "Usar este custo na Precificação por Canal →".' />
           </h3>
-          <div className="hint" style={{ marginTop: -4 }}>
-            Três formas de preencher aqui embaixo: preencha na mão, escolha um "Produto ou kit cadastrado" abaixo (puxa custo total já calculado, e frete/embalagem quando for produto), ou vá em "Simular Custo de Produção" e use o botão "Usar este custo na Precificação por Canal →" pra trazer um cálculo feito na hora.
-          </div>
           <div className="field">
             <label>Produto ou kit cadastrado (opcional)</label>
             <select value={baseSelecionada} onChange={(e) => setBaseSelecionada(e.target.value)}>
@@ -437,13 +461,13 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               ))}
             </select>
           </div>
-          <div className="field">
-            <label>Custo da mercadoria/produção (R$)</label>
-            <input type="number" step="0.01" value={f.custoProduto} onChange={set("custoProduto")} />
-          </div>
-          <div className="row2">
+          <div className="row3">
             <div className="field">
-              <label>Frete extra por sua conta (R$)</label>
+              <label>Custo produção (R$)</label>
+              <input type="number" step="0.01" value={f.custoProduto} onChange={set("custoProduto")} />
+            </div>
+            <div className="field">
+              <label title="Frete extra por sua conta">Frete extra (R$)</label>
               <input type="number" step="0.01" value={f.frete} onChange={set("frete")} />
             </div>
             <div className="field">
@@ -489,20 +513,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       <div>
         <div className="panel">
           <h3 className="section-title">
-            Resultado
+            Detalhamento do preço
             <Ajuda texto="'Taxas descontadas por venda' mostra exatamente o que o canal tira do preço calculado: comissão % (proporcional ao preço) + taxa fixa (mesmo valor em R$ não importa o preço). Imposto e custos fixos aparecem separados porque são configurados por você (Configuração → Canais), não pela plataforma." />
           </h3>
-          <div className="destaque-custo">
-            <span className="k">Custo total do produto</span>
-            <span className="v">{BRL(resultado.custoTotal)}</span>
-          </div>
-          <div className="destaque-preco">
-            <span className="k">
-              Preço definido para a plataforma
-              <span className="k-sub">o que vai anunciado no canal</span>
-            </span>
-            <span className="v">{BRL(resultado.preco)}</span>
-          </div>
           <div className="kv"><span className="k">Mark-up (divisor)</span><span className="v">{isFinite(Number(resultado.markup)) ? Number(resultado.markup).toFixed(3) + "×" : "—"}</span></div>
           {comissaoFixo.temFaixa && (
             <div className="kv">
@@ -514,23 +527,6 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               </span>
             </div>
           )}
-          <div className="destaque-lucro">
-            <span className="k">
-              Quanto cai no seu bolso
-              <span className="k-sub">lucro líquido por unidade, já descontado tudo</span>
-            </span>
-            <span className="v">{BRL(resultado.lucro)}</span>
-          </div>
-          <div className="kv">
-            <span className="k">Margem líquida</span>
-            <span className="v">
-              {PCT(resultado.margem)}{" "}
-              {lucrativo
-                ? <span className="badge good">lucrativo</span>
-                : <span className="badge bad">abaixo da meta</span>}
-            </span>
-          </div>
-          <Termometro valor={resultado.margem} meta={lucratividadeFrac} />
 
           <div className="detalhe-taxas">
             <div className="detalhe-taxas-titulo">Taxas descontadas por venda (nesse preço)</div>
@@ -544,18 +540,24 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
 
         <div className="panel">
           <h3 className="section-title">Comparar com outro preço</h3>
-          <div className="field">
-            <label>Preço do concorrente (R$)</label>
-            <input type="number" step="0.01" value={f.concorrente} onChange={set("concorrente")} />
+          <div className="row2">
+            <div>
+              <div className="field">
+                <label>Preço do concorrente (R$)</label>
+                <input type="number" step="0.01" value={f.concorrente} onChange={set("concorrente")} />
+              </div>
+              <div className="kv"><span className="k">Lucro</span><span className="v">{concorrenteLucro != null ? BRL(concorrenteLucro) : "—"}</span></div>
+              <div className="kv"><span className="k">Margem</span><span className="v">{concorrenteLucro != null ? PCT(concorrenteLucro / n(f.concorrente)) : "—"}</span></div>
+            </div>
+            <div>
+              <div className="field">
+                <label>Preço negociado / manual (R$)</label>
+                <input type="number" step="0.01" value={f.negociado} onChange={set("negociado")} />
+              </div>
+              <div className="kv"><span className="k">Lucro</span><span className="v">{negociadoLucro != null ? BRL(negociadoLucro) : "—"}</span></div>
+              <div className="kv"><span className="k">Margem</span><span className="v">{negociadoLucro != null ? PCT(negociadoLucro / n(f.negociado)) : "—"}</span></div>
+            </div>
           </div>
-          <div className="kv"><span className="k">Lucro nesse preço</span><span className="v">{concorrenteLucro != null ? BRL(concorrenteLucro) : "—"}</span></div>
-          <div className="kv"><span className="k">Margem nesse preço</span><span className="v">{concorrenteLucro != null ? PCT(concorrenteLucro / n(f.concorrente)) : "—"}</span></div>
-          <div className="field" style={{ marginTop: 12 }}>
-            <label>Preço negociado / manual (R$)</label>
-            <input type="number" step="0.01" value={f.negociado} onChange={set("negociado")} />
-          </div>
-          <div className="kv"><span className="k">Lucro nesse preço</span><span className="v">{negociadoLucro != null ? BRL(negociadoLucro) : "—"}</span></div>
-          <div className="kv"><span className="k">Margem nesse preço</span><span className="v">{negociadoLucro != null ? PCT(negociadoLucro / n(f.negociado)) : "—"}</span></div>
         </div>
 
         <div className="panel">
@@ -592,5 +594,6 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         </div>
       </div>
     </div>
+    </>
   );
 }

@@ -772,7 +772,7 @@ export default function PromocaoSimulador({ onToast }) {
 
   return (
     <div>
-      <div className="save-row" style={{ marginBottom: 18, gap: 6, flexWrap: "wrap" }}>
+      <div className="subabas">
         {TIPOS.map((t) => (
           <button
             key={t.key}
@@ -973,7 +973,7 @@ export default function PromocaoSimulador({ onToast }) {
                 Desconto direto
                 <Ajuda texto="'Por desconto %' é o de sempre: você diz o desconto e o app aplica sobre o preço normal. 'Por preço final' é ao contrário: você diz o preço que quer cobrar e o desconto que quer anunciar, e o app calcula o preço 'de' que precisa marcar pra esse desconto bater certinho — sem fazer conta na mão." />
               </h3>
-              <div className="save-row" style={{ marginBottom: 12, gap: 6 }}>
+              <div className="subabas" style={{ marginBottom: 12 }}>
                 <button
                   type="button"
                   className={`btn${modoDesconto === "percentual" ? " primary" : ""}`}
