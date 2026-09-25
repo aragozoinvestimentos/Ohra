@@ -6,6 +6,7 @@ import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
+import { somarMeses } from "../lib/fluxoCaixa.js";
 import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
 
 const MESES_PT = [
@@ -61,6 +62,7 @@ export default function Metas({ onToast }) {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }, []);
+  const [caixaMes, setCaixaMes] = useState(null); // lançamentos realizados no mês (Fluxo de Caixa) — null = indisponível
   const mesLabel = `${MESES_PT[Number(mesAtual.split("-")[1]) - 1]}/${mesAtual.split("-")[0]}`;
 
   useEffect(() => {
@@ -73,19 +75,28 @@ export default function Metas({ onToast }) {
         let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
         let qpc = supabase.from("precos_canal").select("*");
         let qm = supabase.from("metas_mensais").select("*").eq("mes", mesAtual);
+        // Realizado no Fluxo de Caixa neste mês (se a tabela ainda não existir,
+        // o erro é ignorado e os números "reais" simplesmente não aparecem).
+        let qcx = supabase
+          .from("lancamentos_caixa")
+          .select("tipo, categoria, valor, data_realizada, recorrencia")
+          .gte("data_realizada", `${mesAtual}-01`)
+          .lt("data_realizada", `${somarMeses(mesAtual, 1)}-01`);
         if (lojaId) {
           qp = qp.eq("loja_id", lojaId);
           qk = qk.eq("loja_id", lojaId);
           qc = qc.eq("loja_id", lojaId);
           qpc = qpc.eq("loja_id", lojaId);
           qm = qm.eq("loja_id", lojaId);
+          qcx = qcx.eq("loja_id", lojaId);
         }
-        const [rp, rk, rc, rpc, rm] = await Promise.all([qp, qk, qc, qpc, qm]);
+        const [rp, rk, rc, rpc, rm, rcx] = await Promise.all([qp, qk, qc, qpc, qm, qcx]);
         if (!ativo) return;
         if (!rp.error) setProdutos(rp.data || []);
         if (!rk.error) setKits(rk.data || []);
         if (!rc.error) setCanais(rc.data || []);
         if (!rpc.error) setPrecos(rpc.data || []);
+        setCaixaMes(rcx.error ? null : rcx.data || []);
         if (!rm.error) {
           const row = (rm.data || [])[0] || null;
           setMetaId(row?.id || null);
@@ -240,20 +251,33 @@ export default function Metas({ onToast }) {
     );
   }
 
+  // Faturamento real = vendas/encomendas recebidas no mês; resultado real =
+  // tudo que entrou − tudo que saiu (sem saldo inicial/aporte, que não são venda).
+  const caixaValido = (caixaMes || []).filter((l) => l.recorrencia !== "mensal" && l.categoria !== "saldo_inicial" && l.categoria !== "aporte");
+  const faturamentoReal = caixaValido.filter((l) => l.tipo === "entrada" && (l.categoria === "venda" || l.categoria === "encomenda")).reduce((s, l) => s + Number(l.valor || 0), 0);
+  const resultadoReal = caixaValido.reduce((s, l) => s + (l.tipo === "entrada" ? 1 : -1) * Number(l.valor || 0), 0);
   const pctDe = (v, meta) => (meta > 0 ? ` · ${Math.round((v / meta) * 100)}% da meta` : "");
 
   return (
     <>
     <Kpis
       itens={[
-        { label: `Meta de faturamento`, valor: faturamentoObjetivoNum > 0 ? BRL(faturamentoObjetivoNum) : "—", sub: mesLabel },
+        {
+          label: `Meta de faturamento`,
+          valor: faturamentoObjetivoNum > 0 ? BRL(faturamentoObjetivoNum) : "—",
+          sub: caixaMes ? `real no caixa: ${BRL(faturamentoReal)}${pctDe(faturamentoReal, faturamentoObjetivoNum)}` : mesLabel,
+        },
         {
           label: "Faturamento simulado",
           valor: BRL(faturamentoSimulado),
           tom: faturamentoObjetivoNum > 0 ? (faturamentoSimulado >= faturamentoObjetivoNum ? "good" : "warn") : undefined,
           sub: `${totalPecasSimuladas} ${totalPecasSimuladas === 1 ? "peça" : "peças"}${pctDe(faturamentoSimulado, faturamentoObjetivoNum)}`,
         },
-        { label: "Meta de lucro líquido", valor: lucroObjetivoNum > 0 ? BRL(lucroObjetivoNum) : "—", sub: mesLabel },
+        {
+          label: "Meta de lucro líquido",
+          valor: lucroObjetivoNum > 0 ? BRL(lucroObjetivoNum) : "—",
+          sub: caixaMes ? `resultado real no caixa: ${BRL(resultadoReal)}${pctDe(resultadoReal, lucroObjetivoNum)}` : mesLabel,
+        },
         {
           label: "Lucro simulado",
           valor: BRL(lucroSimulado),

@@ -253,6 +253,12 @@ const ETAPAS = [
     intro: "Pra olhar o negócio de um passo atrás: onde focar produção e divulgação, e sua capacidade real de produzir.",
     passos: [
       {
+        icone: "💵",
+        nome: "Fluxo de Caixa",
+        texto:
+          "O dinheiro de verdade: registre entradas (repasses dos marketplaces, encomendas) e saídas (filamento, embalagem, anúncios, equipamento…). O que ainda vai cair ou sair fica como “previsto” até você marcar como recebido/pago. Contas que se repetem todo mês (energia, parcela da impressora) entram como recorrentes. A projeção mostra o saldo mês a mês por até 12 meses, somando previstos, recorrentes e uma estimativa de vendas/custos (média dos últimos 3 meses, se você não preencher). O faturamento e o resultado reais do mês também aparecem em Metas.",
+      },
+      {
         icone: "🏆",
         nome: "Ranking por Retorno",
         texto:

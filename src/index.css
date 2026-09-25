@@ -274,6 +274,34 @@ section.view.active { display: block; }
 .grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 12px; }
 .grid-auto > .span2 { grid-column: span 2; }
 .bloco-seguinte, .panel + .kpis { margin-top: 16px; }
+/* Fluxo de Caixa */
+.grafico-caixa { margin-top: 4px; }
+.grafico-caixa svg { width: 100%; height: auto; display: block; }
+.grafico-legenda { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 12px; color: var(--ink-soft); margin-bottom: 6px; min-height: 20px; }
+.grafico-legenda span { display: inline-flex; align-items: center; gap: 6px; }
+.grafico-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.grafico-legenda .leg-entrada { background: var(--good); }
+.grafico-legenda .leg-saida { background: var(--bad); }
+.grafico-legenda .leg-saldo { height: 2px; width: 14px; border-radius: 1px; background: var(--ink); }
+.grafico-hover { margin-left: auto; color: var(--ink); }
+.grafico-caixa .grade { stroke: var(--border); stroke-width: 1; }
+.grafico-caixa .zero { stroke: var(--ink-faint); stroke-width: 1; }
+.grafico-caixa .eixo { fill: var(--ink-faint); font-size: 11px; font-family: inherit; }
+.grafico-caixa .barra-entrada { fill: var(--good); opacity: 0.85; }
+.grafico-caixa .barra-saida { fill: var(--bad); opacity: 0.8; }
+.grafico-caixa .faixa-hover { fill: var(--surface-2); }
+.grafico-caixa .linha-saldo { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+.grafico-caixa .ponto-saldo { fill: var(--ink); stroke: var(--surface); stroke-width: 2; }
+.grafico-caixa .ponto-saldo.negativo { fill: var(--bad); }
+.check-linha { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); margin: 2px 0 10px; cursor: pointer; }
+.muted-cel { color: var(--ink-soft); }
+.badge.neutro { background: var(--surface-2); color: var(--ink-soft); }
+@media (max-width: 760px) {
+  .grafico-hover { margin-left: 0; width: 100%; }
+  .grafico-caixa { overflow-x: auto; }
+  .grafico-caixa svg { min-width: 680px; }
+}
+
 .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 16px; align-items: start; }
 .grid-cards > .panel + .panel { margin-top: 0; }
 @media (max-width: 420px) { .grid-auto > .span2 { grid-column: auto; } }

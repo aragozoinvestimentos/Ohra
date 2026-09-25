@@ -89,6 +89,12 @@ const PATHS = {
       <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01" />
     </>
   ),
+  caixa: (
+    <>
+      <rect x="2" y="6" width="20" height="13" rx="2" />
+      <path d="M2 10h20M6 15h4M16 3l-4 3-4-3" />
+    </>
+  ),
   config: (
     <>
       <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />
