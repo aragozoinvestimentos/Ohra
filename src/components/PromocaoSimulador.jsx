@@ -26,12 +26,12 @@ const TIERS_PADRAO = [
 // grátis) SEMPRE dá negativo aqui — isso é esperado, é o preço de
 // atrair a venda. Já Combo/Venda combinada podem dar positivo, porque a
 // taxa fixa do canal é cobrada uma vez só em vez de uma vez por peça.
-function DeltaAvulso({ delta, sufixo = "" }) {
+function DeltaAvulso({ delta, sufixo = "", referencia = "vender avulso" }) {
   if (delta == null || !isFinite(delta)) return null;
   const melhor = delta >= 0;
   return (
     <div className="hint" style={{ marginTop: 10, marginBottom: 0, color: melhor ? "var(--good)" : "var(--bad)", fontWeight: 600 }}>
-      {melhor ? "▲" : "▼"} {BRL(Math.abs(delta))} {melhor ? "a mais" : "a menos"} do que vender avulso{sufixo}
+      {melhor ? "▲" : "▼"} {BRL(Math.abs(delta))} {melhor ? "a mais" : "a menos"} do que {referencia}{sufixo}
     </div>
   );
 }
@@ -281,7 +281,7 @@ export default function PromocaoSimulador({ onToast }) {
   useEffect(() => {
     const chave = `${baseSelecionada}|${canalId}`;
     const valor = precoSalvo?.preco ?? normalCalculado?.preco ?? null;
-    const valorStr = valor != null ? String(arredondarPreco(valor)) : "";
+    const valorStr = valor != null ? String(Math.round(valor * 100) / 100) : "";
     const trocouItemOuCanal = chave !== chaveItemCanalRef.current;
     chaveItemCanalRef.current = chave;
     if (trocouItemOuCanal) {
@@ -289,11 +289,12 @@ export default function PromocaoSimulador({ onToast }) {
       setPrecoOriginalOverride(valorStr);
       return;
     }
-    setPrecoOriginalOverride((atual) => {
-      if (atual !== ultimoAutoRef.current) return atual; // editado na mão — não sobrescreve
-      ultimoAutoRef.current = valorStr;
-      return valorStr;
-    });
+    // Updater PURO (sem mexer no ref dentro dele): o React pode chamar o
+    // updater duas vezes, e mutar o ref lá dentro fazia a 2ª chamada achar
+    // que o campo tinha sido "editado na mão" e não atualizar.
+    const anterior = ultimoAutoRef.current;
+    ultimoAutoRef.current = valorStr;
+    setPrecoOriginalOverride((atual) => (atual === anterior ? valorStr : atual));
   }, [baseSelecionada, canalId, precoSalvo, normalCalculado]);
 
   const precoOriginalNum = parseFloat(precoOriginalOverride);
@@ -335,13 +336,25 @@ export default function PromocaoSimulador({ onToast }) {
       const preco = n(precoFinalDesejado);
       if (preco <= 0) return null;
       const lucro = normal.lucroEm(preco);
-      return { preco, lucro, margem: preco > 0 ? lucro / preco : null };
+      // "Vitrine": o preço final É o preço real — o "de" é só o valor riscado
+      // do anúncio, então não existe "perda" em relação a ele.
+      return { preco, lucro, margem: preco > 0 ? lucro / preco : null, vitrine: true };
     }
     const preco = normal.preco * (1 - (n(desconto) || 0) / 100);
     const lucro = normal.lucroEm(preco);
     return { preco, lucro, margem: preco > 0 ? lucro / preco : null };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [normal, desconto, modoDesconto, precoFinalDesejado]);
+
+  // No modo vitrine, a única comparação honesta é com o preço que você JÁ
+  // pratica (salvo em Produtos precificados pra esse item+canal), com o lucro
+  // recalculado pro custo de hoje. Sem preço salvo, não há referência.
+  const referenciaSalva = useMemo(() => {
+    if (!normal || !precoSalvo || !(Number(precoSalvo.preco) > 0)) return null;
+    const preco = Number(precoSalvo.preco);
+    const lucro = normal.lucroEm(preco);
+    return lucro == null ? null : { preco, lucro };
+  }, [normal, precoSalvo]);
 
   // Modo "preço final": pura regra de três a partir do que você digitou (não
   // depende do preço normal calculado) — preço "de" = preço final ÷ (1 −
@@ -420,7 +433,19 @@ export default function PromocaoSimulador({ onToast }) {
     if (!normal) return null;
     const linhas = [{ key: "normal", label: "Preço normal", preco: normal.preco, lucro: normal.lucro, margem: normal.margem }];
     if (descontoResultado) {
-      linhas.push({ key: "desconto", label: `Desconto direto (${n(desconto)}%)`, preco: descontoResultado.preco, lucro: descontoResultado.lucro, margem: descontoResultado.margem });
+      linhas.push(
+        descontoResultado.vitrine
+          ? {
+              key: "desconto",
+              label: `Preço final (vitrine${precoOriginalSugerido != null ? ` "de" ${BRL(precoOriginalSugerido)}` : ""}, −${n(desconto)}%)`,
+              preco: descontoResultado.preco,
+              lucro: descontoResultado.lucro,
+              margem: descontoResultado.margem,
+              // compara com o preço salvo (o que você já pratica), nunca com o "de"
+              lucroReferencia: referenciaSalva ? referenciaSalva.lucro : null,
+            }
+          : { key: "desconto", label: `Desconto direto (${n(desconto)}%)`, preco: descontoResultado.preco, lucro: descontoResultado.lucro, margem: descontoResultado.margem }
+      );
     }
     if (combo) {
       linhas.push({ key: "combo", label: `Combo (leve ${combo.L}, pague ${combo.P})`, preco: combo.precoUnidadeEfetivo, lucro: combo.lucroUnidadeEfetivo, margem: combo.margemKit });
@@ -437,12 +462,21 @@ export default function PromocaoSimulador({ onToast }) {
     if (freteGratis) {
       linhas.push({ key: "frete", label: "Frete grátis subsidiado", preco: normal.preco, lucro: freteGratis.lucro, margem: freteGratis.margem });
     }
-    return linhas.map((l) => ({
-      ...l,
-      deltaVsNormal: l.key === "normal" ? null : l.lucro - normal.lucro,
-      mult: l.key !== "normal" && normal.lucro > 0 && l.lucro > 0 ? normal.lucro / l.lucro : null,
-    }));
-  }, [normal, descontoResultado, desconto, combo, liquidacao, margemMinima, freteGratis]);
+    return linhas.map((l) => {
+      if ("lucroReferencia" in l) {
+        return {
+          ...l,
+          deltaVsNormal: l.lucroReferencia != null ? l.lucro - l.lucroReferencia : null,
+          mult: l.lucroReferencia != null && l.lucroReferencia > 0 && l.lucro > 0 ? l.lucroReferencia / l.lucro : null,
+        };
+      }
+      return {
+        ...l,
+        deltaVsNormal: l.key === "normal" ? null : l.lucro - normal.lucro,
+        mult: l.key !== "normal" && normal.lucro > 0 && l.lucro > 0 ? normal.lucro / l.lucro : null,
+      };
+    });
+  }, [normal, descontoResultado, desconto, combo, liquidacao, margemMinima, freteGratis, precoOriginalSugerido, referenciaSalva]);
 
   // Catálogo pro seletor de "Venda combinada" — produtos e kits juntos,
   // marcados na hora de exibir; o "preço" aqui é o custo de cada um (mesma
@@ -977,9 +1011,17 @@ export default function PromocaoSimulador({ onToast }) {
                         type="button"
                         className="btn"
                         style={{ marginTop: 8 }}
-                        onClick={() => setPrecoOriginalOverride(String(arredondarPreco(precoOriginalSugerido)))}
+                        onClick={async () => {
+                          const txt = (Math.round(precoOriginalSugerido * 100) / 100).toFixed(2).replace(".", ",");
+                          try {
+                            await navigator.clipboard.writeText(txt);
+                            onToast?.(`Copiado: ${txt} — cole como preço "de" no anúncio`);
+                          } catch {
+                            onToast?.(`Preço "de": ${txt}`);
+                          }
+                        }}
                       >
-                        Usar esse valor como preço normal
+                        Copiar {BRL(precoOriginalSugerido)} (preço "de" do anúncio)
                       </button>
                     </>
                   ) : (
@@ -990,13 +1032,39 @@ export default function PromocaoSimulador({ onToast }) {
                 </>
               )}
 
-              {descontoResultado && (
+              {descontoResultado && descontoResultado.vitrine && (
+                <>
+                  <div className="kv"><span className="k">Preço real de venda</span><span className="v">{BRL(descontoResultado.preco)}</span></div>
+                  <div className="kv total"><span className="k">Lucro</span><span className="v">{BRL(descontoResultado.lucro)}</span></div>
+                  <div className="kv"><span className="k">Margem</span><span className="v">{descontoResultado.margem != null ? PCT(descontoResultado.margem) : "—"}</span></div>
+                  <Termometro valor={descontoResultado.margem || 0} meta={n(lucratividade) / 100} />
+                  {referenciaSalva ? (
+                    (() => {
+                      const dPreco = descontoResultado.preco - referenciaSalva.preco;
+                      const dLucro = descontoResultado.lucro - referenciaSalva.lucro;
+                      if (Math.abs(dPreco) < 0.005) {
+                        return <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>Mesmo preço que você já pratica (salvo em Produtos precificados) — o desconto é só de vitrine.</div>;
+                      }
+                      return (
+                        <div className="hint" style={{ marginTop: 10, marginBottom: 0, color: dLucro >= 0 ? "var(--good)" : "var(--bad)", fontWeight: 600 }}>
+                          {dPreco < 0 ? "▼" : "▲"} {BRL(Math.abs(dPreco))} {dPreco < 0 ? "abaixo" : "acima"} do seu preço salvo ({BRL(referenciaSalva.preco)}) — lucro {BRL(Math.abs(dLucro))} {dLucro < 0 ? "menor" : "maior"}
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+                      Sem preço salvo pra esse item nesse canal, então não há com o que comparar. O preço "de" é só vitrine e não entra na conta.
+                    </div>
+                  )}
+                </>
+              )}
+              {descontoResultado && !descontoResultado.vitrine && (
                 <>
                   <div className="kv"><span className="k">Preço com desconto</span><span className="v">{BRL(descontoResultado.preco)}</span></div>
                   <div className="kv total"><span className="k">Lucro com desconto</span><span className="v">{BRL(descontoResultado.lucro)}</span></div>
                   <div className="kv"><span className="k">Margem com desconto</span><span className="v">{descontoResultado.margem != null ? PCT(descontoResultado.margem) : "—"}</span></div>
                   <Termometro valor={descontoResultado.margem || 0} meta={n(lucratividade) / 100} />
-                  <DeltaAvulso delta={descontoResultado.lucro - normal.lucro} />
+                  <DeltaAvulso delta={descontoResultado.lucro - normal.lucro} referencia={`vender sem promoção, a ${BRL(normal.preco)}`} />
                   <Breakeven lucroNormal={normal.lucro} lucroPromo={descontoResultado.lucro} />
                 </>
               )}
