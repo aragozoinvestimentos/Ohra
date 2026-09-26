@@ -6,6 +6,7 @@ import { normalizarTexto } from "../lib/texto.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import { TIPOS } from "../lib/promocaoTipos.js";
+import { useRankingData } from "../hooks/useRankingData.js";
 
 function labelTipo(tipo) {
   return TIPOS.find((t) => t.key === tipo)?.label || tipo || "—";
@@ -30,6 +31,13 @@ export default function PromocoesSalvas({ onToast }) {
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [recemSalvoId, setRecemSalvoId] = useState(null);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
+  const [abertos, setAbertos] = useState(() => new Set()); // promoções abertas (chave normalizada)
+  const [abrirTodas, setAbrirTodas] = useState(false);
+  const [variacoesAbertas, setVariacoesAbertas] = useState(() => new Set()); // "promo|produto"
+  // Nomes dos produtos cadastrados — a promoção salva guarda o item só como
+  // texto ("Produto — Kit 3 unidades"), então é pelo nome que uma variação
+  // é encaixada embaixo do produto dela.
+  const { produtos: produtosCatalogo } = useRankingData();
 
   useEffect(() => {
     if (!supabase) {
@@ -88,11 +96,57 @@ export default function PromocoesSalvas({ onToast }) {
     for (const p of promocoesFiltradas) {
       const nome = p.nome || "—";
       const chave = normalizarTexto(nome);
-      if (!mapa.has(chave)) mapa.set(chave, { nome, itens: [] });
+      if (!mapa.has(chave)) mapa.set(chave, { chave, nome, itens: [] });
       mapa.get(chave).itens.push(p);
     }
     return [...mapa.values()];
   }, [promocoesFiltradas]);
+
+  // Produto "pai" de um item salvo: o nome de produto cadastrado mais longo
+  // que é prefixo do item seguido de " — " (ex.: "Vaso Onda — Areia (P) — Kit 3"
+  // → "Vaso Onda — Areia (P)"). Sem par (produto renomeado/excluído, kit,
+  // item manual), o item fica como uma linha solta.
+  const nomesProdutos = useMemo(
+    () => (produtosCatalogo || []).map((x) => x.nome).filter(Boolean).sort((a, b) => b.length - a.length),
+    [produtosCatalogo]
+  );
+  function paiDe(itemNome) {
+    if (!itemNome) return null;
+    return nomesProdutos.find((n) => itemNome !== n && itemNome.startsWith(`${n} — `)) || null;
+  }
+
+  // Linhas de um grupo: itens "normais" e, embaixo de cada produto, as
+  // variações dele (recolhidas até clicar na seta).
+  function linhasDoGrupo(grupo) {
+    const porPai = new Map();
+    const ordem = [];
+    for (const p of grupo.itens) {
+      const pai = paiDe(p.item_nome);
+      const base = pai || p.item_nome || `__${p.id}`;
+      if (!porPai.has(base)) {
+        porPai.set(base, { base, temItemBase: false, normais: [], variacoes: [] });
+        ordem.push(base);
+      }
+      const g = porPai.get(base);
+      if (pai) g.variacoes.push(p);
+      else {
+        g.normais.push(p);
+        g.temItemBase = true;
+      }
+    }
+    const blocos = ordem.map((b) => porPai.get(b));
+    for (const bl of blocos) bl.variacoes.sort((x, y) => (x.item_nome || "").localeCompare(y.item_nome || "", "pt-BR", { numeric: true }));
+    return blocos;
+  }
+
+  function alternar(setter, chave) {
+    setter((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(chave)) novo.delete(chave);
+      else novo.add(chave);
+      return novo;
+    });
+  }
 
   async function excluir(id) {
     if (!supabase) return;
@@ -218,6 +272,14 @@ export default function PromocoesSalvas({ onToast }) {
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
             />
+            {grupos.length > 1 && (
+              <button type="button" className="btn btn-mini" onClick={() => { setAbrirTodas((v) => !v); setAbertos(new Set()); }}>
+                {abrirTodas ? "Recolher todas" : "Abrir todas"}
+              </button>
+            )}
+            <span className="toolbar-info">
+              {grupos.length} {grupos.length === 1 ? "promoção" : "promoções"}
+            </span>
           </div>
 
           {grupos.length === 0 ? (
@@ -225,59 +287,145 @@ export default function PromocoesSalvas({ onToast }) {
           ) : (
             grupos.map((grupo) => {
               const somaLucro = grupo.itens.reduce((s, p) => s + (Number(p.lucro) || 0), 0);
-              return (
-                <div key={grupo.nome} style={{ marginBottom: 22 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-                    <h4 style={{ margin: 0, fontSize: 15 }}>
-                      {grupo.nome}
-                      <span className="badge" style={{ marginLeft: 8, background: "var(--surface-2)", color: "var(--ink-soft)" }}>
-                        {grupo.itens.length} {grupo.itens.length === 1 ? "produto" : "produtos"}
+              const margens = grupo.itens.map((p) => (p.margem != null ? Number(p.margem) : null)).filter((m) => m != null);
+              const menorMargem = margens.length ? Math.min(...margens) : null;
+              const canaisGrupo = [...new Set(grupo.itens.map((p) => p.canal_nome).filter(Boolean))];
+              const aberto = abrirTodas || abertos.has(grupo.chave) || !!busca.trim();
+              const blocos = linhasDoGrupo(grupo);
+              const linha = (p, variacao) => (
+                <tr key={p.id} className={variacao ? "linha-variacao" : ""}>
+                  <td>
+                    {variacao ? (
+                      <span className="item-cel item-cel-variacao">
+                        <span className="variacao-seta">↳</span>
+                        <span>
+                          {p.item_nome.slice(paiDe(p.item_nome).length + 3)}
+                          {p.canal_nome ? ` — ${p.canal_nome}` : ""}
+                        </span>
                       </span>
-                    </h4>
-                    <div style={{ fontSize: 12.5, color: "var(--ink-soft)" }}>
-                      Lucro total do grupo: <strong style={{ color: "var(--ink)" }}>{BRL(somaLucro)}</strong>
-                    </div>
-                  </div>
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Item / Canal</th>
-                          <th>Tipo</th>
-                          <th className="num">Preço "de"</th>
-                          <th className="num">Preço</th>
-                          <th className="num">Lucro</th>
-                          <th className="num">Margem</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {grupo.itens.map((p) => (
-                          <tr key={p.id}>
-                            <td>
-                              {p.item_nome || "—"}
-                              {p.canal_nome ? ` — ${p.canal_nome}` : ""}
-                              {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
-                              {p.resumo && (
-                                <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>
-                                  {p.resumo}
-                                </div>
-                              )}
-                            </td>
-                            <td>{labelTipo(p.tipo)}</td>
-                            <td className="num">{p.preco_referencia != null ? BRL(p.preco_referencia) : "—"}</td>
-                            <td className="num">{p.preco != null ? BRL(p.preco) : "—"}</td>
-                            <td className="num">{p.lucro != null ? BRL(p.lucro) : "—"}</td>
-                            <td className="num">{p.margem != null ? PCT(p.margem) : "—"}</td>
-                            <td style={{ whiteSpace: "nowrap" }}>
-                              <button className="del" title="Editar" onClick={() => iniciarEdicao(p)}>✎</button>
-                              <button className="del" title="Excluir" onClick={() => setExcluirAlvo(p)}>×</button>
-                            </td>
+                    ) : (
+                      <>
+                        {p.item_nome || "—"}
+                        {p.canal_nome ? ` — ${p.canal_nome}` : ""}
+                      </>
+                    )}
+                    {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
+                    {p.resumo && (
+                      <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em", paddingLeft: variacao ? 38 : 0 }}>
+                        {p.resumo}
+                      </div>
+                    )}
+                  </td>
+                  <td>{labelTipo(p.tipo)}</td>
+                  <td className="num">{p.preco_referencia != null ? BRL(p.preco_referencia) : "—"}</td>
+                  <td className="num">{p.preco != null ? BRL(p.preco) : "—"}</td>
+                  <td className="num">{p.lucro != null ? BRL(p.lucro) : "—"}</td>
+                  <td className="num">
+                    {p.margem != null ? (
+                      <span className={`badge ${Number(p.margem) < 0 ? "bad" : Number(p.margem) < 0.1 ? "warn" : "good"}`}>{PCT(p.margem)}</span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <span className="acoes-linha">
+                      <button className="del" title="Editar" onClick={() => iniciarEdicao(p)}>✎</button>
+                      <button className="del" title="Excluir" onClick={() => setExcluirAlvo(p)}>×</button>
+                    </span>
+                  </td>
+                </tr>
+              );
+              return (
+                <div key={grupo.chave} className={`promo-grupo${aberto ? " aberto" : ""}`}>
+                  <button type="button" className="promo-grupo-cab" onClick={() => alternar(setAbertos, grupo.chave)} aria-expanded={aberto}>
+                    <span className="seta">▸</span>
+                    <span className="promo-grupo-nome">{grupo.nome}</span>
+                    <span className="chip-herdado">
+                      {grupo.itens.length} {grupo.itens.length === 1 ? "item" : "itens"}
+                    </span>
+                    {canaisGrupo.length > 0 && <span className="promo-grupo-canais">{canaisGrupo.join(", ")}</span>}
+                    <span style={{ flex: 1 }} />
+                    {menorMargem != null && (
+                      <span className={`badge ${menorMargem < 0 ? "bad" : menorMargem < 0.1 ? "warn" : "good"}`} title="Menor margem entre os itens dessa promoção">
+                        menor margem {PCT(menorMargem)}
+                      </span>
+                    )}
+                    <span className="promo-grupo-lucro">
+                      Lucro total <strong>{BRL(somaLucro)}</strong>
+                    </span>
+                  </button>
+                  {aberto && (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Item / Canal</th>
+                            <th>Tipo</th>
+                            <th className="num">Preço "de"</th>
+                            <th className="num">Preço</th>
+                            <th className="num">Lucro</th>
+                            <th className="num">Margem</th>
+                            <th></th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {blocos.flatMap((bl) => {
+                            const chaveVar = `${grupo.chave}|${bl.base}`;
+                            const varAberta = variacoesAbertas.has(chaveVar) || (!!busca.trim() && bl.variacoes.length > 0);
+                            const toggle =
+                              bl.variacoes.length > 0 ? (
+                                <button
+                                  type="button"
+                                  className={`variacoes-toggle${varAberta ? " aberto" : ""}`}
+                                  onClick={() => alternar(setVariacoesAbertas, chaveVar)}
+                                >
+                                  <span className="seta">▸</span> {bl.variacoes.length} {bl.variacoes.length === 1 ? "variação" : "variações"}
+                                </button>
+                              ) : null;
+                            const out = [];
+                            if (bl.variacoes.length > 0 && !bl.temItemBase) {
+                              // Só variações desse produto na promoção — linha de cabeçalho com o nome do produto.
+                              out.push(
+                                <tr key={`cab-${chaveVar}`} className={varAberta ? "linha-aberta" : ""}>
+                                  <td colSpan={7}>
+                                    <span className="item-cel">
+                                      <strong style={{ fontWeight: 600 }}>{bl.base}</strong>
+                                      {toggle}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            }
+                            bl.normais.forEach((p, i) => {
+                              const tr = linha(p, false);
+                              if (i === 0 && toggle && bl.temItemBase) {
+                                out.push(
+                                  <tr key={p.id} className={varAberta ? "linha-aberta" : ""}>
+                                    {[
+                                      <td key="n">
+                                        <span className="item-cel">
+                                          <span>
+                                            {p.item_nome || "—"}
+                                            {p.canal_nome ? ` — ${p.canal_nome}` : ""}
+                                            {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
+                                            {p.resumo && <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>{p.resumo}</div>}
+                                          </span>
+                                          {toggle}
+                                        </span>
+                                      </td>,
+                                      ...tr.props.children.slice(1),
+                                    ]}
+                                  </tr>
+                                );
+                              } else out.push(tr);
+                            });
+                            if (varAberta) bl.variacoes.forEach((p) => out.push(linha(p, true)));
+                            return out;
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               );
             })
