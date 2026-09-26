@@ -10,6 +10,7 @@ import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import { itemTipoDoId, formatarPeso } from "../lib/variacoes.js";
+import { precoSalvoAoVivo } from "../lib/aoVivo.js";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
 // instantâneo do que foi salvo em Precificação por Canal, sem ligação real
@@ -109,7 +110,10 @@ export default function Historico({ onEditarCompleto, onToast }) {
   function precoDe(item, canalObj) {
     const id = item.id.split(":")[1];
     const itemTipo = itemTipoDoId(item.id);
-    return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalObj.id) || null;
+    const linha = precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalObj.id) || null;
+    // Lucro/margem sempre recalculados com o custo de HOJE do item e as
+    // taxas atuais do canal — nunca o número congelado no dia do "Salvar".
+    return linha ? precoSalvoAoVivo(linha, item.custoTotal, canalObj) : null;
   }
 
   // Canais onde esse item já tem preço salvo — são as opções válidas de
@@ -584,7 +588,15 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 </button>
                                 </span>
                               </div>
-                              <div className={`preco-canal-linha ${p.margem == null ? "" : Number(p.margem) < 0 ? "ruim" : Number(p.margem) < 0.1 ? "atencao" : "boa"}`}>
+                              <div
+                                className={`preco-canal-linha ${p.margem == null ? "" : Number(p.margem) < 0 ? "ruim" : Number(p.margem) < 0.1 ? "atencao" : "boa"}`}
+                                title={
+                                  p.desatualizado
+                                    ? `Atualizado pro custo de hoje (o custo do item mudou desde que o preço foi salvo). No dia em que foi salvo: lucro ${BRL(p.lucro_salvo)}${p.margem_salva != null ? ` · ${PCT(p.margem_salva)}` : ""}.`
+                                    : undefined
+                                }
+                              >
+                                {p.desatualizado && <span className="ponto-recalc" aria-label="recalculado">↻</span>}
                                 {p.lucro != null ? BRL(p.lucro) : "—"} · {p.margem != null ? PCT(p.margem) : "—"}
                               </div>
                             </div>

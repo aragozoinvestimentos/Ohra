@@ -14,3 +14,10 @@ export const PCT = (v) => {
 // não acumular ruído de arredondamento (nem mostrar dízimas estranhas) em
 // preços de itens comprados em pacote, tipo R$0,0395/cm virando R$0,04/cm.
 export const arredondarPreco = (v) => Math.round(Number(v) * 1000) / 1000;
+
+// Data curta pt-BR; valor ausente ou inválido vira "—" (em vez de "Invalid Date").
+export const DATA = (v) => {
+  if (!v) return "—";
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
+};

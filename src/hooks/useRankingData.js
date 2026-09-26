@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import {
-  ML_CATEGORY_PCT,
   resolverFaixaShopee,
   resolverFaixaML,
   resolverFaixaTikTok,
@@ -8,26 +7,15 @@ import {
   calcCanalCustom,
 } from "../lib/calc.js";
 import { arredondarPreco } from "../lib/format.js";
-import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { totalItens } from "../components/SeletorItens.jsx";
 import { calcVariacao, itemTipoDoId, resumoProduto } from "../lib/variacoes.js";
 
-// Lucratividade e categoria/tipo de anúncio (ML) usados só pra achar o
-// preço/lucro de referência de cada produto — fixos de propósito, tanto
-// aqui quanto no Ranking e na tela de descanso, pra manter os dois
-// consistentes entre si. Quem quiser simular outra meta usa Precificação
-// por Canal ou Comparativo.
-export const LUCRATIVIDADE_PADRAO = 20;
-export const ML_CATEGORIA_PADRAO = Object.keys(ML_CATEGORY_PCT)[0];
-export const ML_TIPO_ANUNCIO_PADRAO = "classico";
+import { LUCRATIVIDADE_PADRAO, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../lib/constantesCanal.js";
+import { produtoAoVivo, precoSalvoAoVivo } from "../lib/aoVivo.js";
+import { usarCatalogo, assinarCatalogo, lerCatalogo } from "../lib/catalogoStore.js";
+export { LUCRATIVIDADE_PADRAO, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO };
 
-// O Supabase Realtime identifica canais pelo nome — dois `.channel()` com o
-// mesmo nome colidem (o segundo tenta registrar listeners num canal que o
-// primeiro já deixou "subscribed", e isso quebra com um erro não tratado).
-// Como mais de um componente usa este hook ao mesmo tempo (Ranking e a
-// tela de descanso), cada instância precisa do seu próprio nome único.
-let proximoIdInstancia = 0;
 
 const centavos = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
@@ -99,98 +87,35 @@ export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFil
 // alimenta o Ranking e a tela de descanso.
 export function useRankingData() {
   const { lojaId } = useLoja();
-  const [produtos, setProdutos] = useState([]);
-  const [kits, setKits] = useState([]);
-  const [kitProdutosTodos, setKitProdutosTodos] = useState([]);
-  const [kitEmbalagensTodos, setKitEmbalagensTodos] = useState([]);
-  const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
-  const [canais, setCanais] = useState([]);
-  const [precos, setPrecos] = useState([]);
-  const [materiais, setMateriais] = useState([]);
-  const [produtoEmbalagens, setProdutoEmbalagens] = useState([]);
-  const [variacoes, setVariacoes] = useState([]);
-  const [carregando, setCarregando] = useState(true);
-  const [idInstancia] = useState(() => proximoIdInstancia++);
+  // Dados crus vêm do store compartilhado (uma busca + um realtime pra todas
+  // as telas); aqui só se derivam os valores ao vivo.
+  const cat = useSyncExternalStore(assinarCatalogo, lerCatalogo, lerCatalogo);
+  useEffect(() => usarCatalogo(lojaId), [lojaId]);
+  const {
+    produtos,
+    kits,
+    kitProdutos: kitProdutosTodos,
+    kitEmbalagens: kitEmbalagensTodos,
+    embalagens: embalagensCatalogo,
+    canais,
+    precos,
+    materiais,
+    produtoEmbalagens,
+    variacoes,
+    carregando,
+  } = cat;
 
-  useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
-    let ativo = true;
-    async function carregar() {
-      try {
-        let qp = supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true });
-        let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
-        let qk = supabase.from("kits").select("*").order("nome");
-        let qe = supabase.from("embalagens").select("*").order("nome");
-        let qpc = supabase.from("precos_canal").select("*");
-        let qm = supabase.from("materiais").select("*");
-        let qv = supabase.from("produto_variacoes").select("*").order("quantidade");
-        if (lojaId) {
-          qm = qm.eq("loja_id", lojaId);
-          qv = qv.eq("loja_id", lojaId);
-          qp = qp.eq("loja_id", lojaId);
-          qc = qc.eq("loja_id", lojaId);
-          qk = qk.eq("loja_id", lojaId);
-          qe = qe.eq("loja_id", lojaId);
-          qpc = qpc.eq("loja_id", lojaId);
-        }
-        const [rp, rc, rk, re, rpc, rm, rv] = await Promise.all([qp, qc, qk, qe, qpc, qm, qv]);
-        if (!ativo) return;
-        if (!rp.error) setProdutos(rp.data || []);
-        if (!rc.error) setCanais(rc.data || []);
-        if (!rk.error) setKits(rk.data || []);
-        if (!re.error) setEmbalagensCatalogo(re.data || []);
-        if (!rpc.error) setPrecos(rpc.data || []);
-        if (!rm.error) setMateriais(rm.data || []);
-        // Tabela de variações só existe depois do schema v26 — se ainda não
-        // existir, segue sem variações em vez de quebrar.
-        setVariacoes(rv.error ? [] : rv.data || []);
-        const produtoIds = (rp.data || []).map((x) => x.id);
-        const peResp = produtoIds.length
-          ? await supabase.from("produto_embalagens").select("*").in("produto_id", produtoIds)
-          : { data: [] };
-        if (!ativo) return;
-        setProdutoEmbalagens(peResp.error ? [] : peResp.data || []);
-
-        const kitIds = (rk.data || []).map((k) => k.id);
-        const [kpResp, keResp] = await Promise.all([
-          kitIds.length ? supabase.from("kit_produtos").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
-          kitIds.length ? supabase.from("kit_embalagens").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
-        ]);
-        if (!ativo) return;
-        setKitProdutosTodos(kpResp.data || []);
-        setKitEmbalagensTodos(keResp.data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    }
-    carregar();
-    const canal = supabase
-      .channel(`ranking-data-realtime-${idInstancia}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kit_produtos" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "produto_variacoes" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "produto_embalagens" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "materiais" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId, idInstancia]);
+  // Produtos com custo de produção e embalagem recalculados AO VIVO (preço
+  // atual do material e dos itens de embalagem) — é essa lista que todo o
+  // resto do app recebe como `produtos`.
+  const produtosVivos = useMemo(
+    () => produtos.map((p) => produtoAoVivo(p, { materiais, produtoEmbalagens, embalagens: embalagensCatalogo })),
+    [produtos, materiais, produtoEmbalagens, embalagensCatalogo]
+  );
 
   const catalogoProdutosBase = useMemo(
-    () => produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" })),
-    [produtos]
+    () => produtosVivos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" })),
+    [produtosVivos]
   );
   const catalogoEmbalagensBase = useMemo(
     () => embalagensCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade })),
@@ -227,12 +152,15 @@ export function useRankingData() {
   // frete + embalagem) e cada kit cadastrado com seu custo total (produtos
   // + embalagem do kit) num só lugar.
   const itens = useMemo(() => {
-    const doProdutos = produtos.map((p) => ({
+    const doProdutos = produtosVivos.map((p) => ({
       id: `p:${p.id}`,
       nome: p.nome,
       sku: p.sku || "",
       tipo: "Produto",
       custoTotal: arredondarPreco((Number(p.custo_producao) || 0) + (Number(p.frete_padrao) || 0) + (Number(p.embalagem_padrao) || 0)),
+      custoProducao: Number(p.custo_producao) || 0,
+      embalagem: Number(p.embalagem_padrao) || 0,
+      freteProduto: Number(p.frete_padrao) || 0,
       peso: resumoProduto(p, { embalagens: embalagensCatalogo, produtoEmbalagens }).peso,
     }));
     const doKits = kits.map((k) => ({
@@ -246,7 +174,7 @@ export function useRankingData() {
     // com custo já considerando o que foi personalizado nela.
     const doVariacoes = variacoes
       .map((v) => {
-        const produto = produtos.find((p) => p.id === v.produto_id);
+        const produto = produtosVivos.find((p) => p.id === v.produto_id);
         if (!produto) return null;
         const calc = calcVariacao(v, produto, { materiais, embalagens: embalagensCatalogo, produtoEmbalagens });
         return {
@@ -268,14 +196,28 @@ export function useRankingData() {
       .filter(Boolean);
     return [...doProdutos, ...doKits, ...doVariacoes];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produtos, kits, kitProdutosTodos, kitEmbalagensTodos, embalagensCatalogo, variacoes, materiais, produtoEmbalagens]);
+  }, [produtosVivos, kits, kitProdutosTodos, kitEmbalagensTodos, embalagensCatalogo, variacoes, materiais, produtoEmbalagens]);
+
+  // Preços salvos com lucro/margem recalculados pro custo de HOJE de cada
+  // item e as taxas atuais do canal (o que foi gravado no dia do "Salvar"
+  // fica em lucro_salvo/margem_salva, e `desatualizado` marca a diferença).
+  const precosVivos = useMemo(() => {
+    const porId = new Map(itens.map((i) => [i.id, i]));
+    const prefixo = { produto: "p", kit: "k", variacao: "v" };
+    return precos.map((linha) => {
+      const item = porId.get(`${prefixo[linha.item_tipo] || "p"}:${linha.item_id}`);
+      const canal = canais.find((c) => c.id === linha.canal_id);
+      return item ? precoSalvoAoVivo(linha, item.custoTotal, canal) : linha;
+    });
+  }, [precos, itens, canais]);
 
   return {
     itens,
     canais,
-    produtos,
+    produtos: produtosVivos,
     kits,
-    precos,
+    precos: precosVivos,
+    precosBrutos: precos,
     variacoes,
     materiais,
     embalagens: embalagensCatalogo,

@@ -286,7 +286,7 @@ export default function App() {
         </section>
 
         <section className={`view ${tab === "comparativo" ? "active" : ""}`}>
-          <Comparativo />
+          <Comparativo key={lojaId || "sem-loja"} />
         </section>
 
         <section className={`view ${tab === "orcamento" ? "active" : ""}`}>

@@ -8,6 +8,7 @@ import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
+import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
@@ -48,45 +49,23 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     setCanalProprioId("");
   }, [lojaId]);
 
-  useEffect(() => {
-    if (!baseSelecionada) return;
+  // Custo/frete/embalagem do item escolhido — AO VIVO: se o custo do produto
+  // mudar (preço do filamento, embalagem, variação editada…), os campos
+  // acompanham sozinhos, a não ser que você tenha digitado outro valor na mão.
+  const valoresDoItem = useMemo(() => {
+    if (!baseSelecionada) return null;
     const [tipo, id] = baseSelecionada.split(":");
     if (tipo === "p") {
-      const p = produtos.find((x) => x.id === id) || null;
-      if (!p) {
-        setF((prev) => ({ ...prev, custoProduto: "", frete: 0, embalagem: 0 }));
-        return;
-      }
-      setF((prev) => ({
-        ...prev,
-        custoProduto: arredondarPreco(p.custo_producao),
-        frete: arredondarPreco(p.frete_padrao || 0),
-        embalagem: arredondarPreco(p.embalagem_padrao || 0),
-        nome: prev.nome || p.nome,
-      }));
-    } else if (tipo === "v") {
-      // Variação: produção, embalagem e frete (+ ajuste) já calculados com o
-      // que foi personalizado nela.
-      const item = baseItens.find((x) => x.id === baseSelecionada) || null;
-      setF((prev) => ({
-        ...prev,
-        custoProduto: arredondarPreco(item?.custoProducao || 0),
-        frete: arredondarPreco(item?.frete || 0),
-        embalagem: arredondarPreco(item?.embalagem || 0),
-        nome: prev.nome || item?.nome || "",
-      }));
-    } else if (tipo === "k") {
-      const item = baseItens.find((x) => x.id === baseSelecionada) || null;
-      setF((prev) => ({
-        ...prev,
-        custoProduto: arredondarPreco(item?.custoTotal || 0),
-        frete: 0,
-        embalagem: 0,
-        nome: prev.nome || item?.nome || "",
-      }));
+      const p = produtos.find((x) => x.id === id);
+      if (!p) return null;
+      return { custoProduto: arredondarPreco(p.custo_producao), frete: arredondarPreco(p.frete_padrao || 0), embalagem: arredondarPreco(p.embalagem_padrao || 0) };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseSelecionada]);
+    const item = baseItens.find((x) => x.id === baseSelecionada);
+    if (!item) return null;
+    if (tipo === "v") return { custoProduto: item.custoProducao, frete: item.frete, embalagem: item.embalagem };
+    return { custoProduto: arredondarPreco(item.custoTotal || 0), frete: 0, embalagem: 0 };
+  }, [baseSelecionada, produtos, baseItens]);
+  useSincronizarAoVivo(baseSelecionada, valoresDoItem, setF);
 
   // Quando "Usar este custo" é clicado na aba de Produção, aplica o valor aqui.
   useEffect(() => {

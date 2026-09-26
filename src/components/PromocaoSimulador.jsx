@@ -3,11 +3,14 @@ import { ML_CATEGORY_PCT, calcCanalCustom, resolverFaixaML, resolverFaixaShein, 
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
-import SeletorItens, { totalItens } from "./SeletorItens.jsx";
+import SeletorItens from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { TIPOS } from "../lib/promocaoTipos.js";
 import { normalizarTexto, nomesParecidos } from "../lib/texto.js";
+import { useRankingData } from "../hooks/useRankingData.js";
+import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
+import { itemTipoDoId, gruposDoSeletor } from "../lib/variacoes.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -62,13 +65,11 @@ function Breakeven({ lucroNormal, lucroPromo }) {
 
 export default function PromocaoSimulador({ onToast }) {
   const { lojaId } = useLoja();
-  const [produtos, setProdutos] = useState([]);
-  const [kits, setKits] = useState([]);
-  const [kitProdutosTodos, setKitProdutosTodos] = useState([]);
-  const [kitEmbalagensTodos, setKitEmbalagensTodos] = useState([]);
-  const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
+  // Produtos (custo e embalagem AO VIVO), kits, variações e preços salvos
+  // (com lucro recalculado) vêm do catálogo compartilhado, que já tem
+  // realtime em todas as tabelas envolvidas.
+  const { itens: itensCatalogo, produtos, precos } = useRankingData();
   const [canais, setCanais] = useState([]);
-  const [precos, setPrecos] = useState([]); // precos_canal já salvos — base do "preço original de venda" abaixo
   const [nomesPromocoesSalvas, setNomesPromocoesSalvas] = useState([]); // pro autocomplete/sugestão ao salvar
   const [carregando, setCarregando] = useState(true);
 
@@ -112,34 +113,22 @@ export default function PromocaoSimulador({ onToast }) {
     let ativo = true;
     async function carregar() {
       try {
-        let qp = supabase.from("produtos_cadastro").select("*").order("nome");
         let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
-        let qk = supabase.from("kits").select("*").order("nome");
-        let qe = supabase.from("embalagens").select("*").order("nome");
-        let qpc = supabase.from("precos_canal").select("*");
         let qps = supabase.from("promocoes_salvas").select("nome");
         if (lojaId) {
-          qp = qp.eq("loja_id", lojaId);
           qc = qc.eq("loja_id", lojaId);
-          qk = qk.eq("loja_id", lojaId);
-          qe = qe.eq("loja_id", lojaId);
-          qpc = qpc.eq("loja_id", lojaId);
           qps = qps.eq("loja_id", lojaId);
         }
-        const [rp, rc, rk, re, rpc, rps] = await Promise.all([qp, qc, qk, qe, qpc, qps]);
+        const [rc, rps] = await Promise.all([qc, qps]);
         if (!ativo) return;
         // Troca de loja invalida seleções antigas — se o produto/canal/kit
         // escolhido não existir mais na lista desta loja, volta pro padrão
         // (manual/primeiro canal) em vez de manter um id de outra loja preso.
-        if (!rp.error) setProdutos(rp.data || []);
         if (!rc.error) {
           const listaC = rc.data || [];
           setCanais(listaC);
           setCanalId((prev) => (listaC.some((c) => c.id === prev) ? prev : listaC[0]?.id || ""));
         }
-        if (!rk.error) setKits(rk.data || []);
-        if (!re.error) setEmbalagensCatalogo(re.data || []);
-        if (!rpc.error) setPrecos(rpc.data || []);
         // Nomes já usados em promoções salvas — só pra sugerir/autocompletar
         // na hora de salvar (dedupe por texto normalizado, guarda a 1ª grafia).
         if (!rps.error) {
@@ -153,24 +142,6 @@ export default function PromocaoSimulador({ onToast }) {
           setNomesPromocoesSalvas([...vistos.values()].sort((a, b) => a.localeCompare(b, "pt-BR")));
         }
 
-        const kitIds = (rk.data || []).map((k) => k.id);
-        const [kpResp, keResp] = await Promise.all([
-          kitIds.length ? supabase.from("kit_produtos").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
-          kitIds.length ? supabase.from("kit_embalagens").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
-        ]);
-        if (!ativo) return;
-        setKitProdutosTodos(kpResp.data || []);
-        setKitEmbalagensTodos(keResp.data || []);
-
-        setBaseSelecionada((prev) => {
-          if (!prev) return prev;
-          const [t, id] = prev.split(":");
-          const listaP = rp.data || [];
-          const listaK = rk.data || [];
-          if (t === "p" && !listaP.some((p) => p.id === id)) return "";
-          if (t === "k" && !listaK.some((k) => k.id === id)) return "";
-          return prev;
-        });
       } catch {
         // falha de rede — mantém o que já estava carregado
       } finally {
@@ -182,13 +153,7 @@ export default function PromocaoSimulador({ onToast }) {
     // Cadastros só refletia aqui depois de recarregar a página inteira.
     const ch = supabase
       .channel("promocoes-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kit_produtos" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "promocoes_salvas" }, carregar)
       .subscribe();
     return () => {
@@ -200,48 +165,43 @@ export default function PromocaoSimulador({ onToast }) {
   const canal = canais.find((c) => c.id === canalId) || null;
 
   const [tipoBaseSel, idBaseSel] = baseSelecionada ? baseSelecionada.split(":") : [null, null];
-  const produtoBase = tipoBaseSel === "p" ? produtos.find((p) => p.id === idBaseSel) || null : null;
-  const kitBase = tipoBaseSel === "k" ? kits.find((k) => k.id === idBaseSel) || null : null;
-
-  const catalogoProdutosBase = useMemo(
-    () => produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" })),
-    [produtos]
-  );
-  const catalogoEmbalagensBase = useMemo(
-    () => embalagensCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade })),
-    [embalagensCatalogo]
-  );
-
-  function custoKitTotal(k) {
-    const prodItens = kitProdutosTodos.filter((r) => r.kit_id === k.id).map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade }));
-    const embItens = kitEmbalagensTodos.filter((r) => r.kit_id === k.id).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade }));
-    return totalItens(catalogoProdutosBase, prodItens) + totalItens(catalogoEmbalagensBase, embItens);
-  }
-
-  // Ao trocar de produto/kit, preenche frete/embalagem automaticamente — do
-  // cadastro do produto, ou zerado pro kit (a embalagem do kit já entra no
-  // custo dele, tem sua própria receita separada em Cadastros → Kits).
-  useEffect(() => {
-    if (!baseSelecionada) return;
-    if (tipoBaseSel === "p" && produtoBase) {
-      setFrete(arredondarPreco(produtoBase.frete_padrao || 0));
-      setEmbalagem(arredondarPreco(produtoBase.embalagem_padrao || 0));
-    } else if (tipoBaseSel === "k") {
-      setFrete(0);
-      setEmbalagem(0);
+  // Custo/frete/embalagem de qualquer item do catálogo (produto, kit ou
+  // variação), sempre com os valores AO VIVO.
+  function infoItem(idPrefixado) {
+    if (!idPrefixado) return null;
+    const [t, id] = idPrefixado.split(":");
+    if (t === "p") {
+      const p = produtos.find((x) => x.id === id);
+      if (!p) return null;
+      return { nome: p.nome, tipo: "produto", custo: arredondarPreco(Number(p.custo_producao) || 0), frete: arredondarPreco(Number(p.frete_padrao) || 0), embalagem: arredondarPreco(Number(p.embalagem_padrao) || 0) };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseSelecionada]);
+    const it = itensCatalogo.find((x) => x.id === idPrefixado);
+    if (!it) return null;
+    if (t === "v") return { nome: it.nome, tipo: "variacao", custo: it.custoProducao, frete: it.frete, embalagem: it.embalagem };
+    return { nome: `[Kit] ${it.nome}`, tipo: "kit", custo: arredondarPreco(it.custoTotal), frete: 0, embalagem: 0 };
+  }
+  const baseInfo = infoItem(baseSelecionada);
+  const produtoBase = tipoBaseSel === "p" && baseInfo ? produtos.find((p) => p.id === idBaseSel) || null : null;
+  const kitBase = tipoBaseSel === "k" && baseInfo ? baseInfo : null;
+  const variacaoBase = tipoBaseSel === "v" && baseInfo ? baseInfo : null;
+
+  // Frete/embalagem do item escolhido, sincronizados AO VIVO (acompanham
+  // mudanças no cadastro enquanto você não digitar outro valor na mão).
+  const valoresFreteEmb = baseInfo ? { frete: baseInfo.frete, embalagem: baseInfo.embalagem } : null;
+  useSincronizarAoVivo(baseInfo ? baseSelecionada : "", valoresFreteEmb, (fn) => {
+    const atual = { frete, embalagem };
+    const novo = fn(atual);
+    if (novo !== atual) {
+      setFrete(novo.frete);
+      setEmbalagem(novo.embalagem);
+    }
+  });
 
   const n = (v) => {
     const x = Number(v);
     return isFinite(x) ? x : 0;
   };
-  const custoProduto = produtoBase
-    ? arredondarPreco(Number(produtoBase.custo_producao) || 0)
-    : kitBase
-    ? arredondarPreco(custoKitTotal(kitBase))
-    : parseFloat(custoManual) || 0;
+  const custoProduto = baseInfo ? baseInfo.custo : parseFloat(custoManual) || 0;
 
   // Resolve preço normal (sem promoção) pelo canal escolhido, e guarda as
   // taxas efetivas (comissão/taxa fixa) pra reaproveitar nos cálculos de
@@ -296,8 +256,8 @@ export default function PromocaoSimulador({ onToast }) {
   // teórica de custo + lucratividade desejada.
   const precoSalvo = useMemo(() => {
     if (!baseSelecionada || !canalId) return null;
-    const [t, id] = baseSelecionada.split(":");
-    const itemTipo = t === "k" ? "kit" : "produto";
+    const id = baseSelecionada.split(":")[1];
+    const itemTipo = itemTipoDoId(baseSelecionada);
     return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalId) || null;
   }, [precos, baseSelecionada, canalId]);
 
@@ -487,43 +447,30 @@ export default function PromocaoSimulador({ onToast }) {
   // Catálogo pro seletor de "Venda combinada" — produtos e kits juntos,
   // marcados na hora de exibir; o "preço" aqui é o custo de cada um (mesma
   // convenção usada em Kits.jsx), só pra calcular o subtotal em custo.
-  const catalogoCombinacao = useMemo(() => {
-    const p = produtos.map((x) => ({ id: `p:${x.id}`, nome: x.nome, sku: x.sku || "", preco: Number(x.custo_producao) || 0, unidade: "un" }));
-    const k = kits.map((x) => ({ id: `k:${x.id}`, nome: `[Kit] ${x.nome}`, sku: x.sku || "", preco: custoKitTotal(x), unidade: "un" }));
-    return [...p, ...k];
+  const catalogoCombinacao = useMemo(
+    () =>
+      itensCatalogo.map((x) => {
+        const info = infoItem(x.id);
+        return { id: x.id, nome: info?.nome || x.nome, sku: x.sku || "", preco: info?.custo || 0, unidade: "un" };
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produtos, kits, kitProdutosTodos, kitEmbalagensTodos, embalagensCatalogo]);
+    [itensCatalogo, produtos]
+  );
 
   function custoBaseDoItem(idPrefixado) {
-    const [t, id] = idPrefixado.split(":");
-    if (t === "p") {
-      const p = produtos.find((x) => x.id === id);
-      return p ? arredondarPreco(Number(p.custo_producao) || 0) : 0;
-    }
-    const k = kits.find((x) => x.id === id);
-    return k ? arredondarPreco(custoKitTotal(k)) : 0;
+    return infoItem(idPrefixado)?.custo || 0;
   }
 
   // "Se vendido avulso" de um item da combinação: resolve o preço/lucro dele
   // sozinho, com o frete/embalagem PRÓPRIO (produto) ou já embutido (kit) —
   // é a referência de "vender em pedidos separados" pra comparar com o pacote.
   function avulsoItem(idPrefixado) {
-    const [t, id] = idPrefixado.split(":");
     if (!canal) return null;
-    let custoP, freteP, embP;
-    if (t === "p") {
-      const p = produtos.find((x) => x.id === id);
-      if (!p) return null;
-      custoP = arredondarPreco(Number(p.custo_producao) || 0);
-      freteP = arredondarPreco(Number(p.frete_padrao) || 0);
-      embP = arredondarPreco(Number(p.embalagem_padrao) || 0);
-    } else {
-      const k = kits.find((x) => x.id === id);
-      if (!k) return null;
-      custoP = arredondarPreco(custoKitTotal(k));
-      freteP = 0;
-      embP = 0;
-    }
+    const info = infoItem(idPrefixado);
+    if (!info) return null;
+    const custoP = info.custo;
+    const freteP = info.frete;
+    const embP = info.embalagem;
     const baseItem = {
       custoProduto: custoP,
       frete: freteP,
@@ -586,7 +533,7 @@ export default function PromocaoSimulador({ onToast }) {
       deltaVsAvulso: lucroCombinado - lucroSomaAvulso,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canal, itensCombinada, freteCombinada, embalagemCombinada, descontoCombinada, lucratividade, produtos, kits, kitProdutosTodos, kitEmbalagensTodos, mlCategoria, mlTipoAnuncio]);
+  }, [canal, itensCombinada, freteCombinada, embalagemCombinada, descontoCombinada, lucratividade, itensCatalogo, produtos, mlCategoria, mlTipoAnuncio]);
 
   // Nome do item/canal + resultado final da promoção CONFIGURADA agora,
   // pronto pra virar uma linha em "Promoções salvas" — cada tipo de
@@ -597,7 +544,7 @@ export default function PromocaoSimulador({ onToast }) {
   // cada campo separado — reaproveita os mesmos memos já calculados acima
   // pra cada tipo de promoção, não recalcula nada.
   const itemNomeAtual =
-    tipoBaseSel === "p" ? produtoBase?.nome || null : tipoBaseSel === "k" ? kitBase?.nome || null : baseSelecionada ? null : "Custo manual";
+    baseInfo ? (baseInfo.tipo === "kit" ? baseInfo.nome.replace(/^\[Kit\] /, "") : baseInfo.nome) : baseSelecionada ? null : "Custo manual";
   const canalNomeAtual = canal?.nome || null;
 
   const resumoParaSalvar = useMemo(() => {
@@ -799,23 +746,16 @@ export default function PromocaoSimulador({ onToast }) {
                 {tipo !== "combinada" && (
                   <>
                     <div className="field">
-                      <label>Produto ou kit cadastrado</label>
-                      <select value={baseSelecionada} onChange={(e) => setBaseSelecionada(e.target.value)}>
+                      <label>Produto, variação ou kit</label>
+                      <select value={baseInfo ? baseSelecionada : ""} onChange={(e) => setBaseSelecionada(e.target.value)}>
                         <option value="">— usar custo manual —</option>
-                        {produtos.length > 0 && (
-                          <optgroup label="Produtos">
-                            {produtos.map((p) => (
-                              <option key={`p:${p.id}`} value={`p:${p.id}`}>{p.nome}</option>
+                        {gruposDoSeletor(itensCatalogo).map((g) => (
+                          <optgroup key={g.label} label={g.label}>
+                            {g.itens.map((it) => (
+                              <option key={it.id} value={it.id}>{it.rotulo}</option>
                             ))}
                           </optgroup>
-                        )}
-                        {kits.length > 0 && (
-                          <optgroup label="Kits">
-                            {kits.map((k) => (
-                              <option key={`k:${k.id}`} value={`k:${k.id}`}>{k.nome}</option>
-                            ))}
-                          </optgroup>
-                        )}
+                        ))}
                       </select>
                     </div>
                     {!baseSelecionada && (
@@ -870,9 +810,11 @@ export default function PromocaoSimulador({ onToast }) {
                         <input type="number" step="1" value={lucratividade} onChange={(e) => setLucratividade(e.target.value)} />
                       </div>
                     </div>
-                    {(produtoBase || kitBase) && (
+                    {(produtoBase || kitBase || variacaoBase) && (
                       <div className="hint" style={{ marginTop: -8 }}>
-                        {produtoBase
+                        {variacaoBase
+                          ? "Preenchido com a embalagem e o frete da variação (já com o que foi personalizado nela)."
+                          : produtoBase
                           ? "Preenchido automaticamente com a embalagem já cadastrada nesse produto — não precisa somar de novo."
                           : "Kit selecionado: a embalagem já está no custo dele (receita própria em Cadastros → Kits) — deixe zerado, a menos que essa promoção precise de embalagem extra."}
                       </div>

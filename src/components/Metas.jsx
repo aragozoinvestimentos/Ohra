@@ -34,10 +34,6 @@ function totalLucroItens(catalogo, itens) {
 // vender" com números que já refletem taxa de canal, imposto etc. de verdade).
 export default function Metas({ onToast }) {
   const { lojaId } = useLoja();
-  const [produtos, setProdutos] = useState([]);
-  const [kits, setKits] = useState([]);
-  const [canais, setCanais] = useState([]);
-  const [precos, setPrecos] = useState([]);
   // Sem Supabase configurado não há nada pra carregar — inicializa já como
   // "não carregando" nesse caso (em vez de sincronizar isso depois, num
   // useEffect, o que dispara um segundo render à toa logo de cara).
@@ -71,10 +67,6 @@ export default function Metas({ onToast }) {
     let ativo = true;
     async function carregar() {
       try {
-        let qp = supabase.from("produtos_cadastro").select("*").order("nome");
-        let qk = supabase.from("kits").select("*").order("nome");
-        let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
-        let qpc = supabase.from("precos_canal").select("*");
         let qm = supabase.from("metas_mensais").select("*").eq("mes", mesAtual);
         // Realizado no Fluxo de Caixa neste mês (se a tabela ainda não existir,
         // o erro é ignorado e os números "reais" simplesmente não aparecem).
@@ -84,19 +76,11 @@ export default function Metas({ onToast }) {
           .gte("data_realizada", `${mesAtual}-01`)
           .lt("data_realizada", `${somarMeses(mesAtual, 1)}-01`);
         if (lojaId) {
-          qp = qp.eq("loja_id", lojaId);
-          qk = qk.eq("loja_id", lojaId);
-          qc = qc.eq("loja_id", lojaId);
-          qpc = qpc.eq("loja_id", lojaId);
           qm = qm.eq("loja_id", lojaId);
           qcx = qcx.eq("loja_id", lojaId);
         }
-        const [rp, rk, rc, rpc, rm, rcx] = await Promise.all([qp, qk, qc, qpc, qm, qcx]);
+        const [rm, rcx] = await Promise.all([qm, qcx]);
         if (!ativo) return;
-        if (!rp.error) setProdutos(rp.data || []);
-        if (!rk.error) setKits(rk.data || []);
-        if (!rc.error) setCanais(rc.data || []);
-        if (!rpc.error) setPrecos(rpc.data || []);
         setCaixaMes(rcx.error ? null : rcx.data || []);
         if (!rm.error) {
           const row = (rm.data || [])[0] || null;
@@ -115,11 +99,8 @@ export default function Metas({ onToast }) {
     // outro aparelho só refletiria aqui depois de recarregar a página inteira.
     const ch = supabase
       .channel("metas-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "metas_mensais" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "lancamentos_caixa" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
@@ -141,32 +122,21 @@ export default function Metas({ onToast }) {
   // JÁ tem preço salvo (Produtos precificados) — preco/lucro aqui são os valores
   // reais salvos, não recalculados. Sem preço salvo, não entra na lista (não
   // dá pra simular uma venda sem saber por quanto ela sai).
+  // Combinações item + canal com preço salvo — lucro recalculado AO VIVO
+  // (custo de hoje do item e taxas atuais do canal), via useRankingData.
   const catalogoVendas = useMemo(() => {
-    return precos
+    const prefixo = { produto: "p", kit: "k", variacao: "v" };
+    return precosRanking
       .map((p) => {
-        let nome, sku;
-        if (p.item_tipo === "variacao") {
-          const v = itensRanking.find((i) => i.id === `v:${p.item_id}`);
-          if (!v) return null;
-          nome = v.nome;
-          sku = v.sku || "";
-        } else if (p.item_tipo === "kit") {
-          const kit = kits.find((k) => k.id === p.item_id);
-          if (!kit) return null;
-          nome = `[Kit] ${kit.nome}`;
-          sku = kit.sku || "";
-        } else {
-          const prod = produtos.find((x) => x.id === p.item_id);
-          if (!prod) return null;
-          nome = prod.nome;
-          sku = prod.sku || "";
-        }
-        const canalObj = canais.find((c) => c.id === p.canal_id);
+        const item = itensRanking.find((i) => i.id === `${prefixo[p.item_tipo] || "p"}:${p.item_id}`);
+        if (!item) return null;
+        const canalObj = canaisRanking.find((c) => c.id === p.canal_id);
         if (!canalObj) return null;
+        const nome = item.tipo === "Kit" ? `[Kit] ${item.nome}` : item.nome;
         return {
           id: p.id,
           nome: `${nome} — ${canalObj.nome}`,
-          sku,
+          sku: item.sku || "",
           preco: Number(p.preco) || 0,
           lucro: Number(p.lucro) || 0,
           unidade: "un",
@@ -174,7 +144,7 @@ export default function Metas({ onToast }) {
       })
       .filter(Boolean)
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [precos, produtos, kits, canais, itensRanking]);
+  }, [precosRanking, itensRanking, canaisRanking]);
 
   // Top 5 melhores desempenhos (mesmo critério do Ranking: maior lucro,
   // considerando o melhor canal de cada produto/kit) que já têm preço

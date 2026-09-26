@@ -1,28 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, aplicarAds } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
-import { useLoja } from "../lib/LojaContext.jsx";
-import { totalItens } from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
+import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, gruposDoSeletor } from "../lib/variacoes.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
 export default function Comparativo() {
-  const { lojaId } = useLoja();
-  const [produtos, setProdutos] = useState([]);
-  const [kits, setKits] = useState([]);
-  const [kitProdutosTodos, setKitProdutosTodos] = useState([]);
-  const [kitEmbalagensTodos, setKitEmbalagensTodos] = useState([]);
-  const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
-  const [canais, setCanais] = useState([]);
-  const [precos, setPrecos] = useState([]); // precos_canal já salvos — preço "real" pra comparar com o teórico calculado aqui
-  const [carregando, setCarregando] = useState(true);
-  const { itens: itensCatalogo } = useRankingData(); // inclui variações de quantidade
+  // Tudo vem do catálogo compartilhado (useRankingData), que já recalcula
+  // custo de produção/embalagem AO VIVO com os preços atuais de material e
+  // embalagem, tem realtime em todas as tabelas envolvidas e inclui kits e
+  // variações de quantidade.
+  const { itens: itensCatalogo, produtos, canais, precos, carregando } = useRankingData();
 
   const [itemAId, setItemAId] = useState(""); // "" (custo manual) | `p:<id>` | `k:<id>`
   const [custoManual, setCustoManual] = useState("");
@@ -38,88 +32,7 @@ export default function Comparativo() {
   const [lucratividade, setLucratividade] = useState(20);
   const [canalFiltroId, setCanalFiltroId] = useState(""); // "" = todos os canais
 
-  // Troca de loja invalida as seleções anteriores — sem isso, o item de
-  // outra loja continuava "selecionado" (ainda que a lista já fosse outra).
-  useEffect(() => {
-    setItemAId("");
-    setItemBId("");
-    setCanalFiltroId("");
-  }, [lojaId]);
-
-  useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
-    let ativo = true;
-    async function carregar() {
-      try {
-        let qp = supabase.from("produtos_cadastro").select("*").order("nome");
-        let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
-        let qk = supabase.from("kits").select("*").order("nome");
-        let qe = supabase.from("embalagens").select("*").order("nome");
-        let qpc = supabase.from("precos_canal").select("*");
-        if (lojaId) {
-          qp = qp.eq("loja_id", lojaId);
-          qc = qc.eq("loja_id", lojaId);
-          qk = qk.eq("loja_id", lojaId);
-          qe = qe.eq("loja_id", lojaId);
-          qpc = qpc.eq("loja_id", lojaId);
-        }
-        const [rp, rc, rk, re, rpc] = await Promise.all([qp, qc, qk, qe, qpc]);
-        if (!ativo) return;
-        if (!rp.error) setProdutos(rp.data || []);
-        if (!rc.error) setCanais(rc.data || []);
-        if (!rk.error) setKits(rk.data || []);
-        if (!re.error) setEmbalagensCatalogo(re.data || []);
-        if (!rpc.error) setPrecos(rpc.data || []);
-
-        const kitIds = (rk.data || []).map((k) => k.id);
-        const [kpResp, keResp] = await Promise.all([
-          kitIds.length ? supabase.from("kit_produtos").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
-          kitIds.length ? supabase.from("kit_embalagens").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
-        ]);
-        if (!ativo) return;
-        setKitProdutosTodos(kpResp.data || []);
-        setKitEmbalagensTodos(keResp.data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    }
-    carregar();
-    const ch = supabase
-      .channel("comparativo-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kit_produtos" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(ch);
-    };
-  }, [lojaId]);
-
-
-  const catalogoProdutosBase = useMemo(
-    () => produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" })),
-    [produtos]
-  );
-  const catalogoEmbalagensBase = useMemo(
-    () => embalagensCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade })),
-    [embalagensCatalogo]
-  );
-
-  function custoKitTotal(k) {
-    const prodItens = kitProdutosTodos.filter((r) => r.kit_id === k.id).map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade }));
-    const embItens = kitEmbalagensTodos.filter((r) => r.kit_id === k.id).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade }));
-    return totalItens(catalogoProdutosBase, prodItens) + totalItens(catalogoEmbalagensBase, embItens);
-  }
+  // Troca de loja zera as seleções: o App remonta esta tela com key={lojaId}.
 
   // Resolve um id prefixado (`p:`/`k:`) pro objeto que a tela precisa: nome,
   // custo e frete/embalagem padrão (do cadastro do produto, ou zerado pro
@@ -149,9 +62,9 @@ export default function Comparativo() {
         embalagemDefault: arredondarPreco(v.embalagem || 0),
       };
     }
-    const k = kits.find((x) => x.id === alvo);
+    const k = itensCatalogo.find((x) => x.id === id);
     if (!k) return null;
-    return { nome: `[Kit] ${k.nome}`, tipo: "kit", custo: arredondarPreco(custoKitTotal(k)), freteDefault: 0, embalagemDefault: 0 };
+    return { nome: `[Kit] ${k.nome}`, tipo: "kit", custo: arredondarPreco(k.custoTotal), freteDefault: 0, embalagemDefault: 0 };
   }
 
   // Preço real já salvo (Precificação por Canal) pra um item+canal — só
@@ -186,21 +99,24 @@ export default function Comparativo() {
   const itemA = resolverItem(itemAId);
   const itemB = resolverItem(itemBId);
 
-  useEffect(() => {
-    if (itemA) {
-      setFreteA(itemA.freteDefault);
-      setEmbalagemA(itemA.embalagemDefault);
+  // Frete/embalagem de cada item, sincronizados AO VIVO com o cadastro
+  // (respeitando o que você digitar na mão pra simular).
+  useSincronizarAoVivo(itemA ? itemAId : "", itemA ? { frete: itemA.freteDefault, embalagem: itemA.embalagemDefault } : null, (fn) => {
+    const atual = { frete: freteA, embalagem: embalagemA };
+    const novo = fn(atual);
+    if (novo !== atual) {
+      setFreteA(novo.frete);
+      setEmbalagemA(novo.embalagem);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemAId]);
-
-  useEffect(() => {
-    if (itemB) {
-      setFreteB(itemB.freteDefault);
-      setEmbalagemB(itemB.embalagemDefault);
+  });
+  useSincronizarAoVivo(itemB ? itemBId : "", itemB ? { frete: itemB.freteDefault, embalagem: itemB.embalagemDefault } : null, (fn) => {
+    const atual = { frete: freteB, embalagem: embalagemB };
+    const novo = fn(atual);
+    if (novo !== atual) {
+      setFreteB(novo.frete);
+      setEmbalagemB(novo.embalagem);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemBId]);
+  });
 
   const custoProdutoA = itemA ? itemA.custo : parseFloat(custoManual) || 0;
   const custoProdutoB = itemB ? itemB.custo : 0;
@@ -236,11 +152,9 @@ export default function Comparativo() {
     [canais, lucratividade, mlCategoria, mlTipoAnuncio]
   );
 
-  const linhasA = useMemo(() => construirLinhas(custoProdutoA, freteA, embalagemA), [construirLinhas, custoProdutoA, freteA, embalagemA]);
-  const linhasB = useMemo(
-    () => (itemB ? construirLinhas(custoProdutoB, freteB, embalagemB) : []),
-    [construirLinhas, itemB, custoProdutoB, freteB, embalagemB]
-  );
+  const linhasA = construirLinhas(custoProdutoA, freteA, embalagemA);
+  const temItemB = !!itemB;
+  const linhasB = temItemB ? construirLinhas(custoProdutoB, freteB, embalagemB) : [];
 
   // Uma linha só concorre a "melhor canal" se o preço calculado realmente
   // fechar dentro da própria faixa de comissão usada pra calculá-lo (Shopee/
@@ -264,8 +178,8 @@ export default function Comparativo() {
     return { melhorOrganico, melhorComAds };
   }
 
-  const { melhorOrganico: melhorOrganicoA, melhorComAds: melhorComAdsA } = useMemo(() => melhoresDeLinhas(linhasA), [linhasA]);
-  const { melhorOrganico: melhorOrganicoB, melhorComAds: melhorComAdsB } = useMemo(() => melhoresDeLinhas(linhasB), [linhasB]);
+  const { melhorOrganico: melhorOrganicoA, melhorComAds: melhorComAdsA } = melhoresDeLinhas(linhasA);
+  const { melhorOrganico: melhorOrganicoB, melhorComAds: melhorComAdsB } = melhoresDeLinhas(linhasB);
 
   // Com um canal escolhido em "Parâmetros gerais", as tabelas mostram só
   // aquela linha — útil pra comparar os dois itens exatamente no mesmo

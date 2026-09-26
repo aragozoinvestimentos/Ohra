@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
-import { arredondarPreco } from "../lib/format.js";
+import { arredondarPreco, DATA } from "../lib/format.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -235,14 +235,28 @@ export default function Embalagens({ onToast }) {
       supabase.from("produto_embalagens").select("id", { count: "exact", head: true }).eq("embalagem_id", item.id),
       supabase.from("kit_embalagens").select("id", { count: "exact", head: true }).eq("embalagem_id", item.id),
     ]);
-    setExcluirAlvo({ ...item, emProdutos: emProdutos || 0, emKits: emKits || 0 });
+    // Variações com embalagem personalizada guardam os itens em jsonb (sem
+    // chave estrangeira) — confere na mão quais usam essa embalagem.
+    const { data: vars, error: eVars } = await supabase.from("produto_variacoes").select("id, embalagem_itens");
+    const variacoesComItem = eVars
+      ? []
+      : (vars || []).filter((v) => Array.isArray(v.embalagem_itens) && v.embalagem_itens.some((it) => it.itemId === item.id));
+    setExcluirAlvo({ ...item, emProdutos: emProdutos || 0, emKits: emKits || 0, variacoesComItem });
   }
 
-  async function excluir(id) {
+  async function excluir(id, variacoesComItem = []) {
     const { error } = await supabase.from("embalagens").delete().eq("id", id);
     if (error) {
       onToast(`Não foi possível excluir: ${error.message}`);
       return;
+    }
+    // Tira o item das variações que usavam ele (receita e kit saem sozinhos
+    // pela chave estrangeira; variação é jsonb, então é na mão).
+    for (const v of variacoesComItem) {
+      await supabase
+        .from("produto_variacoes")
+        .update({ embalagem_itens: v.embalagem_itens.filter((it) => it.itemId !== id), atualizado_em: new Date().toISOString() })
+        .eq("id", v.id);
     }
     setItens((prev) => prev.filter((m) => m.id !== id));
   }
@@ -260,6 +274,7 @@ export default function Embalagens({ onToast }) {
     const partes = [];
     if (alvo.emProdutos) partes.push(`${alvo.emProdutos} produto(s)`);
     if (alvo.emKits) partes.push(`${alvo.emKits} kit(s)`);
+    if (alvo.variacoesComItem?.length) partes.push(`${alvo.variacoesComItem.length} variação(ões)`);
     if (partes.length === 0) return `Confirma excluir "${alvo.nome}"? Não é possível desfazer.`;
     return `"${alvo.nome}" está em uso em ${partes.join(" e ")}. Excluir remove ela dessas receitas também. Não é possível desfazer.`;
   };
@@ -354,7 +369,7 @@ export default function Embalagens({ onToast }) {
                     <td>{m.unidade || "un"}</td>
                     <td className="num">{m.peso_g ? `${m.peso_g} g` : "—"}</td>
                     <td>{m.observacao || "—"}</td>
-                    <td>{new Date(m.atualizado_em).toLocaleDateString("pt-BR")}</td>
+                    <td>{DATA(m.atualizado_em)}</td>
                     <td>
                       <button className="del" title="Editar" onClick={() => abrirEdicao(m)}>✎</button>
                       <button className="del" title="Excluir" onClick={() => pedirExclusao(m)}>×</button>
@@ -374,7 +389,7 @@ export default function Embalagens({ onToast }) {
           confirmarLabel="Excluir"
           perigo
           onConfirm={() => {
-            excluir(excluirAlvo.id);
+            excluir(excluirAlvo.id, excluirAlvo.variacoesComItem);
             setExcluirAlvo(null);
           }}
           onCancel={() => setExcluirAlvo(null)}

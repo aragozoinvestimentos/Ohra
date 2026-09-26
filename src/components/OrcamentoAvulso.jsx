@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { calcCanal } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import Termometro from "./Termometro.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
+import { useRankingData } from "../hooks/useRankingData.js";
+import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
+import { gruposDoSeletor } from "../lib/variacoes.js";
 import Ajuda from "./Ajuda.jsx";
 
 const DEFAULTS = {
@@ -39,56 +42,29 @@ const NIVEIS_DIFICULDADE = [
 // taxa fixa de marketplace, já que não passa pela Shopee/ML.
 export default function OrcamentoAvulso({ onToast }) {
   const { lojaId } = useLoja();
-  const [produtos, setProdutos] = useState([]);
+  // Produtos (custo/embalagem AO VIVO), variações e kits do catálogo compartilhado.
+  const { itens: itensCatalogo, produtos } = useRankingData();
   const [produtoId, setProdutoId] = useState("");
   const [f, setF] = useState(DEFAULTS);
   const [salvando, setSalvando] = useState(false);
 
-  // Troca de loja invalida a seleção anterior de produto cadastrado.
-  useEffect(() => {
-    setProdutoId("");
-  }, [lojaId]);
-
-  useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      let query = supabase.from("produtos_cadastro").select("*").order("nome");
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo || error) return;
-      setProdutos(data || []);
+  // produtoId agora é um id prefixado ("p:"/"v:"/"k:"), como nas outras telas.
+  // Custo/frete/embalagem acompanham o cadastro AO VIVO enquanto você não
+  // digitar outro valor na mão.
+  const valoresItem = (() => {
+    if (!produtoId) return null;
+    const [t, id] = produtoId.split(":");
+    if (t === "p") {
+      const p = produtos.find((x) => x.id === id);
+      return p ? { custoProduto: arredondarPreco(p.custo_producao), frete: arredondarPreco(p.frete_padrao || 0), embalagem: arredondarPreco(p.embalagem_padrao || 0) } : null;
     }
-    carregar();
-    // Sem isso, cadastrar/editar/excluir um produto em Cadastros só refletia
-    // aqui depois de recarregar a página inteira.
-    const canal = supabase
-      .channel("orcamento-avulso-produtos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
-  const produtoSelecionado = produtos.find((p) => p.id === produtoId) || null;
-
-  useEffect(() => {
-    if (!produtoId) return;
-    if (!produtoSelecionado) {
-      // Seleção antiga não existe mais nesta loja (ex: acabou de trocar de
-      // loja) — volta pro preenchimento manual em vez de manter valores presos.
-      setF((prev) => ({ ...prev, custoProduto: "", frete: 0, embalagem: 0 }));
-      return;
-    }
-    setF((prev) => ({
-      ...prev,
-      custoProduto: arredondarPreco(produtoSelecionado.custo_producao),
-      frete: arredondarPreco(produtoSelecionado.frete_padrao || 0),
-      embalagem: arredondarPreco(produtoSelecionado.embalagem_padrao || 0),
-    }));
-  }, [produtoId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const it = itensCatalogo.find((x) => x.id === produtoId);
+    if (!it) return null;
+    if (t === "v") return { custoProduto: it.custoProducao, frete: it.frete, embalagem: it.embalagem };
+    return { custoProduto: arredondarPreco(it.custoTotal), frete: 0, embalagem: 0 };
+  })();
+  const produtoSelecionado = valoresItem ? itensCatalogo.find((x) => x.id === produtoId) || null : null;
+  useSincronizarAoVivo(valoresItem ? produtoId : "", valoresItem, setF);
 
   const set = (key) => (e) => {
     const v = e.target.value;
@@ -184,11 +160,15 @@ export default function OrcamentoAvulso({ onToast }) {
             </span>
           </h3>
           <div className="field">
-            <label>Produto cadastrado (opcional)</label>
-            <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+            <label>Produto, variação ou kit (opcional)</label>
+            <select value={produtoSelecionado ? produtoId : ""} onChange={(e) => setProdutoId(e.target.value)}>
               <option value="">— preencher manualmente —</option>
-              {produtos.map((p) => (
-                <option key={p.id} value={p.id}>{p.nome}</option>
+              {gruposDoSeletor(itensCatalogo).map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.itens.map((it) => (
+                    <option key={it.id} value={it.id}>{it.rotulo}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
@@ -208,7 +188,7 @@ export default function OrcamentoAvulso({ onToast }) {
           </div>
           {produtoSelecionado && (
             <div className="hint" style={{ marginBottom: 0 }}>
-              Preenchido automaticamente com a embalagem já cadastrada nesse produto — não precisa somar de novo.
+              Custo, frete e embalagem preenchidos com o cadastro (variação já com o que foi personalizado nela) e atualizados sozinhos se o cadastro mudar — a não ser que você digite outro valor.
             </div>
           )}
         </div>

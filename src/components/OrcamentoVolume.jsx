@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { calcCanal } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
+import { useRankingData } from "../hooks/useRankingData.js";
 import Ajuda from "./Ajuda.jsx";
 
 // Multiplicadores do lote atual (não quantidades fixas) — assim funciona
@@ -24,7 +25,8 @@ const PADROES = { freteLote: 0, imposto: 0, custosFixos: 2, lucratividade: 30 };
 // mantendo a mesma lucratividade desejada.
 export default function OrcamentoVolume({ onToast }) {
   const { lojaId } = useLoja();
-  const [produtos, setProdutos] = useState([]);
+  // Produtos (custo/embalagem AO VIVO), variações e kits do catálogo compartilhado.
+  const { itens: itensCatalogo } = useRankingData();
   const [itensLote, setItensLote] = useState([]); // [{ itemId, quantidade }]
   const [freteLote, setFreteLote] = useState(PADROES.freteLote);
   const [imposto, setImposto] = useState(PADROES.imposto);
@@ -43,28 +45,6 @@ export default function OrcamentoVolume({ onToast }) {
     setItensLote([]);
   }
 
-  useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      let query = supabase.from("produtos_cadastro").select("*").order("nome");
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo || error) return;
-      setProdutos(data || []);
-    }
-    carregar();
-    // Sem isso, cadastrar/editar/excluir um produto em Cadastros só refletia
-    // aqui depois de recarregar a página inteira.
-    const canal = supabase
-      .channel("orcamento-volume-produtos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
 
   const n = (v) => {
     const x = Number(v);
@@ -74,16 +54,23 @@ export default function OrcamentoVolume({ onToast }) {
   // Catálogo pro SeletorItens — "preco" aqui é o custo unitário (produção +
   // embalagem própria do produto), igual à convenção já usada em Kits e em
   // Promoções → Venda combinada.
+  // Variações entram com o custo delas (produção + embalagem própria + ajuste,
+  // sem o frete, que aqui é o do pedido); kits com o custo total.
   const catalogoProdutos = useMemo(
     () =>
-      produtos.map((p) => ({
-        id: p.id,
-        nome: p.nome,
-        sku: p.sku || "",
-        preco: arredondarPreco((Number(p.custo_producao) || 0) + (Number(p.embalagem_padrao) || 0)),
+      itensCatalogo.map((it) => ({
+        id: it.id,
+        nome: it.tipo === "Kit" ? `[Kit] ${it.nome}` : it.nome,
+        sku: it.sku || "",
+        preco:
+          it.tipo === "Variação"
+            ? arredondarPreco((it.custoProducao || 0) + (it.embalagem || 0) + (it.calc?.ajuste || 0))
+            : it.tipo === "Produto"
+            ? arredondarPreco(it.custoTotal - (it.freteProduto || 0))
+            : arredondarPreco(it.custoTotal || 0),
         unidade: "un",
       })),
-    [produtos]
+    [itensCatalogo]
   );
 
   const itensValidos = itensLote.filter((it) => it.itemId && (Number(it.quantidade) || 0) > 0);
@@ -199,7 +186,7 @@ export default function OrcamentoVolume({ onToast }) {
               <Ajuda texto="Adicione um ou mais produtos já cadastrados, cada um com sua quantidade — o mesmo pedido pode misturar produtos diferentes. O frete do pedido é um valor só (ajuste manualmente abaixo), cobrado uma vez não importa quantas peças — quanto mais peças no lote, mais ele se dilui e menor fica o preço unitário médio. É pra pedido direto, fora do marketplace (sem comissão de canal); desconto por faixa de quantidade ou combo dentro do marketplace fica em Promoções → Progressivo/Combo." />
             </span>
           </h3>
-          {produtos.length === 0 ? (
+          {catalogoProdutos.length === 0 ? (
             <div className="empty">Cadastre um produto em Cadastros → Produtos primeiro.</div>
           ) : (
             <SeletorItens

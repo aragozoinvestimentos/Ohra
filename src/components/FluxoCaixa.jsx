@@ -115,6 +115,7 @@ export default function FluxoCaixa({ onToast }) {
     const ch = supabase
       .channel("fluxo-caixa-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "lancamentos_caixa" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
       .subscribe();
     return () => {
       ativo = false;

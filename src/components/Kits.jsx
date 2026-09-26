@@ -3,11 +3,13 @@ import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
+import { useRankingData } from "../hooks/useRankingData.js";
 import Ajuda from "./Ajuda.jsx";
 
 const VAZIO = { nome: "", sku: "", observacao: "", produtosItens: [], embalagemItens: [] };
 
 export default function Kits({ abrirKitId, onToast }) {
+  const { produtos: produtosVivos } = useRankingData();
   const { lojaId } = useLoja();
   const [produtos, setProdutos] = useState([]);
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
@@ -129,7 +131,12 @@ export default function Kits({ abrirKitId, onToast }) {
     return null;
   }
 
-  const catalogoProdutos = produtos.map((p) => ({ id: p.id, nome: p.nome, sku: p.sku || "", preco: Number(p.custo_producao) || 0, unidade: "un" }));
+  // Custo de produção de cada produto AO VIVO (preço atual do material),
+  // do catálogo compartilhado — não o número gravado no dia do cadastro.
+  const catalogoProdutos = produtos.map((p) => {
+    const vivo = produtosVivos.find((x) => x.id === p.id);
+    return { id: p.id, nome: p.nome, sku: p.sku || "", preco: Number((vivo || p).custo_producao) || 0, unidade: "un" };
+  });
   const catalogoEmbalagens = embalagensCatalogo.map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade }));
 
   const custoFabricacao = totalItens(catalogoProdutos, form.produtosItens);

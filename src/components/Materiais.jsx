@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
-import { arredondarPreco } from "../lib/format.js";
+import { arredondarPreco, DATA } from "../lib/format.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -65,7 +65,7 @@ function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes
                   </td>
                   {comUnidade && <td>{m.unidade || "un"}</td>}
                   <td>{m.observacao || "—"}</td>
-                  <td>{new Date(m.atualizado_em).toLocaleDateString("pt-BR")}</td>
+                  <td>{DATA(m.atualizado_em)}</td>
                   <td>
                     <button className="del" title="Editar" onClick={() => onEditar(m)}>✎</button>
                     <button className="del" title="Excluir" onClick={() => onExcluir(m)}>×</button>
