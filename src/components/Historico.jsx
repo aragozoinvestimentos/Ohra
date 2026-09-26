@@ -9,6 +9,7 @@ import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
+import { itemTipoDoId, formatarPeso } from "../lib/variacoes.js";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
 // instantâneo do que foi salvo em Precificação por Canal, sem ligação real
@@ -31,6 +32,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [recemSalvoId, setRecemSalvoId] = useState(null);
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos"); // todos | Produto | Kit
+  const [expandidos, setExpandidos] = useState(() => new Set()); // produtos com variações abertas
+  const [expandirTudo, setExpandirTudo] = useState(false);
   const [clonarAlvo, setClonarAlvo] = useState(null); // item original sendo clonado
   const [clonarForm, setClonarForm] = useState({ nome: "", sku: "" });
   const [salvandoClone, setSalvandoClone] = useState(false);
@@ -104,8 +107,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
   }, [editAlvo, edicao.preco]);
 
   function precoDe(item, canalObj) {
-    const [tipo, id] = item.id.split(":");
-    const itemTipo = tipo === "k" ? "kit" : "produto";
+    const id = item.id.split(":")[1];
+    const itemTipo = itemTipoDoId(item.id);
     return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalObj.id) || null;
   }
 
@@ -148,14 +151,14 @@ export default function Historico({ onEditarCompleto, onToast }) {
       return;
     }
     const { item, canalDestino } = clonarPrecoAlvo;
-    const [tipoLetra, id] = item.id.split(":");
+    const id = item.id.split(":")[1];
     setSalvandoClonePreco(true);
     const { data, error } = await supabase
       .from("precos_canal")
       .upsert(
         {
           loja_id: lojaId || null,
-          item_tipo: tipoLetra === "k" ? "kit" : "produto",
+          item_tipo: itemTipoDoId(item.id),
           item_id: id,
           canal_id: canalDestino.id,
           preco: arredondarPreco(previaClonePreco.preco),
@@ -265,6 +268,17 @@ export default function Historico({ onEditarCompleto, onToast }) {
           const linhas = embs.map(({ id: _oid, produto_id: _pid, ...resto }) => ({ ...resto, produto_id: novoId }));
           await supabase.from("produto_embalagens").insert(linhas);
         }
+        // Variações de quantidade vão junto (sem os preços salvos delas).
+        const { data: vars, error: eVars } = await supabase.from("produto_variacoes").select("*").eq("produto_id", id);
+        if (!eVars && vars?.length) {
+          const linhas = vars.map(({ id: _oid, produto_id: _pid, criado_em: _c, ...resto }) => ({
+            ...resto,
+            produto_id: novoId,
+            sku: null,
+            atualizado_em: new Date().toISOString(),
+          }));
+          await supabase.from("produto_variacoes").insert(linhas);
+        }
       } else {
         const { data: kp } = await supabase.from("kit_produtos").select("*").eq("kit_id", id);
         if (kp?.length) {
@@ -316,6 +330,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const [tipoLetra, id] = item.id.split(":");
     const tabela = tipoLetra === "k" ? "kits" : "produtos_cadastro";
     const itemTipo = tipoLetra === "k" ? "kit" : "produto";
+    // Preços salvos das variações desse produto (as variações em si somem
+    // junto com o produto, por cascata no banco).
+    const idsVariacoes = itens.filter((i) => i.tipo === "Variação" && i.produtoId === id).map((i) => i.id.split(":")[1]);
     const { error } = await supabase.from(tabela).delete().eq("id", id);
     if (error) {
       onToast(`Não foi possível excluir: ${error.message}`);
@@ -323,15 +340,42 @@ export default function Historico({ onEditarCompleto, onToast }) {
     }
     // precos_canal não tem FK pro produto/kit (referência genérica) — limpa na mão.
     await supabase.from("precos_canal").delete().eq("item_tipo", itemTipo).eq("item_id", id);
+    if (idsVariacoes.length) await supabase.from("precos_canal").delete().eq("item_tipo", "variacao").in("item_id", idsVariacoes);
     setExcluirCompletoAlvo(null);
     onToast("Excluído por completo");
   }
 
   const carregando = carregandoBase || carregandoPrecos;
   const alvoBusca = busca.trim().toLowerCase();
-  const itensFiltrados = itens
+  // Variações ficam dentro do produto (linha "suspensa" que abre ao clicar
+  // na seta) — a lista principal só tem produtos e kits. Uma busca que acha
+  // uma variação mostra o produto dela já aberto.
+  const bate = (item) => !alvoBusca || item.nome.toLowerCase().includes(alvoBusca) || (item.sku || "").toLowerCase().includes(alvoBusca);
+  const variacoesDe = (produtoId) =>
+    itens.filter((i) => i.tipo === "Variação" && i.produtoId === produtoId).sort((a, b) => a.quantidade - b.quantidade);
+  const topo = itens
+    .filter((item) => item.tipo !== "Variação")
     .filter((item) => filtroTipo === "todos" || item.tipo === filtroTipo)
-    .filter((item) => !alvoBusca || item.nome.toLowerCase().includes(alvoBusca) || (item.sku || "").toLowerCase().includes(alvoBusca));
+    .filter((item) => bate(item) || (item.tipo === "Produto" && variacoesDe(item.id.split(":")[1]).some(bate)));
+  const linhasTabela = topo.flatMap((item) => {
+    if (item.tipo !== "Produto") return [{ item }];
+    const pid = item.id.split(":")[1];
+    const vars = variacoesDe(pid);
+    const aberto = expandirTudo || expandidos.has(pid) || (alvoBusca && vars.some(bate) && !bate(item));
+    return [{ item, nVariacoes: vars.length, aberto, pid }, ...(aberto ? vars.map((v) => ({ item: v, variacao: true })) : [])];
+  });
+  // Exportação e contagem usam tudo (produto + todas as variações dele).
+  const itensFiltrados = topo.flatMap((item) => (item.tipo === "Produto" ? [item, ...variacoesDe(item.id.split(":")[1])] : [item]));
+  const totalVariacoes = itens.filter((i) => i.tipo === "Variação").length;
+
+  function alternarExpandido(pid) {
+    setExpandidos((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(pid)) novo.delete(pid);
+      else novo.add(pid);
+      return novo;
+    });
+  }
 
   // Resumo do topo: quantos itens já têm preço, margem média dos preços
   // salvos, quantos preços dão prejuízo e quantos itens ainda têm canal vazio.
@@ -353,7 +397,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
       }
     }
     const qtdKits = itens.filter((i) => i.tipo === "Kit").length;
-    return { comPreco, incompletos, negativos, margemMedia: qtdMargem ? somaMargem / qtdMargem : null, qtdKits };
+    const qtdProdutos = itens.filter((i) => i.tipo === "Produto").length;
+    return { comPreco, incompletos, negativos, margemMedia: qtdMargem ? somaMargem / qtdMargem : null, qtdKits, qtdProdutos };
   })();
   const conflitoSkuClone = clonarAlvo ? achaConflitoSkuClone(clonarForm.sku) : null;
 
@@ -409,7 +454,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     {supabase && !carregando && itens.length > 0 && (
       <Kpis
         itens={[
-          { label: "Itens com preço salvo", valor: `${resumo.comPreco} de ${itens.length}`, sub: `${itens.length - resumo.qtdKits} produtos · ${resumo.qtdKits} kits` },
+          { label: "Itens com preço salvo", valor: `${resumo.comPreco} de ${itens.length}`, sub: `${resumo.qtdProdutos} produtos · ${resumo.qtdKits} kits${totalVariacoes ? ` · ${totalVariacoes} variações` : ""}` },
           { label: "Margem média", valor: resumo.margemMedia != null ? PCT(resumo.margemMedia) : "—", sub: "de todos os preços salvos" },
           { label: "Preços com prejuízo", valor: resumo.negativos, tom: resumo.negativos > 0 ? "bad" : "good", sub: "margem líquida abaixo de 0%" },
           { label: "Com canal sem preço", valor: resumo.incompletos, tom: resumo.incompletos > 0 ? "warn" : "good", sub: "itens com pelo menos 1 canal vazio" },
@@ -419,7 +464,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     <div className="panel">
       <h3>
         Preços por canal
-        <Ajuda texto="Cada célula mostra o preço, lucro e margem salvos pra esse produto/kit nesse canal. Célula vazia significa que ainda não foi salvo nada pra essa combinação — preencha em Precificação por Canal (escolha o item e o canal e clique em Salvar), ou use o ⇄ da célula vazia pra clonar o preço de outro canal (lucro/margem são recalculados pra taxa desse canal). Os botões aparecem ao passar o mouse na linha. Já salvo, use o ✎ pra corrigir na mão ou o × pra excluir (com confirmação). No nome do produto/kit: ⧉ clona tudo (inclusive os preços já salvos em outros canais) pra criar uma variação rapidamente e × exclui o produto/kit por completo (não só um preço); o botão “Abrir” no fim da linha abre o cadastro completo pra editar." />
+        <Ajuda texto="Cada célula mostra o preço, lucro e margem salvos pra esse produto/kit nesse canal. Célula vazia significa que ainda não foi salvo nada pra essa combinação — preencha em Precificação por Canal (escolha o item e o canal e clique em Salvar), ou use o ⇄ da célula vazia pra clonar o preço de outro canal (lucro/margem são recalculados pra taxa desse canal). Os botões aparecem ao passar o mouse na linha. Já salvo, use o ✎ pra corrigir na mão ou o × pra excluir (com confirmação). No nome do produto/kit: ⧉ clona tudo (inclusive os preços já salvos em outros canais) pra criar uma variação rapidamente e × exclui o produto/kit por completo (não só um preço); o botão “Abrir” no fim da linha abre o cadastro completo pra editar. Produto com variações de quantidade mostra “▸ N variações”: clique pra abrir as linhas de cada variação, com preço próprio por canal." />
       </h3>
       {itens.length > 0 && (
         <div className="toolbar">
@@ -435,7 +480,12 @@ export default function Historico({ onEditarCompleto, onToast }) {
               </button>
             ))}
           </div>
-          <span className="toolbar-info">{itensFiltrados.length} de {itens.length}</span>
+          {totalVariacoes > 0 && (
+            <button type="button" className="btn btn-mini" onClick={() => { setExpandirTudo((v) => !v); setExpandidos(new Set()); }}>
+              {expandirTudo ? "Recolher variações" : "Abrir todas as variações"}
+            </button>
+          )}
+          <span className="toolbar-info">{topo.length} de {itens.length - totalVariacoes}</span>
         </div>
       )}
       {!supabase ? (
@@ -468,15 +518,32 @@ export default function Historico({ onEditarCompleto, onToast }) {
                 </tr>
               </thead>
               <tbody>
-                {itensFiltrados.map((item) => (
-                  <tr key={item.id}>
+                {linhasTabela.map(({ item, variacao, nVariacoes, aberto, pid }) => (
+                  <tr key={item.id} className={variacao ? "linha-variacao" : aberto ? "linha-aberta" : ""}>
                     <td>
+                      {variacao ? (
+                        <div className="item-cel item-cel-variacao">
+                          <span className="variacao-seta">↳</span>
+                          <div className="item-cel-nome">
+                            {item.nomeVariacao}
+                            <small>{item.quantidade} un.{item.peso ? ` · ${formatarPeso(item.peso)}` : ""}</small>
+                          </div>
+                        </div>
+                      ) : (
                       <div className="item-cel">
                       <span className={`item-thumb${item.tipo === "Kit" ? " kit" : ""}`}>{iniciais(item.nome)}</span>
                       <div className="item-cel-nome">
                         {item.nome}
-                        <small>{item.tipo}</small>
+                        <small>
+                          {item.tipo}
+                          {item.peso ? ` · ${formatarPeso(item.peso)}` : ""}
+                        </small>
                       </div>
+                      {nVariacoes > 0 && (
+                        <button type="button" className={`variacoes-toggle${aberto ? " aberto" : ""}`} onClick={() => alternarExpandido(pid)} title={aberto ? "Esconder variações" : "Ver variações"}>
+                          <span className="seta">▸</span> {nVariacoes} {nVariacoes === 1 ? "variação" : "variações"}
+                        </button>
+                      )}
                       <span className="acoes-linha">
                         <button className="del" title="Clonar produto/kit" onClick={() => abrirClonar(item)}>
                           ⧉
@@ -486,9 +553,13 @@ export default function Historico({ onEditarCompleto, onToast }) {
                         </button>
                       </span>
                       </div>
+                      )}
                     </td>
-                    <td>{item.sku || <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
-                    <td className="num">{BRL(item.custoTotal)}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{item.sku || <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
+                    <td className="num">
+                      {BRL(item.custoTotal)}
+                      {variacao && item.quantidade > 1 && <div className="sub-num">{BRL(item.custoTotal / item.quantidade)}/un.</div>}
+                    </td>
                     {canais.map((c) => {
                       const p = precoDe(item, c);
                       return (
@@ -528,7 +599,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
                       );
                     })}
                     <td className="num">
-                      <button className="btn btn-mini" onClick={() => abrirCadastro(item)}>
+                      <button
+                        className="btn btn-mini"
+                        onClick={() => (variacao ? onEditarCompleto?.("produto", item.produtoId) : abrirCadastro(item))}
+                        title={variacao ? "Abre o produto pra editar essa variação" : undefined}
+                      >
                         Abrir
                       </button>
                     </td>

@@ -145,9 +145,10 @@ export default function App() {
     showToast("Custo levado para a Precificação por Canal");
   }
 
-  function salvarComoProduto({ custo, materialNome, detalhe, id, nome, pecasPorImpressao }) {
+  function salvarComoProduto({ custo, materialNome, detalhe, id, nome, pecasPorImpressao, peso }) {
     setProdutoRecebido((prev) => ({
       custo,
+      peso: peso || null,
       materialNome,
       detalhe,
       id: id || null,

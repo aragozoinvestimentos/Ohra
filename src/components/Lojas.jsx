@@ -134,6 +134,7 @@ const BACKUP_TABELAS = [
   "metas_mensais",
   "registros_impressao",
   "lancamentos_caixa",
+  "produto_variacoes",
   "produtos",
 ];
 

@@ -210,6 +210,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       id: produtoId || null,
       nome: produtoSelecionado?.nome || "",
       custo: resultado.total,
+      peso: isFinite(Number(resultado.peso)) ? Number(resultado.peso) : null,
       materialNome: materialSelecionado?.nome || "",
       pecasPorImpressao: Math.max(1, n(f.pecasPorPlaca) || 1),
       detalhe: {

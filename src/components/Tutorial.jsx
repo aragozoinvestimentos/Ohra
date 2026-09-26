@@ -190,7 +190,7 @@ const ETAPAS = [
         icone: "🧱",
         nome: "Produtos",
         texto:
-          "O cadastro central de cada produto que você vende. Além do nome e custo, dá pra montar a receita de itens de embalagem (quanto de cada item cadastrado acima esse produto gasta pra ser enviado) — o total substitui o campo manual de embalagem e atualiza sozinho se o preço de um item mudar. Esse cadastro é usado em praticamente toda aba do app. Pra ver o lucro por canal de tudo que está cadastrado, use o Ranking por Retorno; pra ver preços reais já definidos por canal, use Produtos precificados.",
+          "O cadastro central de cada produto que você vende. Além do nome e custo, dá pra montar a receita de itens de embalagem (quanto de cada item cadastrado acima esse produto gasta pra ser enviado) — o total substitui o campo manual de embalagem e atualiza sozinho se o preço de um item mudar. Esse cadastro é usado em praticamente toda aba do app. Pra ver o lucro por canal de tudo que está cadastrado, use o Ranking por Retorno; pra ver preços reais já definidos por canal, use Produtos precificados. Vende o mesmo produto em quantidade (kit 2, kit 3…)? Ao editar o produto, use “Variações de quantidade”: cada variação herda tudo do produto e você personaliza só o que muda (imprimir junto na mesma chapa, caixa maior, peso) — sem cadastrar outro produto.",
       },
       {
         icone: "🎁",

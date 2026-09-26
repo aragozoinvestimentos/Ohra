@@ -7,6 +7,8 @@ import { totalItens } from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
+import { useRankingData } from "../hooks/useRankingData.js";
+import { itemTipoDoId, gruposDoSeletor } from "../lib/variacoes.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -20,6 +22,7 @@ export default function Comparativo() {
   const [canais, setCanais] = useState([]);
   const [precos, setPrecos] = useState([]); // precos_canal já salvos — preço "real" pra comparar com o teórico calculado aqui
   const [carregando, setCarregando] = useState(true);
+  const { itens: itensCatalogo } = useRankingData(); // inclui variações de quantidade
 
   const [itemAId, setItemAId] = useState(""); // "" (custo manual) | `p:<id>` | `k:<id>`
   const [custoManual, setCustoManual] = useState("");
@@ -102,13 +105,6 @@ export default function Comparativo() {
     };
   }, [lojaId]);
 
-  // Lista única de produtos + kits pros dois seletores (A e "Comparar com")
-  // — mesmo padrão usado em Produtos precificados/Promoções/Ranking.
-  const itensDisponiveis = useMemo(() => {
-    const p = produtos.map((x) => ({ id: `p:${x.id}`, nome: x.nome, tipo: "produto" }));
-    const k = kits.map((x) => ({ id: `k:${x.id}`, nome: `[Kit] ${x.nome}`, tipo: "kit" }));
-    return [...p, ...k].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [produtos, kits]);
 
   const catalogoProdutosBase = useMemo(
     () => produtos.map((p) => ({ id: p.id, nome: p.nome, preco: Number(p.custo_producao) || 0, unidade: "un" })),
@@ -142,6 +138,17 @@ export default function Comparativo() {
         embalagemDefault: arredondarPreco(p.embalagem_padrao || 0),
       };
     }
+    if (tipo === "v") {
+      const v = itensCatalogo.find((x) => x.id === id);
+      if (!v) return null;
+      return {
+        nome: v.nome,
+        tipo: "variacao",
+        custo: arredondarPreco(v.custoProducao || 0),
+        freteDefault: arredondarPreco(v.frete || 0),
+        embalagemDefault: arredondarPreco(v.embalagem || 0),
+      };
+    }
     const k = kits.find((x) => x.id === alvo);
     if (!k) return null;
     return { nome: `[Kit] ${k.nome}`, tipo: "kit", custo: arredondarPreco(custoKitTotal(k)), freteDefault: 0, embalagemDefault: 0 };
@@ -154,8 +161,8 @@ export default function Comparativo() {
   // se o preço real foi ajustado manualmente depois.
   function precoSalvoPara(idPrefixado, canalId) {
     if (!idPrefixado) return null;
-    const [t, id] = idPrefixado.split(":");
-    const itemTipo = t === "k" ? "kit" : "produto";
+    const id = idPrefixado.split(":")[1];
+    const itemTipo = itemTipoDoId(idPrefixado);
     return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalId) || null;
   }
 
@@ -365,8 +372,12 @@ export default function Comparativo() {
             <label>Produto ou kit</label>
             <select value={itemAId} onChange={(e) => setItemAId(e.target.value)}>
               <option value="">— usar custo manual —</option>
-              {itensDisponiveis.map((it) => (
-                <option key={it.id} value={it.id}>{it.nome}</option>
+              {gruposDoSeletor(itensCatalogo).map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.itens.map((it) => (
+                    <option key={it.id} value={it.id}>{it.rotulo}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
@@ -424,8 +435,12 @@ export default function Comparativo() {
             <label>Comparar com (opcional)</label>
             <select value={itemBId} onChange={(e) => setItemBId(e.target.value)}>
               <option value="">— não comparar —</option>
-              {itensDisponiveis.filter((it) => it.id !== itemAId).map((it) => (
-                <option key={it.id} value={it.id}>{it.nome}</option>
+              {gruposDoSeletor(itensCatalogo.filter((it) => it.id !== itemAId)).map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.itens.map((it) => (
+                    <option key={it.id} value={it.id}>{it.rotulo}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>

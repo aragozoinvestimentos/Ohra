@@ -7,6 +7,7 @@ import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import { somarMeses } from "../lib/fluxoCaixa.js";
+import { itemTipoDoId } from "../lib/variacoes.js";
 import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
 
 const MESES_PT = [
@@ -144,7 +145,12 @@ export default function Metas({ onToast }) {
     return precos
       .map((p) => {
         let nome, sku;
-        if (p.item_tipo === "kit") {
+        if (p.item_tipo === "variacao") {
+          const v = itensRanking.find((i) => i.id === `v:${p.item_id}`);
+          if (!v) return null;
+          nome = v.nome;
+          sku = v.sku || "";
+        } else if (p.item_tipo === "kit") {
           const kit = kits.find((k) => k.id === p.item_id);
           if (!kit) return null;
           nome = `[Kit] ${kit.nome}`;
@@ -168,7 +174,7 @@ export default function Metas({ onToast }) {
       })
       .filter(Boolean)
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [precos, produtos, kits, canais]);
+  }, [precos, produtos, kits, canais, itensRanking]);
 
   // Top 5 melhores desempenhos (mesmo critério do Ranking: maior lucro,
   // considerando o melhor canal de cada produto/kit) que já têm preço
@@ -179,8 +185,8 @@ export default function Metas({ onToast }) {
     return ranking
       .filter((linha) => linha.origem === "salvo")
       .map((linha) => {
-        const [tipo, id] = linha.item.id.split(":");
-        const itemTipo = tipo === "k" ? "kit" : "produto";
+        const id = linha.item.id.split(":")[1];
+        const itemTipo = itemTipoDoId(linha.item.id);
         const linhaPreco = precosRanking.find(
           (p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === linha.canal.id
         );

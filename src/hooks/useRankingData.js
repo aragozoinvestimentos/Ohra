@@ -11,6 +11,7 @@ import { arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { totalItens } from "../components/SeletorItens.jsx";
+import { calcVariacao, itemTipoDoId, resumoProduto } from "../lib/variacoes.js";
 
 // Lucratividade e categoria/tipo de anúncio (ML) usados só pra achar o
 // preço/lucro de referência de cada produto — fixos de propósito, tanto
@@ -27,6 +28,8 @@ export const ML_TIPO_ANUNCIO_PADRAO = "classico";
 // Como mais de um componente usa este hook ao mesmo tempo (Ranking e a
 // tela de descanso), cada instância precisa do seu próprio nome único.
 let proximoIdInstancia = 0;
+
+const centavos = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
 function lucroPorCanal(custoTotal, canal) {
   if (custoTotal <= 0) return null;
@@ -50,8 +53,8 @@ function lucroPorCanal(custoTotal, canal) {
 // pra esse item nesse canal — usado pra preferir o valor real ao invés do
 // cálculo teórico sempre que ele existir.
 function precoRealDe(precos, item, canalObj) {
-  const [tipo, id] = item.id.split(":");
-  const itemTipo = tipo === "k" ? "kit" : "produto";
+  const id = item.id.split(":")[1];
+  const itemTipo = itemTipoDoId(item.id);
   return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalObj.id) || null;
 }
 
@@ -103,6 +106,9 @@ export function useRankingData() {
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [canais, setCanais] = useState([]);
   const [precos, setPrecos] = useState([]);
+  const [materiais, setMateriais] = useState([]);
+  const [produtoEmbalagens, setProdutoEmbalagens] = useState([]);
+  const [variacoes, setVariacoes] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [idInstancia] = useState(() => proximoIdInstancia++);
 
@@ -119,20 +125,34 @@ export function useRankingData() {
         let qk = supabase.from("kits").select("*").order("nome");
         let qe = supabase.from("embalagens").select("*").order("nome");
         let qpc = supabase.from("precos_canal").select("*");
+        let qm = supabase.from("materiais").select("*");
+        let qv = supabase.from("produto_variacoes").select("*").order("quantidade");
         if (lojaId) {
+          qm = qm.eq("loja_id", lojaId);
+          qv = qv.eq("loja_id", lojaId);
           qp = qp.eq("loja_id", lojaId);
           qc = qc.eq("loja_id", lojaId);
           qk = qk.eq("loja_id", lojaId);
           qe = qe.eq("loja_id", lojaId);
           qpc = qpc.eq("loja_id", lojaId);
         }
-        const [rp, rc, rk, re, rpc] = await Promise.all([qp, qc, qk, qe, qpc]);
+        const [rp, rc, rk, re, rpc, rm, rv] = await Promise.all([qp, qc, qk, qe, qpc, qm, qv]);
         if (!ativo) return;
         if (!rp.error) setProdutos(rp.data || []);
         if (!rc.error) setCanais(rc.data || []);
         if (!rk.error) setKits(rk.data || []);
         if (!re.error) setEmbalagensCatalogo(re.data || []);
         if (!rpc.error) setPrecos(rpc.data || []);
+        if (!rm.error) setMateriais(rm.data || []);
+        // Tabela de variações só existe depois do schema v26 — se ainda não
+        // existir, segue sem variações em vez de quebrar.
+        setVariacoes(rv.error ? [] : rv.data || []);
+        const produtoIds = (rp.data || []).map((x) => x.id);
+        const peResp = produtoIds.length
+          ? await supabase.from("produto_embalagens").select("*").in("produto_id", produtoIds)
+          : { data: [] };
+        if (!ativo) return;
+        setProdutoEmbalagens(peResp.error ? [] : peResp.data || []);
 
         const kitIds = (rk.data || []).map((k) => k.id);
         const [kpResp, keResp] = await Promise.all([
@@ -158,6 +178,9 @@ export function useRankingData() {
       .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "produto_variacoes" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "produto_embalagens" }, carregar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "materiais" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
@@ -210,6 +233,7 @@ export function useRankingData() {
       sku: p.sku || "",
       tipo: "Produto",
       custoTotal: arredondarPreco((Number(p.custo_producao) || 0) + (Number(p.frete_padrao) || 0) + (Number(p.embalagem_padrao) || 0)),
+      peso: resumoProduto(p, { embalagens: embalagensCatalogo, produtoEmbalagens }).peso,
     }));
     const doKits = kits.map((k) => ({
       id: `k:${k.id}`,
@@ -218,9 +242,33 @@ export function useRankingData() {
       tipo: "Kit",
       custoTotal: arredondarPreco(custoKitTotal(k)),
     }));
-    return [...doProdutos, ...doKits];
+    // Variações de quantidade: cada uma vira um item próprio (id "v:<id>"),
+    // com custo já considerando o que foi personalizado nela.
+    const doVariacoes = variacoes
+      .map((v) => {
+        const produto = produtos.find((p) => p.id === v.produto_id);
+        if (!produto) return null;
+        const calc = calcVariacao(v, produto, { materiais, embalagens: embalagensCatalogo, produtoEmbalagens });
+        return {
+          id: `v:${v.id}`,
+          nome: `${produto.nome} — ${v.nome}`,
+          nomeVariacao: v.nome,
+          sku: v.sku || "",
+          tipo: "Variação",
+          produtoId: produto.id,
+          quantidade: calc.quantidade,
+          custoTotal: centavos(calc.custoTotal),
+          custoProducao: centavos(calc.producao),
+          embalagem: centavos(calc.embalagem),
+          frete: centavos(calc.frete + calc.ajuste),
+          peso: calc.peso,
+          calc,
+        };
+      })
+      .filter(Boolean);
+    return [...doProdutos, ...doKits, ...doVariacoes];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produtos, kits, kitProdutosTodos, kitEmbalagensTodos, embalagensCatalogo]);
+  }, [produtos, kits, kitProdutosTodos, kitEmbalagensTodos, embalagensCatalogo, variacoes, materiais, produtoEmbalagens]);
 
   return {
     itens,
@@ -228,6 +276,10 @@ export function useRankingData() {
     produtos,
     kits,
     precos,
+    variacoes,
+    materiais,
+    embalagens: embalagensCatalogo,
+    produtoEmbalagens,
     carregando,
     contagemProdutos: produtos.length,
     contagemKits: kits.length,

@@ -7,6 +7,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import DetalhamentoCusto from "./DetalhamentoCusto.jsx";
 import Ajuda from "./Ajuda.jsx";
+import VariacoesProduto from "./VariacoesProduto.jsx";
 
 const VAZIO = {
   nome: "",
@@ -20,6 +21,7 @@ const VAZIO = {
   embalagemItens: [],
   producao_detalhe: null,
   pecas_por_impressao: 1,
+  peso_g: "",
 };
 
 export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onProdutoCriado }) {
@@ -212,6 +214,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           embalagemItens: itens,
           producao_detalhe: produtoRecebido.detalhe || null,
           pecas_por_impressao: produtoRecebido.pecasPorImpressao ?? pExistente?.pecas_por_impressao ?? 1,
+          peso_g: produtoRecebido.peso ? String(Math.round(produtoRecebido.peso)) : pExistente?.peso_g != null ? String(pExistente.peso_g) : "",
         });
         setDetalheSalvo(produtoRecebido.detalhe || null);
         setPecasPorImpressaoSalvo(produtoRecebido.pecasPorImpressao ?? pExistente?.pecas_por_impressao ?? 1);
@@ -226,6 +229,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       custo_producao: arredondarPreco(produtoRecebido.custo),
       producao_detalhe: produtoRecebido.detalhe || null,
       pecas_por_impressao: produtoRecebido.pecasPorImpressao ?? 1,
+      peso_g: produtoRecebido.peso ? String(Math.round(produtoRecebido.peso)) : "",
     });
     // Nada aparece como "alterado" logo depois de trazer da Simular Custo de
     // Produção — o snapshot de referência começa igual ao que acabou de vir.
@@ -321,22 +325,34 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       observacao: form.observacao.trim() || null,
       producao_detalhe: form.producao_detalhe || null,
       pecas_por_impressao: Math.max(1, parseInt(form.pecas_por_impressao, 10) || 1),
+      peso_g: form.peso_g === "" || form.peso_g == null ? null : Number(String(form.peso_g).replace(",", ".")) || null,
       atualizado_em: new Date().toISOString(),
     };
     setSalvando(true);
     let produtoId = editandoId;
     let error;
-    if (editandoId) {
-      ({ error } = await supabase.from("produtos_cadastro").update(payload).eq("id", editandoId));
-    } else {
-      const resposta = await supabase
+    // Se a coluna peso_g ainda não existir (schema v26 não rodado), salva o
+    // resto do produto mesmo assim e avisa — não trava o cadastro.
+    async function gravar(dados) {
+      if (editandoId) {
+        const r = await supabase.from("produtos_cadastro").update(dados).eq("id", editandoId);
+        return { error: r.error, id: editandoId };
+      }
+      const r = await supabase
         .from("produtos_cadastro")
-        .insert({ ...payload, ...(lojaId ? { loja_id: lojaId } : {}) })
+        .insert({ ...dados, ...(lojaId ? { loja_id: lojaId } : {}) })
         .select()
         .single();
-      error = resposta.error;
-      produtoId = resposta.data?.id;
+      return { error: r.error, id: r.data?.id };
     }
+    let resp = await gravar(payload);
+    if (resp.error && /peso_g/.test(resp.error.message || "")) {
+      const { peso_g: _peso, ...semPeso } = payload;
+      resp = await gravar(semPeso);
+      if (!resp.error) onToast("Produto salvo sem o peso — rode o schema_v26.sql no Supabase pra guardar o peso");
+    }
+    error = resp.error;
+    produtoId = resp.id;
     if (error) {
       setSalvando(false);
       onToast(`Não foi possível salvar: ${error.message}`);
@@ -388,6 +404,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       embalagemItens: itens,
       producao_detalhe: p.producao_detalhe || null,
       pecas_por_impressao: p.pecas_por_impressao ?? 1,
+      peso_g: p.peso_g != null ? String(p.peso_g) : "",
     });
     setDetalheSalvo(p.producao_detalhe || null);
     setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
@@ -416,6 +433,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       embalagemItens: itens,
       producao_detalhe: p.producao_detalhe || null,
       pecas_por_impressao: p.pecas_por_impressao ?? 1,
+      peso_g: p.peso_g != null ? String(p.peso_g) : "",
     }));
     setDetalheSalvo(p.producao_detalhe || null);
     setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
@@ -533,7 +551,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
             </div>
           </div>
         )}
-        <div className="row3">
+        <div className="row4">
           <div className="field">
             <label>Custo de produção (R$)</label>
             <input
@@ -558,6 +576,20 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
               value={usaReceitaEmbalagem ? custoEmbalagemReceita.toFixed(2) : form.embalagem_padrao}
               onChange={setCampo("embalagem_padrao")}
               title={usaReceitaEmbalagem ? "Calculado a partir dos itens de embalagem abaixo" : "Valor manual — some itens abaixo pra calcular sozinho"}
+            />
+          </div>
+          <div className="field">
+            <label>
+              Peso da peça (g)
+              <Ajuda texto="Peso de UMA peça, sem embalagem. Vem sozinho quando você salva pelo Custo de Produção (calculado pelo filamento) — dá pra ajustar se pesar na balança. Somado ao peso dos itens de embalagem, vira o peso de envio (usado nas variações e em Produtos precificados)." />
+            </label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={form.peso_g}
+              placeholder={resultadoDetalhe?.peso ? String(Math.round(resultadoDetalhe.peso)) : "ex: 82"}
+              onChange={setCampo("peso_g")}
             />
           </div>
         </div>
@@ -594,6 +626,33 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           pecasPorImpressaoSalvo={pecasPorImpressaoSalvo}
           onChangePecasPorImpressao={(v) => setForm((prev) => ({ ...prev, pecas_por_impressao: v }))}
         />
+
+        {editandoId ? (
+          <VariacoesProduto
+            produto={{
+              id: editandoId,
+              nome: form.nome,
+              sku: form.sku,
+              custo_producao: resultadoDetalhe ? resultadoDetalhe.total : parseFloat(form.custo_producao) || 0,
+              frete_padrao: parseFloat(form.frete_padrao) || 0,
+              embalagem_padrao: usaReceitaEmbalagem ? custoEmbalagemReceita : parseFloat(form.embalagem_padrao) || 0,
+              peso_g: form.peso_g === "" ? null : Number(form.peso_g) || 0,
+              producao_detalhe: form.producao_detalhe,
+              pecas_por_impressao: Math.max(1, parseInt(form.pecas_por_impressao, 10) || 1),
+            }}
+            produtoEmbalagens={(form.embalagemItens || [])
+              .filter((it) => it.itemId)
+              .map((it) => ({ produto_id: editandoId, embalagem_id: it.itemId, quantidade: it.quantidade }))}
+            embalagens={embalagensCatalogo}
+            materiais={materiais}
+            onToast={onToast}
+          />
+        ) : (
+          <>
+            <h3 className="section-title">Variações de quantidade</h3>
+            <div className="hint">Cadastre o produto primeiro — depois, ao editar, dá pra criar variações (kit 2, kit 3…).</div>
+          </>
+        )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button className="btn primary" onClick={salvar} disabled={salvando}>

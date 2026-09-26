@@ -8,6 +8,7 @@ import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
+import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -62,6 +63,17 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         frete: arredondarPreco(p.frete_padrao || 0),
         embalagem: arredondarPreco(p.embalagem_padrao || 0),
         nome: prev.nome || p.nome,
+      }));
+    } else if (tipo === "v") {
+      // Variação: produção, embalagem e frete (+ ajuste) já calculados com o
+      // que foi personalizado nela.
+      const item = baseItens.find((x) => x.id === baseSelecionada) || null;
+      setF((prev) => ({
+        ...prev,
+        custoProduto: arredondarPreco(item?.custoProducao || 0),
+        frete: arredondarPreco(item?.frete || 0),
+        embalagem: arredondarPreco(item?.embalagem || 0),
+        nome: prev.nome || item?.nome || "",
       }));
     } else if (tipo === "k") {
       const item = baseItens.find((x) => x.id === baseSelecionada) || null;
@@ -208,8 +220,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         else r = calcCanalCustom(canal, b);
         let salvo = null;
         if (baseSelecionada) {
-          const [t, id] = baseSelecionada.split(":");
-          const itemTipo = t === "k" ? "kit" : "produto";
+          const id = baseSelecionada.split(":")[1];
+          const itemTipo = itemTipoDoId(baseSelecionada);
           salvo = precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canal.id) || null;
         }
         const confiavel = canal.tipo === "custom" || r.faixaOk !== false;
@@ -262,12 +274,15 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const kitSelecionadoId = baseSelecionada.startsWith("k:") ? baseSelecionada.slice(2) : null;
   const composicaoKit = kitSelecionadoId ? composicaoDoKit(kitSelecionadoId) : null;
 
+  const itemSel = baseSelecionada ? baseItens.find((x) => x.id === baseSelecionada) || null : null;
+  const qtdSel = itemSel?.quantidade || 1;
+
   const canalIdAtual = resolverCanalId();
   const precoExistente =
     baseSelecionada && canalIdAtual
       ? (() => {
-          const [tipo, id] = baseSelecionada.split(":");
-          const itemTipo = tipo === "k" ? "kit" : "produto";
+          const id = baseSelecionada.split(":")[1];
+          const itemTipo = itemTipoDoId(baseSelecionada);
           return precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalIdAtual) || null;
         })()
       : null;
@@ -290,12 +305,12 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       );
       return;
     }
-    const [tipo, id] = baseSelecionada.split(":");
+    const id = baseSelecionada.split(":")[1];
     setSalvando(true);
     const { error } = await supabase.from("precos_canal").upsert(
       {
         loja_id: lojaId || null,
-        item_tipo: tipo === "k" ? "kit" : "produto",
+        item_tipo: itemTipoDoId(baseSelecionada),
         item_id: id,
         canal_id: canalId,
         preco: arredondarPreco(resultado.preco),
@@ -340,18 +355,32 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     </TopbarAcoes>
     <Kpis
       itens={[
-        { label: "Custo total", valor: BRL(resultado.custoTotal), sub: "produção + frete + embalagem" },
+        {
+          label: "Custo total",
+          valor: BRL(resultado.custoTotal),
+          sub: itemSel?.peso
+            ? `${qtdSel > 1 ? `${qtdSel} un. · ` : ""}peso de envio ${formatarPeso(itemSel.peso)}`
+            : "produção + frete + embalagem",
+        },
         {
           label: "Preço no canal",
           valor: BRL(resultado.preco),
           tom: "destaque",
-          sub: comissaoFixo.temFaixa
-            ? resultado.faixaOk
-              ? `${canalLabel} · confere com a faixa`
-              : `${canalLabel} · fora da faixa — teste outra`
-            : canalLabel,
+          sub:
+            qtdSel > 1 && resultado.preco != null
+              ? `${canalLabel} · ${BRL(resultado.preco / qtdSel)} por unidade`
+              : comissaoFixo.temFaixa
+                ? resultado.faixaOk
+                  ? `${canalLabel} · confere com a faixa`
+                  : `${canalLabel} · fora da faixa — teste outra`
+                : canalLabel,
         },
-        { label: "Lucro líquido / un.", valor: BRL(resultado.lucro), tom: resultado.lucro >= 0 ? "good" : "bad", sub: "depois de todas as taxas" },
+        {
+          label: qtdSel > 1 ? "Lucro líquido / venda" : "Lucro líquido / un.",
+          valor: BRL(resultado.lucro),
+          tom: resultado.lucro >= 0 ? "good" : "bad",
+          sub: qtdSel > 1 && resultado.lucro != null ? `${BRL(resultado.lucro / qtdSel)} por unidade` : "depois de todas as taxas",
+        },
         {
           label: "Margem líquida",
           valor: (
@@ -498,13 +527,15 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
             <Ajuda texto='Três formas de preencher: na mão; escolhendo um produto/kit cadastrado (puxa custo, frete e embalagem); ou em "Custo de Produção" usando o botão "Usar este custo na Precificação por Canal →".' />
           </h3>
           <div className="field">
-            <label>Produto ou kit cadastrado (opcional)</label>
+            <label>Produto, variação ou kit (opcional)</label>
             <select value={baseSelecionada} onChange={(e) => setBaseSelecionada(e.target.value)}>
               <option value="">— preencher manualmente —</option>
-              {baseItens.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.nome}{item.sku ? ` · SKU ${item.sku}` : ""} ({item.tipo})
-                </option>
+              {gruposDoSeletor(baseItens).map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.itens.map((it) => (
+                    <option key={it.id} value={it.id}>{it.rotulo}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>

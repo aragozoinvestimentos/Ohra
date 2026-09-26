@@ -8,7 +8,21 @@ import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CalculadoraPreco from "./CalculadoraPreco.jsx";
 
-const VAZIO = { nome: "", preco: "", unidade: "un", observacao: "" };
+const VAZIO = { nome: "", preco: "", unidade: "un", peso_g: "", observacao: "" };
+
+const pesoOuNull = (v) => (v === "" || v == null || !isFinite(Number(String(v).replace(",", "."))) ? null : Number(String(v).replace(",", ".")));
+
+// Grava; se a coluna peso_g ainda não existir (schema v26 não rodado), grava
+// sem ela em vez de falhar.
+async function gravarComPeso(fn, dados, onToast) {
+  let r = await fn(dados);
+  if (r.error && /peso_g/.test(r.error.message || "")) {
+    const { peso_g: _p, ...semPeso } = dados;
+    r = await fn(semPeso);
+    if (!r.error) onToast("Salvo sem o peso — rode o schema_v26.sql no Supabase pra guardar o peso");
+  }
+  return r;
+}
 
 // Lista fixa de unidades — antes era texto livre e virava "un", "UN", "uni",
 // "unidade" pra dizer a mesma coisa, o que fragmentava qualquer relatório
@@ -119,13 +133,18 @@ export default function Embalagens({ onToast }) {
       return;
     }
     setSalvandoNovo(true);
-    const { error } = await supabase.from("embalagens").insert({
-      nome,
-      preco: arredondarPreco(precoBruto),
-      unidade: novo.unidade.trim() || "un",
-      observacao: novo.observacao.trim() || null,
-      ...(lojaId ? { loja_id: lojaId } : {}),
-    });
+    const { error } = await gravarComPeso(
+      (d) => supabase.from("embalagens").insert(d),
+      {
+        nome,
+        preco: arredondarPreco(precoBruto),
+        unidade: novo.unidade.trim() || "un",
+        peso_g: pesoOuNull(novo.peso_g),
+        observacao: novo.observacao.trim() || null,
+        ...(lojaId ? { loja_id: lojaId } : {}),
+      },
+      onToast
+    );
     setSalvandoNovo(false);
     if (error) {
       onToast(`Não foi possível adicionar: ${error.message}`);
@@ -169,6 +188,7 @@ export default function Embalagens({ onToast }) {
       nome: item.nome,
       preco: String(arredondarPreco(item.preco)),
       unidade: item.unidade || "un",
+      peso_g: item.peso_g != null ? String(item.peso_g) : "",
       observacao: item.observacao || "",
     });
     setEditItem(item);
@@ -186,16 +206,18 @@ export default function Embalagens({ onToast }) {
       return;
     }
     setSalvandoEdicao(true);
-    const { error } = await supabase
-      .from("embalagens")
-      .update({
+    const { error } = await gravarComPeso(
+      (d) => supabase.from("embalagens").update(d).eq("id", editItem.id),
+      {
         nome,
         preco: arredondarPreco(precoBruto),
         unidade: edicaoForm.unidade.trim() || "un",
+        peso_g: pesoOuNull(edicaoForm.peso_g),
         observacao: edicaoForm.observacao.trim() || null,
         atualizado_em: new Date().toISOString(),
-      })
-      .eq("id", editItem.id);
+      },
+      onToast
+    );
     setSalvandoEdicao(false);
     if (error) {
       onToast(`Não foi possível salvar: ${error.message}`);
@@ -246,7 +268,7 @@ export default function Embalagens({ onToast }) {
     <div>
       <div className="panel">
         <h3 className="section-title">Adicionar embalagem</h3>
-        <div className="row3">
+        <div className="row4">
           <div className="field">
             <label>Nome</label>
             <input
@@ -276,6 +298,10 @@ export default function Embalagens({ onToast }) {
                 <option key={u.value} value={u.value}>{u.label}</option>
               ))}
             </select>
+          </div>
+          <div className="field">
+            <label title="Peso de UMA unidade desse item — entra no peso de envio dos produtos e variações">Peso por unidade (g)</label>
+            <input type="number" step="1" min="0" placeholder="opcional" value={novo.peso_g} onChange={(e) => setNovo((p) => ({ ...p, peso_g: e.target.value }))} />
           </div>
         </div>
         <CalculadoraPreco
@@ -312,6 +338,7 @@ export default function Embalagens({ onToast }) {
                   <th>Nome</th>
                   <th className="num">Preço</th>
                   <th>Unidade</th>
+                  <th className="num">Peso</th>
                   <th>Observação</th>
                   <th>Atualizado</th>
                   <th></th>
@@ -325,6 +352,7 @@ export default function Embalagens({ onToast }) {
                       <CampoPreco item={m} edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarPreco} />
                     </td>
                     <td>{m.unidade || "un"}</td>
+                    <td className="num">{m.peso_g ? `${m.peso_g} g` : "—"}</td>
                     <td>{m.observacao || "—"}</td>
                     <td>{new Date(m.atualizado_em).toLocaleDateString("pt-BR")}</td>
                     <td>
@@ -385,6 +413,10 @@ export default function Embalagens({ onToast }) {
                 ))}
               </select>
             </div>
+          </div>
+          <div className="field">
+            <label>Peso por unidade (g)</label>
+            <input type="number" step="1" min="0" placeholder="opcional" value={edicaoForm.peso_g} onChange={(e) => setEdicaoForm((p) => ({ ...p, peso_g: e.target.value }))} />
           </div>
           <CalculadoraPreco
             unidade={edicaoForm.unidade.trim() || "un"}
