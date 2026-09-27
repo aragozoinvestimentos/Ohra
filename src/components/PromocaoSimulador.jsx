@@ -315,7 +315,7 @@ export default function PromocaoSimulador({ onToast }) {
     if (canalObj.tipo === "ml") {
       const r = resolverFaixaML(mlCategoria, baseObj, mlTipoAnuncio, peso);
       const pcts = ML_CATEGORY_PCT[mlCategoria] ?? { classico: 0.13, premium: 0.18 };
-      const comissaoPct = mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico;
+      const comissaoPct = (mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico) + (r.tier.meiaPreco ? 0.5 : 0);
       return { resultado: r.resultado, comissaoPct, taxaFixa: r.tier.fixo };
     }
     if (canalObj.tipo === "tiktok") {

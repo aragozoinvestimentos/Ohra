@@ -172,6 +172,14 @@ export function useRankingData() {
       // nº de peças do kit (soma das quantidades dos produtos) — usado no "lucro por peça"
       pecas: kitProdutosTodos.filter((r) => r.kit_id === k.id).reduce((s, r) => s + (Number(r.quantidade) || 0), 0),
       custoTotal: arredondarPreco(custoKitTotal(k)),
+      // peso de envio do kit = peças (peso de cada produto × qtd) + embalagem própria do kit
+      peso:
+        kitProdutosTodos
+          .filter((r) => r.kit_id === k.id)
+          .reduce((s, r) => s + (Number(produtosVivos.find((p) => p.id === r.produto_id)?.peso_g) || 0) * (Number(r.quantidade) || 0), 0) +
+        kitEmbalagensTodos
+          .filter((r) => r.kit_id === k.id)
+          .reduce((s, r) => s + (Number(embalagensCatalogo.find((e) => e.id === r.embalagem_id)?.peso_g) || 0) * (Number(r.quantidade) || 0), 0),
     }));
     // Variações de quantidade: cada uma vira um item próprio (id "v:<id>"),
     // com custo já considerando o que foi personalizado nela.

@@ -276,6 +276,9 @@ export function statusPrecoSalvo(salvo, linha, salvoPorPecaAnterior) {
 // Alertas do avulso ("atração", barato demais, acima do concorrente).
 export function alertasAvulso({ canal, p1, base1, cfg, escada, concorrente }) {
   const out = [];
+  if (canal?.tipo === "ml" && !(num(base1?.peso) > 0)) {
+    out.push({ tom: "warn", titulo: "Produto sem peso cadastrado", texto: "No Mercado Livre o custo de envio depende do peso (peça + embalagem). Sem peso, o app está usando a faixa mais leve (até 300 g) — preencha o peso no cadastro do produto e das embalagens pra conta ficar exata." });
+  }
   const l1 = escada.l1;
   const m1 = p1 > 0 ? l1 / p1 : 0;
   const k2 = escada.linhas.find((l) => l.n === 2) || escada.linhas.find((l) => !l.base);

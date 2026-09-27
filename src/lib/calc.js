@@ -225,8 +225,22 @@ export function aplicarAds(resultadoCanal, adsPct) {
 
 // Testa as faixas da Shopee em ordem e fica com a primeira que "fecha"
 // (preço calculado cai dentro da própria faixa usada pra calcular).
+// Faixas pra CALCULAR preço (não pra exibir): inclui o trecho de item barato,
+// onde o adicional é metade do preço (entra como +50% de comissão, sem fixo).
+function faixasCalculoShopee() {
+  const [primeira, ...resto] = SHOPEE_TIERS;
+  return [{ label: "Abaixo de R$9 (adicional = metade do preço)", min: 0, max: 8.99, pct: primeira.pct + 0.5, fixo: 0 }, { ...primeira, min: 9 }, ...resto];
+}
+function faixasCalculoML(pesoG) {
+  const faixas = mlFaixas(pesoG);
+  const f0 = faixas[0];
+  const corte = Math.min(18.99, 2 * f0.fixo);
+  // abaixo de R$19 o ML cobra no máx. metade do preço: até 2× o valor da tabela é proporcional
+  return [{ label: `${f0.label} (metade do preço)`, min: 0, max: corte - 0.01, fixo: 0, meiaPreco: true }, { ...f0, min: corte }, ...faixas.slice(1)];
+}
+
 export function resolverFaixaShopee(base) {
-  for (const tier of SHOPEE_TIERS) {
+  for (const tier of faixasCalculoShopee()) {
     const resultado = calcCanal({ ...base, comissaoPct: tier.pct, taxaFixa: tier.fixo, min: tier.min, max: tier.max });
     if (resultado.faixaOk) return { tier, resultado };
   }
@@ -250,9 +264,9 @@ export function resolverFaixaTikTok(base) {
 export function resolverFaixaML(categoria, base, tipoAnuncio = "classico", pesoG = null) {
   const pcts = ML_CATEGORY_PCT[categoria] ?? { classico: 0.13, premium: 0.18 };
   const comissaoPct = tipoAnuncio === "premium" ? pcts.premium : pcts.classico;
-  const faixas = mlFaixas(pesoG);
+  const faixas = faixasCalculoML(pesoG);
   for (const tier of faixas) {
-    const resultado = calcCanal({ ...base, comissaoPct, taxaFixa: tier.fixo, min: tier.min, max: tier.max });
+    const resultado = calcCanal({ ...base, comissaoPct: comissaoPct + (tier.meiaPreco ? 0.5 : 0), taxaFixa: tier.fixo, min: tier.min, max: tier.max });
     if (resultado.faixaOk) return { tier, resultado };
   }
   const tier = faixas[faixas.length - 1];
