@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import BuscaItem from "./BuscaItem.jsx";
 import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, aplicarAds } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -285,16 +286,7 @@ export default function Comparativo() {
         <div className="grid-auto">
           <div className="field span2">
             <label>Produto ou kit</label>
-            <select value={itemAId} onChange={(e) => setItemAId(e.target.value)}>
-              <option value="">— usar custo manual —</option>
-              {gruposDoSeletor(itensCatalogo).map((g) => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.itens.map((it) => (
-                    <option key={it.id} value={it.id}>{it.rotulo}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <BuscaItem grupos={gruposDoSeletor(itensCatalogo)} value={itemAId} onChange={setItemAId} vazio="— usar custo manual —" />
           </div>
           {!itemAId ? (
             <div className="field">
@@ -348,16 +340,7 @@ export default function Comparativo() {
         <div className="grid-auto">
           <div className="field span2">
             <label>Comparar com (opcional)</label>
-            <select value={itemBId} onChange={(e) => setItemBId(e.target.value)}>
-              <option value="">— não comparar —</option>
-              {gruposDoSeletor(itensCatalogo.filter((it) => it.id !== itemAId)).map((g) => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.itens.map((it) => (
-                    <option key={it.id} value={it.id}>{it.rotulo}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <BuscaItem grupos={gruposDoSeletor(itensCatalogo.filter((it) => it.id !== itemAId))} value={itemBId} onChange={setItemBId} vazio="— não comparar —" />
           </div>
           {itemB && (
             <>

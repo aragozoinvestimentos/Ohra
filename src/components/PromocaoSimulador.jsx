@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import BuscaItem from "./BuscaItem.jsx";
 import { ML_CATEGORY_PCT, calcCanalCustom, resolverFaixaML, resolverFaixaShein, resolverFaixaShopee, resolverFaixaTikTok, resultadoNoPreco } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -868,16 +869,7 @@ export default function PromocaoSimulador({ onToast }) {
                   <>
                     <div className="field">
                       <label>Produto, variação ou kit</label>
-                      <select value={baseInfo ? baseSelecionada : ""} onChange={(e) => setBaseSelecionada(e.target.value)}>
-                        <option value="">— usar custo manual —</option>
-                        {gruposDoSeletor(itensCatalogo).map((g) => (
-                          <optgroup key={g.label} label={g.label}>
-                            {g.itens.map((it) => (
-                              <option key={it.id} value={it.id}>{it.rotulo}</option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
+                      <BuscaItem grupos={gruposDoSeletor(itensCatalogo)} value={baseInfo ? baseSelecionada : ""} onChange={setBaseSelecionada} vazio="— usar custo manual —" />
                     </div>
                     {!baseSelecionada && (
                       <div className="field">

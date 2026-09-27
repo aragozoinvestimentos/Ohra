@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import BuscaItem from "./BuscaItem.jsx";
 import { calcCanal } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -161,16 +162,7 @@ export default function OrcamentoAvulso({ onToast }) {
           </h3>
           <div className="field">
             <label>Produto, variação ou kit (opcional)</label>
-            <select value={produtoSelecionado ? produtoId : ""} onChange={(e) => setProdutoId(e.target.value)}>
-              <option value="">— preencher manualmente —</option>
-              {gruposDoSeletor(itensCatalogo).map((g) => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.itens.map((it) => (
-                    <option key={it.id} value={it.id}>{it.rotulo}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <BuscaItem grupos={gruposDoSeletor(itensCatalogo)} value={produtoSelecionado ? produtoId : ""} onChange={setProdutoId} vazio="— preencher manualmente —" />
           </div>
           <div className="field">
             <label>Custo de produção (R$)</label>

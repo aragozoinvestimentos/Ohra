@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import BuscaItem from "./BuscaItem.jsx";
 import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -558,16 +559,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           </h3>
           <div className="field">
             <label>Produto, variação ou kit (opcional)</label>
-            <select value={baseSelecionada} onChange={(e) => setBaseSelecionada(e.target.value)}>
-              <option value="">— preencher manualmente —</option>
-              {gruposDoSeletor(baseItens).map((g) => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.itens.map((it) => (
-                    <option key={it.id} value={it.id}>{it.rotulo}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <BuscaItem grupos={gruposDoSeletor(baseItens)} value={baseSelecionada} onChange={setBaseSelecionada} vazio="— preencher manualmente —" />
           </div>
           <div className="row3">
             <div className="field">

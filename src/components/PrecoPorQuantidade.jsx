@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import BuscaItem from "./BuscaItem.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
@@ -219,14 +220,11 @@ export default function PrecoPorQuantidade({ onToast }) {
         <div className="grid-auto">
           <div className="field">
             <label>Produto pai</label>
-            <select value={pid} onChange={(ev) => setProdutoId(ev.target.value)}>
-              {produtosLista.map((p) => (
-                <option key={p.id} value={p.id.slice(2)}>
-                  {p.nome}
-                  {p.sku ? ` · ${p.sku}` : ""}
-                </option>
-              ))}
-            </select>
+            <BuscaItem
+              grupos={[{ label: "Produtos", itens: produtosLista.map((p) => ({ id: p.id.slice(2), rotulo: `${p.nome}${p.sku ? ` · ${p.sku}` : ""}` })) }]}
+              value={pid}
+              onChange={setProdutoId}
+            />
           </div>
           <div className="field">
             <label>Canal</label>
