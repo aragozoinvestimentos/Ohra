@@ -27,6 +27,7 @@ export default function Publicar({ onToast }) {
   const [baseEdit, setBaseEdit] = useState(null); // { chave, valor } — "já está na Olist"
   const [verTodos, setVerTodos] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  const [abertos, setAbertos] = useState(() => new Set()); // produtos com variações abertas
 
   const canaisOlist = canais.filter((c) => c.acrescimo_olist_pct != null && c.acrescimo_olist_pct !== "");
   const acrescimos = Object.fromEntries(canaisOlist.map((c) => [c.id, Number(c.acrescimo_olist_pct) || 0]));
@@ -85,6 +86,36 @@ export default function Publicar({ onToast }) {
 
   const pendentes = linhas.filter((l) => l.mudou);
   const visiveis = verTodos ? linhas : pendentes;
+
+  // Variações ficam recolhidas embaixo do produto (▸ N variações), igual
+  // Produtos precificados — economiza espaço. O pai aparece sempre que ele ou
+  // alguma variação dele estiver na lista (mesmo já publicado); variação sem
+  // pai com preço aparece solta.
+  const linhasTela = useMemo(() => {
+    const visivel = new Set(visiveis.map((l) => l.item.id));
+    const out = [];
+    const varsDe = (pid) => linhas.filter((l) => l.tipo === "variacao" && l.item.produtoId === pid);
+    const paisComPreco = new Set(linhas.filter((l) => l.tipo === "produto").map((l) => l.id));
+    for (const l of linhas) {
+      if (l.tipo === "produto") {
+        const vars = varsDe(l.id).filter((v) => visivel.has(v.item.id));
+        if (!visivel.has(l.item.id) && !vars.length) continue;
+        const aberto = abertos.has(l.id);
+        out.push({ l, pid: l.id, nVars: vars.length, nPend: vars.filter((v) => v.mudou).length, aberto });
+        if (aberto) for (const v of vars) out.push({ l: v });
+      } else if (visivel.has(l.item.id) && !(l.tipo === "variacao" && paisComPreco.has(l.item.produtoId))) {
+        out.push({ l });
+      }
+    }
+    return out;
+  }, [linhas, visiveis, abertos]);
+  const alternar = (pid) =>
+    setAbertos((s) => {
+      const n = new Set(s);
+      if (n.has(pid)) n.delete(pid);
+      else n.add(pid);
+      return n;
+    });
 
   async function salvarPromoMin() {
     if (promoMinEdit === null) return;
@@ -224,7 +255,7 @@ export default function Publicar({ onToast }) {
                 </tr>
               </thead>
               <tbody>
-                {visiveis.map((l) => (
+                {linhasTela.map(({ l, pid, nVars, nPend, aberto }) => (
                   <tr key={l.item.id} className={l.tipo === "variacao" ? "linha-cad" : ""}>
                     <td>
                       {l.tipo === "variacao" ? `↳ ${l.item.nomeVariacao || l.item.nome}` : l.item.nome}
@@ -239,6 +270,12 @@ export default function Publicar({ onToast }) {
                       )}
                       {regra4xDe(l) && l.tipo === "variacao" && regra4xDe(l).anuncioDoItem[l.item.id] > 1 && (
                         <span className="frete-tag bad">Shopee: vai em outro anúncio (4×)</span>
+                      )}
+                      {nVars > 0 && (
+                        <button type="button" className={`variacoes-toggle${aberto ? " aberto" : ""}`} onClick={() => alternar(pid)} title={aberto ? "Esconder variações" : "Ver variações"}>
+                          <span className="seta">▸</span> {nVars} {nVars === 1 ? "variação" : "variações"}
+                          {nPend > 0 && <span className="badge warn" style={{ marginLeft: 6 }}>{nPend} p/ atualizar</span>}
+                        </button>
                       )}
                     </td>
                     <td className="num">
