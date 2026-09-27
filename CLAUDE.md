@@ -60,6 +60,7 @@ Item do catálogo tem `pecas` (produto = 1; variação = quantidade; kit = soma 
 
 - **Futuro (não agora)**: aba Importar vendas — ler o relatório exportado da Olist (Gustavo vai mandar o modelo) → vendas por item/canal/quantidade (Ranking real, kits mais vendidos, Fluxo de Caixa). Data de conferência das taxas: Gustavo acha desnecessário por enquanto.
 - **Depois**: formar preço a partir da escada e registrar em mais lugares (hoje já dá pra Aplicar/Criar variação).
+- **Validar taxas com fonte OFICIAL (Gustavo vai mandar prints ou liberar o navegador do app, só leitura) — não mudar nada antes disso**: (1) ML desde 02/03/2026 trocou a taxa fixa abaixo de R$79 (R$5,50/6,00 no app) por custo operacional por peso × faixa de preço, e o frete grátis ≥R$79 varia por peso × faixa de preço × reputação → trocar ML_FEE_TIERS + tabela de frete editável de Canais por tabela oficial fixa (só consulta em Taxas Marketplace). (2) Shein: blogs recentes dizem 18% em Casa/Decoração desde 01/03/2026 (app usa 16%). (3) Shopee acima de R$500: blogs dizem R$26, app tem R$28 (validado 06/09 no oficial). (4) Extras não modelados: Shopee +2,5% em campanhas destaque; TikTok possível 6% do Programa de Frete Grátis (não confirmado). O acréscimo Olist NÃO mexe em taxa de marketplace (só em Publicar).
 - **Lembrar o Gustavo**: criar imagem pro anúncio evidenciando a vantagem de comprar mais peças (preço por peça caindo por quantidade) — a tabela de Por quantidade tem os números e os textos prontos.
 
 ## Design system (redesign "premium", set/2026)
