@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
-import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO } from "../lib/escada.js";
+import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginalCanal } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -61,6 +61,18 @@ export default function PrecoPorQuantidade({ onToast }) {
   const refs = dados ? referenciasAvulso(canal, dados.custo1, dados.peso1, cfg, dados.concorrente1) : null;
   const alertas = dados ? alertasAvulso({ canal, p1: dados.p1, base1: { custo: dados.custo1, peso: dados.peso1 }, cfg, escada: e, concorrente: dados.concorrente1 }) : [];
   const kits = e ? e.linhas.filter((l) => !l.base) : [];
+  // Regra da Shopee (4×): preço usado = salvo (ou o sugerido, se não tem salvo);
+  // preço original = com o acréscimo da Olist desse canal.
+  const regra4x =
+    e && canal?.tipo === "shopee"
+      ? gruposRegra4x(
+          e.linhas.map((l) => {
+            const promo = l.base ? dados.p1 : l.salvo ?? l.sugerido;
+            return { n: l.n, promo, original: promo * fatorOriginalCanal(canal) };
+          })
+        )
+      : null;
+  const anuncioDe = (n) => (regra4x ? regra4x.grupos.findIndex((g) => g.includes(n)) + 1 : 1);
   const k2 = kits.find((l) => l.n === 2);
   const melhor = kits.reduce((a, b) => (a == null || b.lucro > a.lucro ? b : a), null);
   const maxLpp = e ? Math.max(0.01, ...e.linhas.map((l) => (l.base ? e.l1 : l.lucroPorPeca))) : 1;
@@ -297,6 +309,14 @@ export default function PrecoPorQuantidade({ onToast }) {
         )}
       </div>
 
+      {regra4x && !regra4x.ok && (
+        <div className="alerta alerta-warn">
+          <b>Shopee: esse produto não cabe num anúncio só (regra de 4×)</b>
+          Num mesmo anúncio a variação mais cara (preço original, com o acréscimo da Olist) não pode passar de 4× a mais barata (com promoção). Aqui o limite é{" "}
+          {BRL(regra4x.limite)}, então o anúncio do avulso vai <b>até {regra4x.maxNoPrimeiro} unidades</b>. Divisão que funciona:{" "}
+          {regra4x.grupos.map((g, i) => `anúncio ${i + 1} (${g.join(", ")} un)`).join(" · ")}
+        </div>
+      )}
       {alertas.map((a) => (
         <div key={a.titulo} className={`alerta alerta-${a.tom}`}>
           <b>{a.titulo}</b>
@@ -417,6 +437,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                         <td>
                           <b className="kit-n">{l.n} un.</b>
                           <span className="sub">{l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}</span>
+                          {regra4x && !regra4x.ok && anuncioDe(l.n) > 1 && <span className="frete-tag">Shopee: anúncio {anuncioDe(l.n)}</span>}
                           <input
                             className="input-conc"
                             type="number"

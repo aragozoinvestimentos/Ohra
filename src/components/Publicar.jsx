@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { BRL } from "../lib/format.js";
-import { calcularPublicacao, publicacaoMudou, configEscada } from "../lib/escada.js";
+import { calcularPublicacao, publicacaoMudou, configEscada, gruposRegra4x } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
 import Ajuda from "./Ajuda.jsx";
 
@@ -59,6 +59,29 @@ export default function Publicar({ onToast }) {
       .filter(Boolean);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itens, precos, publicacoes, canais, promoMin]);
+
+  // Regra da Shopee (4×) por produto: variações do mesmo produto num anúncio
+  // só; preço original = anunciado (com acréscimo), promo = o que o cliente paga.
+  const regra4xPorProduto = useMemo(() => {
+    const out = new Map();
+    const shopee = canaisOlist.find((c) => c.tipo === "shopee");
+    if (!shopee) return out;
+    const porProduto = new Map();
+    for (const l of linhas) {
+      const pid = l.tipo === "produto" ? l.id : l.tipo === "variacao" ? l.item.produtoId : null;
+      const x = l.pub.canais[shopee.id];
+      if (!pid || !x) continue;
+      if (!porProduto.has(pid)) porProduto.set(pid, []);
+      porProduto.get(pid).push({ n: l.tipo === "produto" ? 1 : l.item.pecas || 1, promo: x.clientePaga, original: x.anunciado, itemId: l.item.id });
+    }
+    for (const [pid, ls] of porProduto) {
+      const r = gruposRegra4x(ls);
+      if (!r.ok) out.set(pid, { ...r, anuncioDoItem: Object.fromEntries(ls.map((l) => [l.itemId, r.grupos.findIndex((g) => g.includes(l.n)) + 1])) });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linhas, canais]);
+  const regra4xDe = (l) => regra4xPorProduto.get(l.tipo === "produto" ? l.id : l.item.produtoId) || null;
 
   const pendentes = linhas.filter((l) => l.mudou);
   const visiveis = verTodos ? linhas : pendentes;
@@ -209,6 +232,14 @@ export default function Publicar({ onToast }) {
                         {l.tipo === "variacao" ? `${l.item.pecas} un.` : l.tipo === "kit" ? "kit" : "avulso"}
                         {l.item.sku ? ` · ${l.item.sku}` : ""}
                       </span>
+                      {regra4xDe(l) && l.tipo === "produto" && (
+                        <span className="frete-tag" title="Regra da Shopee: num anúncio, a variação mais cara não pode passar de 4× a mais barata (contando preço original e com promoção)">
+                          Shopee 4×: até {regra4xDe(l).maxNoPrimeiro} un. neste anúncio
+                        </span>
+                      )}
+                      {regra4xDe(l) && l.tipo === "variacao" && regra4xDe(l).anuncioDoItem[l.item.id] > 1 && (
+                        <span className="frete-tag bad">Shopee: vai em outro anúncio (4×)</span>
+                      )}
                     </td>
                     <td className="num">
                       {baseEdit?.chave === l.item.id ? (

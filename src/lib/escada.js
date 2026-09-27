@@ -424,3 +424,44 @@ export function escadaDoProduto({ produtoId, canal, itens, precos, concorrentes,
   const escada = calcularEscada({ canal, p1, base1: { custo: custo1, peso: peso1 }, kits, cfg });
   return { escada, p1, p1Origem, salvo1: salvo1 ? num(salvo1.preco) : null, concorrente1: conc1, itemPai, custo1, peso1 };
 }
+
+// ---------------------------------------------------------------------------
+// Regra da Shopee: num mesmo anúncio, o preço da variação mais cara não pode
+// passar de 4× o da mais barata — contando o preço com promoção (o que o
+// cliente paga) e o preço original (com o acréscimo da Olist). Recebe as
+// variações [{ n, promo, original }] e divide em grupos (anúncios) que
+// respeitam a regra, na ordem das quantidades.
+export const SHOPEE_RAZAO_MAX_VARIACOES = 4;
+export function gruposRegra4x(linhas) {
+  const ord = [...(linhas || [])].filter((l) => num(l.promo) > 0).sort((a, b) => a.n - b.n);
+  const grupos = [];
+  let atual = [];
+  const cabe = (g) => {
+    const precos = g.flatMap((l) => [num(l.promo), num(l.original) || num(l.promo)]);
+    return Math.max(...precos) / Math.min(...precos) <= SHOPEE_RAZAO_MAX_VARIACOES + 1e-9;
+  };
+  for (const l of ord) {
+    if (!atual.length || cabe([...atual, l])) atual.push(l);
+    else {
+      grupos.push(atual);
+      atual = [l];
+    }
+  }
+  if (atual.length) grupos.push(atual);
+  const primeiro = grupos[0] || [];
+  const precosPrimeiro = primeiro.flatMap((l) => [num(l.promo), num(l.original) || num(l.promo)]);
+  return {
+    grupos: grupos.map((g) => g.map((l) => l.n)),
+    ok: grupos.length <= 1,
+    limite: precosPrimeiro.length ? Math.min(...precosPrimeiro) * SHOPEE_RAZAO_MAX_VARIACOES : null,
+    maxNoPrimeiro: primeiro.length ? primeiro[primeiro.length - 1].n : null,
+  };
+}
+
+// Fator do preço original na Shopee a partir do preço real, pelo acréscimo da
+// Olist do canal (por dentro ÷(1−a) | simples ×(1+a)); sem acréscimo = 1.
+export function fatorOriginalCanal(canal) {
+  const a = canal?.acrescimo_olist_pct;
+  if (a == null || a === "") return 1;
+  return canal.acrescimo_olist_modo === "simples" ? 1 + num(a) : 1 / (1 - Math.min(0.95, num(a)));
+}
