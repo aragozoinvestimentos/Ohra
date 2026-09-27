@@ -157,6 +157,7 @@ export function useRankingData() {
       nome: p.nome,
       sku: p.sku || "",
       tipo: "Produto",
+      pecas: 1,
       custoTotal: arredondarPreco((Number(p.custo_producao) || 0) + (Number(p.frete_padrao) || 0) + (Number(p.embalagem_padrao) || 0)),
       custoProducao: Number(p.custo_producao) || 0,
       embalagem: Number(p.embalagem_padrao) || 0,
@@ -168,6 +169,8 @@ export function useRankingData() {
       nome: k.nome,
       sku: k.sku || "",
       tipo: "Kit",
+      // nº de peças do kit (soma das quantidades dos produtos) — usado no "lucro por peça"
+      pecas: kitProdutosTodos.filter((r) => r.kit_id === k.id).reduce((s, r) => s + (Number(r.quantidade) || 0), 0),
       custoTotal: arredondarPreco(custoKitTotal(k)),
     }));
     // Variações de quantidade: cada uma vira um item próprio (id "v:<id>"),
@@ -185,6 +188,7 @@ export function useRankingData() {
           tipo: "Variação",
           produtoId: produto.id,
           quantidade: calc.quantidade,
+          pecas: Number(calc.quantidade) || 1,
           custoTotal: centavos(calc.custoTotal),
           custoProducao: centavos(calc.producao),
           embalagem: centavos(calc.embalagem),

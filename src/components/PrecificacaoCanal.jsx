@@ -254,7 +254,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const composicaoKit = kitSelecionadoId ? composicaoDoKit(kitSelecionadoId) : null;
 
   const itemSel = baseSelecionada ? baseItens.find((x) => x.id === baseSelecionada) || null : null;
-  const qtdSel = itemSel?.quantidade || 1;
+  // nº de peças do item (variação = quantidade; kit = soma dos produtos) — "lucro por peça"
+  const qtdSel = itemSel?.pecas || itemSel?.quantidade || 1;
 
   const canalIdAtual = resolverCanalId();
   const precoExistente =
@@ -347,7 +348,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           tom: "destaque",
           sub:
             qtdSel > 1 && resultado.preco != null
-              ? `${canalLabel} · ${BRL(resultado.preco / qtdSel)} por unidade`
+              ? `${canalLabel} · ${BRL(resultado.preco / qtdSel)} por peça`
               : comissaoFixo.temFaixa
                 ? resultado.faixaOk
                   ? `${canalLabel} · confere com a faixa`
@@ -358,7 +359,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           label: qtdSel > 1 ? "Lucro líquido / venda" : "Lucro líquido / un.",
           valor: BRL(resultado.lucro),
           tom: resultado.lucro >= 0 ? "good" : "bad",
-          sub: qtdSel > 1 && resultado.lucro != null ? `${BRL(resultado.lucro / qtdSel)} por unidade` : "depois de todas as taxas",
+          sub: qtdSel > 1 && resultado.lucro != null ? `${BRL(resultado.lucro / qtdSel)} por peça (${qtdSel} peças)` : "depois de todas as taxas",
         },
         {
           label: "Margem líquida",
@@ -605,6 +606,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               </div>
               <div className="kv"><span className="k">Lucro</span><span className="v">{concorrenteLucro != null ? BRL(concorrenteLucro) : "—"}</span></div>
               <div className="kv"><span className="k">Margem</span><span className="v">{concorrenteLucro != null ? PCT(concorrenteLucro / n(f.concorrente)) : "—"}</span></div>
+              {qtdSel > 1 && concorrenteLucro != null && <div className="kv"><span className="k">Lucro por peça</span><span className="v">{BRL(concorrenteLucro / qtdSel)}</span></div>}
             </div>
             <div>
               <div className="field">
@@ -613,6 +615,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               </div>
               <div className="kv"><span className="k">Lucro</span><span className="v">{negociadoLucro != null ? BRL(negociadoLucro) : "—"}</span></div>
               <div className="kv"><span className="k">Margem</span><span className="v">{negociadoLucro != null ? PCT(negociadoLucro / n(f.negociado)) : "—"}</span></div>
+              {qtdSel > 1 && negociadoLucro != null && <div className="kv"><span className="k">Lucro por peça</span><span className="v">{BRL(negociadoLucro / qtdSel)}</span></div>}
             </div>
           </div>
         </div>
@@ -631,6 +634,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                     <th className="num">Preço sugerido</th>
                     <th className="num">Lucro</th>
                     <th className="num">Margem</th>
+                    {qtdSel > 1 && <th className="num">Lucro/peça</th>}
                     {baseSelecionada && <th className="num">Preço salvo</th>}
                   </tr>
                 </thead>
@@ -644,6 +648,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                       <td className="num">{r.preco != null ? BRL(r.preco) : "—"}</td>
                       <td className="num">{r.lucro != null ? BRL(r.lucro) : "—"}</td>
                       <td className="num">{r.margem != null ? <span className={`badge ${r.margem >= lucratividadeFrac - 0.001 ? "good" : "bad"}`}>{PCT(r.margem)}</span> : "—"}</td>
+                      {qtdSel > 1 && <td className="num">{r.lucro != null ? BRL(r.lucro / qtdSel) : "—"}</td>}
                       {baseSelecionada && <td className="num">{salvo ? BRL(salvo.preco) : <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>}
                     </tr>
                   ))}

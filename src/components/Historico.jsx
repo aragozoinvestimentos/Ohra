@@ -199,7 +199,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   }
 
   function iniciarEdicao(p, item, canalObj) {
-    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal, canal: canalObj });
+    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal, canal: canalObj, pecas: item.pecas || 1 });
     setEdicao({ preco: Number(p.preco || 0).toFixed(2) });
   }
 
@@ -599,6 +599,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 {p.desatualizado && <span className="ponto-recalc" aria-label="recalculado">↻</span>}
                                 {p.lucro != null ? BRL(p.lucro) : "—"} · {p.margem != null ? PCT(p.margem) : "—"}
                               </div>
+                              {item.pecas > 1 && p.lucro != null && (
+                                <div className="sub-num" title={`Lucro dividido pelas ${item.pecas} peças`}>{BRL(p.lucro / item.pecas)}/peça</div>
+                              )}
                             </div>
                           ) : canaisComPrecoSalvo(item).length > 0 ? (
                             <button className="del" title={`Clonar preço de outro canal pra ${c.nome}`} onClick={() => abrirClonarPreco(item, c)}>
@@ -665,6 +668,12 @@ export default function Historico({ onEditarCompleto, onToast }) {
             <span className="k">Margem</span>
             <span className="v">{resultadoEdicao?.margem != null ? PCT(resultadoEdicao.margem) : "—"}</span>
           </div>
+          {editAlvo.pecas > 1 && resultadoEdicao?.lucro != null && (
+            <div className="kv">
+              <span className="k">Lucro por peça ({editAlvo.pecas} peças)</span>
+              <span className="v">{BRL(resultadoEdicao.lucro / editAlvo.pecas)}</span>
+            </div>
+          )}
         </EditarDialog>
       )}
 

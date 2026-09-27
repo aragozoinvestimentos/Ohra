@@ -26,6 +26,18 @@ const TIERS_PADRAO = [
 // grátis) SEMPRE dá negativo aqui — isso é esperado, é o preço de
 // atrair a venda. Já Combo/Venda combinada podem dar positivo, porque a
 // taxa fixa do canal é cobrada uma vez só em vez de uma vez por peça.
+// "Lucro por peça" — só aparece pra item com mais de 1 peça (variação/kit);
+// pra produto avulso seria igual ao lucro e só ocuparia espaço.
+function LucroPorPeca({ lucro, pecas }) {
+  if (!(pecas > 1) || lucro == null || !isFinite(lucro)) return null;
+  return (
+    <div className="kv">
+      <span className="k">Lucro por peça <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>({pecas} peças)</span></span>
+      <span className="v">{BRL(lucro / pecas)}</span>
+    </div>
+  );
+}
+
 function DeltaAvulso({ delta, sufixo = "", referencia = "vender avulso" }) {
   if (delta == null || !isFinite(delta)) return null;
   const melhor = delta >= 0;
@@ -181,6 +193,7 @@ export default function PromocaoSimulador({ onToast }) {
     return { nome: `[Kit] ${it.nome}`, tipo: "kit", custo: arredondarPreco(it.custoTotal), frete: 0, embalagem: 0 };
   }
   const baseInfo = infoItem(baseSelecionada);
+  const pecasBase = baseSelecionada ? itensCatalogo.find((x) => x.id === baseSelecionada)?.pecas || 1 : 1;
   const produtoBase = tipoBaseSel === "p" && baseInfo ? produtos.find((p) => p.id === idBaseSel) || null : null;
   const kitBase = tipoBaseSel === "k" && baseInfo ? baseInfo : null;
   const variacaoBase = tipoBaseSel === "v" && baseInfo ? baseInfo : null;
@@ -889,6 +902,7 @@ export default function PromocaoSimulador({ onToast }) {
               </div>
               <div className="kv"><span className="k">Lucro</span><span className="v">{BRL(normal.lucro)}</span></div>
               <div className="kv"><span className="k">Margem</span><span className="v">{PCT(normal.margem)}</span></div>
+              <LucroPorPeca lucro={normal.lucro} pecas={pecasBase} />
               {canal?.tipo !== "custom" && normal.faixaOk === false && (
                 <div className="hint" style={{ marginTop: 10, marginBottom: 0, color: "var(--bad)" }}>
                   O preço calculado não confere com a faixa de comissão desse canal — o custo informado está baixo demais pra fechar a conta de forma consistente. Ajuste o custo/frete antes de confiar nesses números.
@@ -1037,6 +1051,7 @@ export default function PromocaoSimulador({ onToast }) {
                   <div className="kv"><span className="k">Preço real de venda</span><span className="v">{BRL(descontoResultado.preco)}</span></div>
                   <div className="kv total"><span className="k">Lucro</span><span className="v">{BRL(descontoResultado.lucro)}</span></div>
                   <div className="kv"><span className="k">Margem</span><span className="v">{descontoResultado.margem != null ? PCT(descontoResultado.margem) : "—"}</span></div>
+                  <LucroPorPeca lucro={descontoResultado.lucro} pecas={pecasBase} />
                   <Termometro valor={descontoResultado.margem || 0} meta={n(lucratividade) / 100} />
                   {referenciaSalva ? (
                     (() => {
@@ -1063,6 +1078,7 @@ export default function PromocaoSimulador({ onToast }) {
                   <div className="kv"><span className="k">Preço com desconto</span><span className="v">{BRL(descontoResultado.preco)}</span></div>
                   <div className="kv total"><span className="k">Lucro com desconto</span><span className="v">{BRL(descontoResultado.lucro)}</span></div>
                   <div className="kv"><span className="k">Margem com desconto</span><span className="v">{descontoResultado.margem != null ? PCT(descontoResultado.margem) : "—"}</span></div>
+                  <LucroPorPeca lucro={descontoResultado.lucro} pecas={pecasBase} />
                   <Termometro valor={descontoResultado.margem || 0} meta={n(lucratividade) / 100} />
                   <DeltaAvulso delta={descontoResultado.lucro - normal.lucro} referencia={`vender sem promoção, a ${BRL(normal.preco)}`} />
                   <Breakeven lucroNormal={normal.lucro} lucroPromo={descontoResultado.lucro} />
@@ -1153,6 +1169,7 @@ export default function PromocaoSimulador({ onToast }) {
                   )}
                   <div className="kv total"><span className="k">Lucro do kit</span><span className="v">{BRL(combo.lucroKit)}</span></div>
                   <div className="kv"><span className="k">Lucro efetivo por unidade</span><span className="v">{BRL(combo.lucroUnidadeEfetivo)}</span></div>
+                  <LucroPorPeca lucro={combo.lucroUnidadeEfetivo} pecas={pecasBase} />
                   <div className="kv">
                     <span className="k">Margem do kit</span>
                     <span className="v">{combo.margemKit != null ? PCT(combo.margemKit) : "—"}</span>
@@ -1186,6 +1203,7 @@ export default function PromocaoSimulador({ onToast }) {
                     <span className="v">{liquidacao.descontoMaximo != null ? PCT(liquidacao.descontoMaximo) : "—"}</span>
                   </div>
                   <div className="kv total"><span className="k">Lucro nesse piso</span><span className="v">{BRL(liquidacao.lucroNoPiso)}</span></div>
+                  <LucroPorPeca lucro={liquidacao.lucroNoPiso} pecas={pecasBase} />
                   <DeltaAvulso delta={liquidacao.delta} />
                   <Breakeven lucroNormal={normal.lucro} lucroPromo={liquidacao.lucroNoPiso} />
                 </>
@@ -1209,6 +1227,7 @@ export default function PromocaoSimulador({ onToast }) {
                     <span className="k">Margem absorvendo o frete</span>
                     <span className="v">{freteGratis.margem != null ? PCT(freteGratis.margem) : "—"}</span>
                   </div>
+                  <LucroPorPeca lucro={freteGratis.lucro} pecas={pecasBase} />
                   <Termometro valor={freteGratis.margem || 0} meta={n(lucratividade) / 100} />
                   <DeltaAvulso delta={freteGratis.delta} />
                   <Breakeven lucroNormal={normal.lucro} lucroPromo={freteGratis.lucro} />
@@ -1293,6 +1312,7 @@ export default function PromocaoSimulador({ onToast }) {
                   <th className="num">Preço</th>
                   <th className="num">Lucro</th>
                   <th className="num">Margem</th>
+                  {pecasBase > 1 && <th className="num">Lucro/peça</th>}
                   <th className="num">Vs. normal</th>
                   <th className="num">Equilíbrio</th>
                 </tr>
@@ -1304,6 +1324,7 @@ export default function PromocaoSimulador({ onToast }) {
                     <td className="num">{BRL(l.preco)}</td>
                     <td className="num">{BRL(l.lucro)}</td>
                     <td className="num">{l.margem != null ? PCT(l.margem) : "—"}</td>
+                    {pecasBase > 1 && <td className="num">{l.lucro != null ? BRL(l.lucro / pecasBase) : "—"}</td>}
                     <td className="num" style={l.deltaVsNormal != null ? { color: l.deltaVsNormal >= 0 ? "var(--good)" : "var(--bad)" } : undefined}>
                       {l.deltaVsNormal != null ? `${l.deltaVsNormal >= 0 ? "+" : ""}${BRL(l.deltaVsNormal)}` : "—"}
                     </td>
