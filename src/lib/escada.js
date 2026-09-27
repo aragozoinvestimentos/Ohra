@@ -19,7 +19,7 @@
 //
 // "Preço real" = o que o cliente paga. É o único preço que o app mostra e
 // salva; a Olist (base + acréscimo do canal + promo) só aparece em Publicar.
-import { SHOPEE_TIERS, ML_ENVIO_FAIXAS_PRECO, TIKTOK_TIERS, resolverTaxasNoPreco } from "./calc.js";
+import { SHOPEE_TIERS, ML_ENVIO_FAIXAS_PRECO, TIKTOK_TIERS, resolverTaxasNoPreco, custoEnvioML } from "./calc.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "./constantesCanal.js";
 
 export const ESCADA_PADRAO = {
@@ -51,15 +51,28 @@ export const r90 = (x) => Math.floor(x + 0.1 + 1e-9) - 0.1;
 export const r90up = (x) => Math.ceil(x + 0.1 - 1e-9) - 0.1;
 const centavos = (v) => Math.round(v * 100) / 100;
 
-// Pontos onde a taxa do canal muda (pra resolver preço por faixa).
-function limitesDoCanal(canal) {
+// Pontos onde a taxa do canal muda (pra resolver preço por faixa). Inclui os
+// "degraus" das regras de item barato: Shopee abaixo de R$9 e ML abaixo de
+// R$19 cobram no máximo METADE do preço no lugar do fixo — nesses trechos a
+// taxa é proporcional ao preço, não um valor fixo.
+function limitesDoCanal(canal, pesoG) {
   const tipo = canal?.tipo;
   let mins = [0];
-  if (tipo === "shopee") mins = SHOPEE_TIERS.map((t) => t.min);
-  else if (tipo === "ml") mins = ML_ENVIO_FAIXAS_PRECO.map((t) => t.min);
-  else if (tipo === "tiktok") mins = TIKTOK_TIERS.map((t) => t.min);
+  if (tipo === "shopee") mins = [...SHOPEE_TIERS.map((t) => t.min), 9];
+  else if (tipo === "ml") {
+    const fixoBaixo = custoEnvioML(pesoG, 18.99); // valor da tabela na faixa até R$18,99
+    mins = [...ML_ENVIO_FAIXAS_PRECO.map((t) => t.min), 2 * fixoBaixo < 19 ? 2 * fixoBaixo : 19];
+  } else if (tipo === "tiktok") mins = TIKTOK_TIERS.map((t) => t.min);
   mins = [...new Set([0, ...mins])].sort((a, b) => a - b);
   return mins.map((lo, i) => [lo, i + 1 < mins.length ? mins[i + 1] : Infinity]);
+}
+
+// Modelo linear da taxa dentro de um trecho: taxa(p) = pctTotal·p + fixo.
+function modeloDoTrecho(canal, lo, hi, pesoG, cfg) {
+  const probe = isFinite(hi) ? (lo + hi) / 2 : lo + 1;
+  const t = taxasNoPreco(canal, probe, pesoG, cfg);
+  const meiaPreco = Math.abs(t.taxaFixa - probe / 2) < 1e-6 && ((canal?.tipo === "shopee" && probe < 9) || (canal?.tipo === "ml" && probe < 19));
+  return meiaPreco ? { pct: t.totalPct + 0.5, fixo: 0 } : { pct: t.totalPct, fixo: t.taxaFixa };
 }
 
 // Taxas do canal num preço (comissão %, taxa fixa, imposto, custos fixos).
@@ -83,12 +96,11 @@ export function lucroNoPreco(canal, preco, custo, pesoG, cfg) {
 // Menor preço que dá pelo menos `alvo` de lucro (resolve faixa por faixa).
 export function precoParaLucro(canal, alvo, custo, pesoG, cfg) {
   let melhor = null;
-  for (const [lo, hi] of limitesDoCanal(canal)) {
-    const probe = lo > 0 ? lo + 0.001 : 1;
-    const t = taxasNoPreco(canal, probe, pesoG, cfg);
-    const d = 1 - t.totalPct;
+  for (const [lo, hi] of limitesDoCanal(canal, pesoG)) {
+    const m = modeloDoTrecho(canal, lo, hi, pesoG, cfg);
+    const d = 1 - m.pct;
     if (d <= 0) continue;
-    const p = (num(alvo) + t.taxaFixa + num(custo)) / d;
+    const p = (num(alvo) + m.fixo + num(custo)) / d;
     const pp = Math.max(p, lo);
     if (pp < hi && (melhor == null || pp < melhor)) melhor = pp;
   }
@@ -98,12 +110,11 @@ export function precoParaLucro(canal, alvo, custo, pesoG, cfg) {
 // Menor preço com margem ≥ m.
 export function precoParaMargem(canal, m, custo, pesoG, cfg) {
   let melhor = null;
-  for (const [lo, hi] of limitesDoCanal(canal)) {
-    const probe = lo > 0 ? lo + 0.001 : 1;
-    const t = taxasNoPreco(canal, probe, pesoG, cfg);
-    const d = 1 - t.totalPct - m;
+  for (const [lo, hi] of limitesDoCanal(canal, pesoG)) {
+    const mt = modeloDoTrecho(canal, lo, hi, pesoG, cfg);
+    const d = 1 - mt.pct - m;
     if (d <= 0) continue;
-    const p = (t.taxaFixa + num(custo)) / d;
+    const p = (mt.fixo + num(custo)) / d;
     const pp = Math.max(p, lo);
     if (pp < hi && (melhor == null || pp < melhor)) melhor = pp;
   }
@@ -123,8 +134,9 @@ export function referenciasAvulso(canal, custo1, peso1, cfg, concorrente) {
   const pMin = precoParaMargem(canal, cfg.margemMin, custo1, peso1, cfg);
   return {
     margemDesejada: pMargem != null ? r90up(pMargem) : null,
-    semPrejuizo: pZero != null ? r90up(pZero) : null,
-    margemMinima: pMin != null ? r90up(pMin) : null,
+    // ponto exato (centavo pra cima), não arredondado pra ,90 — é referência, não preço sugerido
+    semPrejuizo: pZero != null ? Math.ceil(pZero * 100 - 1e-6) / 100 : null,
+    margemMinima: pMin != null ? Math.ceil(pMin * 100 - 1e-6) / 100 : null,
     concorrente: num(concorrente) > 0 ? num(concorrente) : null,
     concorrenteAbaixoDoPiso: num(concorrente) > 0 && pMin != null && num(concorrente) < pMin,
   };
@@ -196,7 +208,7 @@ export function calcularEscada({ canal, p1, base1, kits, cfg }) {
       notas.push("ajustado pela escada");
     }
     const descontoCurva = teto > 0 ? (teto - p) / teto : 0;
-    for (const [, hi] of limitesDoCanal(canal)) {
+    for (const [, hi] of limitesDoCanal(canal, peso)) {
       if (!isFinite(hi) || hi <= 0) continue;
       const b = hi - 0.01;
       if (b < p && b >= p * 0.85) {
