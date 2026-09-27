@@ -19,7 +19,7 @@ export { LUCRATIVIDADE_PADRAO, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO };
 
 const centavos = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
-function lucroPorCanal(custoTotal, canal) {
+function lucroPorCanal(custoTotal, canal, pesoG = null) {
   if (custoTotal <= 0) return null;
   const base = {
     custoProduto: custoTotal,
@@ -30,7 +30,7 @@ function lucroPorCanal(custoTotal, canal) {
     custosFixosPct: canal.custos_fixos_pct || 0,
   };
   if (canal.tipo === "shopee") return resolverFaixaShopee(base).resultado;
-  if (canal.tipo === "ml") return resolverFaixaML(ML_CATEGORIA_PADRAO, base, ML_TIPO_ANUNCIO_PADRAO).resultado;
+  if (canal.tipo === "ml") return resolverFaixaML(ML_CATEGORIA_PADRAO, base, ML_TIPO_ANUNCIO_PADRAO, pesoG).resultado;
   if (canal.tipo === "tiktok") return resolverFaixaTikTok(base).resultado;
   if (canal.tipo === "shein") return resolverFaixaShein(base).resultado;
   return calcCanalCustom(canal, base);
@@ -69,7 +69,7 @@ export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFil
           salvo && salvo.lucro != null
             ? { canal: c, lucro: Number(salvo.lucro), margem: salvo.margem != null ? Number(salvo.margem) : null, origem: "salvo" }
             : (() => {
-                const r = lucroPorCanal(item.custoTotal, c);
+                const r = lucroPorCanal(item.custoTotal, c, item.peso);
                 return r?.lucro != null ? { canal: c, lucro: r.lucro, margem: r.margem, origem: "estimado" } : null;
               })();
         if (candidato && (melhor == null || candidato.lucro > melhor.lucro)) {
@@ -211,7 +211,7 @@ export function useRankingData() {
     return precos.map((linha) => {
       const item = porId.get(`${prefixo[linha.item_tipo] || "p"}:${linha.item_id}`);
       const canal = canais.find((c) => c.id === linha.canal_id);
-      return item ? precoSalvoAoVivo(linha, item.custoTotal, canal) : linha;
+      return item ? precoSalvoAoVivo(linha, item.custoTotal, canal, item.peso) : linha;
     });
   }, [precos, itens, canais]);
 

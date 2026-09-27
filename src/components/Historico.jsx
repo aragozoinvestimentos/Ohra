@@ -107,7 +107,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
       imposto: editAlvo.canal?.imposto_pct || 0,
       custosFixosPct: editAlvo.canal?.custos_fixos_pct || 0,
     };
-    return resultadoNoPreco(editAlvo.canal, base, precoNum, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO);
+    return resultadoNoPreco(editAlvo.canal, base, precoNum, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO, editAlvo.peso);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editAlvo, edicao.preco]);
 
@@ -166,7 +166,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const linha = precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalObj.id) || null;
     // Lucro/margem sempre recalculados com o custo de HOJE do item e as
     // taxas atuais do canal — nunca o número congelado no dia do "Salvar".
-    return linha ? precoSalvoAoVivo(linha, item.custoTotal, canalObj) : null;
+    return linha ? precoSalvoAoVivo(linha, item.custoTotal, canalObj, item.peso) : null;
   }
 
   // Canais onde esse item já tem preço salvo — são as opções válidas de
@@ -198,7 +198,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
       imposto: clonarPrecoAlvo.canalDestino.imposto_pct || 0,
       custosFixosPct: clonarPrecoAlvo.canalDestino.custos_fixos_pct || 0,
     };
-    return resultadoNoPreco(clonarPrecoAlvo.canalDestino, base, Number(precoOrigem.preco), ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO);
+    return resultadoNoPreco(clonarPrecoAlvo.canalDestino, base, Number(precoOrigem.preco), ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO, clonarPrecoAlvo.item.peso);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clonarPrecoAlvo, canalOrigemId, canais, precos]);
 
@@ -252,7 +252,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   }
 
   function iniciarEdicao(p, item, canalObj) {
-    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal, canal: canalObj, pecas: item.pecas || 1 });
+    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal, canal: canalObj, pecas: item.pecas || 1, peso: item.peso || null });
     setEdicao({ preco: Number(p.preco || 0).toFixed(2) });
   }
 
@@ -645,7 +645,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 className={`preco-canal-linha ${p.margem == null ? "" : Number(p.margem) < 0 ? "ruim" : Number(p.margem) < 0.1 ? "atencao" : "boa"}`}
                                 title={
                                   p.desatualizado
-                                    ? `Atualizado pro custo de hoje (o custo do item mudou desde que o preço foi salvo). No dia em que foi salvo: lucro ${BRL(p.lucro_salvo)}${p.margem_salva != null ? ` · ${PCT(p.margem_salva)}` : ""}.`
+                                    ? `Atualizado pro custo e as taxas de hoje (o custo do item ou a tarifa do canal mudou desde que o preço foi salvo). No dia em que foi salvo: lucro ${BRL(p.lucro_salvo)}${p.margem_salva != null ? ` · ${PCT(p.margem_salva)}` : ""}.`
                                     : undefined
                                 }
                               >

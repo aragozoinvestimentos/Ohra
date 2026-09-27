@@ -49,47 +49,45 @@ export function produtoAoVivo(produto, { materiais, produtoEmbalagens, embalagen
 }
 
 // Preço salvo em Produtos precificados, com lucro/margem atualizados pro
-// custo ATUAL do item. As taxas (comissão, taxa fixa, imposto, custos fixos)
-// dependem só do PREÇO, que não mudou — então o jeito exato de atualizar é
-// descontar do lucro gravado a diferença de custo desde o dia do "Salvar"
-// (preserva exatamente o imposto/categoria do ML usados na hora de salvar).
-// Linhas antigas sem custo gravado são recalculadas do zero com as taxas
-// atuais do canal. `desatualizado` avisa quando o custo mudou desde então.
-export function precoSalvoAoVivo(linha, custoTotalAtual, canal) {
+// custo ATUAL do item E pras taxas ATUAIS do canal (tarifas oficiais mudam —
+// ex.: Shopee R$4→R$4,50 em out/2026, Shein 16%→18%, ML trocou a taxa fixa
+// pelo custo de envio por peso). Com o canal conhecido, recalcula tudo do
+// zero no preço salvo (faixa certa pro preço, imposto/custos fixos do canal,
+// peso de envio pro ML). Sem canal, cai no jeito antigo: lucro gravado −
+// (custo atual − custo gravado). `desatualizado` avisa quando o lucro de hoje
+// difere do gravado no dia do "Salvar" (lucro_salvo/margem_salva guardam ele).
+export function precoSalvoAoVivo(linha, custoTotalAtual, canal, pesoG = null) {
   if (!linha) return null;
   const preco = num(linha.preco);
   if (!(preco > 0) || custoTotalAtual == null) return { ...linha, desatualizado: false };
   const custoAtual = centavos(custoTotalAtual);
+  if (canal) {
+    const r = resultadoNoPreco(
+      canal,
+      { custoProduto: custoAtual, frete: 0, embalagem: 0, imposto: canal.imposto_pct || 0, custosFixosPct: canal.custos_fixos_pct || 0 },
+      preco,
+      ML_CATEGORIA_PADRAO,
+      ML_TIPO_ANUNCIO_PADRAO,
+      pesoG
+    );
+    if (r) {
+      const mudou = linha.lucro == null || Math.abs(num(linha.lucro) - r.lucro) >= 0.01;
+      return {
+        ...linha,
+        custo_total: custoAtual,
+        lucro: r.lucro,
+        margem: r.margem,
+        lucro_salvo: linha.lucro,
+        margem_salva: linha.margem,
+        desatualizado: linha.lucro != null && mudou,
+      };
+    }
+  }
   if (linha.custo_total != null && linha.lucro != null) {
     const delta = custoAtual - num(linha.custo_total);
     if (Math.abs(delta) < 0.005) return { ...linha, desatualizado: false };
     const lucro = num(linha.lucro) - delta;
-    return {
-      ...linha,
-      custo_total: custoAtual,
-      lucro,
-      margem: lucro / preco,
-      lucro_salvo: linha.lucro,
-      margem_salva: linha.margem,
-      desatualizado: true,
-    };
+    return { ...linha, custo_total: custoAtual, lucro, margem: lucro / preco, lucro_salvo: linha.lucro, margem_salva: linha.margem, desatualizado: true };
   }
-  if (!canal) return { ...linha, desatualizado: false };
-  const r = resultadoNoPreco(
-    canal,
-    { custoProduto: custoAtual, frete: 0, embalagem: 0, imposto: canal.imposto_pct || 0, custosFixosPct: canal.custos_fixos_pct || 0 },
-    preco,
-    ML_CATEGORIA_PADRAO,
-    ML_TIPO_ANUNCIO_PADRAO
-  );
-  if (!r) return { ...linha, desatualizado: false };
-  return {
-    ...linha,
-    custo_total: custoAtual,
-    lucro: r.lucro,
-    margem: r.margem,
-    lucro_salvo: linha.lucro,
-    margem_salva: linha.margem,
-    desatualizado: linha.lucro != null && Math.abs(num(linha.lucro) - r.lucro) >= 0.01,
-  };
+  return { ...linha, desatualizado: false };
 }

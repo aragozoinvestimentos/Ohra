@@ -14,8 +14,7 @@ const pctTxt = (v) => `${Math.round((Number(v) || 0) * 100)}%`;
 
 function faixaTxt(canal, taxas) {
   if (!taxas) return "";
-  const base = `${nomeCanal(canal)}: ${Math.round(taxas.comissaoPct * 100)}% + ${BRL(taxas.taxaFixa)}`;
-  return taxas.freteGratis > 0 ? `${base} + frete ${BRL(taxas.freteGratis)}` : base;
+  return `${nomeCanal(canal)}: ${Math.round(taxas.comissaoPct * 100)}% + ${taxas.envioMl ? "envio " : ""}${BRL(taxas.taxaFixa)}`;
 }
 
 // Campos da escada editáveis (em %).
@@ -443,7 +442,6 @@ export default function PrecoPorQuantidade({ onToast }) {
                             {faixaTxt(canal, l.taxas)}
                             {l.notas.length ? ` · ${l.notas.join(" · ")}` : ""}
                           </span>
-                          {l.taxas?.freteGratis > 0 && <span className="frete-tag">🚚 frete grátis ML: −{BRL(l.taxas.freteGratis)}</span>}
                           {l.concorrenteAbaixoDoPiso && <span className="frete-tag bad">concorrente abaixo da sua margem mínima — não acompanhado</span>}
                         </td>
                         <td className="num" style={{ color: "var(--good)" }}>

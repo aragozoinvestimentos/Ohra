@@ -264,6 +264,8 @@ export default function PromocaoSimulador({ onToast }) {
   }
   const baseInfo = infoItem(baseSelecionada);
   const pecasBase = baseSelecionada ? itensCatalogo.find((x) => x.id === baseSelecionada)?.pecas || 1 : 1;
+  // Peso de envio do item — no ML o custo dos Envios depende do peso × faixa de preço.
+  const pesoBase = baseSelecionada ? itensCatalogo.find((x) => x.id === baseSelecionada)?.peso || null : null;
   const produtoBase = tipoBaseSel === "p" && baseInfo ? produtos.find((p) => p.id === idBaseSel) || null : null;
   const kitBase = tipoBaseSel === "k" && baseInfo ? baseInfo : null;
   const variacaoBase = tipoBaseSel === "v" && baseInfo ? baseInfo : null;
@@ -304,14 +306,14 @@ export default function PromocaoSimulador({ onToast }) {
   // Resolve comissão/taxa fixa efetivas pra um canal+base quaisquer — usada
   // tanto pro item principal quanto, em Venda combinada, pra cada item da
   // lista e pro pacote combinado.
-  function resolverComTier(canalObj, baseObj) {
+  function resolverComTier(canalObj, baseObj, peso = pesoBase) {
     if (!canalObj) return null;
     if (canalObj.tipo === "shopee") {
       const r = resolverFaixaShopee(baseObj);
       return { resultado: r.resultado, comissaoPct: r.tier.pct, taxaFixa: r.tier.fixo };
     }
     if (canalObj.tipo === "ml") {
-      const r = resolverFaixaML(mlCategoria, baseObj, mlTipoAnuncio);
+      const r = resolverFaixaML(mlCategoria, baseObj, mlTipoAnuncio, peso);
       const pcts = ML_CATEGORY_PCT[mlCategoria] ?? { classico: 0.13, premium: 0.18 };
       const comissaoPct = mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico;
       return { resultado: r.resultado, comissaoPct, taxaFixa: r.tier.fixo };
@@ -332,7 +334,7 @@ export default function PromocaoSimulador({ onToast }) {
     const r = resolverComTier(canal, base);
     return { normal: r.resultado, feeInfo: { comissaoPct: r.comissaoPct, taxaFixa: r.taxaFixa } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canal, base, mlCategoria, mlTipoAnuncio]);
+  }, [canal, base, mlCategoria, mlTipoAnuncio, pesoBase]);
 
   // Preço já salvo (Precificação por Canal) pra esse item + canal — quando
   // existe, é a referência mais real do "preço original" do que a conta
@@ -395,9 +397,9 @@ export default function PromocaoSimulador({ onToast }) {
   const normal = useMemo(() => {
     if (!normalCalculado) return null;
     const precoBase = isFinite(precoOriginalNum) && precoOriginalNum > 0 ? precoOriginalNum : normalCalculado.preco;
-    const r = resultadoNoPreco(canal, base, precoBase, mlCategoria, mlTipoAnuncio);
+    const r = resultadoNoPreco(canal, base, precoBase, mlCategoria, mlTipoAnuncio, pesoBase);
     if (!r) return normalCalculado;
-    const lucroEm = (p) => resultadoNoPreco(canal, base, p, mlCategoria, mlTipoAnuncio)?.lucro ?? null;
+    const lucroEm = (p) => resultadoNoPreco(canal, base, p, mlCategoria, mlTipoAnuncio, pesoBase)?.lucro ?? null;
     return {
       ...normalCalculado,
       preco: r.preco,
@@ -408,7 +410,7 @@ export default function PromocaoSimulador({ onToast }) {
       custoTotal: r.custoTotal,
       lucroEm,
     };
-  }, [normalCalculado, precoOriginalNum, canal, base, mlCategoria, mlTipoAnuncio]);
+  }, [normalCalculado, precoOriginalNum, canal, base, mlCategoria, mlTipoAnuncio, pesoBase]);
 
   // Resultado do desconto direto — extraído num memo próprio (em vez de só
   // calcular dentro do JSX) porque o comparativo entre promoções, abaixo,
@@ -474,7 +476,7 @@ export default function PromocaoSimulador({ onToast }) {
     // faixa de comissão diferente da de uma venda avulsa (feeInfo), então
     // reavalia a faixa certa pro preço do KIT, não reaproveita a de uma peça.
     const baseKit = { imposto: base.imposto, custosFixosPct: base.custosFixosPct, custoProduto: custoKit, frete: n(frete), embalagem: 0 };
-    const lucroKit = resultadoNoPreco(canal, baseKit, precoKit, mlCategoria, mlTipoAnuncio)?.lucro ?? null;
+    const lucroKit = resultadoNoPreco(canal, baseKit, precoKit, mlCategoria, mlTipoAnuncio, pesoBase ? pesoBase * (Number(levar) || 1) : null)?.lucro ?? null;
     return {
       L,
       P,
@@ -486,7 +488,7 @@ export default function PromocaoSimulador({ onToast }) {
       economiaTaxaFixa: feeInfo.taxaFixa * (L - 1),
       deltaVsAvulso: lucroKit - normal.lucro * L,
     };
-  }, [normal, feeInfo, levar, pagar, custoProduto, embalagem, frete, base, canal, mlCategoria, mlTipoAnuncio]);
+  }, [normal, feeInfo, levar, pagar, custoProduto, embalagem, frete, base, canal, mlCategoria, mlTipoAnuncio, pesoBase]);
 
   const freteGratis = useMemo(() => {
     if (!normal) return null;
@@ -596,7 +598,7 @@ export default function PromocaoSimulador({ onToast }) {
       imposto: canal.imposto_pct || 0,
       custosFixosPct: canal.custos_fixos_pct || 0,
     };
-    const r = resolverComTier(canal, baseItem);
+    const r = resolverComTier(canal, baseItem, itensCatalogo.find((x) => x.id === idPrefixado)?.peso || null);
     if (!r?.resultado?.preco) return null;
     return { preco: r.resultado.preco, lucro: r.resultado.lucro };
   }
@@ -634,7 +636,8 @@ export default function PromocaoSimulador({ onToast }) {
     // Reavalia a faixa certa pro preço COMBINADO (soma de vários itens, com
     // desconto) em vez de reaproveitar a faixa resolvida pro custo+margem
     // teórico da combinação — mesmo risco de faixa errada dos outros casos.
-    const resultadoCombinada = resultadoNoPreco(canal, baseCombinadaTier, precoCombinado, mlCategoria, mlTipoAnuncio);
+    const pesoCombinada = itensCombinada.reduce((acc, it) => acc + (itensCatalogo.find((x) => x.id === it.itemId)?.peso || 0) * (Number(it.quantidade) || 0), 0) || null;
+    const resultadoCombinada = resultadoNoPreco(canal, baseCombinadaTier, precoCombinado, mlCategoria, mlTipoAnuncio, pesoCombinada);
     if (!resultadoCombinada) return null;
     const lucroCombinado = resultadoCombinada.lucro;
 

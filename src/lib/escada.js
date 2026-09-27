@@ -14,29 +14,13 @@
 //   da margem mínima; se ficar logo acima de uma troca de faixa do canal e
 //   descer der mais lucro, desce.
 // - Tudo na faixa REAL do canal pro preço do kit (o kit é um anúncio só:
-//   comissão e taxa fixa uma vez), com o frete grátis obrigatório do ML
-//   (preço ≥ R$ 79) estimado pelo peso de envio.
+//   comissão e taxa fixa uma vez); no ML, o custo dos Envios oficial por
+//   peso × faixa de preço (calc.js).
 //
 // "Preço real" = o que o cliente paga. É o único preço que o app mostra e
 // salva; a Olist (base + acréscimo do canal + promo) só aparece em Publicar.
-import { SHOPEE_TIERS, ML_FEE_TIERS, TIKTOK_TIERS, resolverTaxasNoPreco } from "./calc.js";
+import { SHOPEE_TIERS, ML_ENVIO_FAIXAS_PRECO, TIKTOK_TIERS, resolverTaxasNoPreco } from "./calc.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "./constantesCanal.js";
-
-export const ML_FRETE_GRATIS_A_PARTIR = 79;
-
-// Estimativa do que o vendedor paga de frete grátis no ML (reputação verde,
-// produto ≥ R$ 79) por faixa de peso de envio. O ML não publica uma tabela
-// única (varia por reputação/dimensão/rota) — por isso é EDITÁVEL em
-// Configuração → Canais; esses são só pontos de partida.
-export const FRETE_ML_PADRAO = [
-  { ateG: 300, valor: 19.95 },
-  { ateG: 500, valor: 21.45 },
-  { ateG: 1000, valor: 22.45 },
-  { ateG: 2000, valor: 23.45 },
-  { ateG: 3000, valor: 24.95 },
-  { ateG: 5000, valor: 27.45 },
-  { ateG: 9000, valor: 32.45 },
-];
 
 export const ESCADA_PADRAO = {
   r2: 1, // kit 2 mantém 100% do lucro/peça
@@ -46,7 +30,6 @@ export const ESCADA_PADRAO = {
   margemMin: 0.15,
   margemDesejada: 0.3,
   promoMinOlist: 0.1, // Publicar: todo canal com pelo menos 10% de promoção
-  freteMl: FRETE_ML_PADRAO,
 };
 
 const num = (v) => {
@@ -60,7 +43,6 @@ export function configEscada(configLoja, configProduto) {
   if (configProduto) {
     for (const k of ["r2", "r10", "piso", "vantagemMin"]) if (configProduto[k] != null) base[k] = configProduto[k];
   }
-  if (!Array.isArray(base.freteMl) || !base.freteMl.length) base.freteMl = FRETE_ML_PADRAO;
   return base;
 }
 
@@ -69,40 +51,33 @@ export const r90 = (x) => Math.floor(x + 0.1 + 1e-9) - 0.1;
 export const r90up = (x) => Math.ceil(x + 0.1 - 1e-9) - 0.1;
 const centavos = (v) => Math.round(v * 100) / 100;
 
-export function freteMlPorPeso(pesoG, tabela = FRETE_ML_PADRAO) {
-  const t = [...tabela].sort((a, b) => a.ateG - b.ateG);
-  if (!t.length) return 0;
-  const p = num(pesoG);
-  const faixa = t.find((f) => p <= f.ateG) || t[t.length - 1];
-  return num(faixa.valor);
-}
-
 // Pontos onde a taxa do canal muda (pra resolver preço por faixa).
 function limitesDoCanal(canal) {
   const tipo = canal?.tipo;
   let mins = [0];
   if (tipo === "shopee") mins = SHOPEE_TIERS.map((t) => t.min);
-  else if (tipo === "ml") mins = [...ML_FEE_TIERS.map((t) => t.min), ML_FRETE_GRATIS_A_PARTIR];
+  else if (tipo === "ml") mins = ML_ENVIO_FAIXAS_PRECO.map((t) => t.min);
   else if (tipo === "tiktok") mins = TIKTOK_TIERS.map((t) => t.min);
   mins = [...new Set([0, ...mins])].sort((a, b) => a - b);
   return mins.map((lo, i) => [lo, i + 1 < mins.length ? mins[i + 1] : Infinity]);
 }
 
-// Taxas do canal num preço (comissão %, taxa fixa, imposto, custos fixos) e
-// o frete grátis do ML quando aplicável.
+// Taxas do canal num preço (comissão %, taxa fixa, imposto, custos fixos).
+// No ML a "taxa fixa" é o custo dos Envios oficial por peso × faixa de preço
+// (inclui o frete grátis a partir de R$79) — ver calc.js.
+// eslint-disable-next-line no-unused-vars
 export function taxasNoPreco(canal, preco, pesoG, cfg) {
-  const t = resolverTaxasNoPreco(canal?.tipo, preco, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO);
+  const t = resolverTaxasNoPreco(canal?.tipo, preco, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO, pesoG);
   const comissaoPct = t ? t.comissaoPct : num(canal?.comissao_pct);
   const taxaFixa = t ? t.taxaFixa : num(canal?.taxa_fixa);
   const totalPct = comissaoPct + num(canal?.imposto_pct) + num(canal?.custos_fixos_pct);
-  const freteGratis = canal?.tipo === "ml" && preco >= ML_FRETE_GRATIS_A_PARTIR ? freteMlPorPeso(pesoG, cfg?.freteMl) : 0;
-  return { comissaoPct, taxaFixa, totalPct, freteGratis };
+  return { comissaoPct, taxaFixa, totalPct, envioMl: canal?.tipo === "ml" };
 }
 
 export function lucroNoPreco(canal, preco, custo, pesoG, cfg) {
   if (!(preco > 0)) return null;
   const t = taxasNoPreco(canal, preco, pesoG, cfg);
-  return preco * (1 - t.totalPct) - t.taxaFixa - t.freteGratis - num(custo);
+  return preco * (1 - t.totalPct) - t.taxaFixa - num(custo);
 }
 
 // Menor preço que dá pelo menos `alvo` de lucro (resolve faixa por faixa).
@@ -113,7 +88,7 @@ export function precoParaLucro(canal, alvo, custo, pesoG, cfg) {
     const t = taxasNoPreco(canal, probe, pesoG, cfg);
     const d = 1 - t.totalPct;
     if (d <= 0) continue;
-    const p = (num(alvo) + t.taxaFixa + t.freteGratis + num(custo)) / d;
+    const p = (num(alvo) + t.taxaFixa + num(custo)) / d;
     const pp = Math.max(p, lo);
     if (pp < hi && (melhor == null || pp < melhor)) melhor = pp;
   }
@@ -128,7 +103,7 @@ export function precoParaMargem(canal, m, custo, pesoG, cfg) {
     const t = taxasNoPreco(canal, probe, pesoG, cfg);
     const d = 1 - t.totalPct - m;
     if (d <= 0) continue;
-    const p = (t.taxaFixa + t.freteGratis + num(custo)) / d;
+    const p = (t.taxaFixa + num(custo)) / d;
     const pp = Math.max(p, lo);
     if (pp < hi && (melhor == null || pp < melhor)) melhor = pp;
   }
@@ -307,10 +282,6 @@ export function alertasAvulso({ canal, p1, base1, cfg, escada, concorrente }) {
     } else if (p1 > c1 * 1.05) {
       out.push({ tom: "warn", titulo: "Avulso acima do concorrente", texto: `Seu avulso está ${(((p1 / c1) - 1) * 100).toFixed(0)}% acima do concorrente. Ele é o menor preço que aparece na busca — caro demais perde clique. Dá pra descer até a margem mínima e deixar o lucro pros kits.` });
     }
-  }
-  const comFrete = escada.linhas.filter((l) => !l.base && l.taxas?.freteGratis > 0);
-  if (comFrete.length) {
-    out.push({ tom: "warn", titulo: "🚚 Frete grátis obrigatório no Mercado Livre", texto: `A partir de R$ 79 o ML obriga frete grátis e você paga o envio (estimado pelo peso — ajuste a tabela em Configuração → Canais). Kits afetados: ${comFrete.map((l) => `${l.n} un.`).join(", ")} — o frete já está descontado do lucro deles.` });
   }
   return out;
 }

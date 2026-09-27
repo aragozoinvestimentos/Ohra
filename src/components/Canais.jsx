@@ -4,7 +4,6 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
-import { FRETE_ML_PADRAO } from "../lib/escada.js";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
 
@@ -103,84 +102,6 @@ function CampoAcrescimo({ canal, onToast, onAtualizado }) {
       />
       %{salvo && <span className="salvo-check">✓</span>}
     </span>
-  );
-}
-
-// Tabela editável do frete grátis do ML por peso (estimativa, fica em
-// lojas.config_escada.freteMl) — usada quando um preço passa de R$ 79 no ML.
-function FreteMlTabela({ onToast }) {
-  const { lojas, lojaId, atualizar } = useLoja();
-  const cfg = lojas.find((l) => l.id === lojaId)?.config_escada || null;
-  const tabela = Array.isArray(cfg?.freteMl) && cfg.freteMl.length ? cfg.freteMl : FRETE_ML_PADRAO;
-  const [edit, setEdit] = useState(null);
-  const linhas = edit ?? tabela.map((f) => ({ ateG: String(f.ateG), valor: String(f.valor) }));
-  async function salvar() {
-    const limpa = linhas
-      .map((f) => ({ ateG: Number(String(f.ateG).replace(",", ".")), valor: Number(String(f.valor).replace(",", ".")) }))
-      .filter((f) => f.ateG > 0 && f.valor >= 0)
-      .sort((a, b) => a.ateG - b.ateG);
-    if (!limpa.length) {
-      onToast("Preencha pelo menos uma faixa de peso");
-      return;
-    }
-    const r = await atualizar(lojaId, { configEscada: { ...(cfg || {}), freteMl: limpa } });
-    if (!r.ok) {
-      onToast(/config_escada|column/i.test(r.error || "") ? "Rode o SQL v27 no Supabase pra salvar" : `Não foi possível salvar: ${r.error}`);
-      return;
-    }
-    setEdit(null);
-    onToast("Tabela de frete do ML salva");
-  }
-  return (
-    <div className="panel">
-      <h3>
-        Frete grátis do Mercado Livre (estimativa por peso)
-        <Ajuda texto="A partir de R$ 79 o ML obriga frete grátis e o vendedor paga parte do envio (depende da reputação, do peso e das dimensões). O app usa esta tabela pelo peso de envio do item (peça + embalagem) sempre que um preço no ML passa de R$ 79 — ajuste pros valores que aparecem na sua conta do ML." />
-      </h3>
-      <div className="table-wrap" style={{ maxWidth: 440 }}>
-        <table>
-          <thead>
-            <tr>
-              <th className="num">Até (g)</th>
-              <th className="num">Você paga (R$)</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {linhas.map((f, i) => (
-              <tr key={i}>
-                <td className="num">
-                  <input type="number" style={{ width: 90, textAlign: "right" }} value={f.ateG} onChange={(e) => setEdit(linhas.map((x, j) => (j === i ? { ...x, ateG: e.target.value } : x)))} />
-                </td>
-                <td className="num">
-                  <input type="number" step="0.01" style={{ width: 90, textAlign: "right" }} value={f.valor} onChange={(e) => setEdit(linhas.map((x, j) => (j === i ? { ...x, valor: e.target.value } : x)))} />
-                </td>
-                <td>
-                  <button className="del" title="Remover faixa" onClick={() => setEdit(linhas.filter((_, j) => j !== i))}>
-                    ×
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-        <button className="btn" onClick={() => setEdit([...linhas, { ateG: "", valor: "" }])}>
-          + Faixa
-        </button>
-        {edit && (
-          <>
-            <button className="btn" onClick={() => setEdit(null)}>
-              Cancelar
-            </button>
-            <button className="btn primary" onClick={salvar}>
-              Salvar tabela
-            </button>
-          </>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -423,7 +344,6 @@ export default function Canais({ onToast }) {
         </div>
       </div>
 
-      <FreteMlTabela onToast={onToast} />
 
       <div className="panel">
         <h3 className="section-title">Adicionar canal próprio</h3>

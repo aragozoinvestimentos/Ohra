@@ -1,4 +1,4 @@
-import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, SHEIN_TIERS } from "../lib/calc.js";
+import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_ENVIO_FAIXAS_PRECO, ML_ENVIO_TABELA, TIKTOK_TIERS, SHEIN_TIERS } from "../lib/calc.js";
 import { BRL, PCT } from "../lib/format.js";
 import { useRankingData } from "../hooks/useRankingData.js";
 import Ajuda from "./Ajuda.jsx";
@@ -12,22 +12,21 @@ const CANAIS_OFICIAIS = [
   {
     tipo: "shopee",
     nome: "Shopee",
-    validado: "Vigente desde 01/03/2026 — validado em 06/09/2026 contra o Centro de Educação do Vendedor (seller.shopee.com.br) e duas fontes independentes.",
+    validado: "Conferido em 27/09/2026 no artigo oficial do Centro de Educação do Vendedor (seller.shopee.com.br, atualizado 18/09/2026). Já com o fixo de R$ 4,50 até R$ 79,99, vigente a partir de 01/10/2026. Abaixo de R$ 9 o adicional é metade do preço. Não inclui o adicional de R$ 3/item de vendedor CPF com mais de 450 pedidos em 90 dias.",
     colunas: ["Faixa de preço", "Comissão", "Taxa fixa"],
     linhas: SHOPEE_TIERS.map((t) => [t.label, PCT(t.pct), BRL(t.fixo)]),
   },
   {
     tipo: "tiktok",
     nome: "TikTok Shop",
-    validado: "Vigente desde 15/07/2026 — duas faixas definidas pelo preço já com desconto aplicado, sem diferenciação por categoria.",
+    validado: "Vigente desde 15/07/2026 — conferido em 27/09/2026 na Academia do Vendedor TikTok Shop (seller-br.tiktok.com, \"Tarifa de Comissão da Plataforma\"). Faixas pelo preço já com o desconto do vendedor.",
     colunas: ["Faixa de preço", "Comissão", "Taxa fixa"],
     linhas: TIKTOK_TIERS.map((t) => [t.label, PCT(t.pct), BRL(t.fixo)]),
   },
   {
     tipo: "shein",
     nome: "Shein",
-    validado:
-      "Validado em 07/09/2026 contra três fontes independentes (a página oficial retornou erro de acesso na hora da validação — vale reconferir em br.shein.com/SHEIN-Commission-Policy-a-1420.html). Comissão padrão de 16%, sem taxa fixa, sem diferenciação por categoria fora de vestuário.",
+    validado: "Conferido em 27/09/2026 na página oficial (br.shein.com/SHEIN-Commission-Policy-a-1420.html): 18% em \"outras categorias\" pra pedidos criados após 01/03/2026 (vestuário feminino é 20%). Sem taxa fixa.",
     colunas: ["Faixa de preço", "Comissão", "Taxa fixa"],
     linhas: SHEIN_TIERS.map((t) => [t.label, PCT(t.pct), BRL(t.fixo)]),
   },
@@ -106,28 +105,34 @@ export default function TaxasMarketplace() {
             </tbody>
           </table>
         </div>
-        <div className="table-wrap" style={{ marginTop: 10 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, margin: "12px 0 6px" }}>Custo dos Envios por peso × preço (cobrado em TODA venda, substitui a antiga taxa fixa)</div>
+        <div className="table-wrap tabela-envio-ml">
           <table>
             <thead>
               <tr>
-                <th>Faixa de preço</th>
-                <th className="num">Taxa fixa</th>
+                <th>Peso</th>
+                {ML_ENVIO_FAIXAS_PRECO.map((f) => (
+                  <th className="num" key={f.label}>{f.label}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {ML_FEE_TIERS.map((t) => (
-                <tr key={t.label}>
-                  <td>{t.label}</td>
-                  <td className="num">{BRL(t.fixo)}</td>
+              {ML_ENVIO_TABELA.map(([max, vals], i) => (
+                <tr key={max}>
+                  <td>{i === 0 ? `até ${max * 1000} g` : `${ML_ENVIO_TABELA[i - 1][0] < 1 ? `${ML_ENVIO_TABELA[i - 1][0] * 1000} g` : `${String(ML_ENVIO_TABELA[i - 1][0]).replace(".", ",")} kg`} – ${max < 1 ? `${max * 1000} g` : `${String(max).replace(".", ",")} kg`}`}</td>
+                  {vals.map((v, j) => (
+                    <td className="num" key={j}>{BRL(v)}</td>
+                  ))}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
-          Comissão validada em 06/09/2026 contra mercadolivre.com.br/ajuda/quanto-custa-vender-um-produto_1338 — valores de "Casa & Decoração" (categoria
-          típica de produtos impressos em 3D); "Beleza" é estimativa dentro da faixa oficial divulgada (Clássico 10%–14%, Premium 15%–19%). Taxa fixa também
-          validada na mesma data; desde março/2026 pode variar por peso/dimensão conforme o tipo logístico — não modelado aqui.
+          Tarifa de venda (Clássico 10%–14%, Premium 15%–19% conforme a categoria) validada em 06/09/2026; os valores acima são de &quot;Casa &amp; Decoração&quot;. Custo dos Envios conferido em
+          27/09/2026 em mercadolivre.com.br/ajuda (MercadoLíder, reputação verde ou sem reputação — já com o desconto da reputação verde). Vigente desde 02/03/2026: abaixo de R$ 79 inclui o frete
+          grátis padrão; a partir de R$ 79, o frete grátis rápido obrigatório. Produtos abaixo de R$ 19 pagam no máximo metade do preço. Kit vendido como um anúncio paga um custo só. O app usa o
+          peso de envio do item (peça + embalagem); sem peso cadastrado, considera até 300 g.
         </div>
       </div>
 

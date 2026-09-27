@@ -122,7 +122,7 @@ export default function Comparativo() {
   const custoProdutoB = itemB ? itemB.custo : 0;
 
   const construirLinhas = useCallback(
-    (custoProduto, frete, embalagem) => {
+    (custoProduto, frete, embalagem, pesoG = null) => {
       const base = {
         lucratividadePct: (parseFloat(lucratividade) || 0) / 100,
         custoProduto,
@@ -137,7 +137,7 @@ export default function Comparativo() {
         if (canal.tipo === "shopee") {
           resultado = resolverFaixaShopee(baseCanal).resultado;
         } else if (canal.tipo === "ml") {
-          resultado = resolverFaixaML(mlCategoria, baseCanal, mlTipoAnuncio).resultado;
+          resultado = resolverFaixaML(mlCategoria, baseCanal, mlTipoAnuncio, pesoG).resultado;
         } else if (canal.tipo === "tiktok") {
           resultado = resolverFaixaTikTok(baseCanal).resultado;
         } else if (canal.tipo === "shein") {
@@ -152,9 +152,10 @@ export default function Comparativo() {
     [canais, lucratividade, mlCategoria, mlTipoAnuncio]
   );
 
-  const linhasA = construirLinhas(custoProdutoA, freteA, embalagemA);
+  const pesoDe = (id) => (id ? itensCatalogo.find((x) => x.id === id)?.peso || null : null);
+  const linhasA = construirLinhas(custoProdutoA, freteA, embalagemA, pesoDe(itemAId));
   const temItemB = !!itemB;
-  const linhasB = temItemB ? construirLinhas(custoProdutoB, freteB, embalagemB) : [];
+  const linhasB = temItemB ? construirLinhas(custoProdutoB, freteB, embalagemB, pesoDe(itemBId)) : [];
 
   // Uma linha só concorre a "melhor canal" se o preço calculado realmente
   // fechar dentro da própria faixa de comissão usada pra calculá-lo (Shopee/

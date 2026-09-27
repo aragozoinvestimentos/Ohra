@@ -2,19 +2,20 @@
 // e no protótipo Claude. Mantida como funções puras para ser fácil de testar.
 import { totalItens } from "../components/SeletorItens.jsx";
 
-// Faixas oficiais Shopee (vendedor CNPJ) vigentes desde 01/03/2026 — validado
-// em 06/09/2026 contra o artigo oficial do Centro de Educação do Vendedor
-// (seller.shopee.com.br) e duas fontes independentes que reproduzem a mesma
-// tabela. Não modela o caso raro de itens abaixo de R$8 (nesse caso o
-// "adicional" vira metade do preço do item em vez do fixo de R$4 — irrelevante
-// pra produtos impressos em 3D, que dificilmente vendem abaixo de R$8) nem o
-// adicional de R$3/item pra vendedor CPF com mais de 450 pedidos em 90 dias.
+// Faixas oficiais Shopee (vendedor CNPJ) — conferido em 27/09/2026 direto no
+// artigo oficial "Política de Comissão para vendedores CNPJ e CPF"
+// (seller.shopee.com.br/edu/article/26839, atualizado 18/09/2026): a partir
+// de 01/10/2026 o fixo até R$79,99 sobe de R$4,00 pra R$4,50 (já aplicado —
+// preço definido agora vale pras vendas de outubro em diante) e acima de
+// R$500 o fixo é R$26. Abaixo de R$9 o adicional vira metade do preço
+// (tratado em resolverTaxasNoPreco). Não modela o adicional de R$3/item pra
+// vendedor CPF com mais de 450 pedidos em 90 dias.
 export const SHOPEE_TIERS = [
-  { label: "Até R$79,99", min: 0, max: 79.99, pct: 0.2, fixo: 4 },
+  { label: "Até R$79,99", min: 0, max: 79.99, pct: 0.2, fixo: 4.5 },
   { label: "R$80,00–99,99", min: 80, max: 99.99, pct: 0.14, fixo: 16 },
   { label: "R$100,00–199,99", min: 100, max: 199.99, pct: 0.14, fixo: 20 },
   { label: "R$200,00–499,99", min: 200, max: 499.99, pct: 0.14, fixo: 26 },
-  { label: "Acima de R$500,00", min: 500, max: 9999999, pct: 0.14, fixo: 28 },
+  { label: "Acima de R$500,00", min: 500, max: 9999999, pct: 0.14, fixo: 26 },
 ];
 
 // Comissão por categoria no Mercado Livre — oficialmente Clássico varia de 10%
@@ -28,16 +29,68 @@ export const ML_CATEGORY_PCT = {
   Beleza: { classico: 0.135, premium: 0.185 },
 };
 
-// Taxa fixa por venda de baixo valor — validado 06/09/2026 contra fonte
-// oficial (mercadolivre.com.br) e confirmado por fontes independentes: os
-// valores batem exatamente com o que já estava aqui. Observação: desde
-// março/2026 esse valor pode variar por peso/dimensão do produto conforme o
-// tipo logístico — não modelado aqui por falta desse dado no cadastro.
-export const ML_FEE_TIERS = [
-  { label: "R$10,00–20,00", min: 10, max: 20, fixo: 5.5 },
-  { label: "R$20,01–78,99", min: 20.01, max: 78.99, fixo: 6.0 },
-  { label: "A partir de R$79,00 (frete grátis obrigatório)", min: 79, max: 9999999, fixo: 0.0 },
+// Mercado Livre: desde 02/03/2026 NÃO existe mais taxa fixa por venda — toda
+// venda paga a tarifa % da categoria + o "custo dos Envios", que depende do
+// PESO (embalagem final) e da FAIXA DE PREÇO, mesmo quando o comprador paga o
+// frete (abaixo de R$79 inclui o frete grátis padrão; a partir de R$79 inclui
+// o frete grátis rápido obrigatório). Tabela oficial conferida em 27/09/2026
+// em mercadolivre.com.br/ajuda/custos-envio-reputacao-verde-mercado-lider_40538
+// (MercadoLíder, reputação verde ou sem reputação — já com o desconto da
+// reputação verde; envios Full/Coleta/Agências). Produtos abaixo de R$19
+// pagam no máximo metade do preço. Kit vendido como um anúncio paga UM custo.
+export const ML_ENVIO_FAIXAS_PRECO = [
+  { label: "R$0–18,99", min: 0, max: 18.99 },
+  { label: "R$19–48,99", min: 19, max: 48.99 },
+  { label: "R$49–78,99", min: 49, max: 78.99 },
+  { label: "R$79–99,99", min: 79, max: 99.99 },
+  { label: "R$100–119,99", min: 100, max: 119.99 },
+  { label: "R$120–149,99", min: 120, max: 149.99 },
+  { label: "R$150–199,99", min: 150, max: 199.99 },
+  { label: "A partir de R$200", min: 200, max: 9999999 },
 ];
+// [peso máximo em kg, valores por faixa de preço (mesma ordem acima)]
+export const ML_ENVIO_TABELA = [
+  [0.3, [5.65, 6.85, 8.15, 12.95, 14.95, 16.95, 19.05, 21.65]],
+  [0.5, [5.95, 6.95, 8.25, 13.85, 16.15, 18.15, 20.45, 23.25]],
+  [1, [6.05, 7.15, 8.45, 14.45, 16.85, 19.05, 21.35, 24.45]],
+  [1.5, [6.15, 7.35, 8.65, 14.75, 17.15, 19.45, 21.75, 25.45]],
+  [2, [6.25, 7.45, 8.75, 15.05, 17.65, 19.85, 22.25, 25.55]],
+  [3, [6.35, 8.65, 9.15, 16.45, 19.15, 21.65, 24.35, 27.05]],
+  [4, [6.45, 8.75, 9.75, 17.85, 20.75, 23.35, 26.35, 29.25]],
+  [5, [6.55, 8.85, 10.25, 19.75, 22.85, 26.05, 29.25, 32.45]],
+  [6, [6.65, 8.95, 10.35, 25.95, 29.15, 33.35, 36.45, 40.85]],
+  [7, [6.75, 9.05, 10.45, 27.55, 31.65, 36.75, 40.85, 45.25]],
+  [8, [6.85, 9.25, 10.55, 29.45, 34.35, 39.25, 44.15, 49.35]],
+  [9, [6.95, 9.35, 10.65, 30.25, 35.25, 40.35, 45.35, 50.75]],
+  [10, [7.05, 9.45, 10.85, 38.25, 45.05, 51.95, 58.75, 65.85]],
+  [11, [7.05, 9.65, 11.05, 41.65, 48.55, 55.45, 62.35, 69.35]],
+  [13, [7.15, 10.05, 11.45, 42.55, 49.75, 56.85, 63.85, 70.95]],
+  [15, [7.25, 10.25, 11.65, 45.55, 52.95, 60.55, 68.15, 75.65]],
+  [17, [7.35, 10.45, 11.85, 48.95, 56.55, 64.05, 71.35, 79.35]],
+  [20, [7.45, 10.65, 12.05, 55.15, 64.35, 73.55, 82.75, 91.95]],
+  [25, [7.65, 11.05, 12.25, 64.55, 75.75, 85.45, 96.25, 106.85]],
+  [30, [7.75, 11.25, 12.45, 66.45, 76.05, 86.25, 97.15, 107.85]],
+];
+// Sem peso cadastrado, o app assume a faixa mais leve (até 0,3 kg) e avisa.
+export const ML_PESO_PADRAO_G = 300;
+
+export function custoEnvioML(pesoG, preco) {
+  const kg = Number(pesoG) > 0 ? Number(pesoG) / 1000 : ML_PESO_PADRAO_G / 1000;
+  const linha = ML_ENVIO_TABELA.find(([max]) => kg <= max) || ML_ENVIO_TABELA[ML_ENVIO_TABELA.length - 1];
+  const p = Number(preco) || 0;
+  let idx = ML_ENVIO_FAIXAS_PRECO.findIndex((f) => p >= f.min && p <= f.max);
+  if (idx < 0) idx = p < 19 ? 0 : ML_ENVIO_FAIXAS_PRECO.length - 1;
+  const v = linha[1][idx];
+  return p > 0 && p < 19 ? Math.min(v, p / 2) : v;
+}
+
+// Faixas do ML no formato das outras (min/max/fixo) pra um peso — o "fixo" é
+// o custo dos Envios daquela faixa de preço.
+export function mlFaixas(pesoG) {
+  return ML_ENVIO_FAIXAS_PRECO.map((f) => ({ label: f.label, min: f.min, max: f.max, fixo: custoEnvioML(pesoG, f.min > 0 ? f.min : 18.99) }));
+}
+// Compatibilidade: faixas pro peso padrão (até 0,3 kg).
+export const ML_FEE_TIERS = mlFaixas(ML_PESO_PADRAO_G);
 
 // Taxas do TikTok Shop Brasil vigentes desde 15/jul/2026 — só duas faixas,
 // definidas pelo preço do item já com desconto aplicado (não por categoria).
@@ -46,15 +99,12 @@ export const TIKTOK_TIERS = [
   { label: "A partir de R$50,00", min: 50, max: 9999999, pct: 0.06, fixo: 6 },
 ];
 
-// Comissão da Shein Marketplace Brasil — validada em 07/09/2026 contra três
-// fontes independentes (a página oficial de política de comissão da Shein
-// devolveu erro de acesso na hora da validação, vale reconferir depois em
-// br.shein.com/SHEIN-Commission-Policy-a-1420.html): comissão padrão de 16%
-// sobre o valor final da venda, sem taxa fixa por venda e sem diferenciação
-// por categoria pra produtos fora de vestuário (algumas categorias de moda
-// chegam a ~20%, irrelevante pra produtos impressos em 3D). Só uma faixa —
-// bem mais simples que Shopee/ML/TikTok.
-export const SHEIN_TIERS = [{ label: "Padrão (todas as faixas de preço)", min: 0, max: 9999999, pct: 0.16, fixo: 0 }];
+// Comissão da Shein Marketplace Brasil — conferida em 27/09/2026 direto na
+// página oficial br.shein.com/SHEIN-Commission-Policy-a-1420.html: "Outras
+// Categorias — pedidos criados após 1º de março de 2026: taxa ajustada de 16%
+// para 18%" (vestuário feminino é 20%, irrelevante pra impressos em 3D). Sem
+// taxa fixa por venda e sem variação por faixa de preço.
+export const SHEIN_TIERS = [{ label: "Padrão (todas as faixas de preço)", min: 0, max: 9999999, pct: 0.18, fixo: 0 }];
 
 // Valores padrão dos campos de Custo de Produção — usados tanto na primeira
 // vez que a aba abre quanto quando alguém preenche o detalhamento de um
@@ -197,14 +247,15 @@ export function resolverFaixaTikTok(base) {
 // Mesma ideia para o Mercado Livre, dada a categoria e o tipo de anúncio
 // (Clássico ou Premium — Premium cobra mais mas permite parcelamento sem
 // juros pro comprador).
-export function resolverFaixaML(categoria, base, tipoAnuncio = "classico") {
+export function resolverFaixaML(categoria, base, tipoAnuncio = "classico", pesoG = null) {
   const pcts = ML_CATEGORY_PCT[categoria] ?? { classico: 0.13, premium: 0.18 };
   const comissaoPct = tipoAnuncio === "premium" ? pcts.premium : pcts.classico;
-  for (const tier of ML_FEE_TIERS) {
+  const faixas = mlFaixas(pesoG);
+  for (const tier of faixas) {
     const resultado = calcCanal({ ...base, comissaoPct, taxaFixa: tier.fixo, min: tier.min, max: tier.max });
     if (resultado.faixaOk) return { tier, resultado };
   }
-  const tier = ML_FEE_TIERS[ML_FEE_TIERS.length - 1];
+  const tier = faixas[faixas.length - 1];
   return { tier, resultado: calcCanal({ ...base, comissaoPct, taxaFixa: tier.fixo, min: tier.min, max: tier.max }) };
 }
 
@@ -243,15 +294,15 @@ export function resolverFaixaShein(base) {
 // preço pra outro canal, Promoções, editar preço em Preços por Canal). Só
 // canal customizado de verdade não tem faixa nenhuma — devolve null só pra
 // esse (quem chama usa a taxa fixa cadastrada no próprio canal).
-export function resolverTaxasNoPreco(canalTipo, preco, mlCategoria, mlTipoAnuncio = "classico") {
+export function resolverTaxasNoPreco(canalTipo, preco, mlCategoria, mlTipoAnuncio = "classico", pesoG = null) {
   if (canalTipo === "shopee") {
     const tier = SHOPEE_TIERS.find((t) => preco >= t.min && preco <= t.max) || SHOPEE_TIERS[SHOPEE_TIERS.length - 1];
-    return { comissaoPct: tier.pct, taxaFixa: tier.fixo };
+    // abaixo de R$9 o adicional por item é metade do preço (regra oficial)
+    return { comissaoPct: tier.pct, taxaFixa: preco > 0 && preco < 9 ? Math.min(tier.fixo, preco / 2) : tier.fixo };
   }
   if (canalTipo === "ml") {
     const pcts = ML_CATEGORY_PCT[mlCategoria] ?? { classico: 0.13, premium: 0.18 };
-    const tier = ML_FEE_TIERS.find((t) => preco >= t.min && preco <= t.max) || ML_FEE_TIERS[ML_FEE_TIERS.length - 1];
-    return { comissaoPct: mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico, taxaFixa: tier.fixo };
+    return { comissaoPct: mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico, taxaFixa: custoEnvioML(pesoG, preco) };
   }
   if (canalTipo === "tiktok") {
     const tier = TIKTOK_TIERS.find((t) => preco >= t.min && preco <= t.max) || TIKTOK_TIERS[TIKTOK_TIERS.length - 1];
@@ -269,9 +320,9 @@ export function resolverTaxasNoPreco(canalTipo, preco, mlCategoria, mlTipoAnunci
 // preço avaliado pode ser bem diferente do preço que resolveu a faixa
 // original (desconto grande, kit com várias unidades, preço editado à mão…).
 // `canal` só precisa ter `.tipo` e, quando for canal customizado, `comissao_pct`/`taxa_fixa`.
-export function resultadoNoPreco(canal, base, preco, mlCategoria, mlTipoAnuncio = "classico") {
+export function resultadoNoPreco(canal, base, preco, mlCategoria, mlTipoAnuncio = "classico", pesoG = null) {
   if (!(preco > 0)) return null;
-  const taxas = resolverTaxasNoPreco(canal?.tipo, preco, mlCategoria, mlTipoAnuncio);
+  const taxas = resolverTaxasNoPreco(canal?.tipo, preco, mlCategoria, mlTipoAnuncio, pesoG);
   const comissaoPct = taxas ? taxas.comissaoPct : canal?.comissao_pct || 0;
   const taxaFixa = taxas ? taxas.taxaFixa : canal?.taxa_fixa || 0;
   const totalPct = (base.imposto || 0) + comissaoPct + (base.custosFixosPct || 0);

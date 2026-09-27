@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { SHOPEE_TIERS, ML_CATEGORY_PCT, ML_FEE_TIERS, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom } from "../lib/calc.js";
+import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -19,7 +19,7 @@ const DEFAULTS = {
   shopeeFaixaIdx: 0,
   mlCategoria: ML_CATEGORIAS[0],
   mlTipoAnuncio: "classico",
-  mlFaixaIdx: 0,
+  mlFaixaIdx: 1,
   tiktokFaixaIdx: 0,
   outroComissao: 0,
   outroFixo: 0,
@@ -112,6 +112,10 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     return isFinite(x) ? x : 0;
   };
 
+  // Peso de envio do item escolhido — no ML o custo dos Envios depende dele.
+  const pesoSel = baseSelecionada ? baseItens.find((x) => x.id === baseSelecionada)?.peso || null : null;
+  const faixasML = useMemo(() => mlFaixas(pesoSel), [pesoSel]);
+
   const comissaoFixo = useMemo(() => {
     if (f.canal === "shopee") {
       const tier = SHOPEE_TIERS[f.shopeeFaixaIdx] || SHOPEE_TIERS[0];
@@ -120,7 +124,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     if (f.canal === "ml") {
       const pcts = ML_CATEGORY_PCT[f.mlCategoria] ?? { classico: 0.13, premium: 0.18 };
       const pct = f.mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico;
-      const tier = ML_FEE_TIERS[f.mlFaixaIdx] || ML_FEE_TIERS[0];
+      const tier = faixasML[f.mlFaixaIdx] || faixasML[1];
       return { pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
     if (f.canal === "tiktok") {
@@ -132,7 +136,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: false };
     }
     return { pct: n(f.outroComissao) / 100, fixo: n(f.outroFixo), temFaixa: false };
-  }, [f.canal, f.shopeeFaixaIdx, f.mlCategoria, f.mlTipoAnuncio, f.mlFaixaIdx, f.tiktokFaixaIdx, f.outroComissao, f.outroFixo]);
+  }, [f.canal, f.shopeeFaixaIdx, f.mlCategoria, f.mlTipoAnuncio, f.mlFaixaIdx, f.tiktokFaixaIdx, f.outroComissao, f.outroFixo, faixasML]);
 
   const resultado = useMemo(() => {
     return calcCanal({
@@ -172,9 +176,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     taxa_fixa: f.canal === "shein" ? resolverTaxasShein().fixo : n(f.outroFixo),
   };
   const concorrenteLucro =
-    n(f.concorrente) > 0 ? resultadoNoPreco(canalParaComparacao, baseSemComissao, n(f.concorrente), f.mlCategoria, f.mlTipoAnuncio)?.lucro ?? null : null;
+    n(f.concorrente) > 0 ? resultadoNoPreco(canalParaComparacao, baseSemComissao, n(f.concorrente), f.mlCategoria, f.mlTipoAnuncio, pesoSel)?.lucro ?? null : null;
   const negociadoLucro =
-    n(f.negociado) > 0 ? resultadoNoPreco(canalParaComparacao, baseSemComissao, n(f.negociado), f.mlCategoria, f.mlTipoAnuncio)?.lucro ?? null : null;
+    n(f.negociado) > 0 ? resultadoNoPreco(canalParaComparacao, baseSemComissao, n(f.negociado), f.mlCategoria, f.mlTipoAnuncio, pesoSel)?.lucro ?? null : null;
 
   // "Mesmo produto nos outros canais": o mesmo custo + margem desejada em
   // cada canal cadastrado, com o imposto/custos fixos configurados em cada
@@ -194,7 +198,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         const b = { ...base, imposto: canal.imposto_pct || 0, custosFixosPct: canal.custos_fixos_pct || 0 };
         let r;
         if (canal.tipo === "shopee") r = resolverFaixaShopee(b).resultado;
-        else if (canal.tipo === "ml") r = resolverFaixaML(f.mlCategoria, b, f.mlTipoAnuncio).resultado;
+        else if (canal.tipo === "ml") r = resolverFaixaML(f.mlCategoria, b, f.mlTipoAnuncio, pesoSel).resultado;
         else if (canal.tipo === "tiktok") r = resolverFaixaTikTok(b).resultado;
         else if (canal.tipo === "shein") r = resolverFaixaShein(b).resultado;
         else r = calcCanalCustom(canal, b);
@@ -209,7 +213,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       })
       .sort((a, b) => (b.confiavel && b.r.lucro != null ? b.r.lucro : -Infinity) - (a.confiavel && a.r.lucro != null ? a.r.lucro : -Infinity));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, f.lucratividade, f.mlCategoria, f.mlTipoAnuncio]);
+  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, f.lucratividade, f.mlCategoria, f.mlTipoAnuncio, pesoSel]);
 
   const canalLabel =
     f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : "Outro canal";
@@ -484,12 +488,15 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                 </div>
               </div>
               <div className="field">
-                <label>Faixa de preço prevista (define a taxa fixa)</label>
+                <label>Faixa de preço prevista (define o custo de envio)</label>
                 <select value={f.mlFaixaIdx} onChange={setIdx("mlFaixaIdx")}>
-                  {ML_FEE_TIERS.map((t, i) => (
-                    <option key={t.label} value={i}>{t.label}</option>
+                  {faixasML.map((t, i) => (
+                    <option key={t.label} value={i}>{t.label} · envio {BRL(t.fixo)}</option>
                   ))}
                 </select>
+                <div className="hint" style={{ marginTop: 3, marginBottom: 0 }}>
+                  Custo dos Envios oficial do ML pelo peso {pesoSel ? `de envio (${formatarPeso(pesoSel)})` : `— sem peso cadastrado, usando até ${ML_PESO_PADRAO_G} g`}.
+                </div>
               </div>
             </>
           )}
@@ -632,7 +639,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           <div className="detalhe-taxas">
             <div className="detalhe-taxas-titulo">Taxas descontadas por venda (nesse preço)</div>
             <div className="kv"><span className="k">Comissão do canal</span><span className="v">{PCT(comissaoFixo.pct)} · {BRL(resultado.preco * comissaoFixo.pct)}</span></div>
-            <div className="kv"><span className="k">Taxa fixa do canal</span><span className="v">{BRL(comissaoFixo.fixo)}</span></div>
+            <div className="kv"><span className="k">{f.canal === "ml" ? "Custo dos Envios (ML, por peso)" : "Taxa fixa do canal"}</span><span className="v">{BRL(comissaoFixo.fixo)}</span></div>
             <div className="kv"><span className="k">Imposto (seu CNPJ/MEI)</span><span className="v">{PCT(n(f.imposto) / 100)} · {BRL(resultado.preco * (n(f.imposto) / 100))}</span></div>
             <div className="kv"><span className="k">Custos fixos adicionais</span><span className="v">{PCT(n(f.custosFixos) / 100)} · {BRL(resultado.preco * (n(f.custosFixos) / 100))}</span></div>
             <div className="kv total"><span className="k">Total descontado da venda</span><span className="v">{BRL(resultado.preco - resultado.custoTotal - resultado.lucro)}</span></div>
