@@ -21,11 +21,13 @@ export default function Publicar({ onToast }) {
   const cfgLoja = lojas.find((l) => l.id === lojaId)?.config_escada || null;
   const promoMin = configEscada(cfgLoja).promoMinOlist;
   const [promoMinEdit, setPromoMinEdit] = useState(null);
+  const [baseEdit, setBaseEdit] = useState(null); // { chave, valor } — "já está na Olist"
   const [verTodos, setVerTodos] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
   const canaisOlist = canais.filter((c) => c.acrescimo_olist_pct != null && c.acrescimo_olist_pct !== "");
   const acrescimos = Object.fromEntries(canaisOlist.map((c) => [c.id, Number(c.acrescimo_olist_pct) || 0]));
+  const modos = Object.fromEntries(canaisOlist.map((c) => [c.id, c.acrescimo_olist_modo || "dentro"]));
 
   const linhas = useMemo(() => {
     const ordem = [];
@@ -44,9 +46,10 @@ export default function Publicar({ onToast }) {
           const s = precos.find((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === c.id);
           if (s && Number(s.preco) > 0) reais[c.id] = Number(s.preco);
         }
-        const pub = calcularPublicacao(reais, acrescimos, promoMin);
-        if (!pub) return null;
         const salva = publicacoes.find((x) => x.item_tipo === tipo && x.item_id === id) || null;
+        // base que já está na Olist (última publicada ou informada) é mantida enquanto servir
+        const pub = calcularPublicacao(reais, acrescimos, promoMin, salva ? Number(salva.base) : null, modos);
+        if (!pub) return null;
         return { item, tipo, id, pub, salva, mudou: publicacaoMudou(salva, pub), nunca: !salva };
       })
       .filter(Boolean);
@@ -65,6 +68,19 @@ export default function Publicar({ onToast }) {
       return;
     }
     setPromoMinEdit(null);
+  }
+
+  // "Já está na Olist por R$ X": grava a base atual (sem promos) — a tela passa
+  // a calcular as promos a partir dela, em vez de sugerir outra base.
+  async function informarBase(l, valor) {
+    const base = Number(String(valor).replace(",", "."));
+    setBaseEdit(null);
+    if (!(base > 0) || !supabase) return;
+    const { error } = await supabase
+      .from("publicacoes_olist")
+      .upsert({ loja_id: lojaId || null, item_tipo: l.tipo, item_id: l.id, base, promos: {}, publicado_em: new Date().toISOString() }, { onConflict: "item_tipo,item_id" });
+    if (error) onToast(`Não foi possível salvar: ${error.message}`);
+    else onToast(`Base da Olist registrada: ${BRL(base)} — lance as promos indicadas e marque como publicado`);
   }
 
   async function marcar(lista) {
@@ -129,7 +145,7 @@ export default function Publicar({ onToast }) {
         <h3 className="section-title h3-split">
           <span>
             O que digitar na Olist e nas plataformas
-            <Ajuda texto="Cadastrar na Olist = preço do item na Olist (um só). Cada canal aplica o próprio acréscimo (Configuração → Canais); promo = % a lançar na plataforma pro cliente pagar o preço real salvo em Produtos precificados. A base é escolhida pra todo canal ficar com pelo menos a 'promo mínima' (o anúncio sempre mostra desconto). A promoção é arredondada pra baixo (% inteiro), então o cliente paga no máximo alguns centavos a mais. ↻ = mudou desde a última vez que você marcou como publicado (custo, preço, taxa ou acréscimo)." />
+            <Ajuda texto="Cadastrar na Olist = preço do item na Olist (um só). Cada canal aplica o próprio acréscimo (Configuração → Canais) do jeito configurado na Olist: “base por dentro” = base ÷ (1 − acréscimo) (ex.: R$11,90 com 30% → R$17,00) ou “base simples” = base × (1 + acréscimo); promo = % a lançar na plataforma pro cliente pagar o preço real salvo em Produtos precificados. A base é escolhida pra todo canal ficar com pelo menos a 'promo mínima' (o anúncio sempre mostra desconto). A promoção é arredondada pra baixo (% inteiro), então o cliente paga no máximo alguns centavos a mais. ↻ = mudou desde a última vez que você marcou como publicado (custo, preço, taxa ou acréscimo)." />
           </span>
           <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <label className="promo-min" title="A base da Olist é calculada pra todo canal ficar com pelo menos essa promoção">
@@ -166,7 +182,7 @@ export default function Publicar({ onToast }) {
                     <th className="num" key={c.id}>
                       {nomeCanal(c)}
                       <span className="sub" style={{ textTransform: "none", letterSpacing: 0 }}>
-                        acréscimo +{Math.round((Number(c.acrescimo_olist_pct) || 0) * 1000) / 10}%
+                        acréscimo {Math.round((Number(c.acrescimo_olist_pct) || 0) * 1000) / 10}% · {c.acrescimo_olist_modo === "simples" ? "base simples" : "por dentro"}
                       </span>
                     </th>
                   ))}
@@ -184,12 +200,34 @@ export default function Publicar({ onToast }) {
                       </span>
                     </td>
                     <td className="num">
-                      <span className="base">{BRL(l.pub.base)}</span>
+                      {baseEdit?.chave === l.item.id ? (
+                        <input
+                          className="input-base-olist"
+                          type="number"
+                          step="0.01"
+                          autoFocus
+                          value={baseEdit.valor}
+                          onChange={(e) => setBaseEdit({ chave: l.item.id, valor: e.target.value })}
+                          onBlur={() => informarBase(l, baseEdit.valor)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") e.target.blur();
+                            if (e.key === "Escape") setBaseEdit(null);
+                          }}
+                        />
+                      ) : (
+                        <span className="base">{BRL(l.pub.base)}</span>
+                      )}
+                      {l.pub.baseMantida && <span className="sub">já está na Olist</span>}
+                      {l.pub.baseAtualNaoServe && <span className="sub" style={{ color: "var(--bad)" }}>a atual ({BRL(Number(l.salva.base))}) não dá mais — troque</span>}
                       {l.mudou && (
                         <span className="sub">
-                          <span className="badge warn">{l.nunca ? "novo" : "↻ atualizar"}</span>
-                          {!l.nunca && Math.abs(Number(l.salva.base) - l.pub.base) >= 0.01 && <> era {BRL(Number(l.salva.base))}</>}
+                          <span className="badge warn">{l.nunca ? "novo" : l.pub.baseMantida ? "↻ promo mudou" : "↻ atualizar"}</span>
                         </span>
+                      )}
+                      {baseEdit?.chave !== l.item.id && (
+                        <button type="button" className="link-btn" style={{ fontSize: 11 }} onClick={() => setBaseEdit({ chave: l.item.id, valor: l.salva ? String(l.salva.base) : "" })}>
+                          {l.nunca ? "já tenho preço na Olist" : "mudar preço da Olist"}
+                        </button>
                       )}
                     </td>
                     {canaisOlist.map((c) => {

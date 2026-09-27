@@ -100,7 +100,26 @@ function CampoAcrescimo({ canal, onToast, onAtualizado }) {
         onBlur={salvar}
         onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
       />
-      %{salvo && <span className="salvo-check">✓</span>}
+      %
+      <select
+        value={canal.acrescimo_olist_modo || "dentro"}
+        title="Forma para aplicar os valores adicionais (igual à integração na Olist)"
+        style={{ width: "auto", padding: "4px 6px", fontSize: 12 }}
+        onChange={async (e) => {
+          const modo = e.target.value;
+          const { error } = await supabase.from("canais").update({ acrescimo_olist_modo: modo }).eq("id", canal.id);
+          if (error) {
+            onToast(/acrescimo_olist_modo|column/i.test(error.message) ? "Rode o SQL v28 no Supabase pra salvar a forma do acréscimo" : "Não foi possível atualizar — tente de novo");
+            return;
+          }
+          onAtualizado?.(undefined, modo);
+          disparar();
+        }}
+      >
+        <option value="dentro">base por dentro</option>
+        <option value="simples">base simples</option>
+      </select>
+      {salvo && <span className="salvo-check">✓</span>}
     </span>
   );
 }
@@ -268,7 +287,7 @@ export default function Canais({ onToast }) {
       <div className="panel">
         <h3>
           Canais cadastrados
-          <Ajuda texto="Comissão e taxa fixa da Shopee/ML seguem as faixas oficiais (calculadas automaticamente). Imposto e custos fixos são por canal — o Comparativo usa o valor daqui pra cada um. % de Ads é quanto você costuma investir em anúncio patrocinado, usado só pra mostrar o lucro com Ads em Comparar canais. Acréscimo Olist = o mesmo % configurado na integração da Olist pra esse canal (vazio = canal sem Olist); é usado só na aba Publicar." />
+          <Ajuda texto="Comissão e taxa fixa da Shopee/ML seguem as faixas oficiais (calculadas automaticamente). Imposto e custos fixos são por canal — o Comparativo usa o valor daqui pra cada um. % de Ads é quanto você costuma investir em anúncio patrocinado, usado só pra mostrar o lucro com Ads em Comparar canais. Acréscimo Olist = o mesmo % e a mesma “forma para aplicar os valores adicionais” (base por dentro ou base simples) configurados na integração da Olist pra esse canal (vazio = canal sem Olist); é usado só na aba Publicar." />
         </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
@@ -317,7 +336,7 @@ export default function Canais({ onToast }) {
                       <CampoEditavel canal={c} campo="ads_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
                     </td>
                     <td className="num">
-                      <CampoAcrescimo canal={c} onToast={onToast} onAtualizado={(v) => setCanais((prev) => prev.map((x) => (x.id === c.id ? { ...x, acrescimo_olist_pct: v } : x)))} />
+                      <CampoAcrescimo canal={c} onToast={onToast} onAtualizado={(v, modo) => setCanais((prev) => prev.map((x) => (x.id === c.id ? (modo ? { ...x, acrescimo_olist_modo: modo } : { ...x, acrescimo_olist_pct: v }) : x)))} />
                     </td>
                     <td>
                       {(c.tipo === "custom" || c.tipo === "tiktok" || c.tipo === "shein") && (

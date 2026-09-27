@@ -45,7 +45,7 @@ function LucroPorPeca({ lucro, pecas }) {
 // - campanha abaixo do preço real salvo;
 // - escada invertida: o item em promoção fica mais barato por peça que um
 //   kit MAIOR do mesmo produto (o cliente perde o motivo de levar mais).
-function AvisosPlataforma({ precoFinal, baseSelecionada, canal, canais, itens, precos }) {
+function AvisosPlataforma({ precoFinal, baseSelecionada, canal, canais, itens, precos, publicacoes = [] }) {
   const { lojas, lojaId } = useLoja();
   const promoMin = configEscada(lojas.find((l) => l.id === lojaId)?.config_escada).promoMinOlist;
   if (!baseSelecionada || !canal || !(precoFinal > 0)) return null;
@@ -61,14 +61,15 @@ function AvisosPlataforma({ precoFinal, baseSelecionada, canal, canais, itens, p
       const s = salvoDe(tipo, id, c.id);
       if (s && Number(s.preco) > 0) reais[c.id] = Number(s.preco);
     }
-    const pub = calcularPublicacao(reais, Object.fromEntries(olist.map((c) => [c.id, Number(c.acrescimo_olist_pct) || 0])), promoMin);
+    const salvaPub = publicacoes.find((x) => x.item_tipo === tipo && x.item_id === id);
+    const pub = calcularPublicacao(reais, Object.fromEntries(olist.map((c) => [c.id, Number(c.acrescimo_olist_pct) || 0])), promoMin, salvaPub ? Number(salvaPub.base) : null, Object.fromEntries(olist.map((c) => [c.id, c.acrescimo_olist_modo || "dentro"])));
     const nosso = pub?.canais[canal.id];
     if (pub && nosso) {
       const pct = promoParaPreco(nosso.anunciado, precoFinal);
       avisos.push({
         tom: "acc",
         titulo: `Na plataforma: lance ${Math.floor(pct)}% de promoção`,
-        texto: `O anúncio aparece a ${BRL(nosso.anunciado)} (base Olist ${BRL(pub.base)} + ${Math.round(Number(canal.acrescimo_olist_pct) * 100)}%). A campanha substitui a promo de sempre (${nosso.promo}%) — não soma. Com ${Math.floor(pct)}% o cliente paga ${BRL(nosso.anunciado * (1 - Math.floor(pct) / 100))}.`,
+        texto: `O anúncio aparece a ${BRL(nosso.anunciado)} (base Olist ${BRL(pub.base)} com acréscimo de ${Math.round(Number(canal.acrescimo_olist_pct) * 100)}% ${canal.acrescimo_olist_modo === "simples" ? "base simples" : "por dentro"}). A campanha substitui a promo de sempre (${nosso.promo}%) — não soma. Com ${Math.floor(pct)}% o cliente paga ${BRL(nosso.anunciado * (1 - Math.floor(pct) / 100))}.`,
       });
     }
   }
@@ -150,7 +151,7 @@ export default function PromocaoSimulador({ onToast }) {
   // Produtos (custo e embalagem AO VIVO), kits, variações e preços salvos
   // (com lucro recalculado) vêm do catálogo compartilhado, que já tem
   // realtime em todas as tabelas envolvidas.
-  const { itens: itensCatalogo, produtos, precos } = useRankingData();
+  const { itens: itensCatalogo, produtos, precos, publicacoes } = useRankingData();
   const [canais, setCanais] = useState([]);
   const [nomesPromocoesSalvas, setNomesPromocoesSalvas] = useState([]); // pro autocomplete/sugestão ao salvar
   const [carregando, setCarregando] = useState(true);
@@ -1165,6 +1166,7 @@ export default function PromocaoSimulador({ onToast }) {
                   canais={canais}
                   itens={itensCatalogo}
                   precos={precos}
+                  publicacoes={publicacoes}
                 />
               )}
             </div>
