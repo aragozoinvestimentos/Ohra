@@ -763,6 +763,13 @@ footer.note { margin-top: 32px; font-size: 12px; color: var(--ink-faint); line-h
 .tabela-pub td, .tabela-pub th { vertical-align: top; }
 .tabela-pub .promo { font-weight: 700; font-size: 14px; }
 .tabela-pub .base { font-weight: 700; font-size: 15px; }
+.kit-sep { margin: -4px 0 14px; padding: 9px 12px; border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 8px; background: var(--accent-soft); font-size: 12.5px; color: var(--ink-soft); }
+.kit-sep-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.kit-sep-linha b { color: var(--ink); font-weight: 600; }
+.kit-sep-linha .btn { margin-left: auto; }
+.kit-sep-comp { color: var(--ink-faint); }
+.kit-sep-sug { font-weight: 700; color: var(--accent-ink); font-size: 14px; }
+.kit-sep-notas { font-size: 11.5px; color: var(--ink-faint); margin-top: 4px; }
 .refs-avulso { margin: -4px 0 14px; padding: 8px 12px; border: 1px dashed var(--border-strong); border-radius: 8px; background: var(--surface); }
 .sug-cel { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 3px 6px; margin-top: 3px; font-size: 11px; }
 .sug-cel-v { color: var(--accent-ink); font-weight: 600; }

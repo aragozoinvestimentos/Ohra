@@ -11,7 +11,8 @@ import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
-import { configEscada, referenciasAvulso } from "../lib/escada.js";
+import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado } from "../lib/escada.js";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -41,6 +42,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [salvando, setSalvando] = useState(false);
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | "p:<id>" | "k:<id>"
   const [canalProprioId, setCanalProprioId] = useState("");
+  const [confirmarKit, setConfirmarKit] = useState(false);
   const { itens: baseItens, canais, produtos, precos, composicaoDoKit } = useRankingData();
 
   const canaisProprios = canais.filter((c) => c.tipo === "custom");
@@ -294,6 +296,38 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         )
       : null;
 
+  // Kit de produtos diferentes: sugerido comparando com as peças vendidas
+  // separadas nesse canal (mesma lógica da escada — ver sugestaoKit).
+  const canalAjustado = canalCadastrado ? { ...canalCadastrado, imposto_pct: n(f.imposto) / 100, custos_fixos_pct: n(f.custosFixos) / 100 } : null;
+  const sugKit =
+    kitSelecionadoId && canalAjustado && itemSel ? sugestaoKit({ canal: canalAjustado, kitItem: itemSel, itens: baseItens, precos, cfg: cfgEscada }) : null;
+  const kitCalculado = sugKit ? kitVsSeparado(sugKit, canalAjustado, resultado.preco, cfgEscada) : null;
+  const kitSalvo = sugKit && precoExistente ? kitVsSeparado(sugKit, canalAjustado, Number(precoExistente.preco), cfgEscada) : null;
+
+  async function salvarSugeridoKit() {
+    setConfirmarKit(false);
+    if (!supabase || !sugKit || !canalIdAtual) return;
+    const { error } = await supabase.from("precos_canal").upsert(
+      {
+        loja_id: lojaId || null,
+        item_tipo: "kit",
+        item_id: kitSelecionadoId,
+        canal_id: canalIdAtual,
+        preco: arredondarPreco(sugKit.sugerido),
+        custo_total: arredondarPreco(sugKit.custo),
+        lucro: arredondarPreco(sugKit.lucro),
+        margem: sugKit.margem,
+        atualizado_em: new Date().toISOString(),
+      },
+      { onConflict: "item_tipo,item_id,canal_id" }
+    );
+    if (error) {
+      onToast(`Não foi possível salvar: ${error.message}`);
+      return;
+    }
+    onToast(`${itemSel?.nome}: ${BRL(sugKit.sugerido)} salvo em ${canalLabel}`);
+  }
+
   async function salvar() {
     if (!supabase) {
       onToast("Produtos precificados indisponível (Supabase não configurado)");
@@ -418,6 +452,55 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           </>
         )}
       </div>
+    )}
+    {sugKit && (
+      <div className="kit-sep">
+        <div className="kit-sep-linha">
+          <span>
+            <b>Separado:</b> {BRL(sugKit.separado)}{" "}
+            <span className="kit-sep-comp">
+              ({sugKit.componentes.map((c, i) => (
+                <span key={c.produtoId}>
+                  {i > 0 && " + "}
+                  {c.quantidade > 1 ? `${c.quantidade}× ` : ""}
+                  {c.nome} {BRL(c.preco)}
+                  {c.origem === "margem" && <span title="Sem preço salvo nesse canal — usando o preço da margem desejada"> *</span>}
+                </span>
+              ))}
+              )
+            </span>
+          </span>
+          <span>
+            <b>Sugerido:</b> <span className="kit-sep-sug">{BRL(sugKit.sugerido)}</span> · cliente economiza {PCT(sugKit.economiaPct)} · seu lucro {BRL(sugKit.lucro)}{" "}
+            <span className="kit-sep-comp">(separado {BRL(sugKit.lucroSeparado)})</span>
+          </span>
+          <button type="button" className="btn btn-sm primary" onClick={() => setConfirmarKit(true)} disabled={!canalIdAtual}>
+            Salvar sugerido
+          </button>
+          <Ajuda texto="O preço separado é a soma dos preços salvos das peças nesse canal (* = peça sem preço salvo; usa o da margem desejada). O kit paga uma taxa fixa só e uma embalagem, então dá pra cobrar menos que o separado mantendo o mesmo lucro — essa economia vai pro cliente. Mesmas travas da escada: cliente economiza pelo menos 5%, margem mínima e troca de faixa do canal." />
+        </div>
+        {sugKit.notas.length > 0 && <div className="kit-sep-notas">{sugKit.notas.join(" · ")}</div>}
+        {sugKit.naoCompensa && <div className="kit-sep-notas" style={{ color: "var(--bad)" }}>Nesse canal o kit não consegue ficar abaixo do separado com a margem mínima — revise o custo do kit ou os preços das peças.</div>}
+      </div>
+    )}
+    {kitSalvo?.menosQueSeparado && (
+      <div className="alerta alerta-bad">
+        <b>Preço salvo do kit dá menos lucro que vender as peças separadas</b>Com {BRL(precoExistente.preco)} o kit lucra {BRL(kitSalvo.lucro)} — {BRL(-kitSalvo.diferenca)} a menos que vender as peças separadas ({BRL(sugKit.lucroSeparado)}). Sugerido: {BRL(sugKit.sugerido)}.
+      </div>
+    )}
+    {!kitSalvo?.menosQueSeparado && kitCalculado?.menosQueSeparado && (
+      <div className="alerta alerta-warn">
+        <b>Esse preço dá menos lucro que vender as peças separadas</b>Com {BRL(resultado.preco)} o kit lucra {BRL(kitCalculado.lucro)} — {BRL(-kitCalculado.diferenca)} a menos que as peças separadas ({BRL(sugKit.lucroSeparado)}). Suba a lucratividade ou use o sugerido ({BRL(sugKit.sugerido)}).
+      </div>
+    )}
+    {confirmarKit && sugKit && (
+      <ConfirmDialog
+        titulo={`Salvar ${BRL(sugKit.sugerido)}?`}
+        mensagem={`Salva ${BRL(sugKit.sugerido)} como preço de ${itemSel?.nome} em ${canalLabel}${precoExistente ? `, no lugar de ${BRL(precoExistente.preco)}` : ""}. Lucro ${BRL(sugKit.lucro)} (separado ${BRL(sugKit.lucroSeparado)}), cliente economiza ${PCT(sugKit.economiaPct)}.`}
+        confirmarLabel="Salvar"
+        onConfirm={salvarSugeridoKit}
+        onCancel={() => setConfirmarKit(false)}
+      />
     )}
     {refs?.concorrenteAbaixoDoPiso && (
       <div className="alerta alerta-bad">

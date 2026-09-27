@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../hooks/useRankingData.js";
 import { useEscada } from "../hooks/useEscada.js";
-import { statusPrecoSalvo } from "../lib/escada.js";
+import { statusPrecoSalvo, sugestaoKit, configEscada } from "../lib/escada.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -25,7 +25,7 @@ import { precoSalvoAoVivo } from "../lib/aoVivo.js";
 // foram simplificadas pra só o formulário.
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, carregando: carregandoBase, escada } = useEscada();
+  const { itens, canais, carregando: carregandoBase, escada, precos: precosVivos, cfgLoja } = useEscada();
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
   const [excluirVariacao, setExcluirVariacao] = useState(null); // item "v:<id>" // { item, canal, sugerido, linha }
   const [salvandoAplicar, setSalvandoAplicar] = useState(false);
@@ -130,9 +130,21 @@ export default function Historico({ onEditarCompleto, onToast }) {
         }
       }
     }
+    // Kits de produtos diferentes: sugerido comparando com as peças separadas.
+    const cfgKit = configEscada(cfgLoja, null);
+    for (const k of itens.filter((i) => i.id.startsWith("k:"))) {
+      for (const c of canais) {
+        const sug = sugestaoKit({ canal: c, kitItem: k, itens, precos: precosVivos, cfg: cfgKit });
+        if (!sug) continue;
+        const salvo = precosVivos.find((p) => p.item_tipo === "kit" && p.item_id === k.id.slice(2) && p.canal_id === c.id);
+        let st = salvo ? statusPrecoSalvo(Number(salvo.preco), sug, null) : null;
+        if (salvo && st?.tom !== "bad" && Number(salvo.preco) >= sug.separado - 0.005) st = { tom: "neu", texto: "↓ sem vantagem vs separado" };
+        mapa.set(`${k.id}|${c.id}`, { linha: sug, st });
+      }
+    }
     return mapa;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itens, canais, escada]);
+  }, [itens, canais, escada, precosVivos, cfgLoja]);
 
   // Exclui a variação (e os preços salvos dela, que não têm FK) — o produto não muda.
   async function confirmarExcluirVariacao() {
@@ -159,7 +171,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const { error } = await supabase.from("precos_canal").upsert(
       {
         loja_id: lojaId || null,
-        item_tipo: "variacao",
+        item_tipo: itemTipoDoId(a.item.id),
         item_id: a.item.id.slice(2),
         canal_id: a.canal.id,
         preco: Math.round(a.linha.sugerido * 100) / 100,
@@ -679,11 +691,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
                               {item.pecas > 1 && p.lucro != null && (
                                 <div className="sub-num" title={`Lucro dividido pelas ${item.pecas} peças`}>{BRL(p.lucro / item.pecas)}/peça</div>
                               )}
-                              {variacao && sugeridos.get(`${item.id}|${c.id}`) && (() => {
+                              {(variacao || item.tipo === "Kit") && sugeridos.get(`${item.id}|${c.id}`) && (() => {
                                 const sg = sugeridos.get(`${item.id}|${c.id}`);
                                 return (
                                   <div className="sug-cel">
-                                    <span className="sug-cel-v" title="Preço sugerido pela escada (Precificação por Canal → Por quantidade)">sugerido {BRL(sg.linha.sugerido)}</span>
+                                    <span className="sug-cel-v" title={item.tipo === "Kit" ? `Sugerido comparando com as peças vendidas separadas (${BRL(sg.linha.separado)}) — Precificação por Canal → Avulso` : "Preço sugerido pela escada (Precificação por Canal → Por quantidade)"}>sugerido {BRL(sg.linha.sugerido)}</span>
                                     {sg.st && <span className={`badge ${sg.st.tom === "acc" ? "acc" : sg.st.tom === "neu" ? "" : sg.st.tom}`}>{sg.st.texto}</span>}
                                     {sg.st && sg.st.tom !== "good" && (
                                       <button type="button" className="link-btn" onClick={() => setAplicarAlvo({ item, canal: c, linha: sg.linha, salvo: p.preco })}>
@@ -694,7 +706,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 );
                               })()}
                             </div>
-                          ) : variacao && sugeridos.get(`${item.id}|${c.id}`) ? (
+                          ) : (variacao || item.tipo === "Kit") && sugeridos.get(`${item.id}|${c.id}`) ? (
                             <div className="sug-cel sug-cel-vazia">
                               <span style={{ color: "var(--ink-faint)" }}>sem preço</span>
                               <span className="sug-cel-v">sugerido {BRL(sugeridos.get(`${item.id}|${c.id}`).linha.sugerido)}</span>
@@ -790,7 +802,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
       {aplicarAlvo && (
         <ConfirmDialog
           titulo={`Aplicar ${BRL(aplicarAlvo.linha.sugerido)}?`}
-          mensagem={`Salva ${BRL(aplicarAlvo.linha.sugerido)} como preço de ${aplicarAlvo.item.nome} em ${aplicarAlvo.canal.nome}${aplicarAlvo.salvo != null ? `, no lugar de ${BRL(aplicarAlvo.salvo)}` : ""}. Lucro ${BRL(aplicarAlvo.linha.lucro)} (${BRL(aplicarAlvo.linha.lucroPorPeca)}/peça).`}
+          mensagem={`Salva ${BRL(aplicarAlvo.linha.sugerido)} como preço de ${aplicarAlvo.item.nome} em ${aplicarAlvo.canal.nome}${aplicarAlvo.salvo != null ? `, no lugar de ${BRL(aplicarAlvo.salvo)}` : ""}. Lucro ${BRL(aplicarAlvo.linha.lucro)} ${aplicarAlvo.linha.kit ? `(peças separadas: ${BRL(aplicarAlvo.linha.lucroSeparado)}), cliente economiza ${PCT(aplicarAlvo.linha.economiaPct)} vs ${BRL(aplicarAlvo.linha.separado)}` : `(${BRL(aplicarAlvo.linha.lucroPorPeca)}/peça)`}.`}
           confirmarLabel={salvandoAplicar ? "Salvando…" : "Aplicar"}
           onConfirm={aplicarSugerido}
           onCancel={() => setAplicarAlvo(null)}

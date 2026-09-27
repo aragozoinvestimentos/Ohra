@@ -426,6 +426,114 @@ export function escadaDoProduto({ produtoId, canal, itens, precos, concorrentes,
 }
 
 // ---------------------------------------------------------------------------
+// Kit de produtos diferentes (ex.: Gato + Cachorro): preço sugerido comparando
+// com as PEÇAS VENDIDAS SEPARADAS no mesmo canal. Mesma lógica da escada:
+// - separado = Σ qtd × preço salvo da peça no canal (sem salvo, o preço da
+//   margem desejada dela);
+// - lucro base de cada peça = o do preço salvo, ou o da margem desejada se o
+//   avulso estiver como "atração" (igual à escada);
+// - alvo = retencao(peças do kit) × Σ lucros (kit de 2 peças = 100%: toda a
+//   economia de taxa fixa/embalagem vai pro cliente, você lucra o mesmo);
+// - menor ,90 que dá o alvo na faixa real do canal pro preço do kit; travas:
+//   cliente economiza ≥ vantagemMin vs separado, margem mínima, desce pra
+//   antes de troca de faixa se der mais lucro.
+// kitItem = item "k:" do catálogo (custoTotal, peso, pecas, componentes).
+export function sugestaoKit({ canal, kitItem, itens, precos, cfg }) {
+  if (!canal || !kitItem?.componentes?.length) return null;
+  const custo = num(kitItem.custoTotal);
+  const peso = num(kitItem.peso);
+  const componentes = [];
+  let separado = 0;
+  let lucroSeparado = 0;
+  let lucroBase = 0;
+  for (const c of kitItem.componentes) {
+    const q = num(c.quantidade);
+    const it = itens.find((i) => i.id === `p:${c.produtoId}`);
+    if (!it || q <= 0) continue;
+    const c1 = num(it.custoTotal);
+    const p1peso = num(it.peso);
+    const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === c.produtoId && p.canal_id === canal.id);
+    const pRef = precoParaMargem(canal, cfg.margemDesejada, c1, p1peso, cfg);
+    const preco = salvo && num(salvo.preco) > 0 ? num(salvo.preco) : pRef != null ? r90up(pRef) : 0;
+    if (!(preco > 0)) return null;
+    const l = lucroNoPreco(canal, preco, c1, p1peso, cfg) ?? 0;
+    const lRef = pRef != null ? lucroNoPreco(canal, pRef, c1, p1peso, cfg) ?? l : l;
+    componentes.push({ produtoId: c.produtoId, nome: it.nome, quantidade: q, preco, origem: salvo ? "salvo" : "margem", lucro: l });
+    separado += q * preco;
+    lucroSeparado += q * l;
+    lucroBase += q * Math.max(l, lRef);
+  }
+  if (!componentes.length || !(separado > 0)) return null;
+  const pecas = componentes.reduce((s, c) => s + c.quantidade, 0);
+  const alvo = retencao(pecas, cfg) * lucroBase;
+  const notas = [];
+  let p = precoParaLucro(canal, alvo, custo, peso, cfg);
+  p = p != null ? r90up(p) : r90(separado);
+  const maxVant = r90(separado * (1 - cfg.vantagemMin));
+  if (p > maxVant) {
+    p = maxVant;
+    notas.push(`desceu pra dar ≥${Math.round(cfg.vantagemMin * 100)}% de economia`);
+  }
+  const descontoCurva = (separado - p) / separado;
+  for (const [, hi] of limitesDoCanal(canal, peso)) {
+    if (!isFinite(hi) || hi <= 0) continue;
+    const b = hi - 0.01;
+    if (b < p && b >= p * 0.85) {
+      const cand = r90(b + 0.001);
+      const lc = lucroNoPreco(canal, cand, custo, peso, cfg);
+      const lp = lucroNoPreco(canal, p, custo, peso, cfg);
+      if (cand < p && lc > lp + 0.5 && (separado - cand) / separado <= descontoCurva + 0.1) {
+        notas.push("evita a troca de faixa do canal");
+        p = cand;
+      }
+    }
+  }
+  const pMin = precoParaMargem(canal, cfg.margemMin, custo, peso, cfg);
+  let naoCompensa = false;
+  if (pMin != null && p < pMin) {
+    const np = r90up(pMin);
+    if (np < separado) {
+      p = np;
+      notas.push("segurado pela margem mínima");
+    } else naoCompensa = true;
+  }
+  p = centavos(p);
+  const lucro = lucroNoPreco(canal, p, custo, peso, cfg);
+  return {
+    n: pecas,
+    custo,
+    peso,
+    componentes,
+    separado: centavos(separado),
+    lucroSeparado,
+    alvo,
+    sugerido: p,
+    lucro,
+    lucroPorPeca: lucro / pecas,
+    margem: p > 0 ? lucro / p : null,
+    economia: separado - p,
+    economiaPct: (separado - p) / separado,
+    pisoMargem: pMin,
+    notas,
+    naoCompensa,
+    kit: true,
+  };
+}
+
+// Lucro de um preço qualquer do kit comparado a vender as peças separadas.
+export function kitVsSeparado(sug, canal, preco, cfg) {
+  if (!sug || !(num(preco) > 0)) return null;
+  const lucro = lucroNoPreco(canal, num(preco), sug.custo, sug.peso, cfg);
+  return {
+    lucro,
+    diferenca: lucro - sug.lucroSeparado,
+    // só avisa quando está ABAIXO do sugerido E lucra menos que as peças separadas
+    menosQueSeparado: lucro < sug.lucroSeparado - 0.05 && num(preco) < sug.sugerido - 0.005,
+    economiaCliente: (sug.separado - num(preco)) / sug.separado,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Regra da Shopee: num mesmo anúncio, o preço da variação mais cara não pode
 // passar de 4× o da mais barata — contando o preço com promoção (o que o
 // cliente paga) e o preço original (com o acréscimo da Olist). Recebe as
