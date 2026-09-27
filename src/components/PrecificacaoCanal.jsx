@@ -114,6 +114,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   };
 
   // Peso de envio do item escolhido — no ML o custo dos Envios depende dele.
+  // Avulso = produtos de 1 peça + kits de produtos diferentes (kits não têm
+  // escada). Variações (kit 2, kit 3…) ficam em Por quantidade / Produtos precificados.
+  const itensAvulso = useMemo(() => baseItens.filter((i) => !i.id.startsWith("v:")), [baseItens]);
   const pesoSel = baseSelecionada ? baseItens.find((x) => x.id === baseSelecionada)?.peso || null : null;
   const faixasML = useMemo(() => mlFaixas(pesoSel), [pesoSel]);
 
@@ -559,7 +562,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           </h3>
           <div className="field">
             <label>Produto, variação ou kit (opcional)</label>
-            <BuscaItem grupos={gruposDoSeletor(baseItens)} value={baseSelecionada} onChange={setBaseSelecionada} vazio="— preencher manualmente —" />
+            <BuscaItem grupos={gruposDoSeletor(itensAvulso)} value={baseSelecionada} onChange={setBaseSelecionada} vazio="— preencher manualmente —" />
           </div>
           <div className="row3">
             <div className="field">
