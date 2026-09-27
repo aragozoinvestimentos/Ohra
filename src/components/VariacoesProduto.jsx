@@ -133,6 +133,8 @@ export default function VariacoesProduto({ produto, produtoEmbalagens, embalagen
     if (error) return onToast?.(`Não foi possível excluir: ${error.message}`);
     // Preço salvo por canal da variação não tem FK — limpa na mão.
     await supabase.from("precos_canal").delete().eq("item_tipo", "variacao").eq("item_id", v.id);
+    await supabase.from("precos_concorrente").delete().eq("item_tipo", "variacao").eq("item_id", v.id);
+    await supabase.from("publicacoes_olist").delete().eq("item_tipo", "variacao").eq("item_id", v.id);
     setVariacoes((prev) => prev.filter((x) => x.id !== v.id));
     onToast?.("Variação excluída");
   }

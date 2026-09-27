@@ -26,7 +26,8 @@ import { precoSalvoAoVivo } from "../lib/aoVivo.js";
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
   const { itens, canais, carregando: carregandoBase, escada } = useEscada();
-  const [aplicarAlvo, setAplicarAlvo] = useState(null); // { item, canal, sugerido, linha }
+  const [aplicarAlvo, setAplicarAlvo] = useState(null);
+  const [excluirVariacao, setExcluirVariacao] = useState(null); // item "v:<id>" // { item, canal, sugerido, linha }
   const [salvandoAplicar, setSalvandoAplicar] = useState(false);
   const [precos, setPrecos] = useState([]);
   const [carregandoPrecos, setCarregandoPrecos] = useState(true);
@@ -132,6 +133,24 @@ export default function Historico({ onEditarCompleto, onToast }) {
     return mapa;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itens, canais, escada]);
+
+  // Exclui a variação (e os preços salvos dela, que não têm FK) — o produto não muda.
+  async function confirmarExcluirVariacao() {
+    const item = excluirVariacao;
+    setExcluirVariacao(null);
+    if (!item || !supabase) return;
+    const vid = item.id.slice(2);
+    const { error } = await supabase.from("produto_variacoes").delete().eq("id", vid);
+    if (error) {
+      onToast(`Não foi possível excluir: ${error.message}`);
+      return;
+    }
+    await supabase.from("precos_canal").delete().eq("item_tipo", "variacao").eq("item_id", vid);
+    await supabase.from("precos_concorrente").delete().eq("item_tipo", "variacao").eq("item_id", vid);
+    await supabase.from("publicacoes_olist").delete().eq("item_tipo", "variacao").eq("item_id", vid);
+    setPrecos((prev) => prev.filter((p) => !(p.item_tipo === "variacao" && p.item_id === vid)));
+    onToast(`${item.nomeVariacao || item.nome} excluída`);
+  }
 
   async function aplicarSugerido() {
     const a = aplicarAlvo;
@@ -585,6 +604,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
                             {item.nomeVariacao}
                             <small>{item.quantidade} un.{item.peso ? ` · ${formatarPeso(item.peso)}` : ""}</small>
                           </div>
+                          <span className="acoes-linha">
+                            <button className="del" title="Excluir variação" onClick={() => setExcluirVariacao(item)}>
+                              ×
+                            </button>
+                          </span>
                         </div>
                       ) : (
                       <div className="item-cel">
@@ -750,6 +774,17 @@ export default function Historico({ onEditarCompleto, onToast }) {
             </div>
           )}
         </EditarDialog>
+      )}
+
+      {excluirVariacao && (
+        <ConfirmDialog
+          titulo="Excluir variação"
+          mensagem={`Excluir "${excluirVariacao.nome}"? Os preços salvos dela em todos os canais também saem. O produto e as outras variações não são afetados.`}
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={confirmarExcluirVariacao}
+          onCancel={() => setExcluirVariacao(null)}
+        />
       )}
 
       {aplicarAlvo && (
