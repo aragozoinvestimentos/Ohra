@@ -64,7 +64,7 @@ function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSal
 }
 
 // Acréscimo da integração Olist (schema v27) — vazio = canal sem Olist.
-function CampoAcrescimo({ canal, onToast, onAtualizado }) {
+function CampoAcrescimo({ canal, onToast, onAtualizado, onPrincipal }) {
   const [salvo, disparar] = useSalvoFlash();
   const atual = canal.acrescimo_olist_pct;
   const [valor, setValor] = useState(null);
@@ -119,6 +119,10 @@ function CampoAcrescimo({ canal, onToast, onAtualizado }) {
         <option value="dentro">base por dentro</option>
         <option value="simples">base simples</option>
       </select>
+      <label className="radio-principal" title="Canal principal da Olist: o preço cadastrado na Olist = seu preço real nesse canal, e a promo nele = o acréscimo">
+        <input type="radio" name="olist-principal" checked={!!canal.olist_principal} disabled={atual == null} onChange={() => onPrincipal?.(canal.id)} />
+        principal
+      </label>
       {salvo && <span className="salvo-check">✓</span>}
     </span>
   );
@@ -162,6 +166,20 @@ export default function Canais({ onToast }) {
       supabase.removeChannel(canal);
     };
   }, [lojaId]);
+
+  // Canal principal da Olist (um por loja): desmarca os outros e marca esse.
+  async function definirPrincipal(id) {
+    if (!supabase) return;
+    const outros = canais.filter((c) => c.id !== id && c.olist_principal).map((c) => c.id);
+    if (outros.length) await supabase.from("canais").update({ olist_principal: false }).in("id", outros);
+    const { error } = await supabase.from("canais").update({ olist_principal: true }).eq("id", id);
+    if (error) {
+      onToast(/olist_principal|column/i.test(error.message) ? "Rode o SQL v29 no Supabase pra marcar o canal principal" : "Não foi possível atualizar — tente de novo");
+      return;
+    }
+    setCanais((prev) => prev.map((c) => ({ ...c, olist_principal: c.id === id })));
+    onToast("Canal principal da Olist definido");
+  }
 
   function chave(id, campo) {
     return `${id}:${campo}`;
@@ -287,7 +305,7 @@ export default function Canais({ onToast }) {
       <div className="panel">
         <h3>
           Canais cadastrados
-          <Ajuda texto="Comissão e taxa fixa da Shopee/ML seguem as faixas oficiais (calculadas automaticamente). Imposto e custos fixos são por canal — o Comparativo usa o valor daqui pra cada um. % de Ads é quanto você costuma investir em anúncio patrocinado, usado só pra mostrar o lucro com Ads em Comparar canais. Acréscimo Olist = o mesmo % e a mesma “forma para aplicar os valores adicionais” (base por dentro ou base simples) configurados na integração da Olist pra esse canal (vazio = canal sem Olist); é usado só na aba Publicar." />
+          <Ajuda texto="Comissão e taxa fixa da Shopee/ML seguem as faixas oficiais (calculadas automaticamente). Imposto e custos fixos são por canal — o Comparativo usa o valor daqui pra cada um. % de Ads é quanto você costuma investir em anúncio patrocinado, usado só pra mostrar o lucro com Ads em Comparar canais. Acréscimo Olist = o mesmo % e a mesma “forma para aplicar os valores adicionais” (base por dentro ou base simples) configurados na integração da Olist pra esse canal (vazio = canal sem Olist); é usado só na aba Publicar. “Principal” = canal cujo preço real vira o preço cadastrado na Olist (a promo nele fica igual ao acréscimo)." />
         </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
@@ -336,7 +354,7 @@ export default function Canais({ onToast }) {
                       <CampoEditavel canal={c} campo="ads_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
                     </td>
                     <td className="num">
-                      <CampoAcrescimo canal={c} onToast={onToast} onAtualizado={(v, modo) => setCanais((prev) => prev.map((x) => (x.id === c.id ? (modo ? { ...x, acrescimo_olist_modo: modo } : { ...x, acrescimo_olist_pct: v }) : x)))} />
+                      <CampoAcrescimo canal={c} onToast={onToast} onPrincipal={definirPrincipal} onAtualizado={(v, modo) => setCanais((prev) => prev.map((x) => (x.id === c.id ? (modo ? { ...x, acrescimo_olist_modo: modo } : { ...x, acrescimo_olist_pct: v }) : x)))} />
                     </td>
                     <td>
                       {(c.tipo === "custom" || c.tipo === "tiktok" || c.tipo === "shein") && (

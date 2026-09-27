@@ -62,7 +62,7 @@ function AvisosPlataforma({ precoFinal, baseSelecionada, canal, canais, itens, p
       if (s && Number(s.preco) > 0) reais[c.id] = Number(s.preco);
     }
     const salvaPub = publicacoes.find((x) => x.item_tipo === tipo && x.item_id === id);
-    const pub = calcularPublicacao(reais, Object.fromEntries(olist.map((c) => [c.id, Number(c.acrescimo_olist_pct) || 0])), promoMin, salvaPub ? Number(salvaPub.base) : null, Object.fromEntries(olist.map((c) => [c.id, c.acrescimo_olist_modo || "dentro"])));
+    const pub = calcularPublicacao(reais, Object.fromEntries(olist.map((c) => [c.id, Number(c.acrescimo_olist_pct) || 0])), promoMin, salvaPub ? Number(salvaPub.base) : null, Object.fromEntries(olist.map((c) => [c.id, c.acrescimo_olist_modo || "dentro"])), olist.find((c) => c.olist_principal)?.id || null);
     const nosso = pub?.canais[canal.id];
     if (pub && nosso) {
       const pct = promoParaPreco(nosso.anunciado, precoFinal);

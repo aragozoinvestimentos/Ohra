@@ -305,34 +305,43 @@ export function alertasAvulso({ canal, p1, base1, cfg, escada, concorrente }) {
 // Publicar (Olist): uma base por item + promo % por canal.
 // precosReais: { [canalId]: preçoReal } só dos canais com acréscimo.
 // acrescimos:  { [canalId]: fração } (0.2 = 20%)
-// promoMin:    todo canal fica com pelo menos essa promoção (0.1 = 10%) — a
-//              base é a maior que ainda garante isso em todos os canais, então
-//              nenhum anúncio fica "sem desconto" (o objetivo do acréscimo).
-export function calcularPublicacao(precosReais, acrescimos, promoMin = 0.1, baseAtual = null, modos = {}) {
+// modos:       { [canalId]: "dentro" | "simples" } — forma do acréscimo na Olist:
+//   "Base por dentro" (padrão, o que o Gustavo usa): anunciado = base ÷ (1 − a)
+//   (ex.: R$11,90 com 30% → R$17,00); "Base simples": anunciado = base × (1 + a).
+// principalId: canal principal da Olist. REGRA (combinada com o Gustavo): o
+//   preço cadastrado na Olist = o PREÇO REAL desse canal, e a promo nele = o
+//   acréscimo — o mesmo número em Produtos precificados, na Olist e no que o
+//   cliente paga. Nos outros canais a promo é calculada a partir dessa base.
+// Plano B (sem canal principal ou sem preço salvo nele): base já na Olist
+//   (baseAtual) enquanto servir; senão a menor ,90 que dá pelo menos promoMin
+//   em todos os canais.
+export function calcularPublicacao(precosReais, acrescimos, promoMin = 0.1, baseAtual = null, modos = {}, principalId = null) {
   const ids = Object.keys(precosReais).filter((id) => acrescimos[id] != null && num(precosReais[id]) > 0);
   if (!ids.length) return null;
   const m = Math.max(0, Math.min(0.9, num(promoMin)));
-  // menor base (terminada em ,90) que dá promo ≥ m em TODOS os canais
-  // Forma do acréscimo na integração da Olist (por canal):
-  // "Base por dentro" (padrão, o que o Gustavo usa): anunciado = base ÷ (1 − a)
-  //   — ex.: R$11,90 com 30% → R$17,00; a promo de a% volta exatamente pra base.
-  // "Base simples": anunciado = base × (1 + a).
   const fator = (id) => (modos[id] === "simples" ? 1 + num(acrescimos[id]) : 1 / (1 - Math.min(0.95, num(acrescimos[id]))));
   const sugerida = r90up(Math.max(...ids.map((id) => num(precosReais[id]) / (fator(id) * (1 - m)))));
-  // Se já existe um preço na Olist (publicado/informado), mantém ele enquanto
-  // funcionar em todos os canais (anunciado ≥ preço real → promo ≥ 0) — só
-  // sugere trocar a base quando ela não dá mais conta.
   const atual = num(baseAtual);
   const atualServe = atual > 0 && ids.every((id) => atual * fator(id) >= num(precosReais[id]) - 0.005);
-  const base = atualServe ? atual : sugerida;
+  const temPrincipal = principalId != null && ids.includes(principalId);
+  const base = temPrincipal ? num(precosReais[principalId]) : atualServe ? atual : sugerida;
+  const origem = temPrincipal ? "principal" : atualServe ? "atual" : "sugerida";
   const canais = {};
   for (const id of ids) {
+    const real = num(precosReais[id]);
     const anunciado = base * fator(id);
-    const promo = Math.max(0, Math.floor((1 - num(precosReais[id]) / anunciado) * 100 + 1e-9));
+    const bruto = (1 - real / anunciado) * 100;
+    const promo = Math.max(0, Math.floor(bruto + 1e-9));
     const clientePaga = centavos(anunciado * (1 - promo / 100));
-    canais[id] = { anunciado: centavos(anunciado), promo, clientePaga, real: num(precosReais[id]) };
+    // canal secundário sem espaço pra promo (< 5%) → acréscimo que daria 5%
+    let acrescimoSugerido = null;
+    if (id !== principalId && bruto < 5) {
+      const alvo = real / 0.95 / base; // fator necessário
+      acrescimoSugerido = Math.ceil((modos[id] === "simples" ? alvo - 1 : 1 - 1 / alvo) * 100);
+    }
+    canais[id] = { anunciado: centavos(anunciado), promo, clientePaga, real, principal: id === principalId, acrescimoSugerido, abaixoDoReal: clientePaga < real - 0.005 };
   }
-  return { base: centavos(base), canais, sugerida: centavos(sugerida), baseMantida: atualServe, baseAtualNaoServe: atual > 0 && !atualServe };
+  return { base: centavos(base), canais, origem, sugerida: centavos(sugerida), baseMantida: origem === "atual", baseAtualNaoServe: !temPrincipal && atual > 0 && !atualServe };
 }
 
 // A publicação salva difere da calculada agora?

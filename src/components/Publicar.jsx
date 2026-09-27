@@ -13,8 +13,11 @@ const nomeCanal = (c) => c?.nome || NOME_CANAL[c?.tipo] || "Canal";
 // Publicar — o ÚNICO lugar do app com informação da Olist. Pra cada item com
 // preço salvo: o preço pra cadastrar na Olist (um só por item) e, em cada
 // canal com acréscimo configurado, a promoção % a lançar na plataforma pra o
-// cliente pagar o preço real salvo. Base = a menor que funciona em todos os
-// canais (nenhum precisa de promoção negativa); promo arredondada pra baixo.
+// cliente pagar o preço real salvo. Regra: preço na Olist = preço real do
+// CANAL PRINCIPAL (Configuração → Canais) e a promo nele = o acréscimo; nos
+// outros canais a promo é calculada. Sem canal principal/preço nele, plano B
+// (base atual da Olist ou a menor que dá a promo mínima). Promo arredondada
+// pra baixo (% inteiro).
 export default function Publicar({ onToast }) {
   const { lojaId, lojas, atualizar } = useLoja();
   const { itens, canais, precos, publicacoes } = useRankingData();
@@ -28,6 +31,7 @@ export default function Publicar({ onToast }) {
   const canaisOlist = canais.filter((c) => c.acrescimo_olist_pct != null && c.acrescimo_olist_pct !== "");
   const acrescimos = Object.fromEntries(canaisOlist.map((c) => [c.id, Number(c.acrescimo_olist_pct) || 0]));
   const modos = Object.fromEntries(canaisOlist.map((c) => [c.id, c.acrescimo_olist_modo || "dentro"]));
+  const principal = canaisOlist.find((c) => c.olist_principal) || null;
 
   const linhas = useMemo(() => {
     const ordem = [];
@@ -48,7 +52,7 @@ export default function Publicar({ onToast }) {
         }
         const salva = publicacoes.find((x) => x.item_tipo === tipo && x.item_id === id) || null;
         // base que já está na Olist (última publicada ou informada) é mantida enquanto servir
-        const pub = calcularPublicacao(reais, acrescimos, promoMin, salva ? Number(salva.base) : null, modos);
+        const pub = calcularPublicacao(reais, acrescimos, promoMin, salva ? Number(salva.base) : null, modos, principal?.id || null);
         if (!pub) return null;
         return { item, tipo, id, pub, salva, mudou: publicacaoMudou(salva, pub), nunca: !salva };
       })
@@ -148,7 +152,12 @@ export default function Publicar({ onToast }) {
             <Ajuda texto="Cadastrar na Olist = preço do item na Olist (um só). Cada canal aplica o próprio acréscimo (Configuração → Canais) do jeito configurado na Olist: “base por dentro” = base ÷ (1 − acréscimo) (ex.: R$11,90 com 30% → R$17,00) ou “base simples” = base × (1 + acréscimo); promo = % a lançar na plataforma pro cliente pagar o preço real salvo em Produtos precificados. A base é escolhida pra todo canal ficar com pelo menos a 'promo mínima' (o anúncio sempre mostra desconto). A promoção é arredondada pra baixo (% inteiro), então o cliente paga no máximo alguns centavos a mais. ↻ = mudou desde a última vez que você marcou como publicado (custo, preço, taxa ou acréscimo)." />
           </span>
           <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            <label className="promo-min" title="A base da Olist é calculada pra todo canal ficar com pelo menos essa promoção">
+            {principal ? (
+              <span className="promo-min" title="Configuração → Canais">
+                preço na Olist = preço real na <b style={{ color: "var(--ink)" }}>{nomeCanal(principal)}</b>
+              </span>
+            ) : (
+            <label className="promo-min" title="Sem canal principal: a base da Olist é calculada pra todo canal ficar com pelo menos essa promoção">
               promo mínima
               <input
                 type="number"
@@ -160,6 +169,7 @@ export default function Publicar({ onToast }) {
               />
               %
             </label>
+            )}
             <button type="button" className="btn btn-sm" onClick={() => setVerTodos((v) => !v)}>
               {verTodos ? `Só o que precisa atualizar (${pendentes.length})` : `Ver todos (${linhas.length})`}
             </button>
@@ -179,8 +189,9 @@ export default function Publicar({ onToast }) {
                   <th>Item</th>
                   <th className="num">Cadastrar na Olist</th>
                   {canaisOlist.map((c) => (
-                    <th className="num" key={c.id}>
+                    <th className={`num${c.olist_principal ? " cel-principal" : ""}`} key={c.id}>
                       {nomeCanal(c)}
+                      {c.olist_principal && <span className="badge acc" style={{ marginLeft: 4 }}>principal</span>}
                       <span className="sub" style={{ textTransform: "none", letterSpacing: 0 }}>
                         acréscimo {Math.round((Number(c.acrescimo_olist_pct) || 0) * 1000) / 10}% · {c.acrescimo_olist_modo === "simples" ? "base simples" : "por dentro"}
                       </span>
@@ -217,14 +228,16 @@ export default function Publicar({ onToast }) {
                       ) : (
                         <span className="base">{BRL(l.pub.base)}</span>
                       )}
+                      {l.pub.origem === "principal" && <span className="sub">= seu preço na {nomeCanal(principal)}</span>}
                       {l.pub.baseMantida && <span className="sub">já está na Olist</span>}
+                      {principal && l.pub.origem !== "principal" && <span className="sub">sem preço na {nomeCanal(principal)} — base calculada</span>}
                       {l.pub.baseAtualNaoServe && <span className="sub" style={{ color: "var(--bad)" }}>a atual ({BRL(Number(l.salva.base))}) não dá mais — troque</span>}
                       {l.mudou && (
                         <span className="sub">
                           <span className="badge warn">{l.nunca ? "novo" : l.pub.baseMantida ? "↻ promo mudou" : "↻ atualizar"}</span>
                         </span>
                       )}
-                      {baseEdit?.chave !== l.item.id && (
+                      {baseEdit?.chave !== l.item.id && l.pub.origem !== "principal" && (
                         <button type="button" className="link-btn" style={{ fontSize: 11 }} onClick={() => setBaseEdit({ chave: l.item.id, valor: l.salva ? String(l.salva.base) : "" })}>
                           {l.nunca ? "já tenho preço na Olist" : "mudar preço da Olist"}
                         </button>
@@ -240,10 +253,18 @@ export default function Publicar({ onToast }) {
                         );
                       const antes = l.salva?.promos?.[c.id];
                       return (
-                        <td className="num" key={c.id}>
+                        <td className={`num${x.principal ? " cel-principal" : ""}`} key={c.id}>
                           <span className="promo">promo {x.promo}%</span>
                           <span className="sub">cliente paga {BRL(x.clientePaga)}</span>
                           {antes != null && Number(antes) !== x.promo && <span className="sub">era {antes}%</span>}
+                          {x.abaixoDoReal && (
+                            <span className="sub" style={{ color: "var(--bad)" }}>
+                              abaixo do seu preço ({BRL(x.real)}) — suba o acréscimo desse canal pra {x.acrescimoSugerido}%
+                            </span>
+                          )}
+                          {!x.abaixoDoReal && x.acrescimoSugerido != null && (
+                            <span className="sub" style={{ color: "var(--warn)" }}>quase sem promo — acréscimo de {x.acrescimoSugerido}% daria 5%</span>
+                          )}
                         </td>
                       );
                     })}
