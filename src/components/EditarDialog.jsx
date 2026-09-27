@@ -1,3 +1,4 @@
+import Portal from "./Portal.jsx";
 // Modal genérico pra editar um item já cadastrado (material, embalagem...).
 // Diferente do ConfirmDialog (que só confirma uma ação), este carrega um
 // formulário — os campos vêm de fora via children, o modal só cuida do
@@ -5,6 +6,7 @@
 // "Cancelar" (não salva nada), igual ao PinPrompt/ConfirmDialog.
 export default function EditarDialog({ titulo, salvando, onSalvar, onCancelar, salvarLabel = "Salvar alterações", salvandoLabel = "Salvando…", children }) {
   return (
+    <Portal>
     <div className="modal-overlay" onClick={onCancelar}>
       <div className="modal-box modal-box-larga" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <h3>{titulo}</h3>
@@ -19,5 +21,6 @@ export default function EditarDialog({ titulo, salvando, onSalvar, onCancelar, s
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

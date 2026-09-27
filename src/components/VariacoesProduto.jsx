@@ -1,3 +1,4 @@
+import Portal from "./Portal.jsx";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -232,6 +233,7 @@ export default function VariacoesProduto({ produto, produtoEmbalagens, embalagen
       )}
 
       {form && previa && (
+        <Portal>
         <div className="modal-overlay modal-overlay-topo" onClick={() => !salvando && setForm(null)}>
           <div className="modal-box modal-variacao" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="mv-head">
@@ -438,6 +440,7 @@ export default function VariacoesProduto({ produto, produtoEmbalagens, embalagen
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {excluirAlvo && (

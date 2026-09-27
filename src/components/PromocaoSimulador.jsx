@@ -11,6 +11,7 @@ import { normalizarTexto, nomesParecidos } from "../lib/texto.js";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, gruposDoSeletor } from "../lib/variacoes.js";
+import { calcularPublicacao, promoParaPreco, configEscada } from "../lib/escada.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -34,6 +35,75 @@ function LucroPorPeca({ lucro, pecas }) {
     <div className="kv">
       <span className="k">Lucro por peça <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>({pecas} peças)</span></span>
       <span className="v">{BRL(lucro / pecas)}</span>
+    </div>
+  );
+}
+
+// Avisos da campanha na plataforma (Olist + escada):
+// - % a lançar no canal a partir do preço ANUNCIADO (base Olist + acréscimo) —
+//   a campanha substitui a promo de sempre, não soma;
+// - campanha abaixo do preço real salvo;
+// - escada invertida: o item em promoção fica mais barato por peça que um
+//   kit MAIOR do mesmo produto (o cliente perde o motivo de levar mais).
+function AvisosPlataforma({ precoFinal, baseSelecionada, canal, canais, itens, precos }) {
+  const { lojas, lojaId } = useLoja();
+  const promoMin = configEscada(lojas.find((l) => l.id === lojaId)?.config_escada).promoMinOlist;
+  if (!baseSelecionada || !canal || !(precoFinal > 0)) return null;
+  const [pref, id] = baseSelecionada.split(":");
+  const tipo = itemTipoDoId(baseSelecionada);
+  const salvoDe = (t, iid, cid) => precos.find((p) => p.item_tipo === t && p.item_id === iid && p.canal_id === cid) || null;
+  const avisos = [];
+  // Olist
+  const olist = canais.filter((c) => c.acrescimo_olist_pct != null && c.acrescimo_olist_pct !== "");
+  if (canal.acrescimo_olist_pct != null && canal.acrescimo_olist_pct !== "") {
+    const reais = {};
+    for (const c of olist) {
+      const s = salvoDe(tipo, id, c.id);
+      if (s && Number(s.preco) > 0) reais[c.id] = Number(s.preco);
+    }
+    const pub = calcularPublicacao(reais, Object.fromEntries(olist.map((c) => [c.id, Number(c.acrescimo_olist_pct) || 0])), promoMin);
+    const nosso = pub?.canais[canal.id];
+    if (pub && nosso) {
+      const pct = promoParaPreco(nosso.anunciado, precoFinal);
+      avisos.push({
+        tom: "acc",
+        titulo: `Na plataforma: lance ${Math.floor(pct)}% de promoção`,
+        texto: `O anúncio aparece a ${BRL(nosso.anunciado)} (base Olist ${BRL(pub.base)} + ${Math.round(Number(canal.acrescimo_olist_pct) * 100)}%). A campanha substitui a promo de sempre (${nosso.promo}%) — não soma. Com ${Math.floor(pct)}% o cliente paga ${BRL(nosso.anunciado * (1 - Math.floor(pct) / 100))}.`,
+      });
+    }
+  }
+  const salvo = salvoDe(tipo, id, canal.id);
+  if (salvo && precoFinal < Number(salvo.preco) - 0.005) {
+    avisos.push({ tom: "warn", titulo: "Campanha abaixo do preço real", texto: `O cliente paga ${BRL(precoFinal)} — ${BRL(Number(salvo.preco) - precoFinal)} abaixo do preço salvo (${BRL(Number(salvo.preco))}).` });
+  }
+  // escada
+  const item = itens.find((i) => i.id === baseSelecionada);
+  const produtoId = pref === "p" ? id : item?.produtoId;
+  const pecas = item?.pecas || 1;
+  if (produtoId && pref !== "k") {
+    const maiores = itens
+      .filter((i) => i.id.startsWith("v:") && i.produtoId === produtoId && (i.pecas || 0) > pecas)
+      .map((v) => ({ v, s: salvoDe("variacao", v.id.slice(2), canal.id) }))
+      .filter((x) => x.s && Number(x.s.preco) > 0);
+    const invertido = maiores.find((x) => precoFinal / pecas < Number(x.s.preco) / x.v.pecas - 0.005);
+    if (invertido) {
+      const limite = (Number(invertido.s.preco) / invertido.v.pecas) * pecas;
+      avisos.push({
+        tom: "warn",
+        titulo: "Escada invertida",
+        texto: `Com essa campanha, ${pecas > 1 ? `o kit de ${pecas}` : "o avulso"} sai a ${BRL(precoFinal / pecas)} por peça — mais barato por peça que o ${invertido.v.nomeVariacao || invertido.v.nome} (${BRL(Number(invertido.s.preco) / invertido.v.pecas)}). O cliente perde o motivo de levar mais. Pra não inverter, não desça de ${BRL(limite)} (ou aplique a campanha nos kits maiores também).`,
+      });
+    }
+  }
+  if (!avisos.length) return null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      {avisos.map((a) => (
+        <div key={a.titulo} className={`alerta alerta-${a.tom === "acc" ? "good" : a.tom}`}>
+          <b>{a.titulo}</b>
+          {a.texto}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1083,6 +1153,16 @@ export default function PromocaoSimulador({ onToast }) {
                   <DeltaAvulso delta={descontoResultado.lucro - normal.lucro} referencia={`vender sem promoção, a ${BRL(normal.preco)}`} />
                   <Breakeven lucroNormal={normal.lucro} lucroPromo={descontoResultado.lucro} />
                 </>
+              )}
+              {descontoResultado && (
+                <AvisosPlataforma
+                  precoFinal={descontoResultado.preco}
+                  baseSelecionada={baseSelecionada}
+                  canal={canal}
+                  canais={canais}
+                  itens={itensCatalogo}
+                  precos={precos}
+                />
               )}
             </div>
           ) : tipo === "progressivo" ? (

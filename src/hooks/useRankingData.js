@@ -223,6 +223,8 @@ export function useRankingData() {
     precos: precosVivos,
     precosBrutos: precos,
     variacoes,
+    concorrentes: cat.concorrentes || [],
+    publicacoes: cat.publicacoes || [],
     materiais,
     embalagens: embalagensCatalogo,
     produtoEmbalagens,

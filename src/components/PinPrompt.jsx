@@ -1,3 +1,4 @@
+import Portal from "./Portal.jsx";
 import { useState } from "react";
 
 // Modal de PIN de 4 números — usado tanto pra entrar numa loja protegida
@@ -30,6 +31,7 @@ export default function PinPrompt({
   }
 
   return (
+    <Portal>
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <h3>{titulo}</h3>
@@ -59,5 +61,6 @@ export default function PinPrompt({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

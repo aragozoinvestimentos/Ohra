@@ -4,6 +4,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import { FRETE_ML_PADRAO } from "../lib/escada.js";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
 
@@ -60,6 +61,126 @@ function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSal
       {sufixo === "%" && "%"}
       {salvo && <span className="salvo-check">✓</span>}
     </span>
+  );
+}
+
+// Acréscimo da integração Olist (schema v27) — vazio = canal sem Olist.
+function CampoAcrescimo({ canal, onToast, onAtualizado }) {
+  const [salvo, disparar] = useSalvoFlash();
+  const atual = canal.acrescimo_olist_pct;
+  const [valor, setValor] = useState(null);
+  const exibido = valor ?? (atual == null ? "" : String(Math.round(Number(atual) * 1000) / 10));
+  async function salvar() {
+    if (valor === null) return;
+    const txt = valor.trim().replace(",", ".");
+    const novo = txt === "" ? null : Number(txt) / 100;
+    if (novo != null && (!isFinite(novo) || novo < 0 || novo > 3)) {
+      onToast("Acréscimo precisa ficar entre 0% e 300%");
+      return;
+    }
+    const { error } = await supabase.from("canais").update({ acrescimo_olist_pct: novo }).eq("id", canal.id);
+    if (error) {
+      onToast(/acrescimo_olist_pct|column/i.test(error.message) ? "Rode o SQL v27 no Supabase pra salvar o acréscimo" : "Não foi possível atualizar — tente de novo");
+      return;
+    }
+    onAtualizado?.(novo);
+    setValor(null);
+    disparar();
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+      <input
+        type="number"
+        step="0.1"
+        min="0"
+        placeholder="—"
+        title="Vazio = canal sem Olist"
+        style={{ width: 78, textAlign: "right" }}
+        value={exibido}
+        onChange={(e) => setValor(e.target.value)}
+        onBlur={salvar}
+        onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+      />
+      %{salvo && <span className="salvo-check">✓</span>}
+    </span>
+  );
+}
+
+// Tabela editável do frete grátis do ML por peso (estimativa, fica em
+// lojas.config_escada.freteMl) — usada quando um preço passa de R$ 79 no ML.
+function FreteMlTabela({ onToast }) {
+  const { lojas, lojaId, atualizar } = useLoja();
+  const cfg = lojas.find((l) => l.id === lojaId)?.config_escada || null;
+  const tabela = Array.isArray(cfg?.freteMl) && cfg.freteMl.length ? cfg.freteMl : FRETE_ML_PADRAO;
+  const [edit, setEdit] = useState(null);
+  const linhas = edit ?? tabela.map((f) => ({ ateG: String(f.ateG), valor: String(f.valor) }));
+  async function salvar() {
+    const limpa = linhas
+      .map((f) => ({ ateG: Number(String(f.ateG).replace(",", ".")), valor: Number(String(f.valor).replace(",", ".")) }))
+      .filter((f) => f.ateG > 0 && f.valor >= 0)
+      .sort((a, b) => a.ateG - b.ateG);
+    if (!limpa.length) {
+      onToast("Preencha pelo menos uma faixa de peso");
+      return;
+    }
+    const r = await atualizar(lojaId, { configEscada: { ...(cfg || {}), freteMl: limpa } });
+    if (!r.ok) {
+      onToast(/config_escada|column/i.test(r.error || "") ? "Rode o SQL v27 no Supabase pra salvar" : `Não foi possível salvar: ${r.error}`);
+      return;
+    }
+    setEdit(null);
+    onToast("Tabela de frete do ML salva");
+  }
+  return (
+    <div className="panel">
+      <h3>
+        Frete grátis do Mercado Livre (estimativa por peso)
+        <Ajuda texto="A partir de R$ 79 o ML obriga frete grátis e o vendedor paga parte do envio (depende da reputação, do peso e das dimensões). O app usa esta tabela pelo peso de envio do item (peça + embalagem) sempre que um preço no ML passa de R$ 79 — ajuste pros valores que aparecem na sua conta do ML." />
+      </h3>
+      <div className="table-wrap" style={{ maxWidth: 440 }}>
+        <table>
+          <thead>
+            <tr>
+              <th className="num">Até (g)</th>
+              <th className="num">Você paga (R$)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((f, i) => (
+              <tr key={i}>
+                <td className="num">
+                  <input type="number" style={{ width: 90, textAlign: "right" }} value={f.ateG} onChange={(e) => setEdit(linhas.map((x, j) => (j === i ? { ...x, ateG: e.target.value } : x)))} />
+                </td>
+                <td className="num">
+                  <input type="number" step="0.01" style={{ width: 90, textAlign: "right" }} value={f.valor} onChange={(e) => setEdit(linhas.map((x, j) => (j === i ? { ...x, valor: e.target.value } : x)))} />
+                </td>
+                <td>
+                  <button className="del" title="Remover faixa" onClick={() => setEdit(linhas.filter((_, j) => j !== i))}>
+                    ×
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        <button className="btn" onClick={() => setEdit([...linhas, { ateG: "", valor: "" }])}>
+          + Faixa
+        </button>
+        {edit && (
+          <>
+            <button className="btn" onClick={() => setEdit(null)}>
+              Cancelar
+            </button>
+            <button className="btn primary" onClick={salvar}>
+              Salvar tabela
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -226,7 +347,7 @@ export default function Canais({ onToast }) {
       <div className="panel">
         <h3>
           Canais cadastrados
-          <Ajuda texto="Comissão e taxa fixa da Shopee/ML seguem as faixas oficiais (calculadas automaticamente). Imposto e custos fixos são por canal — o Comparativo usa o valor daqui pra cada um. % de Ads é quanto você costuma investir em anúncio patrocinado, usado só pra mostrar o lucro com Ads no Comparativo." />
+          <Ajuda texto="Comissão e taxa fixa da Shopee/ML seguem as faixas oficiais (calculadas automaticamente). Imposto e custos fixos são por canal — o Comparativo usa o valor daqui pra cada um. % de Ads é quanto você costuma investir em anúncio patrocinado, usado só pra mostrar o lucro com Ads em Comparar canais. Acréscimo Olist = o mesmo % configurado na integração da Olist pra esse canal (vazio = canal sem Olist); é usado só na aba Publicar." />
         </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
@@ -242,6 +363,7 @@ export default function Canais({ onToast }) {
                   <th className="num">Imposto (seu)</th>
                   <th className="num">Custos fixos</th>
                   <th className="num">% Ads</th>
+                  <th className="num">Acréscimo Olist</th>
                   <th></th>
                 </tr>
               </thead>
@@ -273,6 +395,9 @@ export default function Canais({ onToast }) {
                     <td className="num">
                       <CampoEditavel canal={c} campo="ads_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
                     </td>
+                    <td className="num">
+                      <CampoAcrescimo canal={c} onToast={onToast} onAtualizado={(v) => setCanais((prev) => prev.map((x) => (x.id === c.id ? { ...x, acrescimo_olist_pct: v } : x)))} />
+                    </td>
                     <td>
                       {(c.tipo === "custom" || c.tipo === "tiktok" || c.tipo === "shein") && (
                         <button className="del" title="Excluir" onClick={() => setExcluirAlvo(c)}>×</button>
@@ -297,6 +422,8 @@ export default function Canais({ onToast }) {
           )}
         </div>
       </div>
+
+      <FreteMlTabela onToast={onToast} />
 
       <div className="panel">
         <h3 className="section-title">Adicionar canal próprio</h3>

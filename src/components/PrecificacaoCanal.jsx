@@ -10,6 +10,7 @@ import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
+import { configEscada, referenciasAvulso } from "../lib/escada.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -33,8 +34,8 @@ const DEFAULTS = {
   nome: "",
 };
 
-export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar, onToast }) {
-  const { lojaId } = useLoja();
+export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar, onToast, ativo = true }) {
+  const { lojaId, lojas } = useLoja();
   const [f, setF] = useState(DEFAULTS);
   const [salvando, setSalvando] = useState(false);
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | "p:<id>" | "k:<id>"
@@ -267,6 +268,24 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         })()
       : null;
 
+  // Referências ao lado do preço (mínimo sem prejuízo, margem mínima,
+  // concorrente, salvo) — mesma conta da escada de preços, com o canal
+  // cadastrado de verdade (imposto/custos fixos dele).
+  const canalCadastrado = canais.find((x) => x.id === canalIdAtual) || null;
+  const produtoDoItem = baseSelecionada.startsWith("p:") ? produtos.find((p) => p.id === baseSelecionada.slice(2)) : itemSel?.produtoId ? produtos.find((p) => p.id === itemSel.produtoId) : null;
+  const cfgEscada = configEscada(lojas.find((l) => l.id === lojaId)?.config_escada, produtoDoItem?.escada_config);
+  const custoTotalAtual = n(f.custoProduto) + n(f.frete) + n(f.embalagem);
+  const refs =
+    canalCadastrado && custoTotalAtual > 0
+      ? referenciasAvulso(
+          { ...canalCadastrado, imposto_pct: n(f.imposto) / 100, custos_fixos_pct: n(f.custosFixos) / 100 },
+          custoTotalAtual,
+          itemSel?.peso || 0,
+          cfgEscada,
+          n(f.concorrente)
+        )
+      : null;
+
   async function salvar() {
     if (!supabase) {
       onToast("Produtos precificados indisponível (Supabase não configurado)");
@@ -319,6 +338,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
 
   return (
     <>
+    {ativo && (
     <TopbarAcoes aba="canal">
       <button type="button" className="btn" onClick={limparTudo}>
         Limpar
@@ -333,6 +353,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         {salvando ? "Salvando…" : "Salvar preço"}
       </button>
     </TopbarAcoes>
+    )}
     <Kpis
       itens={[
         {
@@ -373,6 +394,28 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         },
       ]}
     />
+    {refs && (
+      <div className="refs-linha refs-avulso">
+        Referências neste canal: <b>mínimo sem prejuízo {BRL(refs.semPrejuizo)}</b> · <b>margem mínima ({Math.round(cfgEscada.margemMin * 100)}%) {BRL(refs.margemMinima)}</b>
+        {refs.concorrente != null && (
+          <>
+            {" "}
+            · <b>concorrente {BRL(refs.concorrente)}</b>
+          </>
+        )}
+        {precoExistente && (
+          <>
+            {" "}
+            · <b>salvo {BRL(precoExistente.preco)}</b>
+          </>
+        )}
+      </div>
+    )}
+    {refs?.concorrenteAbaixoDoPiso && (
+      <div className="alerta alerta-bad">
+        <b>Não dá pra competir nesse preço sem prejuízo</b>O concorrente ({BRL(refs.concorrente)}) está abaixo da sua margem mínima ({BRL(refs.margemMinima)}). Não acompanhe — diferencie pelo kit, pela foto ou pela qualidade.
+      </div>
+    )}
     <div className="grid2">
       <div>
         <div className="panel">

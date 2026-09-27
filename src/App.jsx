@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import logo from "./assets/logo.png";
 import CustoProducao from "./components/CustoProducao.jsx";
 import RegistroImpressoes from "./components/RegistroImpressoes.jsx";
-import PrecificacaoCanal from "./components/PrecificacaoCanal.jsx";
-import Comparativo from "./components/Comparativo.jsx";
+import PrecificacaoPagina from "./components/PrecificacaoPagina.jsx";
+import ImportarVendas from "./components/ImportarVendas.jsx";
 import Cadastros from "./components/Cadastros.jsx";
 import Orcamento from "./components/Orcamento.jsx";
 import Promocoes from "./components/Promocoes.jsx";
@@ -42,9 +42,7 @@ const GRUPOS = [
     titulo: "Precificar",
     tabs: [
       { key: "producao", label: "Custo de Produção", sub: "Simule o custo de uma peça a partir do fatiador" },
-      { key: "registroImpressoes", label: "Registro de Impressões", sub: "Taxa de falha real e lote máximo seguro" },
-      { key: "canal", label: "Precificação por Canal", sub: "Preço, taxas e lucro em cada marketplace" },
-      { key: "comparativo", label: "Comparativo", sub: "O mesmo item lado a lado em todos os canais" },
+      { key: "canal", label: "Precificação por Canal", sub: "Avulso, por quantidade, comparar canais e publicar" },
     ],
   },
   {
@@ -68,6 +66,8 @@ const GRUPOS = [
       { key: "metas", label: "Metas", sub: "Faturamento e lucro do mês" },
       { key: "ranking", label: "Ranking por Retorno", sub: "Quais itens dão mais lucro por hora" },
       { key: "otimizacao", label: "Otimização", sub: "Capacidade de produção da loja" },
+      { key: "registroImpressoes", label: "Registro de Impressões", sub: "Taxa de falha real e lote máximo seguro" },
+      { key: "importarVendas", label: "Importar vendas", sub: "Relatório de vendas da Olist (em construção)" },
     ],
   },
   {
@@ -92,6 +92,8 @@ function loadTab() {
     const saved = localStorage.getItem(TAB_KEY);
     // "lojas"/"canais"/"taxas" viraram sub-abas de "config" (set/2026)
     if (saved === "lojas" || saved === "canais" || saved === "taxas") return "config";
+    // "Comparativo" virou a sub-aba "Comparar canais" da Precificação por Canal (set/2026)
+    if (saved === "comparativo") return "canal";
     if (saved && TABS.some((t) => t.key === saved)) return saved;
   } catch {
     // sem problema, usa o padrão
@@ -103,6 +105,16 @@ export default function App() {
   const { lojas, disponivel: lojasDisponivel, carregando: carregandoLoja, lojaId, precisaPin } = useLoja();
   const [tab, setTab] = useState(loadTab);
   const [configSub, setConfigSub] = useState("lojas");
+  const [canalSub, setCanalSub] = useState(() => {
+    try {
+      if (localStorage.getItem(TAB_KEY) === "comparativo") return "comparar";
+      const s = localStorage.getItem("ohra:canal-sub");
+      if (["avulso", "quantidade", "comparar", "publicar"].includes(s)) return s;
+    } catch {
+      // sem problema
+    }
+    return "avulso";
+  });
   const [custoRecebido, setCustoRecebido] = useState(null);
   const [produtoRecebido, setProdutoRecebido] = useState(null);
   const [abrirItem, setAbrirItem] = useState(null); // { tipo: "produto"|"kit", id, seq } — vindo de "editar completo" em Preços por Canal
@@ -127,6 +139,14 @@ export default function App() {
 
   useEffect(() => {
     try {
+      localStorage.setItem("ohra:canal-sub", canalSub);
+    } catch {
+      // sem problema
+    }
+  }, [canalSub]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(TAB_KEY, tab);
     } catch {
       // sem problema, só não lembra da próxima vez
@@ -142,6 +162,7 @@ export default function App() {
   function usarCusto(total) {
     setCustoRecebido((prev) => ({ value: total, seq: (prev?.seq || 0) + 1 }));
     setTab("canal");
+    setCanalSub("avulso");
     showToast("Custo levado para a Precificação por Canal");
   }
 
@@ -172,6 +193,7 @@ export default function App() {
   function irParaPrecificarProduto(id) {
     setProdutoParaPrecificar((prev) => ({ id, seq: (prev?.seq || 0) + 1 }));
     setTab("canal");
+    setCanalSub("avulso");
     showToast("Produto levado para a Precificação por Canal");
   }
 
@@ -179,6 +201,10 @@ export default function App() {
     if (key === "lojas" || key === "canais" || key === "taxas") {
       setConfigSub(key);
       key = "config";
+    }
+    if (key === "comparativo") {
+      setCanalSub("comparar");
+      key = "canal";
     }
     setTab(key);
     setMenuAberto(false);
@@ -282,11 +308,18 @@ export default function App() {
         </section>
 
         <section className={`view ${tab === "canal" ? "active" : ""}`}>
-          <PrecificacaoCanal custoRecebido={custoRecebido} produtoParaSelecionar={produtoParaPrecificar} onToast={showToast} />
+          <PrecificacaoPagina
+            sub={canalSub}
+            onSub={setCanalSub}
+            ativo={tab === "canal"}
+            custoRecebido={custoRecebido}
+            produtoParaSelecionar={produtoParaPrecificar}
+            onToast={showToast}
+          />
         </section>
 
-        <section className={`view ${tab === "comparativo" ? "active" : ""}`}>
-          <Comparativo key={lojaId || "sem-loja"} />
+        <section className={`view ${tab === "importarVendas" ? "active" : ""}`}>
+          <ImportarVendas />
         </section>
 
         <section className={`view ${tab === "orcamento" ? "active" : ""}`}>

@@ -1,3 +1,4 @@
+import Portal from "./Portal.jsx";
 import { useState } from "react";
 
 // Modal genérico de confirmação — usado antes de excluir ou editar algo que
@@ -19,6 +20,7 @@ export default function ConfirmDialog({
   const bloqueado = confirmarComTexto != null && texto.trim() !== confirmarComTexto;
 
   return (
+    <Portal>
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <h3>{titulo}</h3>
@@ -37,5 +39,6 @@ export default function ConfirmDialog({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

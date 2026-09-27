@@ -25,6 +25,12 @@ const PATHS = {
       <path d="M7 15l4-4 3 3 5-6" />
     </>
   ),
+  importarVendas: (
+    <>
+      <path d="M12 3v12M7 10l5 5 5-5" />
+      <path d="M4 17v3h16v-3" />
+    </>
+  ),
   historico: (
     <>
       <path d="M3 7l9-4 9 4-9 4-9-4Z" />

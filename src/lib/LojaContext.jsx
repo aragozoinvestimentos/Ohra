@@ -183,13 +183,14 @@ export function LojaProvider({ children }) {
     return { ok: true, loja: data };
   }
 
-  async function atualizar(id, { nome, pin, iconeUrl, removerIcone } = {}) {
+  async function atualizar(id, { nome, pin, iconeUrl, removerIcone, configEscada } = {}) {
     if (!supabase) return { ok: false, error: "Supabase não configurado" };
     const patch = {};
     if (nome !== undefined) patch.nome = nome;
     if (pin !== undefined) patch.pin = pin || null;
     if (removerIcone) patch.icone_url = null;
     else if (iconeUrl !== undefined) patch.icone_url = iconeUrl;
+    if (configEscada !== undefined) patch.config_escada = configEscada; // regras da escada de preços (schema v27)
     const { data, error } = await supabase.from("lojas").update(patch).eq("id", id).select().single();
     if (error) return { ok: false, error: explicarErro(error) };
     setLojas((prev) => prev.map((l) => (l.id === id ? data : l)));
