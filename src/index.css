@@ -955,6 +955,14 @@ tr.linha-variacao, .tabela-pub tr.linha-cad { animation: surgir 0.18s ease-out; 
 .qtd-topo .qtd-add { flex: 0 0 auto; }
 .margens-produto { margin-bottom: 10px; padding-top: 8px; border-top: 1px dashed var(--border-strong); }
 .previa-regras { font-size: 12px; color: var(--accent-ink); background: var(--accent-soft); border-radius: 7px; padding: 6px 10px; margin-bottom: 10px; font-variant-numeric: tabular-nums; }
-.tabela-escada .sku-btn { display: block; font-size: 11px; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--accent-ink); text-decoration: none; }
-.tabela-escada .sku-btn:hover { text-decoration: underline; }
-.tabela-escada .input-sku { width: 120px; padding: 2px 6px; font-size: 12px; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ficha-var { padding: 8px 0; }
+.ficha-var + .ficha-var { border-top: 1px dashed var(--border-strong); }
+.ficha-var-cab { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.ficha-var-nome { width: 160px; font-weight: 600; padding: 4px 8px; }
+.ficha-escolha { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 12.5px; }
+.ficha-escolha b { color: var(--warn); }
+.ficha-escolha .subabas { margin: 0; }
+.ficha-sku-btn { margin-left: 6px; font-size: 12px; text-decoration: none; opacity: 0.55; }
+tr:hover .ficha-sku-btn, .ficha-sku-btn:focus { opacity: 1; }
+.ficha-sku-edit { display: inline-flex; align-items: center; gap: 2px; }
+.ficha-sku-edit input { width: 110px; padding: 2px 6px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

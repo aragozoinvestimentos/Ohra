@@ -10,23 +10,42 @@ import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 const LIMITE_NOME_OPCAO = 30; // Shopee: nome de cada opção de variação
+const MAX_VARIACOES = 2; // variações do produto (além da quantidade)
+const NOMES_SUGERIDOS = ["Cor", "Modelo", "Tamanho", "Estampa", "Acabamento"];
+const ATRIBUTOS_ML = ["cor", "tamanho"]; // quase sempre existem como atributo da categoria no ML/Shein
 const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
 
-// 3º Ficha do anúncio — monta, pra UM produto (ou kit) e UM canal, as tabelas
-// prontas pra criar o anúncio na plataforma: variações (Cor × Quantidade) e
-// produtos (SKU = SKU do item + sufixo da cor, preço original, promo, cliente
-// paga). Os preços vêm do que foi salvo em Precificação (Avulso / Por
-// quantidade) e do desconto exibido (Anunciar). Regras por canal:
-// Shopee/TikTok/próprio = um anúncio com Cor × Quantidade (Shopee divide se a
-// regra de 4× estourar); ML/Shein = quantidade não é variação → um anúncio por
-// quantidade, com variação de Cor. Cores ficam em produtos_cadastro/kits
-// .cores_anuncio (schema v31).
+// Lê `cores_anuncio` (schema v31): formato antigo = lista de opções de Cor
+// [{nome, sufixo}]; formato novo = { variacoes: [{ nome, opcoes: [{nome, sufixo}] }] }.
+function lerVariacoes(valor) {
+  if (Array.isArray(valor)) return valor.length ? [{ nome: "Cor", opcoes: valor.filter((o) => o && o.nome) }] : [];
+  if (valor && Array.isArray(valor.variacoes)) return valor.variacoes.filter((v) => v && v.nome).map((v) => ({ nome: v.nome, opcoes: (v.opcoes || []).filter((o) => o && o.nome) }));
+  return [];
+}
+const sufixoAuto = (nome) => `-${String(nome).normalize("NFD").replace(/[^A-Za-z0-9]/g, "").slice(0, 1).toUpperCase() || "X"}`;
+function combinacoes(variacoes) {
+  const ativas = variacoes.filter((v) => v.opcoes.length);
+  return ativas.reduce((acc, v) => acc.flatMap((c) => v.opcoes.map((o) => [...c, o])), [[]]);
+}
+
+// 3º Ficha do anúncio — pra UM produto (inclui as variações de quantidade
+// dele) ou kit e UM canal, monta as tabelas pra criar o anúncio: variações e
+// produtos (SKU = SKU do item + sufixos das opções, preço original, promo,
+// cliente paga). Os preços vêm de Precificação (1º Avulso / 2º Por
+// quantidade) e do desconto exibido (4º Anunciar). Até 2 variações próprias
+// (Cor, Modelo, Tamanho… — só o que NÃO muda custo). Regras por canal:
+// Shopee/TikTok/próprio aceitam até 2 variações por anúncio — com a quantidade
+// dá 3, e aí junta as duas numa só ("Preto · Sentado") ou separa a quantidade
+// em anúncios; ML/Shein = um anúncio por quantidade, com as variações. SKU do
+// item editável direto na tabela (✎).
 export default function FichaAnuncio({ onToast, onIrPara }) {
   const { itens, canais, precos, produtos, kits } = useRankingData();
   const [sel, setSel] = useState("");
   const [canalId, setCanalId] = useState("");
-  const [novaCor, setNovaCor] = useState({ nome: "", sufixo: "" });
-  const [salvandoCor, setSalvandoCor] = useState(false);
+  const [novaOpcao, setNovaOpcao] = useState({}); // { [idxVariacao]: { nome, sufixo } }
+  const [salvando, setSalvando] = useState(false);
+  const [modoTres, setModoTres] = useState("juntar"); // "juntar" | "separar" — quando dá 3 variações
+  const [skuEdit, setSkuEdit] = useState(null); // { itemId, valor }
 
   const canal = canais.find((c) => c.id === canalId) || canais[0] || null;
   const opcoesBusca = useMemo(() => gruposDoSeletor(itens.filter((i) => !i.id.startsWith("v:"))), [itens]);
@@ -34,9 +53,8 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
   const donoId = sel ? sel.slice(2) : null;
   const dono = !sel ? null : isKit ? kits.find((k) => k.id === donoId) : produtos.find((p) => p.id === donoId);
   const itemBase = sel ? itens.find((i) => i.id === sel) : null;
-  const cores = (Array.isArray(dono?.cores_anuncio) ? dono.cores_anuncio : []).filter((c) => c && String(c.nome || "").trim());
+  const variacoes = useMemo(() => lerVariacoes(dono?.cores_anuncio), [dono]);
 
-  // Itens do anúncio: o produto (1 un.) + variações por quantidade, ou o kit.
   const itensLista = useMemo(() => {
     if (!itemBase) return [];
     if (isKit) return [itemBase];
@@ -46,26 +64,36 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
 
   const ficha = useMemo(() => {
     if (!canal || !itensLista.length) return null;
+    const ativas = variacoes.filter((v) => v.opcoes.length);
+    const combos = combinacoes(variacoes);
     const qtdDe = (it) => (it.id.startsWith("v:") ? it.pecas || it.quantidade || 1 : 1);
     const qtdLabel = (it) => `${qtdDe(it)} un.`;
+    const temQtd = !isKit && itensLista.length > 1;
+    const mlShein = canal.tipo === "ml" || canal.tipo === "shein";
+    const tiersNecessarios = ativas.length + (temQtd ? 1 : 0);
+    const tresVariacoes = !mlShein && tiersNecessarios > 2;
+    const quantidadeSeparada = temQtd && (mlShein || (tresVariacoes && modoTres === "separar"));
+    const juntar = tresVariacoes && modoTres === "juntar" && ativas.length === 2;
+
     const linhasDe = (it) => {
       const tipo = itemTipoDoId(it.id);
       const s = precos.find((p) => p.item_tipo === tipo && p.item_id === it.id.slice(2) && p.canal_id === canal.id);
       const { desconto } = descontoDoItem(it.id, canal, { itens, produtos, kits });
       const an = s && Number(s.preco) > 0 ? calcularAnuncio(Number(s.preco), desconto) : null;
-      return (cores.length ? cores : [null]).map((cor) => ({
+      return combos.map((combo) => ({
         item: it,
-        sku: `${it.sku || ""}${cor?.sufixo || ""}`,
+        sku: `${it.sku || ""}${combo.map((o) => o.sufixo || "").join("")}`,
+        sufixos: combo.map((o) => o.sufixo || "").join(""),
         semSku: !it.sku,
-        cor: cor?.nome || null,
+        opcoes: combo.map((o) => o.nome),
         qtd: isKit ? null : qtdLabel(it),
         an,
       }));
     };
-    const temQtd = !isKit && itensLista.length > 1;
-    const quantidadeSeparada = temQtd && (canal.tipo === "ml" || canal.tipo === "shein");
+
     const nomeBase = itemBase?.nome || "";
-    const sufixoCores = cores.length > 1 ? ` — ${cores.map((c) => c.nome).join(" e ")}` : cores.length === 1 ? ` — ${cores[0].nome}` : "";
+    const resumo = ativas.map((v) => (v.opcoes.length <= 3 ? v.opcoes.map((o) => o.nome).join(" e ") : `${v.opcoes.length} ${v.nome.toLowerCase()}s`)).join(" · ");
+    const sufixoTitulo = resumo ? ` — ${resumo}` : "";
 
     let grupos;
     let regra4x = null;
@@ -84,57 +112,93 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
       } else grupos = [itensLista];
     } else grupos = [itensLista];
 
+    // colunas/variações de cada anúncio
+    const colunasAttr = juntar ? [ativas.map((v) => v.nome).join(" e ")] : ativas.map((v) => v.nome);
+    const valoresAttr = (l) => (juntar ? [l.opcoes.join(" · ")] : l.opcoes);
     const anuncios = grupos.map((g) => {
       const linhas = g.flatMap(linhasDe);
       const unico = g.length === 1 ? g[0] : null;
-      const titulo = quantidadeSeparada && unico && qtdDe(unico) > 1 ? `Kit ${qtdDe(unico)} ${nomeBase}${sufixoCores}` : `${nomeBase}${sufixoCores}`;
-      const variacoes = [];
-      if (cores.length) variacoes.push({ nome: "Cor", opcoes: cores.map((c) => c.nome) });
-      if (g.length > 1) variacoes.push({ nome: "Quantidade", opcoes: g.map(qtdLabel) });
+      const titulo = quantidadeSeparada && unico && qtdDe(unico) > 1 ? `Kit ${qtdDe(unico)} ${nomeBase}${sufixoTitulo}` : `${nomeBase}${sufixoTitulo}`;
+      const tabelaVar = [];
+      if (juntar) tabelaVar.push({ nome: colunasAttr[0], opcoes: combos.map((c) => c.map((o) => o.nome).join(" · ")) });
+      else ativas.forEach((v) => tabelaVar.push({ nome: v.nome, opcoes: v.opcoes.map((o) => o.nome) }));
+      if (g.length > 1) tabelaVar.push({ nome: "Quantidade", opcoes: g.map(qtdLabel) });
       const precificadas = linhas.filter((l) => l.an);
-      const razao =
-        precificadas.length > 1 ? Math.max(...precificadas.map((l) => l.an.original)) / Math.min(...precificadas.map((l) => l.an.clientePaga)) : precificadas.length ? precificadas[0].an.original / precificadas[0].an.clientePaga : null;
-      return { titulo, linhas, variacoes, temQtdColuna: g.length > 1, razao };
+      const razao = precificadas.length ? Math.max(...precificadas.map((l) => l.an.original)) / Math.min(...precificadas.map((l) => l.an.clientePaga)) : null;
+      return { titulo, linhas, tabelaVar, temQtdColuna: g.length > 1, razao };
     });
 
     const todasLinhas = anuncios.flatMap((a) => a.linhas);
-    const nomesOpcao = [...cores.map((c) => c.nome), ...(temQtd ? itensLista.map(qtdLabel) : [])];
+    const nomesOpcao = [...new Set(anuncios.flatMap((a) => a.tabelaVar.flatMap((t) => t.opcoes)))];
     const nomesLongos = nomesOpcao.filter((n) => n.length > LIMITE_NOME_OPCAO);
     const semPreco = [...new Set(todasLinhas.filter((l) => !l.an).map((l) => l.item.id))].map((id) => itensLista.find((i) => i.id === id));
     const semSku = [...new Set(todasLinhas.filter((l) => l.semSku).map((l) => l.item.id))].map((id) => itensLista.find((i) => i.id === id));
-    return { anuncios, nomesLongos, semPreco, semSku, quantidadeSeparada, regra4x, temQtd };
-  }, [canal, itensLista, precos, itens, produtos, kits, cores, isKit, itemBase]);
+    const attrsForaML = mlShein ? ativas.filter((v) => !ATRIBUTOS_ML.includes(v.nome.trim().toLowerCase())).map((v) => v.nome) : [];
+    return { anuncios, colunasAttr, valoresAttr, nomesLongos, semPreco, semSku, quantidadeSeparada, regra4x, temQtd, tresVariacoes, attrsForaML };
+  }, [canal, itensLista, precos, itens, produtos, kits, variacoes, isKit, itemBase, modoTres]);
 
-  // Kits de produtos diferentes que usam este produto — cada um tem a própria ficha.
   const kitsComProduto = !isKit && donoId ? itens.filter((i) => i.id.startsWith("k:") && (i.componentes || []).some((c) => c.produtoId === donoId)) : [];
 
-  async function salvarCores(lista) {
+  // ---- variações do produto (salvas em cores_anuncio, formato novo)
+  async function salvarVariacoes(lista) {
     if (!supabase || !dono) return false;
-    setSalvandoCor(true);
+    setSalvando(true);
+    const limpo = lista.filter((v) => v.nome.trim());
     const { error } = await supabase
       .from(isKit ? "kits" : "produtos_cadastro")
-      .update({ cores_anuncio: lista.length ? lista : null })
+      .update({ cores_anuncio: limpo.length ? { variacoes: limpo } : null })
       .eq("id", donoId);
-    setSalvandoCor(false);
+    setSalvando(false);
     if (error) {
-      onToast(/cores_anuncio|column/i.test(error.message) ? "Rode o SQL v31 no Supabase pra salvar as cores" : `Não foi possível salvar: ${error.message}`);
+      onToast(/cores_anuncio|column/i.test(error.message) ? "Rode o SQL v31 no Supabase pra salvar as variações" : `Não foi possível salvar: ${error.message}`);
       return false;
     }
     return true;
   }
-  async function adicionarCor() {
-    const nome = novaCor.nome.trim();
+  function adicionarVariacao() {
+    if (variacoes.length >= MAX_VARIACOES) return;
+    const usados = new Set(variacoes.map((v) => v.nome.toLowerCase()));
+    const nome = NOMES_SUGERIDOS.find((n) => !usados.has(n.toLowerCase())) || `Variação ${variacoes.length + 1}`;
+    salvarVariacoes([...variacoes, { nome, opcoes: [] }]);
+  }
+  function renomearVariacao(idx, nome) {
+    const n = nome.trim();
+    if (!n || n === variacoes[idx].nome) return;
+    salvarVariacoes(variacoes.map((v, i) => (i === idx ? { ...v, nome: n } : v)));
+  }
+  function removerVariacao(idx) {
+    salvarVariacoes(variacoes.filter((_, i) => i !== idx));
+  }
+  async function adicionarOpcao(idx) {
+    const d = novaOpcao[idx] || {};
+    const nome = String(d.nome || "").trim();
     if (!nome) return;
-    let sufixo = novaCor.sufixo.trim() || `-${nome.normalize("NFD").replace(/[^A-Za-z]/g, "").slice(0, 1).toUpperCase()}`;
+    let sufixo = String(d.sufixo || "").trim() || sufixoAuto(nome);
     if (!sufixo.startsWith("-")) sufixo = `-${sufixo}`;
-    if (cores.some((c) => c.sufixo.toUpperCase() === sufixo.toUpperCase())) {
-      onToast(`O sufixo ${sufixo} já está em uso — escolha outro`);
+    sufixo = sufixo.toUpperCase();
+    if (variacoes[idx].opcoes.some((o) => o.sufixo.toUpperCase() === sufixo)) {
+      onToast(`O sufixo ${sufixo} já está em uso em ${variacoes[idx].nome} — escolha outro`);
       return;
     }
-    if (await salvarCores([...cores, { nome, sufixo: sufixo.toUpperCase() }])) setNovaCor({ nome: "", sufixo: "" });
+    const nova = variacoes.map((v, i) => (i === idx ? { ...v, opcoes: [...v.opcoes, { nome, sufixo }] } : v));
+    if (await salvarVariacoes(nova)) setNovaOpcao((prev) => ({ ...prev, [idx]: { nome: "", sufixo: "" } }));
   }
-  async function removerCor(sufixo) {
-    await salvarCores(cores.filter((c) => c.sufixo !== sufixo));
+  function removerOpcao(idx, sufixo) {
+    salvarVariacoes(variacoes.map((v, i) => (i === idx ? { ...v, opcoes: v.opcoes.filter((o) => o.sufixo !== sufixo) } : v)));
+  }
+
+  // ---- SKU do item (produto, variação de quantidade ou kit) direto na tabela
+  async function salvarSku() {
+    const e = skuEdit;
+    setSkuEdit(null);
+    if (!e || !supabase) return;
+    const it = itens.find((i) => i.id === e.itemId);
+    const novo = String(e.valor).trim();
+    if (!it || novo === (it.sku || "")) return;
+    const tabela = e.itemId.startsWith("k:") ? "kits" : e.itemId.startsWith("v:") ? "produto_variacoes" : "produtos_cadastro";
+    const { error } = await supabase.from(tabela).update({ sku: novo || null }).eq("id", e.itemId.slice(2));
+    if (error) onToast(`Não foi possível salvar o SKU: ${error.message}`);
+    else onToast(novo ? `SKU salvo: ${novo}` : "SKU removido");
   }
 
   async function copiar(texto, rotulo) {
@@ -146,17 +210,17 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
     }
   }
   const num = (v) => String(Number(v).toFixed(2)).replace(".", ",");
-  const tsvVariacoes = (a) => ["Variação\tOpções", ...a.variacoes.map((v) => `${v.nome}\t${v.opcoes.join(", ")}`)].join("\n");
+  const tsvVariacoes = (a) => ["Variação\tOpções", ...a.tabelaVar.map((v) => `${v.nome}\t${v.opcoes.join(", ")}`)].join("\n");
   const tsvProdutos = (a) =>
     [
-      ["SKU", ...(cores.length ? ["Cor"] : []), ...(a.temQtdColuna ? ["Quantidade"] : []), "Preço original", "Promoção %", "Cliente paga"].join("\t"),
-      ...a.linhas.map((l) => [l.sku, ...(cores.length ? [l.cor] : []), ...(a.temQtdColuna ? [l.qtd] : []), l.an ? num(l.an.original) : "", l.an ? String(l.an.promo) : "", l.an ? num(l.an.clientePaga) : ""].join("\t")),
+      ["SKU", ...ficha.colunasAttr, ...(a.temQtdColuna ? ["Quantidade"] : []), "Preço original", "Promoção %", "Cliente paga"].join("\t"),
+      ...a.linhas.map((l) => [l.sku, ...ficha.valoresAttr(l), ...(a.temQtdColuna ? [l.qtd] : []), l.an ? num(l.an.original) : "", l.an ? String(l.an.promo) : "", l.an ? num(l.an.clientePaga) : ""].join("\t")),
     ].join("\n");
 
   function exportarCsv() {
     if (!ficha) return;
-    const rows = [["Anúncio", "SKU", "Cor", "Quantidade", "Preço original", "Promoção %", "Cliente paga"]];
-    ficha.anuncios.forEach((a) => a.linhas.forEach((l) => rows.push([a.titulo, l.sku, l.cor || "", l.qtd || "", l.an ? num(l.an.original) : "", l.an ? String(l.an.promo) : "", l.an ? num(l.an.clientePaga) : ""])));
+    const rows = [["Anúncio", "SKU", ...ficha.colunasAttr, "Quantidade", "Preço original", "Promoção %", "Cliente paga"]];
+    ficha.anuncios.forEach((a) => a.linhas.forEach((l) => rows.push([a.titulo, l.sku, ...ficha.valoresAttr(l), l.qtd || "", l.an ? num(l.an.original) : "", l.an ? String(l.an.promo) : "", l.an ? num(l.an.clientePaga) : ""])));
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
@@ -165,6 +229,8 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
+
+  const rotuloItem = (i) => (i.id.startsWith("v:") ? `${i.pecas} un.` : i.nome);
 
   return (
     <>
@@ -176,7 +242,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
           <h3 className="section-title">
             <span>
               Produto e canal
-              <Ajuda texto="Escolha um produto (a ficha inclui as variações de 2, 3… unidades dele) ou um kit (ficha própria). O canal define o formato: Shopee/TikTok = um anúncio com Cor × Quantidade; Mercado Livre/Shein = um anúncio por quantidade, com variação de Cor." />
+              <Ajuda texto="Escolha um produto (a ficha inclui as variações de 2, 3… unidades dele) ou um kit (ficha própria). O canal define o formato: Shopee/TikTok = um anúncio com até 2 variações (as suas + Quantidade); Mercado Livre/Shein = um anúncio por quantidade, com as suas variações." />
             </span>
           </h3>
           <div className="field">
@@ -195,36 +261,62 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
           </div>
         </div>
         <div className="panel">
-          <h3 className="section-title">
+          <h3 className="section-title h3-split">
             <span>
-              Cores {isKit ? "do kit" : "do produto"}
-              <Ajuda texto="Cadastre uma vez por produto as cores (ou versões) que vão como opção no anúncio, com o sufixo do SKU. SKU de cada opção = SKU do item + sufixo (ex.: GATO2 + -P = GATO2-P) — o mesmo em todos os canais e na Olist. No kit, cada combinação é uma “cor” (ex.: “Gato Preto + Cão Branco”, -GP-CB). Sem cores = uma opção por item, SKU sem sufixo." />
+              Variações {isKit ? "do kit" : "do produto"}
+              <Ajuda texto="Até 2 variações (Cor, Modelo, Tamanho, Estampa… ou um nome seu), cada uma com as opções e o sufixo do SKU. SKU de cada opção = SKU do item + sufixos (ex.: GATO-2 + -P + -S = GATO-2-P-S). Use só pro que NÃO muda o custo — todas as opções saem com o mesmo preço do item. Se a opção muda custo/preço (ex.: tamanho G gasta mais filamento), cadastre como produto separado. Sem variações = uma opção por item." />
             </span>
+            {dono && variacoes.length < MAX_VARIACOES && (
+              <button type="button" className="btn btn-sm" disabled={salvando} onClick={adicionarVariacao}>
+                + Adicionar variação
+              </button>
+            )}
           </h3>
           {!dono ? (
             <div className="hint" style={{ margin: 0 }}>Escolha um produto ou kit ao lado.</div>
+          ) : !variacoes.length ? (
+            <div className="hint" style={{ margin: 0 }}>Nenhuma variação — o anúncio sai com uma opção por item. Clique em “+ Adicionar variação” (ex.: Cor).</div>
           ) : (
-            <>
-              <div className="ficha-cores">
-                {cores.map((c) => (
-                  <span key={c.sufixo} className="ficha-cor">
-                    {c.nome} <code>{c.sufixo}</code>
-                    <button type="button" className="del" title="Remover" disabled={salvandoCor} onClick={() => removerCor(c.sufixo)}>
-                      ×
-                    </button>
-                  </span>
-                ))}
-                {!cores.length && <span className="hint" style={{ margin: 0 }}>Nenhuma cor ainda — o anúncio sai sem variação de cor.</span>}
+            variacoes.map((v, idx) => (
+              <div className="ficha-var" key={`${idx}-${v.nome}`}>
+                <div className="ficha-var-cab">
+                  <input className="ficha-var-nome" list="ficha-nomes-var" defaultValue={v.nome} maxLength={20} onBlur={(e) => renomearVariacao(idx, e.target.value)} onKeyDown={(e) => e.key === "Enter" && e.target.blur()} title="Nome da variação (aparece no anúncio)" />
+                  <button type="button" className="del" title="Remover esta variação" disabled={salvando} onClick={() => removerVariacao(idx)}>
+                    ×
+                  </button>
+                </div>
+                <div className="ficha-cores">
+                  {v.opcoes.map((o) => (
+                    <span key={o.sufixo} className="ficha-cor">
+                      {o.nome} <code>{o.sufixo}</code>
+                      <button type="button" className="del" title="Remover opção" disabled={salvando} onClick={() => removerOpcao(idx, o.sufixo)}>
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {!v.opcoes.length && <span className="hint" style={{ margin: 0 }}>Sem opções ainda.</span>}
+                </div>
+                <div className="ficha-add-cor">
+                  <input
+                    placeholder={`nova opção de ${v.nome.toLowerCase()}`}
+                    value={novaOpcao[idx]?.nome || ""}
+                    maxLength={LIMITE_NOME_OPCAO}
+                    onChange={(e) => setNovaOpcao((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), nome: e.target.value } }))}
+                    onKeyDown={(e) => e.key === "Enter" && adicionarOpcao(idx)}
+                  />
+                  <input className="ficha-sufixo" placeholder="-P" value={novaOpcao[idx]?.sufixo || ""} maxLength={12} onChange={(e) => setNovaOpcao((prev) => ({ ...prev, [idx]: { ...(prev[idx] || {}), sufixo: e.target.value } }))} onKeyDown={(e) => e.key === "Enter" && adicionarOpcao(idx)} />
+                  <button type="button" className="btn btn-sm" disabled={salvando || !String(novaOpcao[idx]?.nome || "").trim()} onClick={() => adicionarOpcao(idx)}>
+                    + Opção
+                  </button>
+                </div>
               </div>
-              <div className="ficha-add-cor">
-                <input placeholder={isKit ? "ex.: Gato Preto + Cão Branco" : "ex.: Preto"} value={novaCor.nome} maxLength={LIMITE_NOME_OPCAO} onChange={(e) => setNovaCor({ ...novaCor, nome: e.target.value })} onKeyDown={(e) => e.key === "Enter" && adicionarCor()} />
-                <input className="ficha-sufixo" placeholder="-P" value={novaCor.sufixo} maxLength={12} onChange={(e) => setNovaCor({ ...novaCor, sufixo: e.target.value })} onKeyDown={(e) => e.key === "Enter" && adicionarCor()} />
-                <button type="button" className="btn btn-sm" disabled={salvandoCor || !novaCor.nome.trim()} onClick={adicionarCor}>
-                  + Cor
-                </button>
-              </div>
-            </>
+            ))
           )}
+          <datalist id="ficha-nomes-var">
+            {NOMES_SUGERIDOS.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
         </div>
       </div>
 
@@ -232,6 +324,21 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
         <div className="empty">{canais.length ? "Escolha um produto ou kit pra montar a ficha do anúncio." : "Cadastre seus canais em Configuração → Canais."}</div>
       ) : ficha ? (
         <>
+          {ficha.tresVariacoes && (
+            <div className="ficha-escolha">
+              <span>
+                <b>{nomeCanal(canal)} aceita no máximo 2 variações por anúncio</b> — com {variacoes.filter((v) => v.opcoes.length).map((v) => v.nome).join(", ")} e Quantidade seriam 3. Como montar?
+              </span>
+              <div className="subabas">
+                <button type="button" className={`btn${modoTres === "juntar" ? " primary" : ""}`} onClick={() => setModoTres("juntar")}>
+                  Juntar {variacoes.filter((v) => v.opcoes.length).map((v) => v.nome).join(" e ")} numa só
+                </button>
+                <button type="button" className={`btn${modoTres === "separar" ? " primary" : ""}`} onClick={() => setModoTres("separar")}>
+                  Quantidade em anúncios separados
+                </button>
+              </div>
+            </div>
+          )}
           <div className="ficha-checks">
             {ficha.nomesLongos.length ? (
               <span className="chk warn">⚠ Nome com mais de {LIMITE_NOME_OPCAO} caracteres: {ficha.nomesLongos.join(", ")}</span>
@@ -240,22 +347,22 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
             )}
             {canal.tipo === "shopee" &&
               ficha.temQtd &&
+              !ficha.quantidadeSeparada &&
               (ficha.regra4x && !ficha.regra4x.ok ? (
                 <span className="chk warn">⚠ Regra de 4×: dividido em {ficha.anuncios.length} anúncios</span>
               ) : ficha.anuncios[0]?.razao ? (
-                <span className="chk ok">
-                  ✓ Regra de 4×: {ficha.anuncios[0].razao.toFixed(1).replace(".", ",")}× (cabe num anúncio só)
-                </span>
+                <span className="chk ok">✓ Regra de 4×: {ficha.anuncios[0].razao.toFixed(1).replace(".", ",")}× (cabe num anúncio só)</span>
               ) : null)}
-            {ficha.quantidadeSeparada && <span className="chk ok">✓ Quantidades em anúncios próprios ({nomeCanal(canal)})</span>}
+            {ficha.quantidadeSeparada && <span className="chk ok">✓ Quantidades em anúncios próprios</span>}
+            {ficha.attrsForaML.length > 0 && <span className="chk warn">⚠ Confira se a categoria do {nomeCanal(canal)} aceita “{ficha.attrsForaML.join("”, “")}” como variação — se não, use anúncios separados</span>}
             {ficha.semPreco.length ? (
               <button type="button" className="chk warn chk-btn" onClick={() => onIrPara?.(ficha.semPreco.some((i) => i.id.startsWith("v:")) ? "quantidade" : "avulso")}>
-                ⚠ Sem preço salvo na {nomeCanal(canal)}: {ficha.semPreco.map((i) => (i.id.startsWith("v:") ? `${i.pecas} un.` : i.nome)).join(", ")} → salvar
+                ⚠ Sem preço salvo na {nomeCanal(canal)}: {ficha.semPreco.map(rotuloItem).join(", ")} → salvar
               </button>
             ) : (
               <span className="chk ok">✓ Todos os itens com preço salvo na {nomeCanal(canal)}</span>
             )}
-            {ficha.semSku.length > 0 && <span className="chk warn">⚠ Sem SKU no cadastro: {ficha.semSku.map((i) => (i.id.startsWith("v:") ? `${i.pecas} un.` : i.nome)).join(", ")}</span>}
+            {ficha.semSku.length > 0 && <span className="chk warn">⚠ Sem SKU: {ficha.semSku.map(rotuloItem).join(", ")} — clique no ✎ da tabela</span>}
           </div>
 
           {ficha.anuncios.map((a, idx) => (
@@ -273,13 +380,13 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                   <h4>
                     Variações
                     <span className="ficha-sp" />
-                    {a.variacoes.length > 0 && (
+                    {a.tabelaVar.length > 0 && (
                       <button type="button" className="link-btn" onClick={() => copiar(tsvVariacoes(a), "Tabela de variações")}>
                         copiar
                       </button>
                     )}
                   </h4>
-                  {a.variacoes.length ? (
+                  {a.tabelaVar.length ? (
                     <table>
                       <thead>
                         <tr>
@@ -288,7 +395,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {a.variacoes.map((v) => (
+                        {a.tabelaVar.map((v) => (
                           <tr key={v.nome}>
                             <td>{v.nome}</td>
                             <td>
@@ -319,7 +426,9 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                       <thead>
                         <tr>
                           <th>SKU</th>
-                          {cores.length > 0 && <th>Cor</th>}
+                          {ficha.colunasAttr.map((c) => (
+                            <th key={c}>{c}</th>
+                          ))}
                           {a.temQtdColuna && <th>Qtd.</th>}
                           <th className="num">Preço original</th>
                           <th className="num">Promo</th>
@@ -328,9 +437,39 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                       </thead>
                       <tbody>
                         {a.linhas.map((l) => (
-                          <tr key={`${l.item.id}|${l.cor || ""}`}>
-                            <td className="ficha-sku">{l.sku || <span style={{ color: "var(--warn)" }}>sem SKU</span>}</td>
-                            {cores.length > 0 && <td>{l.cor}</td>}
+                          <tr key={`${l.item.id}|${l.sufixos}`}>
+                            <td className="ficha-sku">
+                              {skuEdit?.itemId === l.item.id ? (
+                                <span className="ficha-sku-edit">
+                                  <input
+                                    autoFocus
+                                    value={skuEdit.valor}
+                                    onChange={(e) => setSkuEdit({ ...skuEdit, valor: e.target.value })}
+                                    onBlur={salvarSku}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") e.target.blur();
+                                      if (e.key === "Escape") setSkuEdit(null);
+                                    }}
+                                  />
+                                  {l.sufixos}
+                                </span>
+                              ) : (
+                                <>
+                                  {l.semSku ? <span style={{ color: "var(--warn)" }}>sem SKU{l.sufixos}</span> : l.sku}
+                                  <button
+                                    type="button"
+                                    className="link-btn ficha-sku-btn"
+                                    title={`Editar o SKU de ${rotuloItem(l.item)} (vale pra todas as opções dele)`}
+                                    onClick={() => setSkuEdit({ itemId: l.item.id, valor: l.item.sku || "" })}
+                                  >
+                                    ✎
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                            {ficha.valoresAttr(l).map((vv, i) => (
+                              <td key={i}>{vv}</td>
+                            ))}
                             {a.temQtdColuna && <td>{l.qtd}</td>}
                             {l.an ? (
                               <>
