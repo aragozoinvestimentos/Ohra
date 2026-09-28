@@ -42,7 +42,7 @@ const GRUPOS = [
     titulo: "Precificar",
     tabs: [
       { key: "producao", label: "Custo de Produção", sub: "Simule o custo de uma peça a partir do fatiador" },
-      { key: "canal", label: "Precificação por Canal", sub: "Avulso, por quantidade, comparar canais e anunciar" },
+      { key: "canal", label: "Precificação por Canal", sub: "Avulso, por quantidade, ficha do anúncio e anunciar" },
     ],
   },
   {
@@ -109,7 +109,7 @@ export default function App() {
     try {
       if (localStorage.getItem(TAB_KEY) === "comparativo") return "comparar";
       const s = localStorage.getItem("ohra:canal-sub");
-      if (["avulso", "quantidade", "comparar", "publicar"].includes(s)) return s;
+      if (["avulso", "quantidade", "ficha", "comparar", "publicar"].includes(s)) return s;
     } catch {
       // sem problema
     }

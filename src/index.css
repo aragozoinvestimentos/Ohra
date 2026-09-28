@@ -895,3 +895,45 @@ tr.linha-variacao, .tabela-pub tr.linha-cad { animation: surgir 0.18s ease-out; 
 .btn, .variacoes-toggle, .link-btn, .canal-tag { transition: background-color 0.12s, border-color 0.12s, color 0.12s; }
 @media (prefers-reduced-motion: reduce) { tr.linha-variacao, .tabela-pub tr.linha-cad, [data-subview]:not([hidden]), .view.active { animation: none; } }
 .tabela-sug-kit .sub-num { display: block; font-size: 11px; color: var(--ink-faint); font-weight: 400; }
+.subaba-ordem { font-size: 10.5px; font-weight: 700; color: var(--accent-ink); margin-right: 5px; opacity: 0.85; }
+.subabas .btn.subaba-separada { margin-left: 14px; position: relative; }
+.subabas .btn.subaba-separada::before { content: ""; position: absolute; left: -8px; top: 7px; bottom: 7px; width: 1px; background: var(--border-strong); }
+
+/* ---- Ficha do anúncio ---------------------------------------------------- */
+.aviso-fluxo { font-size: 12.5px; color: var(--ink-soft); background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; }
+.aviso-fluxo b { color: var(--ink); font-weight: 600; }
+.ficha-topo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
+.ficha-topo .panel { margin: 0; }
+@media (max-width: 860px) { .ficha-topo { grid-template-columns: minmax(0, 1fr); } }
+.ficha-canais { display: flex; flex-wrap: wrap; gap: 6px; }
+.ficha-canal { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 3px; cursor: pointer; }
+.ficha-canal.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.ficha-cores { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.ficha-cor { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); background: var(--surface-3); border-radius: 8px; padding: 3px 4px 3px 9px; font-size: 12.5px; }
+.ficha-cor code { font-size: 11.5px; color: var(--accent-ink); background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; }
+.ficha-add-cor { display: flex; gap: 6px; align-items: center; }
+.ficha-add-cor input { flex: 1; min-width: 0; }
+.ficha-add-cor .ficha-sufixo { flex: 0 0 80px; }
+.ficha-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 999px; font-weight: 500; border: 0; }
+.chk.ok { background: var(--good-soft); color: var(--good); }
+.chk.warn { background: var(--warn-soft); color: var(--warn); }
+.chk-btn { cursor: pointer; font: inherit; font-size: 12px; }
+.chk-btn:hover { text-decoration: underline; }
+.ficha-anuncio { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); margin-bottom: 14px; overflow: hidden; }
+.ficha-anuncio-cab { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--surface-3); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.ficha-n { font-size: 11px; font-weight: 700; color: var(--accent-ink); background: var(--accent-soft); border-radius: 5px; padding: 2px 7px; }
+.ficha-sp { flex: 1; }
+.ficha-meta { font-size: 11.5px; color: var(--ink-faint); }
+.ficha-blocos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+.ficha-bloco { padding: 12px 14px; min-width: 0; }
+.ficha-bloco + .ficha-bloco { border-left: 1px solid var(--border); }
+.ficha-bloco h4 { display: flex; align-items: center; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); }
+.ficha-bloco h4 .link-btn { font-size: 11.5px; text-transform: none; letter-spacing: 0; }
+.ficha-bloco table th, .ficha-bloco table td { padding: 6px 8px; }
+.ficha-opt { display: inline-block; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; margin: 2px 4px 2px 0; font-size: 12px; }
+.ficha-opt.longa { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); }
+.ficha-sku { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.ficha-centavo { font-size: 10.5px; color: var(--warn); }
+.ficha-rodape { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 860px) { .ficha-blocos { grid-template-columns: minmax(0, 1fr); } .ficha-bloco + .ficha-bloco { border-left: 0; border-top: 1px solid var(--border); } }

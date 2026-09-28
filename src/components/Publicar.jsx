@@ -197,6 +197,10 @@ export default function Publicar({ onToast }) {
   }
 
   return (
+    <>
+    <div className="aviso-fluxo">
+      Os preços vêm de <b>Precificação</b> (1º Avulso / 2º Por quantidade). Aqui você só confere o que digitar em cada plataforma — o <b>preço original</b> (“de”) e a <b>promo</b> — e marca “feito” depois de atualizar.
+    </div>
     <div className="panel">
       <h3 className="section-title h3-split">
         <span>
@@ -339,5 +343,6 @@ export default function Publicar({ onToast }) {
         <div className="empty">{linhas.length ? "Tudo atualizado — nenhum preço mudou desde a última vez." : "Nenhum item com preço salvo ainda. Salve os preços em Precificação por Canal e eles aparecem aqui."}</div>
       )}
     </div>
+    </>
   );
 }
