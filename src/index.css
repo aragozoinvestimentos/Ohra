@@ -939,3 +939,17 @@ tr.linha-variacao, .tabela-pub tr.linha-cad { animation: surgir 0.18s ease-out; 
 @media (max-width: 860px) { .ficha-blocos { grid-template-columns: minmax(0, 1fr); } .ficha-bloco + .ficha-bloco { border-left: 0; border-top: 1px solid var(--border); } }
 .reserva-linha { margin-top: 10px; border-top: 1px dashed var(--border-strong); border-bottom: 0; padding-top: 8px; color: var(--ink-soft); }
 .reserva-linha .v { color: var(--ink-soft); }
+/* Por quantidade — faixa "Produto e canal" usando a largura toda */
+.qtd-topo { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2.6fr); gap: 12px; align-items: start; }
+.qtd-topo .field { margin-bottom: 0; }
+.qtd-topo .qtd-chips { display: inline-flex; flex-wrap: wrap; gap: 5px; vertical-align: middle; }
+.qtd-topo .field:last-child { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+.qtd-topo .field:last-child > label { flex-basis: 100%; }
+.qtd-add { display: inline-flex; gap: 6px; }
+.qtd-add input { width: 78px; }
+@media (max-width: 1100px) { .qtd-topo { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); } .qtd-topo .field:first-child, .qtd-topo .field:last-child { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .qtd-topo { grid-template-columns: minmax(0, 1fr); } }
+.qtd-topo .field:last-child { justify-content: flex-start; text-align: left; }
+.qtd-topo .field:last-child > label { text-align: left; }
+.qtd-topo .qtd-chips { width: auto; flex: 0 1 auto; margin: 0; }
+.qtd-topo .qtd-add { flex: 0 0 auto; }

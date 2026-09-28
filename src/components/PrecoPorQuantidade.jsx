@@ -220,7 +220,7 @@ export default function PrecoPorQuantidade({ onToast }) {
           Produto e canal
           <Ajuda texto="Escolha o produto (o 'pai') e o canal. O preço avulso é escolha sua — vem do preço salvo em Produtos precificados. A partir dele o app sugere o preço de cada quantidade pelo lucro por peça: o kit 2 mantém o mesmo lucro por peça do avulso (a economia de taxa, embalagem e frete vai pro cliente) e dali pra frente o lucro por peça cai devagar." />
         </h3>
-        <div className="grid-auto">
+        <div className="qtd-topo">
           <div className="field">
             <label>Produto pai</label>
             <BuscaItem
@@ -267,7 +267,7 @@ export default function PrecoPorQuantidade({ onToast }) {
           </div>
           <div className="field">
             <label>Quantidades</label>
-            <div className="chips">
+            <div className="chips qtd-chips">
               {variacoesDoProduto
                 .map((v) => v.pecas || v.quantidade)
                 .filter((n) => n > 1)
@@ -289,8 +289,8 @@ export default function PrecoPorQuantidade({ onToast }) {
                   </span>
                 ))}
             </div>
-            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-              <input type="number" min="2" placeholder="ex: 20" style={{ width: 90 }} value={novaQtd} onChange={(ev) => setNovaQtd(ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && adicionarQtd()} />
+            <div className="qtd-add">
+              <input type="number" min="2" placeholder="ex: 20" value={novaQtd} onChange={(ev) => setNovaQtd(ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && adicionarQtd()} />
               <button type="button" className="btn" onClick={adicionarQtd}>
                 + simular
               </button>
