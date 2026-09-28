@@ -4,6 +4,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData, calcularRanking, LUCRATIVIDADE_PADRAO } from "../hooks/useRankingData.js";
 import { supabase } from "../lib/supabaseClient.js";
 import Ajuda from "./Ajuda.jsx";
+import CanalTag from "./CanalTag.jsx";
 
 // Ranking por retorno: pra cada produto E kit cadastrado, olha o lucro
 // líquido por unidade (quanto cai no bolso de verdade, já descontado tudo,
@@ -102,7 +103,7 @@ export default function Ranking() {
                       <td><span className="campo-anterior">{linha.item.tipo}</span></td>
                       <td className="num">{BRL(linha.item.custoTotal)}</td>
                       <td>
-                        {linha.canal.nome}{" "}
+                        <CanalTag canal={linha.canal} />{" "}
                         {linha.origem === "salvo" ? (
                           <span className="badge good" title="Preço realmente salvo em Produtos precificados">salvo</span>
                         ) : (

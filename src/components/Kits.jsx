@@ -5,12 +5,14 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import Ajuda from "./Ajuda.jsx";
+import CanalTag from "./CanalTag.jsx";
+import { sugestaoKit, configEscada } from "../lib/escada.js";
 
 const VAZIO = { nome: "", sku: "", observacao: "", produtosItens: [], embalagemItens: [] };
 
 export default function Kits({ abrirKitId, onToast }) {
-  const { produtos: produtosVivos } = useRankingData();
-  const { lojaId } = useLoja();
+  const { produtos: produtosVivos, itens: itensVivos, canais: canaisVivos, precos: precosVivos } = useRankingData();
+  const { lojaId, lojas } = useLoja();
   const [produtos, setProdutos] = useState([]);
   const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
   const [produtoEmbalagensTodos, setProdutoEmbalagensTodos] = useState([]);
@@ -21,7 +23,6 @@ export default function Kits({ abrirKitId, onToast }) {
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [salvando, setSalvando] = useState(false);
-  const [markup, setMarkup] = useState(100);
   const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
 
   useEffect(() => {
@@ -116,7 +117,6 @@ export default function Kits({ abrirKitId, onToast }) {
         produtosItens: (kp || []).map((r) => ({ itemId: r.produto_id, quantidade: r.quantidade })),
         embalagemItens: (ke || []).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade })),
       });
-      setMarkup(kitData.markup_desejado ?? 100);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirKitId?.seq]);
@@ -142,12 +142,19 @@ export default function Kits({ abrirKitId, onToast }) {
   const custoFabricacao = totalItens(catalogoProdutos, form.produtosItens);
   const custoEmbalagemKit = totalItens(catalogoEmbalagens, form.embalagemItens);
   const custoTotal = custoFabricacao + custoEmbalagemKit;
-  const precoSugerido = custoTotal * (1 + (Number(markup) || 0) / 100);
+  // Preço sugerido real por canal (kit vs peças vendidas separadas — mesma
+  // conta do Avulso/Produtos precificados), no lugar do antigo markup.
+  const cfgKit = configEscada(lojas.find((l) => l.id === lojaId)?.config_escada, null);
+  const kitItemVivo = editandoId ? itensVivos.find((i) => i.id === `k:${editandoId}`) : null;
+  const sugestoesCanais = kitItemVivo
+    ? canaisVivos
+        .map((c) => ({ c, sug: sugestaoKit({ canal: c, kitItem: kitItemVivo, itens: itensVivos, precos: precosVivos, cfg: cfgKit }), salvo: precosVivos.find((p) => p.item_tipo === "kit" && p.item_id === editandoId && p.canal_id === c.id) }))
+        .filter((x) => x.sug)
+    : [];
 
   function limpar() {
     setForm(VAZIO);
     setEditandoId(null);
-    setMarkup(100);
   }
 
   // Soma a embalagem de cada produto escolhido (vezes a quantidade dele no
@@ -183,17 +190,13 @@ export default function Kits({ abrirKitId, onToast }) {
       return;
     }
     setSalvando(true);
-    // markup_desejado/preco_sugerido: sem eles aqui, o markup digitado e o
-    // preço sugerido calculado na tela somem assim que o kit é reaberto —
-    // ver schema_v23.sql.
-    const markupNumero = Number(markup);
-    const markupValido = markup !== "" && Number.isFinite(markupNumero) ? markupNumero : null;
+    // markup_desejado/preco_sugerido (schema v23) não são mais editados aqui —
+    // o sugerido real (vs peças separadas) é calculado ao vivo; os valores
+    // antigos continuam no banco.
     const payload = {
       nome,
       sku: form.sku.trim() || null,
       observacao: form.observacao.trim() || null,
-      markup_desejado: markupValido,
-      preco_sugerido: markupValido !== null ? custoTotal * (1 + markupValido / 100) : null,
       atualizado_em: new Date().toISOString(),
     };
     let kitId = editandoId;
@@ -255,7 +258,6 @@ export default function Kits({ abrirKitId, onToast }) {
         .filter((r) => r.kit_id === k.id)
         .map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade })),
     });
-    setMarkup(k.markup_desejado ?? 100);
   }
 
   // Puxa a composição de um kit já cadastrado como ponto de partida pra um
@@ -390,17 +392,50 @@ export default function Kits({ abrirKitId, onToast }) {
           <div className="kv"><span className="k">Custo de fabricação (produtos)</span><span className="v">{BRL(custoFabricacao)}</span></div>
           <div className="kv"><span className="k">Custo de embalagem do kit</span><span className="v">{BRL(custoEmbalagemKit)}</span></div>
           <div className="kv total"><span className="k">Custo total do kit</span><span className="v">{BRL(custoTotal)}</span></div>
-          <div className="row2" style={{ marginTop: 12, marginBottom: 0 }}>
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label>Markup desejado (%)</label>
-              <input type="number" step="1" value={markup} onChange={(e) => setMarkup(e.target.value)} />
-            </div>
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label>Preço sugerido</label>
-              <input type="text" readOnly value={BRL(precoSugerido)} />
-            </div>
-          </div>
         </div>
+
+        <h3 className="section-title">
+          Preço sugerido por canal
+          <Ajuda texto="Comparado com vender as peças separadas: separado = soma dos preços salvos das peças em cada canal (* = peça sem preço salvo, usa a margem desejada). O kit paga uma taxa fixa só e uma embalagem, então dá pra cobrar menos mantendo o lucro — essa economia vai pro cliente. Pra salvar o preço, use Precificação por Canal → Avulso (Salvar sugerido) ou o Aplicar em Produtos precificados." />
+        </h3>
+        {!editandoId ? (
+          <div className="hint">Salve o kit pra ver o preço sugerido em cada canal.</div>
+        ) : sugestoesCanais.length ? (
+          <div className="table-wrap">
+            <table className="tabela-sug-kit">
+              <thead>
+                <tr>
+                  <th>Canal</th>
+                  <th className="num">Separado</th>
+                  <th className="num">Sugerido</th>
+                  <th className="num">Cliente economiza</th>
+                  <th className="num">Salvo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sugestoesCanais.map(({ c, sug, salvo }) => (
+                  <tr key={c.id}>
+                    <td>
+                      <CanalTag canal={c} />
+                    </td>
+                    <td className="num">
+                      {BRL(sug.separado)}
+                      {sug.componentes.some((x) => x.origem === "margem") ? " *" : ""}
+                    </td>
+                    <td className="num">
+                      <b>{BRL(sug.sugerido)}</b>
+                      <span className="sub-num">lucro {BRL(sug.lucro)}</span>
+                    </td>
+                    <td className="num">{Math.round(sug.economiaPct * 100)}%</td>
+                    <td className="num">{salvo ? BRL(Number(salvo.preco)) : <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="hint">Cadastre os canais e salve os preços das peças pra ver o sugerido.</div>
+        )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button className="btn primary" onClick={salvar} disabled={salvando}>

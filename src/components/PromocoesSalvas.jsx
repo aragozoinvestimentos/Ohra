@@ -7,6 +7,8 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import { TIPOS } from "../lib/promocaoTipos.js";
 import { useRankingData } from "../hooks/useRankingData.js";
+import CanalTag from "./CanalTag.jsx";
+import { tipoDoNome } from "../lib/canais.js";
 
 function labelTipo(tipo) {
   return TIPOS.find((t) => t.key === tipo)?.label || tipo || "—";
@@ -300,13 +302,13 @@ export default function PromocoesSalvas({ onToast }) {
                         <span className="variacao-seta">↳</span>
                         <span>
                           {p.item_nome.slice(paiDe(p.item_nome).length + 3)}
-                          {p.canal_nome ? ` — ${p.canal_nome}` : ""}
+                          {p.canal_nome ? <> <CanalTag tipo={tipoDoNome(p.canal_nome)} nome={p.canal_nome} className="canal-tag-mini" /></> : ""}
                         </span>
                       </span>
                     ) : (
                       <>
                         {p.item_nome || "—"}
-                        {p.canal_nome ? ` — ${p.canal_nome}` : ""}
+                        {p.canal_nome ? <> <CanalTag tipo={tipoDoNome(p.canal_nome)} nome={p.canal_nome} className="canal-tag-mini" /></> : ""}
                       </>
                     )}
                     {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
@@ -343,7 +345,13 @@ export default function PromocoesSalvas({ onToast }) {
                     <span className="chip-herdado">
                       {grupo.itens.length} {grupo.itens.length === 1 ? "item" : "itens"}
                     </span>
-                    {canaisGrupo.length > 0 && <span className="promo-grupo-canais">{canaisGrupo.join(", ")}</span>}
+                    {canaisGrupo.length > 0 && (
+                      <span className="promo-grupo-canais">
+                        {canaisGrupo.map((nm) => (
+                          <CanalTag key={nm} tipo={tipoDoNome(nm)} nome={nm} className="canal-tag-mini" />
+                        ))}
+                      </span>
+                    )}
                     <span style={{ flex: 1 }} />
                     {menorMargem != null && (
                       <span className={`badge ${menorMargem < 0 ? "bad" : menorMargem < 0.1 ? "warn" : "good"}`} title="Menor margem entre os itens dessa promoção">
@@ -406,7 +414,7 @@ export default function PromocoesSalvas({ onToast }) {
                                         <span className="item-cel">
                                           <span>
                                             {p.item_nome || "—"}
-                                            {p.canal_nome ? ` — ${p.canal_nome}` : ""}
+                                            {p.canal_nome ? <> <CanalTag tipo={tipoDoNome(p.canal_nome)} nome={p.canal_nome} className="canal-tag-mini" /></> : ""}
                                             {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
                                             {p.resumo && <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>{p.resumo}</div>}
                                           </span>

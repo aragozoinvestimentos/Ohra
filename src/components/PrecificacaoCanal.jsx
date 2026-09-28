@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import BuscaItem from "./BuscaItem.jsx";
 import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
@@ -13,21 +14,23 @@ import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
 import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado } from "../lib/escada.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import CanalTag from "./CanalTag.jsx";
+import ResumoFixo from "./ResumoFixo.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
 const DEFAULTS = {
   canal: "shopee",
-  shopeeFaixaIdx: 0,
+  shopeeFaixaIdx: -1, // -1 = automática (acha a faixa do preço calculado)
   mlCategoria: ML_CATEGORIAS[0],
   mlTipoAnuncio: "classico",
-  mlFaixaIdx: 1,
-  tiktokFaixaIdx: 0,
+  mlFaixaIdx: -1,
+  tiktokFaixaIdx: -1,
   outroComissao: 0,
   outroFixo: 0,
   imposto: 0,
   custosFixos: 0,
-  lucratividade: 20,
+  lucratividade: null, // null = margem desejada da loja (useMargemDesejada)
   custoProduto: 0,
   frete: 0,
   embalagem: 0,
@@ -44,6 +47,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [canalProprioId, setCanalProprioId] = useState("");
   const [confirmarKit, setConfirmarKit] = useState(false);
   const { itens: baseItens, canais, produtos, precos, composicaoDoKit } = useRankingData();
+  const margemLoja = useMargemDesejada();
+  const lucratividadeEf = f.lucratividade ?? margemLoja;
 
   const canaisProprios = canais.filter((c) => c.tipo === "custom");
 
@@ -122,19 +127,50 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const pesoSel = baseSelecionada ? baseItens.find((x) => x.id === baseSelecionada)?.peso || null : null;
   const faixasML = useMemo(() => mlFaixas(pesoSel), [pesoSel]);
 
+  // Faixa de preço: "automática" (-1) testa as faixas oficiais e fica com a
+  // que confere com o preço calculado; ou a escolhida na mão.
+  const faixaResolvida = useMemo(() => {
+    const base = {
+      imposto: n(f.imposto) / 100,
+      custosFixosPct: n(f.custosFixos) / 100,
+      lucratividadePct: n(lucratividadeEf) / 100,
+      custoProduto: n(f.custoProduto),
+      frete: n(f.frete),
+      embalagem: n(f.embalagem),
+    };
+    const auto = (tiers, pct) => {
+      for (let i = 0; i < tiers.length; i++) {
+        const t = tiers[i];
+        const r = calcCanal({ ...base, comissaoPct: pct ?? t.pct, taxaFixa: t.fixo, min: t.min, max: t.max });
+        if (r.faixaOk) return i;
+      }
+      return 0;
+    };
+    const mlPcts = ML_CATEGORY_PCT[f.mlCategoria] ?? { classico: 0.13, premium: 0.18 };
+    const mlPct = f.mlTipoAnuncio === "premium" ? mlPcts.premium : mlPcts.classico;
+    return {
+      shopee: f.shopeeFaixaIdx >= 0 ? f.shopeeFaixaIdx : auto(SHOPEE_TIERS, null),
+      shopeeAuto: auto(SHOPEE_TIERS, null),
+      ml: f.mlFaixaIdx >= 0 ? f.mlFaixaIdx : auto(faixasML, mlPct),
+      mlAuto: auto(faixasML, mlPct),
+      tiktok: f.tiktokFaixaIdx >= 0 ? f.tiktokFaixaIdx : auto(TIKTOK_TIERS, null),
+      tiktokAuto: auto(TIKTOK_TIERS, null),
+      mlPct,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.imposto, f.custosFixos, lucratividadeEf, f.custoProduto, f.frete, f.embalagem, f.shopeeFaixaIdx, f.mlFaixaIdx, f.tiktokFaixaIdx, f.mlCategoria, f.mlTipoAnuncio, faixasML]);
+
   const comissaoFixo = useMemo(() => {
     if (f.canal === "shopee") {
-      const tier = SHOPEE_TIERS[f.shopeeFaixaIdx] || SHOPEE_TIERS[0];
+      const tier = SHOPEE_TIERS[faixaResolvida.shopee] || SHOPEE_TIERS[0];
       return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
     if (f.canal === "ml") {
-      const pcts = ML_CATEGORY_PCT[f.mlCategoria] ?? { classico: 0.13, premium: 0.18 };
-      const pct = f.mlTipoAnuncio === "premium" ? pcts.premium : pcts.classico;
-      const tier = faixasML[f.mlFaixaIdx] || faixasML[1];
-      return { pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
+      const tier = faixasML[faixaResolvida.ml] || faixasML[1];
+      return { pct: faixaResolvida.mlPct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
     if (f.canal === "tiktok") {
-      const tier = TIKTOK_TIERS[f.tiktokFaixaIdx] || TIKTOK_TIERS[0];
+      const tier = TIKTOK_TIERS[faixaResolvida.tiktok] || TIKTOK_TIERS[0];
       return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: true };
     }
     if (f.canal === "shein") {
@@ -142,7 +178,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       return { pct: tier.pct, fixo: tier.fixo, min: tier.min, max: tier.max, temFaixa: false };
     }
     return { pct: n(f.outroComissao) / 100, fixo: n(f.outroFixo), temFaixa: false };
-  }, [f.canal, f.shopeeFaixaIdx, f.mlCategoria, f.mlTipoAnuncio, f.mlFaixaIdx, f.tiktokFaixaIdx, f.outroComissao, f.outroFixo, faixasML]);
+  }, [f.canal, f.outroComissao, f.outroFixo, faixasML, faixaResolvida]);
 
   const resultado = useMemo(() => {
     return calcCanal({
@@ -150,16 +186,16 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       comissaoPct: comissaoFixo.pct,
       taxaFixa: comissaoFixo.fixo,
       custosFixosPct: n(f.custosFixos) / 100,
-      lucratividadePct: n(f.lucratividade) / 100,
+      lucratividadePct: n(lucratividadeEf) / 100,
       custoProduto: n(f.custoProduto),
       frete: n(f.frete),
       embalagem: n(f.embalagem),
       min: comissaoFixo.temFaixa ? comissaoFixo.min : null,
       max: comissaoFixo.temFaixa ? comissaoFixo.max : null,
     });
-  }, [f, comissaoFixo]);
+  }, [f, comissaoFixo, lucratividadeEf]);
 
-  const lucratividadeFrac = n(f.lucratividade) / 100;
+  const lucratividadeFrac = n(lucratividadeEf) / 100;
   const lucrativo = resultado.margem != null && resultado.margem >= lucratividadeFrac - 0.001;
 
   // "Comparar com outro preço" avalia um preço DIFERENTE do calculado — pra
@@ -193,7 +229,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const outrosCanais = useMemo(() => {
     if (n(f.custoProduto) <= 0) return [];
     const base = {
-      lucratividadePct: n(f.lucratividade) / 100,
+      lucratividadePct: n(lucratividadeEf) / 100,
       custoProduto: n(f.custoProduto),
       frete: n(f.frete),
       embalagem: n(f.embalagem),
@@ -219,7 +255,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       })
       .sort((a, b) => (b.confiavel && b.r.lucro != null ? b.r.lucro : -Infinity) - (a.confiavel && a.r.lucro != null ? a.r.lucro : -Infinity));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, f.lucratividade, f.mlCategoria, f.mlTipoAnuncio, pesoSel]);
+  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, lucratividadeEf, f.mlCategoria, f.mlTipoAnuncio, pesoSel]);
 
   const canalLabel =
     f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : "Outro canal";
@@ -392,10 +428,40 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         disabled={salvando || !baseSelecionada}
         title={baseSelecionada ? "Salvar esse preço em Produtos precificados" : "Escolha um produto ou kit cadastrado pra poder salvar"}
       >
-        {salvando ? "Salvando…" : "Salvar preço"}
+        {salvando ? "Salvando…" : baseSelecionada && resultado.preco > 0 && resultado.custoTotal > 0 ? `Salvar ${BRL(resultado.preco)}` : "Salvar preço"}
       </button>
     </TopbarAcoes>
     )}
+    <div className="panel painel-topo">
+      <div className="topo-campos">
+        <div className="field">
+          <label>1. Produto ou kit</label>
+          <BuscaItem grupos={gruposDoSeletor(itensAvulso)} value={baseSelecionada} onChange={setBaseSelecionada} vazio="— preencher custo na mão —" />
+        </div>
+        <div className="field">
+          <label>2. Canal de venda</label>
+          <select value={f.canal} onChange={setStr("canal")}>
+            <option value="shopee">Shopee</option>
+            <option value="ml">Mercado Livre</option>
+            <option value="tiktok">TikTok Shop</option>
+            <option value="shein">Shein</option>
+            <option value="outro">Outro canal</option>
+          </select>
+        </div>
+        {f.canal === "outro" && canaisProprios.length > 0 && (
+          <div className="field">
+            <label>Qual canal próprio?</label>
+            <select value={canalProprioId} onChange={(e) => setCanalProprioId(e.target.value)}>
+              <option value="">— preencher manualmente —</option>
+              {canaisProprios.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+    </div>
+    <ResumoFixo>
     <Kpis
       itens={[
         {
@@ -406,7 +472,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
             : "produção + frete + embalagem",
         },
         {
-          label: "Preço no canal",
+          label: `Preço pela margem de ${n(lucratividadeEf)}%`,
           valor: BRL(resultado.preco),
           tom: "destaque",
           sub:
@@ -415,7 +481,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               : comissaoFixo.temFaixa
                 ? resultado.faixaOk
                   ? `${canalLabel} · confere com a faixa`
-                  : `${canalLabel} · fora da faixa — teste outra`
+                  : `${canalLabel} · fora da faixa escolhida`
                 : canalLabel,
         },
         {
@@ -436,23 +502,34 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         },
       ]}
     />
-    {refs && (
+    {(refs || precoExistente) && (
       <div className="refs-linha refs-avulso">
-        Referências neste canal: <b>mínimo sem prejuízo {BRL(refs.semPrejuizo)}</b> · <b>margem mínima ({Math.round(cfgEscada.margemMin * 100)}%) {BRL(refs.margemMinima)}</b>
-        {refs.concorrente != null && (
-          <>
-            {" "}
-            · <b>concorrente {BRL(refs.concorrente)}</b>
-          </>
-        )}
         {precoExistente && (
-          <>
-            {" "}
-            · <b>salvo {BRL(precoExistente.preco)}</b>
-          </>
+          <span className="salvo-chip" title="Preço já salvo em Produtos precificados — lucro e margem recalculados com o custo e as taxas de hoje">
+            Salvo neste canal: <b>{BRL(precoExistente.preco)}</b>
+            {precoExistente.lucro != null && (
+              <>
+                {" "}
+                · lucro {BRL(precoExistente.lucro)}
+                {precoExistente.margem != null ? ` · ${PCT(precoExistente.margem)}` : ""}
+              </>
+            )}
+          </span>
+        )}
+        {refs && (
+          <span>
+            Referências: <b>mínimo sem prejuízo {BRL(refs.semPrejuizo)}</b> · <b>margem mínima ({Math.round(cfgEscada.margemMin * 100)}%) {BRL(refs.margemMinima)}</b>
+            {refs.concorrente != null && (
+              <>
+                {" "}
+                · <b>concorrente {BRL(refs.concorrente)}</b>
+              </>
+            )}
+          </span>
         )}
       </div>
     )}
+    </ResumoFixo>
     {sugKit && (
       <div className="kit-sep">
         <div className="kit-sep-linha">
@@ -512,31 +589,21 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         <div className="panel">
           <h3 className="section-title">
             <span>
-              Canal
-              <Ajuda texto="Comissão e taxa fixa são o que Shopee/Mercado Livre descontam de cada venda (calculadas pelas faixas oficiais). Imposto é o % que você recolhe sobre a venda (MEI com DAS fixo pode deixar em 0%). Custos fixos adicionais é qualquer % extra recorrente (embalagens, ferramentas, assinaturas). Lucratividade desejada é a margem líquida que você quer garantir — é ela que define o preço calculado." />
+              Taxas do canal
+              <Ajuda texto="Faixa de preço “automática” acha sozinha a faixa oficial que confere com o preço calculado. Comissão e taxa fixa são o que Shopee/Mercado Livre descontam de cada venda (calculadas pelas faixas oficiais). Imposto é o % que você recolhe sobre a venda (MEI com DAS fixo pode deixar em 0%). Custos fixos adicionais é qualquer % extra recorrente (embalagens, ferramentas, assinaturas). Margem desejada é a margem líquida que você quer garantir — é ela que define o preço calculado; começa com a margem da loja (a mesma de todo o app)." />
             </span>
           </h3>
-          <div className="field">
-            <label>Canal de venda</label>
-            <select value={f.canal} onChange={setStr("canal")}>
-              <option value="shopee">Shopee</option>
-              <option value="ml">Mercado Livre</option>
-              <option value="tiktok">TikTok Shop</option>
-              <option value="shein">Shein</option>
-              <option value="outro">Outro canal</option>
-            </select>
-          </div>
-
           {f.canal === "shein" && (
             <div className="hint" style={{ marginTop: -4 }}>
-              Comissão fixa de 16%, sem taxa por venda — não varia por categoria nem faixa de preço.
+              Comissão fixa de 18%, sem taxa por venda — não varia por faixa de preço.
             </div>
           )}
 
           {f.canal === "tiktok" && (
             <div className="field">
-              <label>Faixa de preço prevista (já com desconto)</label>
+              <label>Faixa de preço (já com desconto)</label>
               <select value={f.tiktokFaixaIdx} onChange={setIdx("tiktokFaixaIdx")}>
+                <option value={-1}>Automática ({TIKTOK_TIERS[faixaResolvida.tiktokAuto]?.label})</option>
                 {TIKTOK_TIERS.map((t, i) => (
                   <option key={t.label} value={i}>{t.label}</option>
                 ))}
@@ -546,8 +613,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
 
           {f.canal === "shopee" && (
             <div className="field">
-              <label>Faixa de preço prevista</label>
+              <label>Faixa de preço</label>
               <select value={f.shopeeFaixaIdx} onChange={setIdx("shopeeFaixaIdx")}>
+                <option value={-1}>Automática ({SHOPEE_TIERS[faixaResolvida.shopeeAuto]?.label})</option>
                 {SHOPEE_TIERS.map((t, i) => (
                   <option key={t.label} value={i}>{t.label}</option>
                 ))}
@@ -575,8 +643,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                 </div>
               </div>
               <div className="field">
-                <label>Faixa de preço prevista (define o custo de envio)</label>
+                <label>Faixa de preço (define o custo de envio)</label>
                 <select value={f.mlFaixaIdx} onChange={setIdx("mlFaixaIdx")}>
+                  <option value={-1}>Automática ({faixasML[faixaResolvida.mlAuto]?.label} · envio {BRL(faixasML[faixaResolvida.mlAuto]?.fixo)})</option>
                   {faixasML.map((t, i) => (
                     <option key={t.label} value={i}>{t.label} · envio {BRL(t.fixo)}</option>
                   ))}
@@ -590,17 +659,6 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
 
           {f.canal === "outro" && (
             <>
-              {canaisProprios.length > 0 && (
-                <div className="field">
-                  <label>Qual canal próprio é esse?</label>
-                  <select value={canalProprioId} onChange={(e) => setCanalProprioId(e.target.value)}>
-                    <option value="">— preencher manualmente —</option>
-                    {canaisProprios.map((c) => (
-                      <option key={c.id} value={c.id}>{c.nome}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
               <div className="row2">
                 <div className="field">
                   <label>Comissão (%)</label>
@@ -630,7 +688,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
             </div>
             <div className="field">
               <label>Margem desejada (%)</label>
-              <input type="number" step="1" value={f.lucratividade} onChange={set("lucratividade")} />
+              <input type="number" step="1" value={lucratividadeEf} onChange={set("lucratividade")} />
             </div>
           </div>
           <button type="button" className="link-btn" onClick={usarConfigDoCanal}>
@@ -643,10 +701,6 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
             Custo do produto
             <Ajuda texto='Três formas de preencher: na mão; escolhendo um produto/kit cadastrado (puxa custo, frete e embalagem); ou em "Custo de Produção" usando o botão "Usar este custo na Precificação por Canal →".' />
           </h3>
-          <div className="field">
-            <label>Produto, variação ou kit (opcional)</label>
-            <BuscaItem grupos={gruposDoSeletor(itensAvulso)} value={baseSelecionada} onChange={setBaseSelecionada} vazio="— preencher manualmente —" />
-          </div>
           <div className="row3">
             <div className="field">
               <label>Custo produção (R$)</label>
@@ -770,7 +824,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                   {outrosCanais.map(({ canal, r, salvo, confiavel }) => (
                     <tr key={canal.id} className={canal.tipo === f.canal || canal.id === canalProprioId ? "linha-atual" : ""}>
                       <td>
-                        <strong style={{ fontWeight: 600 }}>{canal.nome}</strong>
+                        <CanalTag canal={canal} />
                         {!confiavel && <span className="badge warn" style={{ marginLeft: 6 }}>faixa não fecha</span>}
                       </td>
                       <td className="num">{r.preco != null ? BRL(r.preco) : "—"}</td>

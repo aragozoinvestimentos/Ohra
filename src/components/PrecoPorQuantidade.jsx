@@ -4,7 +4,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
-import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginalCanal } from "../lib/escada.js";
+import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -30,7 +30,7 @@ const CAMPOS_ESCADA = [
 
 export default function PrecoPorQuantidade({ onToast }) {
   const { lojaId, atualizar } = useLoja();
-  const { itens, canais, produtos, cfgLoja, cfgDoProduto, escada } = useEscada();
+  const { itens, canais, produtos, kits: kitsCat, cfgLoja, cfgDoProduto, escada } = useEscada();
   const [produtoId, setProdutoId] = useState("");
   const [canalId, setCanalId] = useState("");
   const [p1Edit, setP1Edit] = useState({}); // { "<produto>|<canal>": "12.9" }
@@ -63,13 +63,14 @@ export default function PrecoPorQuantidade({ onToast }) {
   const alertas = dados ? alertasAvulso({ canal, p1: dados.p1, base1: { custo: dados.custo1, peso: dados.peso1 }, cfg, escada: e, concorrente: dados.concorrente1 }) : [];
   const kits = e ? e.linhas.filter((l) => !l.base) : [];
   // Regra da Shopee (4×): preço usado = salvo (ou o sugerido, se não tem salvo);
-  // preço original = com o acréscimo da Olist desse canal.
+  // preço original = com o desconto exibido no anúncio (canal ou do produto).
+  const fatorOrig = pid && canal ? fatorOriginal(descontoDoItem(`p:${pid}`, canal, { itens, produtos, kits: kitsCat }).desconto) : 1;
   const regra4x =
     e && canal?.tipo === "shopee"
       ? gruposRegra4x(
           e.linhas.map((l) => {
             const promo = l.base ? dados.p1 : l.salvo ?? l.sugerido;
-            return { n: l.n, promo, original: promo * fatorOriginalCanal(canal) };
+            return { n: l.n, promo, original: promo * fatorOrig };
           })
         )
       : null;
@@ -310,7 +311,7 @@ export default function PrecoPorQuantidade({ onToast }) {
       {regra4x && !regra4x.ok && (
         <div className="alerta alerta-warn">
           <b>Shopee: esse produto não cabe num anúncio só (regra de 4×)</b>
-          Num mesmo anúncio a variação mais cara (preço original, com o acréscimo da Olist) não pode passar de 4× a mais barata (com promoção). Aqui o limite é{" "}
+          Num mesmo anúncio a variação mais cara (preço original, o riscado do anúncio) não pode passar de 4× a mais barata (com promoção). Aqui o limite é{" "}
           {BRL(regra4x.limite)}, então o anúncio do avulso vai <b>até {regra4x.maxNoPrimeiro} unidades</b>. Divisão que funciona:{" "}
           {regra4x.grupos.map((g, i) => `anúncio ${i + 1} (${g.join(", ")} un)`).join(" · ")}
         </div>
@@ -375,7 +376,7 @@ export default function PrecoPorQuantidade({ onToast }) {
               </div>
             </div>
           )}
-          <div className="table-wrap tabela-escada">
+          <div className="table-wrap tabela-escada cabecalho-fixo">
             <table>
               <thead>
                 <tr>

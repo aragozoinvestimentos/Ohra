@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import BuscaItem from "./BuscaItem.jsx";
 import { ML_CATEGORY_PCT, calcCanalCustom, resolverFaixaML, resolverFaixaShein, resolverFaixaShopee, resolverFaixaTikTok, resultadoNoPreco } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
@@ -12,7 +13,7 @@ import { normalizarTexto, nomesParecidos } from "../lib/texto.js";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, gruposDoSeletor } from "../lib/variacoes.js";
-import { calcularPublicacao, promoParaPreco, configEscada } from "../lib/escada.js";
+import { promoParaPreco, calcularAnuncio, descontoDoItem, configEscada } from "../lib/escada.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -40,37 +41,29 @@ function LucroPorPeca({ lucro, pecas }) {
   );
 }
 
-// Avisos da campanha na plataforma (Olist + escada):
-// - % a lançar no canal a partir do preço ANUNCIADO (base Olist + acréscimo) —
-//   a campanha substitui a promo de sempre, não soma;
+// Avisos da campanha na plataforma (anúncio + escada):
+// - % a lançar no canal a partir do PREÇO ORIGINAL do anúncio (preço real ÷
+//   (1 − desconto do canal/produto)) — a campanha substitui a promo de
+//   sempre, não soma;
 // - campanha abaixo do preço real salvo;
 // - escada invertida: o item em promoção fica mais barato por peça que um
 //   kit MAIOR do mesmo produto (o cliente perde o motivo de levar mais).
-function AvisosPlataforma({ precoFinal, baseSelecionada, canal, canais, itens, precos, publicacoes = [] }) {
-  const { lojas, lojaId } = useLoja();
-  const promoMin = configEscada(lojas.find((l) => l.id === lojaId)?.config_escada).promoMinOlist;
+function AvisosPlataforma({ precoFinal, baseSelecionada, canal, itens, precos, produtos, kits }) {
   if (!baseSelecionada || !canal || !(precoFinal > 0)) return null;
   const [pref, id] = baseSelecionada.split(":");
   const tipo = itemTipoDoId(baseSelecionada);
   const salvoDe = (t, iid, cid) => precos.find((p) => p.item_tipo === t && p.item_id === iid && p.canal_id === cid) || null;
   const avisos = [];
-  // Olist
-  const olist = canais.filter((c) => c.acrescimo_olist_pct != null && c.acrescimo_olist_pct !== "");
-  if (canal.acrescimo_olist_pct != null && canal.acrescimo_olist_pct !== "") {
-    const reais = {};
-    for (const c of olist) {
-      const s = salvoDe(tipo, id, c.id);
-      if (s && Number(s.preco) > 0) reais[c.id] = Number(s.preco);
-    }
-    const salvaPub = publicacoes.find((x) => x.item_tipo === tipo && x.item_id === id);
-    const pub = calcularPublicacao(reais, Object.fromEntries(olist.map((c) => [c.id, Number(c.acrescimo_olist_pct) || 0])), promoMin, salvaPub ? Number(salvaPub.base) : null, Object.fromEntries(olist.map((c) => [c.id, c.acrescimo_olist_modo || "dentro"])), olist.find((c) => c.olist_principal)?.id || null);
-    const nosso = pub?.canais[canal.id];
-    if (pub && nosso) {
-      const pct = promoParaPreco(nosso.anunciado, precoFinal);
+  const salvoCanal = salvoDe(tipo, id, canal.id);
+  if (salvoCanal && Number(salvoCanal.preco) > 0) {
+    const { desconto } = descontoDoItem(baseSelecionada, canal, { itens, produtos, kits });
+    const an = calcularAnuncio(Number(salvoCanal.preco), desconto);
+    if (an && an.promo > 0) {
+      const pct = promoParaPreco(an.original, precoFinal);
       avisos.push({
         tom: "acc",
         titulo: `Na plataforma: lance ${Math.floor(pct)}% de promoção`,
-        texto: `O anúncio aparece a ${BRL(nosso.anunciado)} (base Olist ${BRL(pub.base)} com acréscimo de ${Math.round(Number(canal.acrescimo_olist_pct) * 100)}% ${canal.acrescimo_olist_modo === "simples" ? "base simples" : "por dentro"}). A campanha substitui a promo de sempre (${nosso.promo}%) — não soma. Com ${Math.floor(pct)}% o cliente paga ${BRL(nosso.anunciado * (1 - Math.floor(pct) / 100))}.`,
+        texto: `O anúncio tem preço original de ${BRL(an.original)} (seu preço real com ${an.promo}% de promoção de sempre). A campanha substitui essa promo — não soma. Com ${Math.floor(pct)}% o cliente paga ${BRL(an.original * (1 - Math.floor(pct) / 100))}.`,
       });
     }
   }
@@ -148,11 +141,11 @@ function Breakeven({ lucroNormal, lucroPromo }) {
 }
 
 export default function PromocaoSimulador({ onToast }) {
-  const { lojaId } = useLoja();
+  const { lojaId, lojas } = useLoja();
   // Produtos (custo e embalagem AO VIVO), kits, variações e preços salvos
   // (com lucro recalculado) vêm do catálogo compartilhado, que já tem
   // realtime em todas as tabelas envolvidas.
-  const { itens: itensCatalogo, produtos, precos, publicacoes } = useRankingData();
+  const { itens: itensCatalogo, produtos, kits: kitsCatalogo, precos } = useRankingData();
   const [canais, setCanais] = useState([]);
   const [nomesPromocoesSalvas, setNomesPromocoesSalvas] = useState([]); // pro autocomplete/sugestão ao salvar
   const [carregando, setCarregando] = useState(true);
@@ -164,7 +157,9 @@ export default function PromocaoSimulador({ onToast }) {
   const [embalagem, setEmbalagem] = useState(0);
   const [mlCategoria, setMlCategoria] = useState(ML_CATEGORIAS[0]);
   const [mlTipoAnuncio, setMlTipoAnuncio] = useState("classico");
-  const [lucratividade, setLucratividade] = useState(30);
+  const margemLoja = useMargemDesejada();
+  const [lucratividadeEdit, setLucratividade] = useState(null);
+  const lucratividade = lucratividadeEdit ?? margemLoja;
 
   const [tipo, setTipo] = useState("desconto");
   const [desconto, setDesconto] = useState(10);
@@ -459,14 +454,29 @@ export default function PromocaoSimulador({ onToast }) {
     setTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, [campo]: valor } : t)));
   }
 
+  // "Compre Mais, Pague Menos" (Shopee) / desconto progressivo: cada unidade
+  // paga a taxa fixa inteira. "Máx." = maior desconto (% inteiro) que ainda
+  // deixa cada unidade com a margem mínima da loja.
+  const margemMinLoja = configEscada(lojas.find((l) => l.id === lojaId)?.config_escada).margemMin;
+  const descontoMaxProgressivo = useMemo(() => {
+    if (!normal?.lucroEm || !(normal.preco > 0)) return null;
+    let melhor = null;
+    for (let d = 0; d <= 60; d++) {
+      const p = normal.preco * (1 - d / 100);
+      const l = normal.lucroEm(p);
+      if (l != null && p > 0 && l / p >= margemMinLoja - 1e-9) melhor = d;
+      else break;
+    }
+    return melhor;
+  }, [normal, margemMinLoja]);
   const linhasProgressivo = useMemo(() => {
     if (!normal) return [];
     return tiers.map((t) => {
       const precoUnit = normal.preco * (1 - (n(t.desconto) || 0) / 100);
       const lucroUnit = normal.lucroEm(precoUnit);
-      return { ...t, precoUnit, lucroUnit, margemUnit: precoUnit > 0 ? lucroUnit / precoUnit : null, deltaVsAvulso: lucroUnit - normal.lucro };
+      return { ...t, precoUnit, lucroUnit, margemUnit: precoUnit > 0 ? lucroUnit / precoUnit : null, deltaVsAvulso: lucroUnit - normal.lucro, acimaDoMax: descontoMaxProgressivo != null && n(t.desconto) > descontoMaxProgressivo };
     });
-  }, [normal, tiers]);
+  }, [normal, tiers, descontoMaxProgressivo]);
 
   const combo = useMemo(() => {
     if (!normal || !feeInfo) return null;
@@ -978,7 +988,7 @@ export default function PromocaoSimulador({ onToast }) {
           )}
         </div>
 
-        <div>
+        <div className="coluna-fixa">
           {tipo === "combinada" ? (
             <div className="panel">
               <h3 className="section-title">
@@ -1155,19 +1165,24 @@ export default function PromocaoSimulador({ onToast }) {
                   precoFinal={descontoResultado.preco}
                   baseSelecionada={baseSelecionada}
                   canal={canal}
-                  canais={canais}
                   itens={itensCatalogo}
                   precos={precos}
-                  publicacoes={publicacoes}
+                  produtos={produtos}
+                  kits={kitsCatalogo}
                 />
               )}
             </div>
           ) : tipo === "progressivo" ? (
             <div className="panel">
               <h3 className="section-title">
-                Progressivo por quantidade
-                <Ajuda texto="Cada faixa aplica um desconto % maior conforme a quantidade comprada — a taxa fixa do canal continua sendo cobrada por unidade (é assim que Shopee/ML tratam item por item, mesmo em um pedido só). “Equilíbrio” é quantas vezes mais peças você precisa vender NESSA faixa (em vez de vender avulso, no preço normal) pra igualar o lucro total — quanto maior o desconto da faixa, mais volume ela exige pra compensar. É pra venda dentro do marketplace (o desconto aparece nas faixas de quantidade do próprio anúncio). Pra um pedido combinado direto com o cliente, fora do marketplace, use “Encomenda em volume” em Orçamento." />
+                Progressivo por quantidade (Compre Mais, Pague Menos)
+                <Ajuda texto="Cada faixa aplica um desconto % maior conforme a quantidade comprada — na Shopee é o “Compre Mais, Pague Menos”. A taxa fixa do canal continua sendo cobrada POR UNIDADE (é assim que Shopee/ML tratam item por item, mesmo em um pedido só) — por isso o desconto possível aqui é menor que numa variação “2 un./3 un.” (Precificação por Canal → Por quantidade), que paga a taxa fixa uma vez só. “Máx.” = o maior desconto que ainda deixa cada unidade com a margem mínima da loja. “Equilíbrio” é quantas vezes mais peças você precisa vender NESSA faixa (em vez de vender avulso, no preço normal) pra igualar o lucro total — quanto maior o desconto da faixa, mais volume ela exige pra compensar. É pra venda dentro do marketplace (o desconto aparece nas faixas de quantidade do próprio anúncio). Pra um pedido combinado direto com o cliente, fora do marketplace, use “Encomenda em volume” em Orçamento." />
               </h3>
+              {descontoMaxProgressivo != null && (
+                <div className="refs-linha" style={{ marginTop: 0, paddingTop: 0, borderTop: 0, marginBottom: 8 }}>
+                  Desconto máximo por faixa, mantendo a margem mínima ({Math.round(margemMinLoja * 100)}%) em cada unidade: <b>{descontoMaxProgressivo}%</b>
+                </div>
+              )}
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -1205,7 +1220,10 @@ export default function PromocaoSimulador({ onToast }) {
                         </td>
                         <td className="num">{BRL(t.precoUnit)}</td>
                         <td className="num">{BRL(t.lucroUnit)}</td>
-                        <td className="num">{t.margemUnit != null ? PCT(t.margemUnit) : "—"}</td>
+                        <td className="num">
+                          {t.margemUnit != null ? PCT(t.margemUnit) : "—"}
+                          {t.acimaDoMax && <span className="badge bad" style={{ marginLeft: 4 }} title="Desconto acima do máximo — cada unidade fica abaixo da margem mínima">abaixo do mín.</span>}
+                        </td>
                         <td className="num" style={{ color: t.deltaVsAvulso >= 0 ? "var(--good)" : "var(--bad)" }}>
                           {t.deltaVsAvulso >= 0 ? "+" : ""}{BRL(t.deltaVsAvulso)}
                         </td>
@@ -1375,7 +1393,7 @@ export default function PromocaoSimulador({ onToast }) {
         </div>
       </div>
 
-      {resumoComparativo && resumoComparativo.length > 1 && (
+      {resumoComparativo && resumoComparativo.length > 1 && normal?.preco > 0 && (
         <div className="panel">
           <h3 className="section-title">
             Comparativo entre promoções

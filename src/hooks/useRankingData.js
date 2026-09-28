@@ -1,3 +1,4 @@
+import { ordenarCanais } from "../lib/canais.js";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import {
   resolverFaixaShopee,
@@ -225,9 +226,12 @@ export function useRankingData() {
     });
   }, [precos, itens, canais]);
 
+  // Shopee primeiro, depois ML, TikTok, Shein e canais próprios (lib/canais.js).
+  const canaisOrdenados = useMemo(() => ordenarCanais(canais), [canais]);
+
   return {
     itens,
-    canais,
+    canais: canaisOrdenados,
     produtos: produtosVivos,
     kits,
     precos: precosVivos,
@@ -235,6 +239,7 @@ export function useRankingData() {
     variacoes,
     concorrentes: cat.concorrentes || [],
     publicacoes: cat.publicacoes || [],
+    publicacoesCanal: cat.publicacoesCanal || [],
     materiais,
     embalagens: embalagensCatalogo,
     produtoEmbalagens,

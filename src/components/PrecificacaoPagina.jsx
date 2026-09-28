@@ -5,14 +5,14 @@ import Comparativo from "./Comparativo.jsx";
 import Publicar from "./Publicar.jsx";
 
 // Precificação por Canal em 4 sub-abas, na ordem do fluxo: preço do avulso →
-// preço dos kits → conferir nos outros canais → publicar na Olist. Todas
+// preço dos kits → conferir nos outros canais → anunciar em cada plataforma. Todas
 // ficam montadas (só escondidas) pra não perder o que foi digitado ao trocar
 // de sub-aba. "Comparar canais" é o antigo item "Comparativo" do menu.
 const SUBABAS = [
   { key: "avulso", label: "Avulso" },
   { key: "quantidade", label: "Por quantidade" },
   { key: "comparar", label: "Comparar canais" },
-  { key: "publicar", label: "Publicar" },
+  { key: "publicar", label: "Anunciar" },
 ];
 
 export default function PrecificacaoPagina({ sub, onSub, ativo, custoRecebido, produtoParaSelecionar, onToast }) {

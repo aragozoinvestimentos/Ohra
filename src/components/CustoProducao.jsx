@@ -8,6 +8,10 @@ import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
+import CanalTag from "./CanalTag.jsx";
+import ResumoFixo from "./ResumoFixo.jsx";
+import { useRankingData } from "../hooks/useRankingData.js";
+import { configEscada, precoParaMargem, r90up } from "../lib/escada.js";
 
 const STORAGE_KEY = "ohra:custo-producao:v2";
 
@@ -29,7 +33,8 @@ function loadInitial() {
 }
 
 export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMateriais }) {
-  const { lojaId } = useLoja();
+  const { lojaId, lojas } = useLoja();
+  const { canais: canaisVivos, itens: itensVivos, produtos: produtosVivos } = useRankingData();
   const [f, setF] = useState(loadInitial);
   const [materiais, setMateriais] = useState([]);
   const [materiaisCarregando, setMateriaisCarregando] = useState(true);
@@ -178,6 +183,21 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f, materialSelecionado, custoConsumiveis]);
 
+  // Preço de venda de referência no canal principal (Shopee, ou o 1º canal):
+  // margem desejada da loja + taxas reais do canal, com a embalagem/frete do
+  // produto escolhido (sem produto, só o custo de produção). No lugar do
+  // antigo "markup sobre o custo", que ignorava as taxas.
+  const cfgLoja = configEscada(lojas.find((l) => l.id === lojaId)?.config_escada, null);
+  const canalRef = canaisVivos.find((c) => c.tipo === "shopee") || canaisVivos[0] || null;
+  const vivoSel = produtoId ? produtosVivos.find((p) => p.id === produtoId) : null;
+  const extrasProduto = vivoSel ? (Number(vivoSel.embalagem_padrao) || 0) + (Number(vivoSel.frete_padrao) || 0) : 0;
+  const custoVenda = resultado.total + extrasProduto;
+  const pesoRef = produtoId ? itensVivos.find((i) => i.id === `p:${produtoId}`)?.peso || 0 : 0;
+  const pSug = canalRef && custoVenda > 0 ? precoParaMargem(canalRef, cfgLoja.margemDesejada, custoVenda, pesoRef, cfgLoja) : null;
+  const pZero = canalRef && custoVenda > 0 ? precoParaMargem(canalRef, 0, custoVenda, pesoRef, cfgLoja) : null;
+  const sugeridoCanal = pSug != null ? r90up(pSug) : null;
+  const minimoCanal = pZero != null ? Math.ceil(pZero * 100 - 1e-6) / 100 : null;
+
   if (materiaisCarregando) {
     return (
       <div className="panel">
@@ -249,14 +269,16 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         Precificar nos canais →
       </button>
     </TopbarAcoes>
+    <ResumoFixo>
     <Kpis
       itens={[
         { label: "Custo por peça", valor: BRL(resultado.total), tom: "destaque", sub: n(f.pecasPorPlaca) > 1 ? `chapa com ${n(f.pecasPorPlaca)} peças` : "custo de produção total" },
         { label: "Material", valor: BRL(resultado.material), sub: `${pesoTxt} de ${materialSelecionado?.nome || "filamento"}` },
         { label: "Máquina e energia", valor: BRL(resultado.energia + resultado.manutencao + resultado.roiPeca), sub: "energia + manutenção + ROI" },
-        { label: "Preço sugerido", valor: BRL(resultado.precoRapido), tom: "good", sub: `markup de ${n(f.markupRapido)}% sobre o custo` },
+        { label: canalRef ? `Sugerido na ${canalRef.nome || "Shopee"}` : "Preço sugerido", valor: sugeridoCanal != null ? BRL(sugeridoCanal) : "—", tom: "good", sub: sugeridoCanal != null ? `margem ${Math.round(cfgLoja.margemDesejada * 100)}% · já com as taxas` : "cadastre um canal" },
       ]}
     />
+    </ResumoFixo>
     <div className="grid2">
       <div>
         <div className="panel">
@@ -424,14 +446,25 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         </div>
         <div className="panel">
           <h3 className="section-title">
-            Cálculo rápido de venda
-            <Ajuda texto="Markup é o multiplicador aplicado sobre o custo total pra chegar num preço sugerido — 100% de markup significa vender pelo dobro do custo. É só uma estimativa rápida, sem considerar taxas de canal; pra um preço final por Shopee/ML/etc., use 'Precificação por Canal'." />
+            Preço de venda (referência)
+            <Ajuda texto="Estimativa rápida no seu canal principal, já com a comissão, a taxa fixa e o imposto do canal e a margem desejada da loja (a mesma de todo o app). Com um produto escolhido acima, inclui a embalagem e o frete dele. O preço final de cada canal você define e salva em Precificação por Canal." />
           </h3>
-          <div className="field">
-            <label>Markup desejado (%) — ex: 100% = dobro do custo</label>
-            <input type="number" step="1" value={f.markupRapido} onChange={set("markupRapido")} />
-          </div>
-          <div className="kv total"><span className="k">Preço sugerido</span><span className="v">{BRL(resultado.precoRapido)}</span></div>
+          {canalRef ? (
+            <>
+              <div className="kv">
+                <span className="k">Canal</span>
+                <span className="v">
+                  <CanalTag canal={canalRef} />
+                </span>
+              </div>
+              <div className="kv"><span className="k">Custo considerado</span><span className="v">{BRL(custoVenda)}</span></div>
+              <div className="kv"><span className="k">Mínimo sem prejuízo</span><span className="v">{minimoCanal != null ? BRL(minimoCanal) : "—"}</span></div>
+              <div className="kv total"><span className="k">Sugerido (margem {Math.round(cfgLoja.margemDesejada * 100)}%)</span><span className="v">{sugeridoCanal != null ? BRL(sugeridoCanal) : "—"}</span></div>
+              {!vivoSel && <div className="hint" style={{ marginTop: 6 }}>Sem produto escolhido: só o custo de produção (sem embalagem e frete).</div>}
+            </>
+          ) : (
+            <div className="hint">Cadastre um canal em Configuração → Canais pra ver o preço de referência.</div>
+          )}
           <button
             className="btn primary"
             style={{ marginTop: 10, width: "100%" }}

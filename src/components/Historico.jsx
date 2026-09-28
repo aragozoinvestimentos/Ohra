@@ -13,6 +13,7 @@ import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import { itemTipoDoId, formatarPeso } from "../lib/variacoes.js";
 import { precoSalvoAoVivo } from "../lib/aoVivo.js";
+import CanalTag from "./CanalTag.jsx";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
 // instantâneo do que foi salvo em Precificação por Canal, sem ligação real
@@ -160,6 +161,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     await supabase.from("precos_canal").delete().eq("item_tipo", "variacao").eq("item_id", vid);
     await supabase.from("precos_concorrente").delete().eq("item_tipo", "variacao").eq("item_id", vid);
     await supabase.from("publicacoes_olist").delete().eq("item_tipo", "variacao").eq("item_id", vid);
+    await supabase.from("publicacoes_canal").delete().eq("item_tipo", "variacao").eq("item_id", vid);
     setPrecos((prev) => prev.filter((p) => !(p.item_tipo === "variacao" && p.item_id === vid)));
     onToast(`${item.nomeVariacao || item.nome} excluída`);
   }
@@ -545,7 +547,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
           { label: "Itens com preço salvo", valor: `${resumo.comPreco} de ${itens.length}`, sub: `${resumo.qtdProdutos} produtos · ${resumo.qtdKits} kits${totalVariacoes ? ` · ${totalVariacoes} variações` : ""}` },
           { label: "Margem média", valor: resumo.margemMedia != null ? PCT(resumo.margemMedia) : "—", sub: "de todos os preços salvos" },
           { label: "Preços com prejuízo", valor: resumo.negativos, tom: resumo.negativos > 0 ? "bad" : "good", sub: "margem líquida abaixo de 0%" },
-          { label: "Com canal sem preço", valor: resumo.incompletos, tom: resumo.incompletos > 0 ? "warn" : "good", sub: "itens com pelo menos 1 canal vazio" },
+          { label: "Com canal sem preço", valor: resumo.incompletos, tom: resumo.incompletos > 0 ? "warn" : "good", sub: "itens (com variações) com algum canal vazio" },
         ]}
       />
     )}
@@ -592,7 +594,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
               excluir os produtos/kits abaixo.
             </div>
           )}
-          <div className="table-wrap">
+          <div className="table-wrap cabecalho-fixo">
             <table>
               <thead>
                 <tr>
@@ -600,7 +602,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
                   <th>SKU</th>
                   <th className="num">Custo total</th>
                   {canais.map((c) => (
-                    <th key={c.id} className="num">{c.nome}</th>
+                    <th key={c.id} className="num">
+                      <CanalTag canal={c} />
+                    </th>
                   ))}
                   <th></th>
                 </tr>
@@ -631,12 +635,12 @@ export default function Historico({ onEditarCompleto, onToast }) {
                           {item.tipo}
                           {item.peso ? ` · ${formatarPeso(item.peso)}` : ""}
                         </small>
+                        {nVariacoes > 0 && (
+                          <button type="button" className={`variacoes-toggle abaixo${aberto ? " aberto" : ""}`} onClick={() => alternarExpandido(pid)} title={aberto ? "Esconder variações" : "Ver variações"}>
+                            <span className="seta">▸</span> {nVariacoes} {nVariacoes === 1 ? "variação" : "variações"}
+                          </button>
+                        )}
                       </div>
-                      {nVariacoes > 0 && (
-                        <button type="button" className={`variacoes-toggle${aberto ? " aberto" : ""}`} onClick={() => alternarExpandido(pid)} title={aberto ? "Esconder variações" : "Ver variações"}>
-                          <span className="seta">▸</span> {nVariacoes} {nVariacoes === 1 ? "variação" : "variações"}
-                        </button>
-                      )}
                       <span className="acoes-linha">
                         <button className="del" title="Clonar produto/kit" onClick={() => abrirClonar(item)}>
                           ⧉
@@ -695,8 +699,14 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 const sg = sugeridos.get(`${item.id}|${c.id}`);
                                 return (
                                   <div className="sug-cel">
-                                    <span className="sug-cel-v" title={item.tipo === "Kit" ? `Sugerido comparando com as peças vendidas separadas (${BRL(sg.linha.separado)}) — Precificação por Canal → Avulso` : "Preço sugerido pela escada (Precificação por Canal → Por quantidade)"}>sugerido {BRL(sg.linha.sugerido)}</span>
-                                    {sg.st && <span className={`badge ${sg.st.tom === "acc" ? "acc" : sg.st.tom === "neu" ? "" : sg.st.tom}`}>{sg.st.texto}</span>}
+                                    <span className="sug-cel-v" title={item.tipo === "Kit" ? `Sugerido comparando com as peças vendidas separadas (${BRL(sg.linha.separado)}) — Precificação por Canal → Avulso` : "Preço sugerido pela escada (Precificação por Canal → Por quantidade)"}>
+                                      sug. {BRL(sg.linha.sugerido)}
+                                    </span>
+                                    {sg.st && (
+                                      <span className={`sug-st ${sg.st.tom}`} title={sg.st.texto.replace(/^[^\wÀ-ú]+\s*/, "")}>
+                                        {{ good: "✓", acc: "↑", neu: "↓", bad: "▼", warn: "⚠" }[sg.st.tom] || "•"}
+                                      </span>
+                                    )}
                                     {sg.st && sg.st.tom !== "good" && (
                                       <button type="button" className="link-btn" onClick={() => setAplicarAlvo({ item, canal: c, linha: sg.linha, salvo: p.preco })}>
                                         aplicar
@@ -708,8 +718,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                             </div>
                           ) : (variacao || item.tipo === "Kit") && sugeridos.get(`${item.id}|${c.id}`) ? (
                             <div className="sug-cel sug-cel-vazia">
-                              <span style={{ color: "var(--ink-faint)" }}>sem preço</span>
-                              <span className="sug-cel-v">sugerido {BRL(sugeridos.get(`${item.id}|${c.id}`).linha.sugerido)}</span>
+                              <span className="sug-cel-v" title="Ainda sem preço salvo nesse canal — sugerido">sug. {BRL(sugeridos.get(`${item.id}|${c.id}`).linha.sugerido)}</span>
                               <button type="button" className="btn btn-mini" onClick={() => setAplicarAlvo({ item, canal: c, linha: sugeridos.get(`${item.id}|${c.id}`).linha, salvo: null })}>
                                 Aplicar
                               </button>

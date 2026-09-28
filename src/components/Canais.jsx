@@ -4,6 +4,9 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import CanalTag from "./CanalTag.jsx";
+import { descontoPadraoCanal } from "../lib/escada.js";
+import { ordenarCanais } from "../lib/canais.js";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
 
@@ -63,23 +66,26 @@ function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSal
   );
 }
 
-// Acréscimo da integração Olist (schema v27) — vazio = canal sem Olist.
-function CampoAcrescimo({ canal, onToast, onAtualizado, onPrincipal }) {
+// Desconto exibido no anúncio (schema v30) — o app calcula o preço original
+// (riscado) = preço real ÷ (1 − desconto) pra digitar na plataforma
+// (Precificação por Canal → Anunciar). Vazio = sem desconto exibido. Sem a
+// coluna nova, mostra o acréscimo antigo da Olist convertido.
+function CampoDesconto({ canal, onToast, onAtualizado }) {
   const [salvo, disparar] = useSalvoFlash();
-  const atual = canal.acrescimo_olist_pct;
+  const atual = canal.desconto_anuncio_pct != null ? canal.desconto_anuncio_pct : canal.acrescimo_olist_pct != null ? descontoPadraoCanal(canal) : null;
   const [valor, setValor] = useState(null);
-  const exibido = valor ?? (atual == null ? "" : String(Math.round(Number(atual) * 1000) / 10));
+  const exibido = valor ?? (atual == null || atual === "" ? "" : String(Math.round(Number(atual) * 1000) / 10));
   async function salvar() {
     if (valor === null) return;
     const txt = valor.trim().replace(",", ".");
     const novo = txt === "" ? null : Number(txt) / 100;
-    if (novo != null && (!isFinite(novo) || novo < 0 || novo > 3)) {
-      onToast("Acréscimo precisa ficar entre 0% e 300%");
+    if (novo != null && (!isFinite(novo) || novo < 0 || novo > 0.9)) {
+      onToast("Desconto precisa ficar entre 0% e 90%");
       return;
     }
-    const { error } = await supabase.from("canais").update({ acrescimo_olist_pct: novo }).eq("id", canal.id);
+    const { error } = await supabase.from("canais").update({ desconto_anuncio_pct: novo }).eq("id", canal.id);
     if (error) {
-      onToast(/acrescimo_olist_pct|column/i.test(error.message) ? "Rode o SQL v27 no Supabase pra salvar o acréscimo" : "Não foi possível atualizar — tente de novo");
+      onToast(/desconto_anuncio_pct|column/i.test(error.message) ? "Rode o SQL v30 no Supabase pra salvar o desconto" : "Não foi possível atualizar — tente de novo");
       return;
     }
     onAtualizado?.(novo);
@@ -90,39 +96,18 @@ function CampoAcrescimo({ canal, onToast, onAtualizado, onPrincipal }) {
     <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
       <input
         type="number"
-        step="0.1"
+        step="1"
         min="0"
+        max="90"
         placeholder="—"
-        title="Vazio = canal sem Olist"
-        style={{ width: 78, textAlign: "right" }}
+        title="Desconto que aparece no anúncio (preço riscado). Vazio = sem desconto."
+        style={{ width: 70, textAlign: "right" }}
         value={exibido}
         onChange={(e) => setValor(e.target.value)}
         onBlur={salvar}
         onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
       />
       %
-      <select
-        value={canal.acrescimo_olist_modo || "dentro"}
-        title="Forma para aplicar os valores adicionais (igual à integração na Olist)"
-        style={{ width: "auto", padding: "4px 6px", fontSize: 12 }}
-        onChange={async (e) => {
-          const modo = e.target.value;
-          const { error } = await supabase.from("canais").update({ acrescimo_olist_modo: modo }).eq("id", canal.id);
-          if (error) {
-            onToast(/acrescimo_olist_modo|column/i.test(error.message) ? "Rode o SQL v28 no Supabase pra salvar a forma do acréscimo" : "Não foi possível atualizar — tente de novo");
-            return;
-          }
-          onAtualizado?.(undefined, modo);
-          disparar();
-        }}
-      >
-        <option value="dentro">base por dentro</option>
-        <option value="simples">base simples</option>
-      </select>
-      <label className="radio-principal" title="Canal principal da Olist: o preço cadastrado na Olist = seu preço real nesse canal, e a promo nele = o acréscimo">
-        <input type="radio" name="olist-principal" checked={!!canal.olist_principal} disabled={atual == null} onChange={() => onPrincipal?.(canal.id)} />
-        principal
-      </label>
       {salvo && <span className="salvo-check">✓</span>}
     </span>
   );
@@ -166,20 +151,6 @@ export default function Canais({ onToast }) {
       supabase.removeChannel(canal);
     };
   }, [lojaId]);
-
-  // Canal principal da Olist (um por loja): desmarca os outros e marca esse.
-  async function definirPrincipal(id) {
-    if (!supabase) return;
-    const outros = canais.filter((c) => c.id !== id && c.olist_principal).map((c) => c.id);
-    if (outros.length) await supabase.from("canais").update({ olist_principal: false }).in("id", outros);
-    const { error } = await supabase.from("canais").update({ olist_principal: true }).eq("id", id);
-    if (error) {
-      onToast(/olist_principal|column/i.test(error.message) ? "Rode o SQL v29 no Supabase pra marcar o canal principal" : "Não foi possível atualizar — tente de novo");
-      return;
-    }
-    setCanais((prev) => prev.map((c) => ({ ...c, olist_principal: c.id === id })));
-    onToast("Canal principal da Olist definido");
-  }
 
   function chave(id, campo) {
     return `${id}:${campo}`;
@@ -305,7 +276,7 @@ export default function Canais({ onToast }) {
       <div className="panel">
         <h3>
           Canais cadastrados
-          <Ajuda texto="Comissão e taxa fixa da Shopee/ML seguem as faixas oficiais (calculadas automaticamente). Imposto e custos fixos são por canal — o Comparativo usa o valor daqui pra cada um. % de Ads é quanto você costuma investir em anúncio patrocinado, usado só pra mostrar o lucro com Ads em Comparar canais. Acréscimo Olist = o mesmo % e a mesma “forma para aplicar os valores adicionais” (base por dentro ou base simples) configurados na integração da Olist pra esse canal (vazio = canal sem Olist); é usado só na aba Publicar. “Principal” = canal cujo preço real vira o preço cadastrado na Olist (a promo nele fica igual ao acréscimo)." />
+          <Ajuda texto="Comissão e taxa fixa da Shopee/ML seguem as faixas oficiais (calculadas automaticamente). Imposto e custos fixos são por canal — o Comparativo usa o valor daqui pra cada um. % de Ads é quanto você costuma investir em anúncio patrocinado, usado só pra mostrar o lucro com Ads em Comparar canais. Desconto no anúncio = o % de promoção que aparece no anúncio desse canal (preço riscado); o app calcula o preço original pra digitar na plataforma em Precificação por Canal → Anunciar. Dá pra dar um desconto próprio a um produto ou kit direto na aba Anunciar." />
         </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
@@ -321,14 +292,16 @@ export default function Canais({ onToast }) {
                   <th className="num">Imposto (seu)</th>
                   <th className="num">Custos fixos</th>
                   <th className="num">% Ads</th>
-                  <th className="num">Acréscimo Olist</th>
+                  <th className="num">Desconto no anúncio</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {canais.map((c) => (
+                {ordenarCanais(canais).map((c) => (
                   <tr key={c.id}>
-                    <td>{c.nome}</td>
+                    <td>
+                      <CanalTag canal={c} />
+                    </td>
                     <td>{TIPO_LABEL[c.tipo] || c.tipo}</td>
                     <td className="num">
                       {c.tipo === "custom" ? (
@@ -354,7 +327,7 @@ export default function Canais({ onToast }) {
                       <CampoEditavel canal={c} campo="ads_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
                     </td>
                     <td className="num">
-                      <CampoAcrescimo canal={c} onToast={onToast} onPrincipal={definirPrincipal} onAtualizado={(v, modo) => setCanais((prev) => prev.map((x) => (x.id === c.id ? (modo ? { ...x, acrescimo_olist_modo: modo } : { ...x, acrescimo_olist_pct: v }) : x)))} />
+                      <CampoDesconto canal={c} onToast={onToast} onAtualizado={(v) => setCanais((prev) => prev.map((x) => (x.id === c.id ? { ...x, desconto_anuncio_pct: v } : x)))} />
                     </td>
                     <td>
                       {(c.tipo === "custom" || c.tipo === "tiktok" || c.tipo === "shein") && (

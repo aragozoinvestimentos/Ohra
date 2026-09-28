@@ -1,4 +1,4 @@
-// Preço por quantidade ("escada") e publicação na Olist — lógica pura.
+// Preço por quantidade ("escada") e anúncio nas plataformas — lógica pura.
 //
 // Regra (combinada com o Gustavo, set/2026):
 // - O avulso (1 un.) é escolha dele. Os kits/variações são SUGERIDOS a
@@ -18,7 +18,7 @@
 //   peso × faixa de preço (calc.js).
 //
 // "Preço real" = o que o cliente paga. É o único preço que o app mostra e
-// salva; a Olist (base + acréscimo do canal + promo) só aparece em Publicar.
+// salva; o preço original (riscado) + promo % só aparece em Anunciar.
 import { SHOPEE_TIERS, ML_ENVIO_FAIXAS_PRECO, TIKTOK_TIERS, resolverTaxasNoPreco, custoEnvioML } from "./calc.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "./constantesCanal.js";
 
@@ -29,7 +29,7 @@ export const ESCADA_PADRAO = {
   vantagemMin: 0.05, // cliente economiza pelo menos 5% vs N avulsos
   margemMin: 0.15,
   margemDesejada: 0.3,
-  promoMinOlist: 0.1, // Publicar: todo canal com pelo menos 10% de promoção
+  promoMinOlist: 0.1, // (antigo — Publicar/Olist; sem uso)
 };
 
 const num = (v) => {
@@ -302,56 +302,62 @@ export function alertasAvulso({ canal, p1, base1, cfg, escada, concorrente }) {
 }
 
 // ---------------------------------------------------------------------------
-// Publicar (Olist): uma base por item + promo % por canal.
-// precosReais: { [canalId]: preçoReal } só dos canais com acréscimo.
-// acrescimos:  { [canalId]: fração } (0.2 = 20%)
-// modos:       { [canalId]: "dentro" | "simples" } — forma do acréscimo na Olist:
-//   "Base por dentro" (padrão, o que o Gustavo usa): anunciado = base ÷ (1 − a)
-//   (ex.: R$11,90 com 30% → R$17,00); "Base simples": anunciado = base × (1 + a).
-// principalId: canal principal da Olist. REGRA (combinada com o Gustavo): o
-//   preço cadastrado na Olist = o PREÇO REAL desse canal, e a promo nele = o
-//   acréscimo — o mesmo número em Produtos precificados, na Olist e no que o
-//   cliente paga. Nos outros canais a promo é calculada a partir dessa base.
-// Plano B (sem canal principal ou sem preço salvo nele): base já na Olist
-//   (baseAtual) enquanto servir; senão a menor ,90 que dá pelo menos promoMin
-//   em todos os canais.
-export function calcularPublicacao(precosReais, acrescimos, promoMin = 0.1, baseAtual = null, modos = {}, principalId = null) {
-  const ids = Object.keys(precosReais).filter((id) => acrescimos[id] != null && num(precosReais[id]) > 0);
-  if (!ids.length) return null;
-  const m = Math.max(0, Math.min(0.9, num(promoMin)));
-  const fator = (id) => (modos[id] === "simples" ? 1 + num(acrescimos[id]) : 1 / (1 - Math.min(0.95, num(acrescimos[id]))));
-  const sugerida = r90up(Math.max(...ids.map((id) => num(precosReais[id]) / (fator(id) * (1 - m)))));
-  const atual = num(baseAtual);
-  const atualServe = atual > 0 && ids.every((id) => atual * fator(id) >= num(precosReais[id]) - 0.005);
-  const temPrincipal = principalId != null && ids.includes(principalId);
-  const base = temPrincipal ? num(precosReais[principalId]) : atualServe ? atual : sugerida;
-  const origem = temPrincipal ? "principal" : atualServe ? "atual" : "sugerida";
-  const canais = {};
-  for (const id of ids) {
-    const real = num(precosReais[id]);
-    const anunciado = base * fator(id);
-    const bruto = (1 - real / anunciado) * 100;
-    const promo = Math.max(0, Math.floor(bruto + 1e-9));
-    const clientePaga = centavos(anunciado * (1 - promo / 100));
-    // canal secundário sem espaço pra promo (< 5%) → acréscimo que daria 5%
-    let acrescimoSugerido = null;
-    if (id !== principalId && bruto < 5) {
-      const alvo = real / 0.95 / base; // fator necessário
-      acrescimoSugerido = Math.ceil((modos[id] === "simples" ? alvo - 1 : 1 - 1 / alvo) * 100);
-    }
-    canais[id] = { anunciado: centavos(anunciado), promo, clientePaga, real, principal: id === principalId, acrescimoSugerido, abaixoDoReal: clientePaga < real - 0.005 };
-  }
-  return { base: centavos(base), canais, origem, sugerida: centavos(sugerida), baseMantida: origem === "atual", baseAtualNaoServe: !temPrincipal && atual > 0 && !atualServe };
+// Anunciar (anúncio criado direto em cada marketplace; a Olist só cuida de
+// estoque/pedidos/nota, com "preço fixo" na integração — decisão do Gustavo,
+// set/2026). Por item × canal: PREÇO ORIGINAL (o riscado) pra digitar na
+// plataforma + PROMOÇÃO % → o cliente paga o preço real salvo.
+// Desconto exibido: padrão do canal (`canais.desconto_anuncio_pct`) ou o
+// próprio do produto/kit (`desconto_anuncio` jsonb { canal_id: fração }) —
+// variação usa o do produto pai.
+
+// Desconto padrão do canal. Sem a coluna nova (SQL v30 não rodado), usa o
+// acréscimo antigo da Olist ("por dentro" a = desconto a; "simples" a/(1+a)).
+export function descontoPadraoCanal(canal) {
+  if (!canal) return 0;
+  if (canal.desconto_anuncio_pct != null && canal.desconto_anuncio_pct !== "") return Math.max(0, Math.min(0.9, num(canal.desconto_anuncio_pct)));
+  const a = canal.acrescimo_olist_pct;
+  if (a == null || a === "") return 0;
+  return Math.max(0, Math.min(0.9, canal.acrescimo_olist_modo === "simples" ? num(a) / (1 + num(a)) : num(a)));
 }
 
-// A publicação salva difere da calculada agora?
-export function publicacaoMudou(salva, atual) {
+// Desconto do item (id "p:" | "v:" | "k:") no canal: o próprio do produto/kit
+// quando houver, senão o padrão do canal. Devolve { desconto, proprio }.
+export function descontoDoItem(itemId, canal, { itens = [], produtos = [], kits = [] } = {}) {
+  const padrao = descontoPadraoCanal(canal);
+  if (!itemId || !canal) return { desconto: padrao, proprio: false };
+  let dono = null;
+  if (itemId.startsWith("k:")) dono = kits.find((k) => k.id === itemId.slice(2));
+  else {
+    const pid = itemId.startsWith("v:") ? itens.find((i) => i.id === itemId)?.produtoId : itemId.slice(2);
+    dono = produtos.find((p) => p.id === pid);
+  }
+  const v = dono?.desconto_anuncio?.[canal.id];
+  if (v != null && v !== "") return { desconto: Math.max(0, Math.min(0.9, num(v))), proprio: true };
+  return { desconto: padrao, proprio: false };
+}
+
+const centavoAcima = (x) => Math.ceil(x * 100 - 1e-6) / 100;
+
+// Preço original (riscado) + promo % pra o cliente pagar o preço real.
+// Original = real ÷ (1 − desconto), no centavo pra cima (ex.: R$11,90 com
+// 30% → R$17,00); promo = % inteiro pra baixo — o cliente paga o preço real
+// ou, no máximo, alguns centavos a mais.
+export function calcularAnuncio(real, desconto) {
+  const r = num(real);
+  if (!(r > 0)) return null;
+  const d = Math.max(0, Math.min(0.9, num(desconto)));
+  if (d < 0.005) return { original: r, promo: 0, clientePaga: r, real: r, desconto: 0 };
+  const original = centavoAcima(r / (1 - d));
+  const promo = Math.max(0, Math.floor((1 - r / original) * 100 + 1e-9));
+  const clientePaga = centavos(original * (1 - promo / 100));
+  return { original, promo, clientePaga, real: r, desconto: d };
+}
+
+// O que foi marcado como atualizado na plataforma difere do calculado agora?
+export function anuncioMudou(salvo, atual) {
   if (!atual) return false;
-  if (!salva) return true;
-  if (Math.abs(num(salva.base) - atual.base) >= 0.01) return true;
-  const promos = salva.promos || {};
-  for (const [id, c] of Object.entries(atual.canais)) if (num(promos[id]) !== c.promo) return true;
-  return false;
+  if (!salvo) return true;
+  return Math.abs(num(salvo.preco_original) - atual.original) >= 0.01 || num(salvo.promo) !== atual.promo;
 }
 
 // Campanha temporária a partir do preço anunciado (a campanha SUBSTITUI a
@@ -536,7 +542,7 @@ export function kitVsSeparado(sug, canal, preco, cfg) {
 // ---------------------------------------------------------------------------
 // Regra da Shopee: num mesmo anúncio, o preço da variação mais cara não pode
 // passar de 4× o da mais barata — contando o preço com promoção (o que o
-// cliente paga) e o preço original (com o acréscimo da Olist). Recebe as
+// cliente paga) e o preço original (o riscado do anúncio). Recebe as
 // variações [{ n, promo, original }] e divide em grupos (anúncios) que
 // respeitam a regra, na ordem das quantidades.
 export const SHOPEE_RAZAO_MAX_VARIACOES = 4;
@@ -566,10 +572,8 @@ export function gruposRegra4x(linhas) {
   };
 }
 
-// Fator do preço original na Shopee a partir do preço real, pelo acréscimo da
-// Olist do canal (por dentro ÷(1−a) | simples ×(1+a)); sem acréscimo = 1.
-export function fatorOriginalCanal(canal) {
-  const a = canal?.acrescimo_olist_pct;
-  if (a == null || a === "") return 1;
-  return canal.acrescimo_olist_modo === "simples" ? 1 + num(a) : 1 / (1 - Math.min(0.95, num(a)));
+// Fator do preço original (riscado) a partir do preço real: 1 ÷ (1 − desconto).
+export function fatorOriginal(desconto) {
+  const d = Math.max(0, Math.min(0.9, num(desconto)));
+  return 1 / (1 - d);
 }

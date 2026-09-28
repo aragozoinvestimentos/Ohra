@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import BuscaItem from "./BuscaItem.jsx";
 import { ML_CATEGORY_PCT, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, aplicarAds } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
@@ -9,6 +10,7 @@ import Kpis from "./Kpis.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, gruposDoSeletor } from "../lib/variacoes.js";
+import CanalTag from "./CanalTag.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -30,7 +32,9 @@ export default function Comparativo() {
 
   const [mlCategoria, setMlCategoria] = useState(ML_CATEGORIAS[0]);
   const [mlTipoAnuncio, setMlTipoAnuncio] = useState("classico");
-  const [lucratividade, setLucratividade] = useState(20);
+  const margemLoja = useMargemDesejada();
+  const [lucratividadeEdit, setLucratividade] = useState(null);
+  const lucratividade = lucratividadeEdit ?? margemLoja;
   const [canalFiltroId, setCanalFiltroId] = useState(""); // "" = todos os canais
 
   // Troca de loja zera as seleções: o App remonta esta tela com key={lojaId}.
@@ -235,7 +239,7 @@ export default function Comparativo() {
                   return (
                     <tr key={canal.id}>
                       <td>
-                        {canal.nome}
+                        <CanalTag canal={canal} />
                         {melhorOrganico?.canal.id === canal.id && <span className="badge good" style={{ marginLeft: 6 }}>melhor orgânico</span>}
                         {melhorComAds?.canal.id === canal.id && canal.ads_pct > 0 && <span className="badge good" style={{ marginLeft: 6 }}>melhor c/ Ads</span>}
                         {inconsistente && (

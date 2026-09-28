@@ -42,7 +42,7 @@ const GRUPOS = [
     titulo: "Precificar",
     tabs: [
       { key: "producao", label: "Custo de Produção", sub: "Simule o custo de uma peça a partir do fatiador" },
-      { key: "canal", label: "Precificação por Canal", sub: "Avulso, por quantidade, comparar canais e publicar" },
+      { key: "canal", label: "Precificação por Canal", sub: "Avulso, por quantidade, comparar canais e anunciar" },
     ],
   },
   {
@@ -355,7 +355,7 @@ export default function App() {
         </section>
 
         <footer className="note">
-          Taxas vigentes a partir de mar/2026 — confira periodicamente na Shopee e no Mercado Livre. Dados salvos na nuvem, acessíveis de qualquer aparelho.
+          Taxas oficiais dos marketplaces conferidas em set/2026. Dados salvos na nuvem, acessíveis de qualquer aparelho.
         </footer>
         </div>
       </div>

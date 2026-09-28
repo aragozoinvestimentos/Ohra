@@ -19,6 +19,7 @@ const VAZIO = {
   variacoes: [],
   concorrentes: [],
   publicacoes: [],
+  publicacoesCanal: [],
   carregando: true,
 };
 
@@ -35,6 +36,7 @@ const TABELAS = [
   "materiais",
   "precos_concorrente",
   "publicacoes_olist",
+  "publicacoes_canal",
 ];
 
 let estado = { ...VAZIO, carregando: !!supabase };
@@ -59,7 +61,7 @@ async function carregar() {
   const lojaId = lojaAtual;
   const porLoja = (q) => (lojaId ? q.eq("loja_id", lojaId) : q);
   try {
-    const [rp, rc, rk, re, rpc, rm, rv, rcc, rpo] = await Promise.all([
+    const [rp, rc, rk, re, rpc, rm, rv, rcc, rpo, rpcn] = await Promise.all([
       porLoja(supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true })),
       porLoja(supabase.from("canais").select("*").eq("ativo", true).order("tipo")),
       porLoja(supabase.from("kits").select("*").order("nome")),
@@ -71,6 +73,8 @@ async function carregar() {
       // Só existem depois do schema v27 — sem elas, segue sem concorrentes/publicações.
       porLoja(supabase.from("precos_concorrente").select("*")),
       porLoja(supabase.from("publicacoes_olist").select("*")),
+      // Só existe depois do schema v30 — sem ela, nada marcado como atualizado.
+      porLoja(supabase.from("publicacoes_canal").select("*")),
     ]);
     if (minhaGeracao !== geracao) return;
     const produtos = rp.error ? estado.produtos : rp.data || [];
@@ -93,6 +97,7 @@ async function carregar() {
       variacoes: rv.error ? [] : rv.data || [],
       concorrentes: rcc.error ? [] : rcc.data || [],
       publicacoes: rpo.error ? [] : rpo.data || [],
+      publicacoesCanal: rpcn.error ? [] : rpcn.data || [],
       produtoEmbalagens: rpe.error ? [] : rpe.data || [],
       kitProdutos: rkp.error ? estado.kitProdutos : rkp.data || [],
       kitEmbalagens: rke.error ? estado.kitEmbalagens : rke.data || [],

@@ -3,7 +3,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "./useRankingData.js";
 import { configEscada, escadaDoProduto } from "../lib/escada.js";
 
-// Tudo que as telas de preço por quantidade/Publicar/Produtos precificados
+// Tudo que as telas de preço por quantidade/Anunciar/Produtos precificados
 // precisam, em cima do catálogo AO VIVO (mudou custo, preço salvo, taxa,
 // acréscimo ou a config da escada → recalcula sozinho).
 export function useEscada() {

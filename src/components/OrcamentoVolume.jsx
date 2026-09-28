@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import { calcCanal } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -31,7 +32,9 @@ export default function OrcamentoVolume({ onToast }) {
   const [freteLote, setFreteLote] = useState(PADROES.freteLote);
   const [imposto, setImposto] = useState(PADROES.imposto);
   const [custosFixos, setCustosFixos] = useState(PADROES.custosFixos);
-  const [lucratividade, setLucratividade] = useState(PADROES.lucratividade);
+  const margemLoja = useMargemDesejada();
+  const [lucratividadeEdit, setLucratividade] = useState(null);
+  const lucratividade = lucratividadeEdit ?? margemLoja;
   const [nomePedido, setNomePedido] = useState("");
   const [salvando, setSalvando] = useState(false);
 
@@ -167,7 +170,7 @@ export default function OrcamentoVolume({ onToast }) {
     setFreteLote(PADROES.freteLote);
     setImposto(PADROES.imposto);
     setCustosFixos(PADROES.custosFixos);
-    setLucratividade(PADROES.lucratividade);
+    setLucratividade(null);
   }
 
   return (
