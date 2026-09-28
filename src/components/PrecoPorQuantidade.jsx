@@ -135,9 +135,11 @@ export default function PrecoPorQuantidade({ onToast }) {
           return next;
         });
     } else if (c.tipo === "criar") {
+      // mesmo padrão do cadastro de variação: SKU do produto + "-" + quantidade (editável depois)
+      const skuPai = produtos.find((p) => p.id === pid)?.sku || "";
       const { data, error: err } = await supabase
         .from("produto_variacoes")
-        .insert({ loja_id: lojaId || null, produto_id: pid, quantidade: c.linha.n, nome: `Kit ${c.linha.n}`, producao_modo: "multiplicar" })
+        .insert({ loja_id: lojaId || null, produto_id: pid, quantidade: c.linha.n, nome: `Kit ${c.linha.n}`, producao_modo: "multiplicar", sku: skuPai ? `${skuPai}-${c.linha.n}` : null })
         .select()
         .single();
       error = err;
