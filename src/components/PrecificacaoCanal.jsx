@@ -12,7 +12,7 @@ import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
-import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado } from "../lib/escada.js";
+import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMinimo } from "../lib/escada.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
 import ResumoFixo from "./ResumoFixo.jsx";
@@ -47,7 +47,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [canalProprioId, setCanalProprioId] = useState("");
   const [confirmarKit, setConfirmarKit] = useState(false);
   const { itens: baseItens, canais, produtos, precos, composicaoDoKit, materiais } = useRankingData();
-  const margemLoja = useMargemDesejada();
+  // margem de partida: a do produto escolhido (se tiver regras próprias) ou a da loja
+  const produtoEscolhido = baseSelecionada.startsWith("p:") ? produtos.find((p) => p.id === baseSelecionada.slice(2)) : null;
+  const margemLoja = useMargemDesejada(produtoEscolhido?.escada_config || null);
   const lucratividadeEf = f.lucratividade ?? margemLoja;
 
   const canaisProprios = canais.filter((c) => c.tipo === "custom");
@@ -546,7 +548,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         )}
         {refs && (
           <span>
-            Referências: <b>mínimo sem prejuízo {BRL(refs.semPrejuizo)}</b> · <b>margem mínima ({Math.round(cfgEscada.margemMin * 100)}%) {BRL(refs.margemMinima)}</b>
+            Referências: <b>mínimo sem prejuízo {BRL(refs.semPrejuizo)}</b> · <b>{rotuloMinimo(cfgEscada)} {BRL(refs.margemMinima)}</b>
             {refs.concorrente != null && (
               <>
                 {" "}
@@ -609,7 +611,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     )}
     {refs?.concorrenteAbaixoDoPiso && (
       <div className="alerta alerta-bad">
-        <b>Não dá pra competir nesse preço sem prejuízo</b>O concorrente ({BRL(refs.concorrente)}) está abaixo da sua margem mínima ({BRL(refs.margemMinima)}). Não acompanhe — diferencie pelo kit, pela foto ou pela qualidade.
+        <b>Não dá pra competir nesse preço sem prejuízo</b>O concorrente ({BRL(refs.concorrente)}) está abaixo do seu mínimo aceitável ({BRL(refs.margemMinima)}). Não acompanhe — diferencie pelo kit, pela foto ou pela qualidade.
       </div>
     )}
     <div className="grid2">

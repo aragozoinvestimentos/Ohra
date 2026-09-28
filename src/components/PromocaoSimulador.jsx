@@ -157,7 +157,9 @@ export default function PromocaoSimulador({ onToast }) {
   const [embalagem, setEmbalagem] = useState(0);
   const [mlCategoria, setMlCategoria] = useState(ML_CATEGORIAS[0]);
   const [mlTipoAnuncio, setMlTipoAnuncio] = useState("classico");
-  const margemLoja = useMargemDesejada();
+  // margem de partida: a do produto escolhido (regras próprias) ou a da loja
+  const pidPromo = baseSelecionada.startsWith("p:") ? baseSelecionada.slice(2) : baseSelecionada.startsWith("v:") ? itensCatalogo.find((i) => i.id === baseSelecionada)?.produtoId : null;
+  const margemLoja = useMargemDesejada(pidPromo ? produtos.find((p) => p.id === pidPromo)?.escada_config || null : null);
   const [lucratividadeEdit, setLucratividade] = useState(null);
   const lucratividade = lucratividadeEdit ?? margemLoja;
 
@@ -457,18 +459,20 @@ export default function PromocaoSimulador({ onToast }) {
   // "Compre Mais, Pague Menos" (Shopee) / desconto progressivo: cada unidade
   // paga a taxa fixa inteira. "Máx." = maior desconto (% inteiro) que ainda
   // deixa cada unidade com a margem mínima da loja.
-  const margemMinLoja = configEscada(lojas.find((l) => l.id === lojaId)?.config_escada).margemMin;
+  const cfgPromo = configEscada(lojas.find((l) => l.id === lojaId)?.config_escada, pidPromo ? produtos.find((p) => p.id === pidPromo)?.escada_config || null : null);
+  const margemMinLoja = cfgPromo.margemMin;
+  const lucroMinLoja = Number(cfgPromo.lucroMinimo) || 0;
   const descontoMaxProgressivo = useMemo(() => {
     if (!normal?.lucroEm || !(normal.preco > 0)) return null;
     let melhor = null;
     for (let d = 0; d <= 60; d++) {
       const p = normal.preco * (1 - d / 100);
       const l = normal.lucroEm(p);
-      if (l != null && p > 0 && l / p >= margemMinLoja - 1e-9) melhor = d;
+      if (l != null && p > 0 && l / p >= margemMinLoja - 1e-9 && l >= lucroMinLoja - 1e-9) melhor = d;
       else break;
     }
     return melhor;
-  }, [normal, margemMinLoja]);
+  }, [normal, margemMinLoja, lucroMinLoja]);
   const linhasProgressivo = useMemo(() => {
     if (!normal) return [];
     return tiers.map((t) => {
@@ -1180,7 +1184,7 @@ export default function PromocaoSimulador({ onToast }) {
               </h3>
               {descontoMaxProgressivo != null && (
                 <div className="refs-linha" style={{ marginTop: 0, paddingTop: 0, borderTop: 0, marginBottom: 8 }}>
-                  Desconto máximo por faixa, mantendo a margem mínima ({Math.round(margemMinLoja * 100)}%) em cada unidade: <b>{descontoMaxProgressivo}%</b>
+                  Desconto máximo por faixa, mantendo a margem mínima ({Math.round(margemMinLoja * 100)}%{lucroMinLoja > 0 ? ` e R$ ${lucroMinLoja.toFixed(2).replace(".", ",")} de lucro` : ""}) em cada unidade: <b>{descontoMaxProgressivo}%</b>
                 </div>
               )}
               <div className="table-wrap">

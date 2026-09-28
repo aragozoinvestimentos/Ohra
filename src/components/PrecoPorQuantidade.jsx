@@ -4,7 +4,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
-import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem } from "../lib/escada.js";
+import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, rotuloMinimo, escadaDoProduto, configEscada } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -24,13 +24,18 @@ const CAMPOS_ESCADA = [
   { k: "r10", label: "Kit 10 mantém (%)", ajuda: "Quanto mais baixo, mais agressivo o desconto nos kits grandes." },
   { k: "piso", label: "Piso do lucro/peça (%)", ajuda: "Nenhuma quantidade fica abaixo disso." },
   { k: "vantagemMin", label: "Vantagem mínima pro cliente (%)", ajuda: "Kit sempre sai pelo menos isso mais barato que N avulsos." },
-  { k: "margemMin", label: "Margem mínima (%)", ajuda: "Piso absoluto — nem o concorrente derruba abaixo disso." },
-  { k: "margemDesejada", label: "Margem desejada (%)", ajuda: "Usada no preço de partida do avulso e pra avisar quando ele virou 'atração'." },
+];
+// Margens próprias do produto (só com "regras próprias"; vazio = usa a da loja,
+// que fica em Configuração → Lojas → Metas de preço).
+const CAMPOS_MARGEM = [
+  { k: "margemDesejada", label: "Margem desejada (%)", pct: true },
+  { k: "margemMin", label: "Margem mínima (%)", pct: true },
+  { k: "lucroMinimo", label: "Lucro mínimo por venda (R$)", pct: false },
 ];
 
 export default function PrecoPorQuantidade({ onToast }) {
   const { lojaId, atualizar } = useLoja();
-  const { itens, canais, produtos, kits: kitsCat, cfgLoja, cfgDoProduto, escada } = useEscada();
+  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada } = useEscada();
   const [produtoId, setProdutoId] = useState("");
   const [canalId, setCanalId] = useState("");
   const [p1Edit, setP1Edit] = useState({}); // { "<produto>|<canal>": "12.9" }
@@ -174,18 +179,35 @@ export default function PrecoPorQuantidade({ onToast }) {
     const fonte = { ...regrasLoja, ...(escadaPropria || {}) };
     const r = {};
     for (const c of CAMPOS_ESCADA) r[c.k] = String(Math.round((fonte[c.k] ?? 0) * 1000) / 10);
+    for (const c of CAMPOS_MARGEM) {
+      const v = escadaPropria?.[c.k];
+      r[c.k] = v == null || v === "" ? "" : String(c.pct ? Math.round(Number(v) * 1000) / 10 : Number(v));
+    }
     setRegrasEdit({ valores: r, propria: !!escadaPropria });
     setMostrarRegras(true);
   }
-  async function salvarRegras() {
-    const v = regrasEdit.valores;
+  // Regras em edição → config (loja e produto) pra salvar e pra prévia ao vivo.
+  function configsDaEdicao(ed) {
+    const v = ed.valores;
     const frac = (k) => Math.max(0, Math.min(1, (Number(v[k]) || 0) / 100));
-    const doProduto = { r2: frac("r2"), r10: frac("r10"), piso: frac("piso"), vantagemMin: frac("vantagemMin") };
-    const daLoja = { ...(cfgLoja || {}), margemMin: frac("margemMin"), margemDesejada: frac("margemDesejada") };
-    if (!regrasEdit.propria) Object.assign(daLoja, doProduto);
+    const escadaCampos = { r2: frac("r2"), r10: frac("r10"), piso: frac("piso"), vantagemMin: frac("vantagemMin") };
+    if (!ed.propria) return { loja: { ...(cfgLoja || {}), ...escadaCampos }, produto: null };
+    const doProduto = { ...escadaCampos };
+    for (const c of CAMPOS_MARGEM) {
+      const t = String(v[c.k] ?? "").trim().replace(",", ".");
+      if (t === "" || !isFinite(Number(t))) continue;
+      doProduto[c.k] = c.pct ? Math.max(0, Math.min(0.9, Number(t) / 100)) : Math.max(0, Number(t));
+    }
+    return { loja: cfgLoja || {}, produto: doProduto };
+  }
+  async function salvarRegras() {
+    const { loja, produto: doProduto } = configsDaEdicao(regrasEdit);
     setSalvando(true);
-    const r = await atualizar(lojaId, { configEscada: daLoja });
-    let erro = r.ok ? null : r.error;
+    let erro = null;
+    if (!regrasEdit.propria) {
+      const r = await atualizar(lojaId, { configEscada: loja });
+      erro = r.ok ? null : r.error;
+    }
     if (!erro && supabase && produto) {
       const { error } = await supabase.from("produtos_cadastro").update({ escada_config: regrasEdit.propria ? doProduto : null }).eq("id", produto.id);
       if (error) erro = error.message;
@@ -196,8 +218,18 @@ export default function PrecoPorQuantidade({ onToast }) {
       return;
     }
     setMostrarRegras(false);
-    onToast(regrasEdit.propria ? "Regras salvas (escada própria deste produto)" : "Regras da escada salvas pra loja toda");
+    onToast(regrasEdit.propria ? `Regras próprias salvas pra ${produto?.nome}` : "Regras da escada salvas pra loja toda");
   }
+  // Prévia ao vivo das regras em edição (antes de salvar).
+  const previaRegras = (() => {
+    if (!mostrarRegras || !regrasEdit || !pid || !canal) return null;
+    const { loja, produto: doProduto } = configsDaEdicao(regrasEdit);
+    const cfgPrev = configEscada(loja, doProduto);
+    const d = escadaDoProduto({ produtoId: pid, canal, itens, precos: precosEsc, concorrentes: concorrentesEsc, cfg: cfgPrev, p1Override: p1Edit[chave], quantidadesExtras: qtdsExtras, concorrenteOverrides: concOverrides });
+    const ks = d?.escada?.linhas.filter((l) => !l.base) || [];
+    if (!ks.length) return null;
+    return ks.map((l) => `${l.n} un. = ${BRL(l.sugerido)} (${Math.round(l.economiaPct * 100)}% off · mantém ${Math.round((l.lucroPorPeca / (d.escada.lBase || 1)) * 100)}% do lucro/peça)`).join(" · ");
+  })();
 
   if (!produtosLista.length) {
     return <div className="panel"><div className="empty">Cadastre um produto em Cadastros → Produtos pra montar a escada de preços.</div></div>;
@@ -299,7 +331,7 @@ export default function PrecoPorQuantidade({ onToast }) {
         </div>
         {refs && (
           <div className="refs-linha">
-            Referências: <b>margem desejada {BRL(refs.margemDesejada)}</b> · <b>margem mínima {BRL(refs.margemMinima)}</b> · <b>sem prejuízo {BRL(refs.semPrejuizo)}</b>
+            Referências: <b>margem desejada {BRL(refs.margemDesejada)}</b> · <b>{rotuloMinimo(cfg)} {BRL(refs.margemMinima)}</b> · <b>sem prejuízo {BRL(refs.semPrejuizo)}</b>
             {refs.concorrente != null && (
               <>
                 {" "}
@@ -350,24 +382,40 @@ export default function PrecoPorQuantidade({ onToast }) {
           {mostrarRegras && regrasEdit && (
             <div className="regras-escada">
               <div className="grid-auto">
-                {CAMPOS_ESCADA.map((c) => {
-                  const soLoja = c.k === "margemMin" || c.k === "margemDesejada";
-                  return (
-                    <div className="field" key={c.k}>
-                      <label>
-                        {c.label}
-                        {soLoja && regrasEdit.propria ? " · loja" : ""}
-                      </label>
-                      <input type="number" step="1" value={regrasEdit.valores[c.k]} onChange={(ev) => setRegrasEdit((prev) => ({ ...prev, valores: { ...prev.valores, [c.k]: ev.target.value } }))} />
-                      <div className="hint" style={{ marginTop: 3, marginBottom: 0 }}>{c.ajuda}</div>
-                    </div>
-                  );
-                })}
+                {CAMPOS_ESCADA.map((c) => (
+                  <div className="field" key={c.k}>
+                    <label>{c.label}</label>
+                    <input type="number" step="1" value={regrasEdit.valores[c.k]} onChange={(ev) => setRegrasEdit((prev) => ({ ...prev, valores: { ...prev.valores, [c.k]: ev.target.value } }))} />
+                    <div className="hint" style={{ marginTop: 3, marginBottom: 0 }}>{c.ajuda}</div>
+                  </div>
+                ))}
               </div>
               <label className="check-linha">
                 <input type="checkbox" checked={regrasEdit.propria} onChange={(ev) => setRegrasEdit((prev) => ({ ...prev, propria: ev.target.checked }))} />
-                Usar escada própria só pra <b>{produto?.nome}</b> (kit 2, kit 10, piso e vantagem). Desmarcado = regras valem pra loja toda.
+                Regras próprias só pra <b>{produto?.nome}</b> (escada e, se quiser, margens). Desmarcado = a escada acima vale pra loja toda.
               </label>
+              {regrasEdit.propria ? (
+                <div className="grid-auto margens-produto">
+                  {CAMPOS_MARGEM.map((c) => (
+                    <div className="field" key={c.k}>
+                      <label>{c.label}</label>
+                      <input
+                        type="number"
+                        step={c.pct ? "1" : "0.5"}
+                        placeholder={`loja: ${c.pct ? Math.round((regrasLoja[c.k] ?? 0) * 100) + "%" : BRL(regrasLoja[c.k] ?? 0)}`}
+                        value={regrasEdit.valores[c.k]}
+                        onChange={(ev) => setRegrasEdit((prev) => ({ ...prev, valores: { ...prev.valores, [c.k]: ev.target.value } }))}
+                      />
+                    </div>
+                  ))}
+                  <div className="hint" style={{ alignSelf: "end", margin: 0 }}>Vazio = usa a da loja. Vale no Avulso, aqui e nas promoções deste produto.</div>
+                </div>
+              ) : (
+                <div className="hint" style={{ margin: "0 0 10px" }}>
+                  Margens da loja: desejada <b>{Math.round((regrasLoja.margemDesejada ?? 0) * 100)}%</b> · mínima <b>{Math.round((regrasLoja.margemMin ?? 0) * 100)}%</b> · lucro mínimo <b>{BRL(regrasLoja.lucroMinimo ?? 0)}</b> — mude em Configuração → Lojas, canais e taxas → Lojas.
+                </div>
+              )}
+              {previaRegras && <div className="previa-regras">Prévia: {previaRegras}</div>}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button type="button" className="btn" onClick={() => setMostrarRegras(false)}>
                   Cancelar
@@ -464,7 +512,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                             {faixaTxt(canal, l.taxas)}
                             {l.notas.length ? ` · ${l.notas.join(" · ")}` : ""}
                           </span>
-                          {l.concorrenteAbaixoDoPiso && <span className="frete-tag bad">concorrente abaixo da sua margem mínima — não acompanhado</span>}
+                          {l.concorrenteAbaixoDoPiso && <span className="frete-tag bad">concorrente abaixo do seu mínimo — não acompanhado</span>}
                         </td>
                         <td className="num" style={{ color: "var(--good)" }}>
                           {BRL(l.economia)}

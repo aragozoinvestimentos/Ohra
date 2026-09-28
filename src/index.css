@@ -953,3 +953,5 @@ tr.linha-variacao, .tabela-pub tr.linha-cad { animation: surgir 0.18s ease-out; 
 .qtd-topo .field:last-child > label { text-align: left; }
 .qtd-topo .qtd-chips { width: auto; flex: 0 1 auto; margin: 0; }
 .qtd-topo .qtd-add { flex: 0 0 auto; }
+.margens-produto { margin-bottom: 10px; padding-top: 8px; border-top: 1px dashed var(--border-strong); }
+.previa-regras { font-size: 12px; color: var(--accent-ink); background: var(--accent-soft); border-radius: 7px; padding: 6px 10px; margin-bottom: 10px; font-variant-numeric: tabular-nums; }

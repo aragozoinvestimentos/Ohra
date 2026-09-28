@@ -29,6 +29,7 @@ export const ESCADA_PADRAO = {
   vantagemMin: 0.05, // cliente economiza pelo menos 5% vs N avulsos
   margemMin: 0.15,
   margemDesejada: 0.3,
+  lucroMinimo: 0, // R$ por venda (0 = sem piso em reais)
   promoMinOlist: 0.1, // (antigo — Publicar/Olist; sem uso)
 };
 
@@ -41,7 +42,8 @@ const num = (v) => {
 export function configEscada(configLoja, configProduto) {
   const base = { ...ESCADA_PADRAO, ...(configLoja || {}) };
   if (configProduto) {
-    for (const k of ["r2", "r10", "piso", "vantagemMin"]) if (configProduto[k] != null) base[k] = configProduto[k];
+    // escada própria do produto + margens próprias (desejada, mínima, lucro mínimo em R$)
+    for (const k of ["r2", "r10", "piso", "vantagemMin", "margemDesejada", "margemMin", "lucroMinimo"]) if (configProduto[k] != null && configProduto[k] !== "") base[k] = configProduto[k];
   }
   return base;
 }
@@ -121,6 +123,24 @@ export function precoParaMargem(canal, m, custo, pesoG, cfg) {
   return melhor;
 }
 
+// Menor preço ACEITÁVEL: o maior entre o da margem mínima e o do lucro mínimo
+// em R$ por venda (cfg.lucroMinimo) — o piso em reais protege os itens
+// baratos, onde a % engana por causa da taxa fixa.
+export function precoMinimoAceitavel(canal, custo, pesoG, cfg) {
+  const pM = precoParaMargem(canal, cfg.margemMin, custo, pesoG, cfg);
+  const pL = num(cfg.lucroMinimo) > 0 ? precoParaLucro(canal, num(cfg.lucroMinimo), custo, pesoG, cfg) : null;
+  if (pM == null) return pL;
+  if (pL == null) return pM;
+  return Math.max(pM, pL);
+}
+
+// Rótulo do piso nas referências: "margem mínima (15%)" ou, com lucro mínimo
+// em R$, "mínimo (15% ou R$ 4,00 de lucro)".
+export function rotuloMinimo(cfg) {
+  const pct = Math.round(num(cfg.margemMin) * 100);
+  return num(cfg.lucroMinimo) > 0 ? `mínimo (${pct}% ou R$ ${num(cfg.lucroMinimo).toFixed(2).replace(".", ",")} de lucro)` : `margem mínima (${pct}%)`;
+}
+
 export function retencao(n, cfg) {
   if (n <= 1) return 1;
   const r = cfg.r2 + (cfg.r10 - cfg.r2) * (Math.log(n / 2) / Math.log(5));
@@ -131,7 +151,7 @@ export function retencao(n, cfg) {
 export function referenciasAvulso(canal, custo1, peso1, cfg, concorrente) {
   const pMargem = precoParaMargem(canal, cfg.margemDesejada, custo1, peso1, cfg);
   const pZero = precoParaMargem(canal, 0, custo1, peso1, cfg);
-  const pMin = precoParaMargem(canal, cfg.margemMin, custo1, peso1, cfg);
+  const pMin = precoMinimoAceitavel(canal, custo1, peso1, cfg);
   return {
     margemDesejada: pMargem != null ? r90up(pMargem) : null,
     // ponto exato (centavo pra cima), não arredondado pra ,90 — é referência, não preço sugerido
@@ -193,7 +213,7 @@ export function calcularEscada({ canal, p1, base1, kits, cfg }) {
       p = maxVant;
       notas.push(`desceu pra dar ≥${Math.round(cfg.vantagemMin * 100)}% de vantagem`);
     }
-    const pMin = precoParaMargem(canal, cfg.margemMin, custo, peso, cfg);
+    const pMin = precoMinimoAceitavel(canal, custo, peso, cfg);
     let concorrenteAbaixoDoPiso = false;
     if (num(k.concorrente) > 0) {
       const cap = r90(num(k.concorrente) * 0.98);
@@ -226,7 +246,7 @@ export function calcularEscada({ canal, p1, base1, kits, cfg }) {
       const np = r90up(pMin);
       if (np < teto) {
         p = np;
-        notas.push("segurado pela margem mínima");
+        notas.push("segurado pelo mínimo aceitável");
       } else naoCompensa = true;
     }
     p = centavos(p);
@@ -293,7 +313,7 @@ export function alertasAvulso({ canal, p1, base1, cfg, escada, concorrente }) {
   if (c1 > 0) {
     const ref = referenciasAvulso(canal, num(base1?.custo), num(base1?.peso), cfg, c1);
     if (ref.concorrenteAbaixoDoPiso) {
-      out.push({ tom: "bad", titulo: "Não dá pra competir nesse preço sem prejuízo", texto: `O concorrente está abaixo da sua margem mínima (${ref.margemMinima != null ? ref.margemMinima.toFixed(2).replace(".", ",") : "—"}). Não acompanhe — diferencie pelo kit, pela foto ou pela qualidade.` });
+      out.push({ tom: "bad", titulo: "Não dá pra competir nesse preço sem prejuízo", texto: `O concorrente está abaixo do seu mínimo aceitável (${ref.margemMinima != null ? ref.margemMinima.toFixed(2).replace(".", ",") : "—"}). Não acompanhe — diferencie pelo kit, pela foto ou pela qualidade.` });
     } else if (p1 > c1 * 1.05) {
       out.push({ tom: "warn", titulo: "Avulso acima do concorrente", texto: `Seu avulso está ${(((p1 / c1) - 1) * 100).toFixed(0)}% acima do concorrente. Ele é o menor preço que aparece na busca — caro demais perde clique. Dá pra descer até a margem mínima e deixar o lucro pros kits.` });
     }
@@ -494,13 +514,13 @@ export function sugestaoKit({ canal, kitItem, itens, precos, cfg }) {
       }
     }
   }
-  const pMin = precoParaMargem(canal, cfg.margemMin, custo, peso, cfg);
+  const pMin = precoMinimoAceitavel(canal, custo, peso, cfg);
   let naoCompensa = false;
   if (pMin != null && p < pMin) {
     const np = r90up(pMin);
     if (np < separado) {
       p = np;
-      notas.push("segurado pela margem mínima");
+      notas.push("segurado pelo mínimo aceitável");
     } else naoCompensa = true;
   }
   p = centavos(p);

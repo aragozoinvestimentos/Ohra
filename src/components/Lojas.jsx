@@ -5,6 +5,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import Ajuda from "./Ajuda.jsx";
 import PinPrompt from "./PinPrompt.jsx";
+import MetasPrecoLoja from "./MetasPrecoLoja.jsx";
 
 const BUCKET = "loja-icones";
 const TAMANHO_MAX_MB = 3;
@@ -333,6 +334,7 @@ export default function Lojas({ onToast }) {
           + Nova loja
         </button>
       </TopbarAcoes>
+      <MetasPrecoLoja onToast={onToast} />
       <div className="panel">
         <h3 className="section-title">
           Suas lojas
