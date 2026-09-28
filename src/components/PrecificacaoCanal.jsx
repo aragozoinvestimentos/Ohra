@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import BuscaItem from "./BuscaItem.jsx";
-import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom } from "../lib/calc.js";
+import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, reservaProducao } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -46,7 +46,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | "p:<id>" | "k:<id>"
   const [canalProprioId, setCanalProprioId] = useState("");
   const [confirmarKit, setConfirmarKit] = useState(false);
-  const { itens: baseItens, canais, produtos, precos, composicaoDoKit } = useRankingData();
+  const { itens: baseItens, canais, produtos, precos, composicaoDoKit, materiais } = useRankingData();
   const margemLoja = useMargemDesejada();
   const lucratividadeEf = f.lucratividade ?? margemLoja;
 
@@ -342,6 +342,28 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     kitSelecionadoId && canalAjustado && itemSel ? sugestaoKit({ canal: canalAjustado, kitItem: itemSel, itens: baseItens, precos, cfg: cfgEscada }) : null;
   const kitCalculado = sugKit ? kitVsSeparado(sugKit, canalAjustado, resultado.preco, cfgEscada) : null;
   const kitSalvo = sugKit && precoExistente ? kitVsSeparado(sugKit, canalAjustado, Number(precoExistente.preco), cfgEscada) : null;
+
+  // Reserva de produção (falhas + manutenção + acabamento) do item escolhido —
+  // já dentro do custo; só informativa, pro fundo de reserva do mês. Kit =
+  // soma das peças; produto sem detalhamento do Custo de Produção = não mostra.
+  const reserva = (() => {
+    if (!itemSel) return null;
+    const umProduto = (pid) => reservaProducao(produtos.find((p) => p.id === pid), materiais);
+    if (itemSel.id.startsWith("p:")) return umProduto(itemSel.id.slice(2));
+    if (itemSel.id.startsWith("k:")) {
+      let total = 0;
+      let algum = false;
+      for (const c of itemSel.componentes || []) {
+        const r = umProduto(c.produtoId);
+        if (r) {
+          total += r.total * (Number(c.quantidade) || 0);
+          algum = true;
+        }
+      }
+      return algum ? { total } : null;
+    }
+    return null;
+  })();
 
   async function salvarSugeridoKit() {
     setConfirmarKit(false);
@@ -782,6 +804,15 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
             <div className="kv"><span className="k">Custos fixos adicionais</span><span className="v">{PCT(n(f.custosFixos) / 100)} · {BRL(resultado.preco * (n(f.custosFixos) / 100))}</span></div>
             <div className="kv total"><span className="k">Total descontado da venda</span><span className="v">{BRL(resultado.preco - resultado.custoTotal - resultado.lucro)}</span></div>
           </div>
+          {reserva && reserva.total > 0 && (
+            <div className="kv reserva-linha">
+              <span className="k">
+                Reserva de produção (já no custo)
+                <Ajuda texto="Falhas + manutenção + acabamento, calculados no Custo de Produção e já incluídos no custo total — não é lucro e não muda o preço. É o valor por venda pra separar num fundo no fechamento do mês (lote perdido, peças da impressora, lixa/tinta). Se sobrar mês após mês, dá pra baixar o % de falhas no Custo de Produção." />
+              </span>
+              <span className="v">{BRL(reserva.total)}</span>
+            </div>
+          )}
         </div>
 
         <div className="panel">

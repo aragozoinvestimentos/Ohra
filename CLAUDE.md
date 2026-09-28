@@ -68,11 +68,13 @@ Item do catálogo tem `pecas` (produto = 1; variação = quantidade; kit = soma 
 - **Resumo fixo ao rolar** (só PC ≥1101px): `<ResumoFixo>` gruda os KPIs (e a linha de referências no Avulso) embaixo do topbar e compacta quando grudado (Custo de Produção, Avulso); `.cabecalho-fixo` gruda o cabeçalho das tabelas (≥1280px, table-wrap vira overflow visible) em Produtos precificados, Anunciar e Por quantidade; `.coluna-fixa` na coluna de resultados de Promoções. `--topbar-h: 61px`.
 - **Produtos precificados**: botão de variações embaixo do nome; sugerido compacto ("sug. R$X" + bolinha de status com tooltip + aplicar).
 - **Promoções**: comparativo só aparece com preço; "Progressivo por quantidade (Compre Mais, Pague Menos)" mostra o desconto máximo por faixa que mantém a margem mínima em cada unidade (taxa fixa por unidade).
+- **Reserva de produção** (`reservaProducao` em calc.js): linha no rodapé do Detalhamento do preço (Avulso) = falhas + manutenção + acabamento por venda (do detalhamento do Custo de Produção; kit = soma das peças × qtd; sem detalhamento = não aparece). Já está DENTRO do custo — não é lucro, não muda preço; serve pro Gustavo separar um fundo único no fechamento do mês (decisão: um caixa só, sem separar as 3).
 - **Visual**: KPIs com rótulo discreto em caixa alta e número forte; margem boa só com ponto verde (atenção/prejuízo continuam coloridos); estados vazios com borda tracejada; números tabulares; transições curtas (respeita reduced-motion).
 
 ## Pendências combinadas com o Gustavo (não esquecer)
 
 - **Futuro (não agora)**: aba Importar vendas — ler o relatório exportado da Olist (Gustavo vai mandar o modelo) → vendas por item/canal/quantidade (Ranking real, kits mais vendidos, Fluxo de Caixa). Data de conferência das taxas: Gustavo acha desnecessário por enquanto.
+- **Com a importação de vendas**: relatório do mês com a "Reserva de produção do mês" (peças vendidas × reserva por peça, um valor só) → sugerir quanto separar pro fundo; opcional: lançamento de transferência pro fundo no Fluxo de Caixa e comparar com o perdido real no Registro de Impressões.
 - **Depois**: formar preço a partir da escada e registrar em mais lugares (hoje já dá pra Aplicar/Criar variação).
 - Extras de marketplace NÃO modelados (dependem da situação do Gustavo): Shopee +2,5% em campanhas destaque e +R$3/item CPF >450 pedidos/90d; incentivos temporários de comissão 0%.
 - **Lembrar o Gustavo**: criar imagem pro anúncio evidenciando a vantagem de comprar mais peças (preço por peça caindo por quantidade) — a tabela de Por quantidade tem os números e os textos prontos.

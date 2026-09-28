@@ -937,3 +937,5 @@ tr.linha-variacao, .tabela-pub tr.linha-cad { animation: surgir 0.18s ease-out; 
 .ficha-centavo { font-size: 10.5px; color: var(--warn); }
 .ficha-rodape { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 @media (max-width: 860px) { .ficha-blocos { grid-template-columns: minmax(0, 1fr); } .ficha-bloco + .ficha-bloco { border-left: 0; border-top: 1px solid var(--border); } }
+.reserva-linha { margin-top: 10px; border-top: 1px dashed var(--border-strong); border-bottom: 0; padding-top: 8px; color: var(--ink-soft); }
+.reserva-linha .v { color: var(--ink-soft); }

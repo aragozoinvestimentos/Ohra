@@ -356,3 +356,16 @@ export function calcCanalCustom(canal, base) {
     max: null,
   });
 }
+
+// Reserva de produção por peça (falhas + manutenção + acabamento) — já está
+// DENTRO do custo de produção; o app só mostra quanto é, pra no fechamento do
+// mês separar esse valor num fundo (lote perdido, peças da máquina, lixa/tinta).
+// Não muda preço. null se o produto não tiver detalhamento do Custo de Produção.
+export function reservaProducao(produto, materiais) {
+  const r = custoProdutoPorPeca(produto, materiais);
+  if (!r) return null;
+  const falhas = Number(r.falhas) || 0;
+  const manutencao = Number(r.manutencao) || 0;
+  const acabamento = Number(r.acabamento) || 0;
+  return { falhas, manutencao, acabamento, total: falhas + manutencao + acabamento };
+}
