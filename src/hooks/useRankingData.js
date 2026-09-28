@@ -20,13 +20,13 @@ export { LUCRATIVIDADE_PADRAO, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO };
 
 const centavos = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
-function lucroPorCanal(custoTotal, canal, pesoG = null) {
+function lucroPorCanal(custoTotal, canal, pesoG = null, margemPct = LUCRATIVIDADE_PADRAO) {
   if (custoTotal <= 0) return null;
   const base = {
     custoProduto: custoTotal,
     frete: 0,
     embalagem: 0,
-    lucratividadePct: LUCRATIVIDADE_PADRAO / 100,
+    lucratividadePct: (Number(margemPct) || 0) / 100,
     imposto: canal.imposto_pct || 0,
     custosFixosPct: canal.custos_fixos_pct || 0,
   };
@@ -55,7 +55,9 @@ function precoRealDe(precos, item, canalObj) {
 // LUCRATIVIDADE_PADRAO — assim o que você edita/salva lá se reflete aqui
 // também, e o cálculo teórico só entra pra preencher o que ainda não foi
 // precificado de verdade.
-export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFiltro = "todos", precos = [] } = {}) {
+// margemPct: margem desejada da loja (useMargemDesejada) pra estimar o que ainda
+// não tem preço salvo.
+export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFiltro = "todos", precos = [], margemPct = LUCRATIVIDADE_PADRAO } = {}) {
   if (canais.length === 0) return [];
   const canaisAlvo = canalFiltro === "melhor" ? canais : canais.filter((c) => c.id === canalFiltro);
   if (canaisAlvo.length === 0) return [];
@@ -70,7 +72,7 @@ export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFil
           salvo && salvo.lucro != null
             ? { canal: c, lucro: Number(salvo.lucro), margem: salvo.margem != null ? Number(salvo.margem) : null, origem: "salvo" }
             : (() => {
-                const r = lucroPorCanal(item.custoTotal, c, item.peso);
+                const r = lucroPorCanal(item.custoTotal, c, item.peso, margemPct);
                 return r?.lucro != null ? { canal: c, lucro: r.lucro, margem: r.margem, origem: "estimado" } : null;
               })();
         if (candidato && (melhor == null || candidato.lucro > melhor.lucro)) {

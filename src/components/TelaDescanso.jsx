@@ -4,6 +4,7 @@ import { BRL } from "../lib/format.js";
 import { versiculoDoDia } from "../data/versiculosDoDia.js";
 import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 
 const CHAVE_ULTIMA_DATA = "ohra:tela-descanso:ultima-data";
 const LIMITE_INATIVIDADE_MS = 5 * 60 * 1000;
@@ -29,6 +30,7 @@ function hojeStr() {
 // 2) A qualquer momento, depois de 5 minutos sem nenhuma interação:
 //    versão leve, só frase + versículo — some ao primeiro mexer do mouse.
 export default function TelaDescanso() {
+  const margemLoja = useMargemDesejada();
   const [modo, setModo] = useState(null); // null | "cheia" | "leve"
   const [versiculo] = useState(() => versiculoDoDia());
   const modoRef = useRef(null);
@@ -109,7 +111,7 @@ export default function TelaDescanso() {
     );
   }
 
-  const top3 = calcularRanking(itens, canais, { canalFiltro: "melhor", tipoFiltro: "todos", precos }).slice(0, 3);
+  const top3 = calcularRanking(itens, canais, { canalFiltro: "melhor", tipoFiltro: "todos", precos, margemPct: margemLoja }).slice(0, 3);
 
   return (
     <div className="tela-descanso">

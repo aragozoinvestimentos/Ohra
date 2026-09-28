@@ -9,6 +9,7 @@ import Kpis from "./Kpis.jsx";
 import { somarMeses } from "../lib/fluxoCaixa.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
 import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
+import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 
 const MESES_PT = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -33,6 +34,7 @@ function totalLucroItens(catalogo, itens) {
 // teórica de custo + margem desejada (o objetivo é responder "quanto falta
 // vender" com números que já refletem taxa de canal, imposto etc. de verdade).
 export default function Metas({ onToast }) {
+  const margemLoja = useMargemDesejada();
   const { lojaId } = useLoja();
   // Sem Supabase configurado não há nada pra carregar — inicializa já como
   // "não carregando" nesse caso (em vez de sincronizar isso depois, num
@@ -151,7 +153,7 @@ export default function Metas({ onToast }) {
   // salvo — só esses têm uma linha correspondente em catalogoVendas pra
   // poder entrar no simulador com um clique.
   const topPerformers = useMemo(() => {
-    const ranking = calcularRanking(itensRanking, canaisRanking, { precos: precosRanking });
+    const ranking = calcularRanking(itensRanking, canaisRanking, { precos: precosRanking, margemPct: margemLoja });
     return ranking
       .filter((linha) => linha.origem === "salvo")
       .map((linha) => {
@@ -167,7 +169,7 @@ export default function Metas({ onToast }) {
       })
       .filter(Boolean)
       .slice(0, 5);
-  }, [itensRanking, canaisRanking, precosRanking, catalogoVendas]);
+  }, [itensRanking, canaisRanking, precosRanking, catalogoVendas, margemLoja]);
 
   // Adiciona (ou soma +1 unidade, se já estiver no cenário) um item do
   // topPerformers ao simulador — mesmo formato { itemId, quantidade } que o

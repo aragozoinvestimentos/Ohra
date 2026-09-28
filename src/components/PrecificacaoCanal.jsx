@@ -196,6 +196,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   }, [f, comissaoFixo, lucratividadeEf]);
 
   const lucratividadeFrac = n(lucratividadeEf) / 100;
+  // Sem custo nenhum (nem produto escolhido), o "preço" calculado seria só a
+  // taxa fixa do canal — não significa nada, então a tela mostra "—".
+  const semCusto = !(n(f.custoProduto) + n(f.frete) + n(f.embalagem) > 0);
   const lucrativo = resultado.margem != null && resultado.margem >= lucratividadeFrac - 0.001;
 
   // "Comparar com outro preço" avalia um preço DIFERENTE do calculado — pra
@@ -473,10 +476,11 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         },
         {
           label: `Preço pela margem de ${n(lucratividadeEf)}%`,
-          valor: BRL(resultado.preco),
+          valor: semCusto ? "—" : BRL(resultado.preco),
           tom: "destaque",
-          sub:
-            qtdSel > 1 && resultado.preco != null
+          sub: semCusto
+            ? "escolha um produto ou informe o custo"
+            : qtdSel > 1 && resultado.preco != null
               ? `${canalLabel} · ${BRL(resultado.preco / qtdSel)} por peça`
               : comissaoFixo.temFaixa
                 ? resultado.faixaOk
@@ -486,19 +490,21 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         },
         {
           label: qtdSel > 1 ? "Lucro líquido / venda" : "Lucro líquido / un.",
-          valor: BRL(resultado.lucro),
-          tom: resultado.lucro >= 0 ? "good" : "bad",
+          valor: semCusto ? "—" : BRL(resultado.lucro),
+          tom: semCusto ? undefined : resultado.lucro >= 0 ? "good" : "bad",
           sub: qtdSel > 1 && resultado.lucro != null ? `${BRL(resultado.lucro / qtdSel)} por peça (${qtdSel} peças)` : "depois de todas as taxas",
         },
         {
           label: "Margem líquida",
-          valor: (
+          valor: semCusto ? (
+            "—"
+          ) : (
             <>
               {PCT(resultado.margem)}{" "}
               <span className={`badge ${lucrativo ? "good" : "bad"}`} style={{ verticalAlign: 4 }}>{lucrativo ? "lucrativo" : "abaixo da meta"}</span>
             </>
           ),
-          extra: <Termometro valor={resultado.margem} meta={lucratividadeFrac} />,
+          extra: semCusto ? null : <Termometro valor={resultado.margem} meta={lucratividadeFrac} />,
         },
       ]}
     />

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { BRL, PCT } from "../lib/format.js";
 import { useLoja } from "../lib/LojaContext.jsx";
-import { useRankingData, calcularRanking, LUCRATIVIDADE_PADRAO } from "../hooks/useRankingData.js";
+import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
 import { supabase } from "../lib/supabaseClient.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
+import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 
 // Ranking por retorno: pra cada produto E kit cadastrado, olha o lucro
 // líquido por unidade (quanto cai no bolso de verdade, já descontado tudo,
@@ -13,6 +14,7 @@ import CanalTag from "./CanalTag.jsx";
 // assunto pro futuro ERP; aqui é só "onde vale mais a pena focar produção e
 // divulgação" do ponto de vista financeiro.
 export default function Ranking() {
+  const margemLoja = useMargemDesejada();
   const { lojaId } = useLoja();
   const { itens, canais, precos, carregando } = useRankingData();
   const [canalFiltro, setCanalFiltro] = useState("melhor"); // "melhor" ou o id de um canal específico
@@ -25,7 +27,7 @@ export default function Ranking() {
     setCanalFiltro("melhor");
   }, [lojaId]);
 
-  const ranking = calcularRanking(itens, canais, { canalFiltro, tipoFiltro, precos }).filter((linha) => {
+  const ranking = calcularRanking(itens, canais, { canalFiltro, tipoFiltro, precos, margemPct: margemLoja }).filter((linha) => {
     const alvo = busca.trim().toLowerCase();
     if (!alvo) return true;
     return linha.item.nome.toLowerCase().includes(alvo) || (linha.item.sku || "").toLowerCase().includes(alvo);
@@ -45,7 +47,7 @@ export default function Ranking() {
       <div className="panel">
         <h3 className="section-title">
           Ranking por retorno
-          <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade. Quando o item já tem um preço salvo em Produtos precificados pra aquele canal, usa o lucro/margem REAIS desse preço (marcado "salvo"); quando ainda não tem, estima a ${LUCRATIVIDADE_PADRAO}% de lucratividade padrão (marcado "estimado") só pra dar uma referência — não é ranking de venda/popularidade, isso fica pro ERP futuro. Use "Mostrar" pra enxugar a lista só pra Produtos ou só pra Kits, e "Marketplace" pra ver o retorno num canal específico (ou deixe em 'Melhor canal' pra ver o teto de cada item).`} />
+          <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade. Quando o item já tem um preço salvo em Produtos precificados pra aquele canal, usa o lucro/margem REAIS desse preço (marcado "salvo"); quando ainda não tem, estima a ${margemLoja}% (a margem desejada da loja) (marcado "estimado") só pra dar uma referência — não é ranking de venda/popularidade, isso fica pro ERP futuro. Use "Mostrar" pra enxugar a lista só pra Produtos ou só pra Kits, e "Marketplace" pra ver o retorno num canal específico (ou deixe em 'Melhor canal' pra ver o teto de cada item).`} />
         </h3>
         {canais.length > 0 ? (
           <>
@@ -107,8 +109,8 @@ export default function Ranking() {
                         {linha.origem === "salvo" ? (
                           <span className="badge good" title="Preço realmente salvo em Produtos precificados">salvo</span>
                         ) : (
-                          <span className="campo-anterior" title={`Ainda não tem preço salvo pra esse canal — estimativa a ${LUCRATIVIDADE_PADRAO}% de lucratividade`}>
-                            (estimado {LUCRATIVIDADE_PADRAO}%)
+                          <span className="campo-anterior" title={`Ainda não tem preço salvo pra esse canal — estimativa a ${margemLoja}% de margem (a desejada da loja)`}>
+                            (estimado {margemLoja}%)
                           </span>
                         )}
                       </td>
