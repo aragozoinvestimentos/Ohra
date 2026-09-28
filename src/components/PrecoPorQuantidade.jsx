@@ -140,11 +140,11 @@ export default function PrecoPorQuantidade({ onToast }) {
           return next;
         });
     } else if (c.tipo === "criar") {
-      // mesmo padrão do cadastro de variação: SKU do produto + "-" + quantidade (editável depois)
-      const skuPai = produtos.find((p) => p.id === pid)?.sku || "";
+      // SKU digitado na confirmação (vem preenchido com SKU do produto + "-" + quantidade)
+      const skuNovo = String(c.sku ?? "").trim() || null;
       const { data, error: err } = await supabase
         .from("produto_variacoes")
-        .insert({ loja_id: lojaId || null, produto_id: pid, quantidade: c.linha.n, nome: `Kit ${c.linha.n}`, producao_modo: "multiplicar", sku: skuPai ? `${skuPai}-${c.linha.n}` : null })
+        .insert({ loja_id: lojaId || null, produto_id: pid, quantidade: c.linha.n, nome: `Kit ${c.linha.n}`, producao_modo: "multiplicar", sku: skuNovo })
         .select()
         .single();
       error = err;
@@ -162,6 +162,25 @@ export default function PrecoPorQuantidade({ onToast }) {
       return;
     }
     onToast(c.tipo === "criar" ? `Kit ${c.linha.n} criado com ${BRL(c.linha.sugerido)} (${nomeCanal(canal)})` : `Preço salvo em Produtos precificados (${nomeCanal(canal)})`);
+  }
+
+  // SKU sugerido pra uma variação nova: SKU do produto + "-" + quantidade (GATO-2).
+  const skuPadrao = (n) => {
+    const base = produtos.find((p) => p.id === pid)?.sku || "";
+    return base ? `${base}-${n}` : "";
+  };
+  // Editar o SKU de uma variação direto na linha da escada.
+  const [skuEdit, setSkuEdit] = useState(null); // { variacaoId, valor }
+  async function salvarSku() {
+    const e = skuEdit;
+    setSkuEdit(null);
+    if (!e || !supabase) return;
+    const atual = itens.find((i) => i.id === `v:${e.variacaoId}`)?.sku || "";
+    const novo = String(e.valor).trim();
+    if (novo === atual) return;
+    const { error } = await supabase.from("produto_variacoes").update({ sku: novo || null }).eq("id", e.variacaoId);
+    if (error) onToast(`Não foi possível salvar o SKU: ${error.message}`);
+    else onToast(novo ? `SKU salvo: ${novo}` : "SKU removido");
   }
 
   function adicionarQtd() {
@@ -486,6 +505,29 @@ export default function PrecoPorQuantidade({ onToast }) {
                         <td>
                           <b className="kit-n">{l.n} un.</b>
                           <span className="sub">{l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}</span>
+                          {l.cadastrada &&
+                            (skuEdit?.variacaoId === l.variacaoId ? (
+                              <input
+                                className="input-sku"
+                                autoFocus
+                                value={skuEdit.valor}
+                                onChange={(ev) => setSkuEdit({ ...skuEdit, valor: ev.target.value })}
+                                onBlur={salvarSku}
+                                onKeyDown={(ev) => {
+                                  if (ev.key === "Enter") ev.target.blur();
+                                  if (ev.key === "Escape") setSkuEdit(null);
+                                }}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                className="link-btn sku-btn"
+                                title="Clique pra editar o SKU"
+                                onClick={() => setSkuEdit({ variacaoId: l.variacaoId, valor: itens.find((i) => i.id === l.itemId)?.sku || "" })}
+                              >
+                                SKU: {itens.find((i) => i.id === l.itemId)?.sku || "—"} ✎
+                              </button>
+                            ))}
                           {regra4x && !regra4x.ok && anuncioDe(l.n) > 1 && <span className="frete-tag">Shopee: anúncio {anuncioDe(l.n)}</span>}
                           <input
                             className="input-conc"
@@ -562,7 +604,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                               </button>
                             )
                           ) : (
-                            <button type="button" className="btn btn-sm" onClick={() => setConfirmar({ tipo: "criar", linha: l })}>
+                            <button type="button" className="btn btn-sm" onClick={() => setConfirmar({ tipo: "criar", linha: l, sku: skuPadrao(l.n) })}>
                               + Criar variação
                             </button>
                           )}
@@ -590,7 +632,14 @@ export default function PrecoPorQuantidade({ onToast }) {
           confirmarLabel={salvando ? "Salvando…" : "Confirmar"}
           onConfirm={executar}
           onCancel={() => setConfirmar(null)}
-        />
+        >
+          {confirmar.tipo === "criar" && (
+            <div className="field" style={{ marginBottom: 14 }}>
+              <label>SKU da variação (o mesmo das plataformas)</label>
+              <input type="text" autoFocus value={confirmar.sku} onChange={(ev) => setConfirmar((prev) => ({ ...prev, sku: ev.target.value }))} onKeyDown={(ev) => ev.key === "Enter" && executar()} />
+            </div>
+          )}
+        </ConfirmDialog>
       )}
     </>
   );

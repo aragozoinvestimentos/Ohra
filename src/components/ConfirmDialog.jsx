@@ -15,6 +15,7 @@ export default function ConfirmDialog({
   confirmarComTexto,
   onConfirm,
   onCancel,
+  children,
 }) {
   const [texto, setTexto] = useState("");
   const bloqueado = confirmarComTexto != null && texto.trim() !== confirmarComTexto;
@@ -25,6 +26,7 @@ export default function ConfirmDialog({
       <div className="modal-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <h3>{titulo}</h3>
         {mensagem && <p className="modal-msg">{mensagem}</p>}
+        {children}
         {confirmarComTexto != null && (
           <div className="field" style={{ marginBottom: 16 }}>
             <label>{`Digite "${confirmarComTexto}" pra confirmar`}</label>
