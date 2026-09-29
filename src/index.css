@@ -966,3 +966,9 @@ tr.linha-variacao, .tabela-pub tr.linha-cad { animation: surgir 0.18s ease-out; 
 tr:hover .ficha-sku-btn, .ficha-sku-btn:focus { opacity: 1; }
 .ficha-sku-edit { display: inline-flex; align-items: center; gap: 2px; }
 .ficha-sku-edit input { width: 110px; padding: 2px 6px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ficha-copiar { margin-left: 6px; font-size: 12px; text-decoration: none; color: var(--accent-ink); }
+.ficha-copiar.ok, .ficha-valor.ok .ficha-copiar-ic { color: var(--good); }
+.ficha-valor { background: none; border: 0; padding: 1px 4px; margin: -1px -4px; border-radius: 5px; font: inherit; color: inherit; cursor: copy; display: inline-flex; align-items: center; gap: 5px; }
+.ficha-valor:hover { background: var(--accent-soft); }
+.ficha-copiar-ic { font-size: 11px; color: var(--accent-ink); opacity: 0; transition: opacity 0.12s; }
+tr:hover .ficha-copiar-ic, .ficha-valor.ok .ficha-copiar-ic { opacity: 1; }

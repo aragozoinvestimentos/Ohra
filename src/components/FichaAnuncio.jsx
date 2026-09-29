@@ -201,6 +201,18 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
     else onToast(novo ? `SKU salvo: ${novo}` : "SKU removido");
   }
 
+  // Copiar um valor só (SKU, preço original, promo) — mostra ✓ na hora.
+  const [copiado, setCopiado] = useState(null);
+  async function copiarValor(texto, chave) {
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(chave);
+      setTimeout(() => setCopiado((c) => (c === chave ? null : c)), 1200);
+    } catch {
+      onToast("Não deu pra copiar automaticamente neste navegador");
+    }
+  }
+
   async function copiar(texto, rotulo) {
     try {
       await navigator.clipboard.writeText(texto);
@@ -456,6 +468,11 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                               ) : (
                                 <>
                                   {l.semSku ? <span style={{ color: "var(--warn)" }}>sem SKU{l.sufixos}</span> : l.sku}
+                                  {!l.semSku && (
+                                    <button type="button" className={`link-btn ficha-copiar${copiado === `sku|${l.sku}` ? " ok" : ""}`} title="Copiar SKU" onClick={() => copiarValor(l.sku, `sku|${l.sku}`)}>
+                                      {copiado === `sku|${l.sku}` ? "✓" : "⧉"}
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     className="link-btn ficha-sku-btn"
@@ -474,9 +491,20 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                             {l.an ? (
                               <>
                                 <td className="num">
-                                  <b>{BRL(l.an.original)}</b>
+                                  <button type="button" className={`ficha-valor${copiado === `po|${l.sku}` ? " ok" : ""}`} title="Clique pra copiar o preço original" onClick={() => copiarValor(num(l.an.original), `po|${l.sku}`)}>
+                                    <b>{BRL(l.an.original)}</b>
+                                    <span className="ficha-copiar-ic">{copiado === `po|${l.sku}` ? "✓" : "⧉"}</span>
+                                  </button>
                                 </td>
-                                <td className="num">{l.an.promo ? `${l.an.promo}%` : "—"}</td>
+                                <td className="num">
+                                  {l.an.promo ? (
+                                    <button type="button" className={`ficha-valor${copiado === `pr|${l.sku}` ? " ok" : ""}`} title="Clique pra copiar a promoção %" onClick={() => copiarValor(String(l.an.promo), `pr|${l.sku}`)}>
+                                      {l.an.promo}%<span className="ficha-copiar-ic">{copiado === `pr|${l.sku}` ? "✓" : "⧉"}</span>
+                                    </button>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
                                 <td className="num" style={{ color: "var(--ink-soft)" }}>
                                   {BRL(l.an.clientePaga)}
                                   {l.an.clientePaga - l.an.real > 0.004 && <span className="ficha-centavo"> +{Math.round((l.an.clientePaga - l.an.real) * 100)}¢</span>}
