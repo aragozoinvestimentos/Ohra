@@ -66,11 +66,9 @@ function registroDoForm(f, { lojaId, produtoId }) {
 }
 
 export default function VariacoesProduto({ produto, produtoEmbalagens, embalagens, materiais, onToast }) {
-  const { lojaId } = useLoja();
   const [variacoes, setVariacoes] = useState([]);
   const [indisponivel, setIndisponivel] = useState(false);
   const [form, setForm] = useState(null);
-  const [salvando, setSalvando] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const produtoId = produto?.id;
 
@@ -99,33 +97,13 @@ export default function VariacoesProduto({ produto, produtoEmbalagens, embalagen
 
   const ctx = { materiais, embalagens, produtoEmbalagens };
   const pai = useMemo(() => (produto ? resumoProduto(produto, { embalagens, produtoEmbalagens }) : null), [produto, embalagens, produtoEmbalagens]);
-  const filamentos = (materiais || []).filter((m) => (m.tipo || "filamento") === "filamento");
-  const catalogoEmb = catalogoEmbalagens(embalagens);
 
-  // Prévia ao vivo da variação sendo editada.
-  const previa = useMemo(() => {
-    if (!form || !produto) return null;
-    return calcVariacao(registroDoForm(form, { lojaId, produtoId }), produto, ctx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, produto, materiais, embalagens, produtoEmbalagens]);
 
   if (!produto) return null;
 
   function abrirNova() {
     const proxima = Math.max(1, ...variacoes.map((v) => v.quantidade)) + 1;
     setForm({ ...formDaVariacao(null, produto), quantidade: String(proxima), fat_pecas: String(proxima), nome: `Kit ${proxima} unidades`, sku: produto.sku ? `${produto.sku}-${proxima}` : "" });
-  }
-
-  async function salvar() {
-    const registro = registroDoForm(form, { lojaId, produtoId });
-    setSalvando(true);
-    const { error } = form.id
-      ? await supabase.from("produto_variacoes").update(registro).eq("id", form.id)
-      : await supabase.from("produto_variacoes").insert(registro);
-    setSalvando(false);
-    if (error) return onToast?.(`Não foi possível salvar a variação: ${error.message}`);
-    onToast?.(form.id ? "Variação atualizada" : "Variação criada");
-    setForm(null);
   }
 
   async function excluir(v) {
@@ -139,10 +117,6 @@ export default function VariacoesProduto({ produto, produtoEmbalagens, embalagen
     setVariacoes((prev) => prev.filter((x) => x.id !== v.id));
     onToast?.("Variação excluída");
   }
-
-  const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
-  const chip = (personalizado) =>
-    personalizado ? <span className="chip-personalizado">personalizado</span> : <span className="chip-herdado">do produto</span>;
 
   return (
     <>
@@ -235,17 +209,81 @@ export default function VariacoesProduto({ produto, produtoEmbalagens, embalagen
         </div>
       )}
 
-      {form && previa && (
+      {form && (
+        <EditorVariacao
+          formInicial={form}
+          produto={produto}
+          produtoEmbalagens={produtoEmbalagens}
+          embalagens={embalagens}
+          materiais={materiais}
+          onToast={onToast}
+          onClose={() => setForm(null)}
+        />
+      )}
+
+      {excluirAlvo && (
+        <ConfirmDialog
+          titulo="Excluir variação"
+          mensagem={`Excluir "${excluirAlvo.nome}"? Os preços salvos dela em Produtos precificados também saem. O produto não é afetado.`}
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={() => {
+            excluir(excluirAlvo);
+            setExcluirAlvo(null);
+          }}
+          onCancel={() => setExcluirAlvo(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// Tela suspensa de edição/criação de UMA variação — usada no cadastro do
+// produto e também no 2º Por quantidade (logo depois de "Criar variação",
+// pra revisar embalagem/produção/peso sem trocar de tela). `formInicial` vem
+// de formDaVariacao (ou passe `variacao`, a linha do banco) e `produto` é o pai (ao vivo).
+export function EditorVariacao({ formInicial, variacao, produto, produtoEmbalagens, embalagens, materiais, onToast, onClose, titulo }) {
+  const { lojaId } = useLoja();
+  const [form, setForm] = useState(() => formInicial || formDaVariacao(variacao, produto));
+  const [salvando, setSalvando] = useState(false);
+  const produtoId = produto?.id;
+  const ctx = { materiais, embalagens, produtoEmbalagens };
+  const pai = useMemo(() => (produto ? resumoProduto(produto, { embalagens, produtoEmbalagens }) : null), [produto, embalagens, produtoEmbalagens]);
+  const filamentos = (materiais || []).filter((m) => (m.tipo || "filamento") === "filamento");
+  const catalogoEmb = catalogoEmbalagens(embalagens);
+  const previa = useMemo(() => {
+    if (!form || !produto) return null;
+    return calcVariacao(registroDoForm(form, { lojaId, produtoId }), produto, ctx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, produto, materiais, embalagens, produtoEmbalagens]);
+  if (!form || !previa || !pai) return null;
+  const setForm0 = setForm;
+  const set = (k) => (e) => setForm0((p) => ({ ...p, [k]: e.target.value }));
+  const chip = (personalizado) =>
+    personalizado ? <span className="chip-personalizado">personalizado</span> : <span className="chip-herdado">do produto</span>;
+  async function salvar() {
+    const registro = registroDoForm(form, { lojaId, produtoId });
+    setSalvando(true);
+    const { error } = form.id
+      ? await supabase.from("produto_variacoes").update(registro).eq("id", form.id)
+      : await supabase.from("produto_variacoes").insert(registro);
+    setSalvando(false);
+    if (error) return onToast?.(`Não foi possível salvar a variação: ${error.message}`);
+    onToast?.(form.id ? "Variação atualizada" : "Variação criada");
+    onClose();
+  }
+  const setFormFechar = (v) => (v === null ? onClose() : setForm(v));
+  return (
         <Portal>
-        <div className="modal-overlay modal-overlay-topo" onClick={() => !salvando && setForm(null)}>
+        <div className="modal-overlay modal-overlay-topo" onClick={() => !salvando && setFormFechar(null)}>
           <div className="modal-box modal-variacao" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="mv-head">
               <div style={{ minWidth: 0 }}>
                 <div className="topbar-crumb">{produto.nome} · variação</div>
-                <h3 style={{ margin: 0 }}>{form.id ? `Editar variação — ${form.nome || "sem nome"}` : "Nova variação"}</h3>
+                <h3 style={{ margin: 0 }}>{titulo || (form.id ? `Editar variação — ${form.nome || "sem nome"}` : "Nova variação")}</h3>
               </div>
               <span style={{ flex: 1 }} />
-              <button type="button" className="btn" onClick={() => setForm(null)} disabled={salvando}>
+              <button type="button" className="btn" onClick={() => setFormFechar(null)} disabled={salvando}>
                 Cancelar
               </button>
               <button type="button" className="btn primary" onClick={salvar} disabled={salvando}>
@@ -444,21 +482,5 @@ export default function VariacoesProduto({ produto, produtoEmbalagens, embalagen
           </div>
         </div>
         </Portal>
-      )}
-
-      {excluirAlvo && (
-        <ConfirmDialog
-          titulo="Excluir variação"
-          mensagem={`Excluir "${excluirAlvo.nome}"? Os preços salvos dela em Produtos precificados também saem. O produto não é afetado.`}
-          confirmarLabel="Excluir"
-          perigo
-          onConfirm={() => {
-            excluir(excluirAlvo);
-            setExcluirAlvo(null);
-          }}
-          onCancel={() => setExcluirAlvo(null)}
-        />
-      )}
-    </>
   );
 }

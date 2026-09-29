@@ -8,6 +8,7 @@ import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, grup
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import { EditorVariacao } from "./VariacoesProduto.jsx";
 
 const NOME_CANAL = { shopee: "Shopee", ml: "Mercado Livre", tiktok: "TikTok Shop", shein: "Shein" };
 const nomeCanal = (c) => c?.nome || NOME_CANAL[c?.tipo] || "Canal";
@@ -35,7 +36,8 @@ const CAMPOS_MARGEM = [
 
 export default function PrecoPorQuantidade({ onToast }) {
   const { lojaId, atualizar } = useLoja();
-  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada } = useEscada();
+  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais } = useEscada();
+  const [revisar, setRevisar] = useState(null); // linha de produto_variacoes aberta na tela suspensa (revisar insumos)
   const [produtoId, setProdutoId] = useState("");
   const [canalId, setCanalId] = useState("");
   const [p1Edit, setP1Edit] = useState({}); // { "<produto>|<canal>": "12.9" }
@@ -153,6 +155,8 @@ export default function PrecoPorQuantidade({ onToast }) {
         // O custo real da variação (caixa, chapa…) aparece assim que o catálogo recarregar;
         // o preço é salvo já com o sugerido calculado agora.
         ({ error } = await salvarPreco({ itemTipo: "variacao", itemId: data.id, preco: c.linha.sugerido, custo: c.linha.custo, lucro: c.linha.lucro, margem: c.linha.margem }));
+        // já abre a revisão de insumos da variação nova (embalagem, produção, peso)
+        if (!error) setRevisar(data);
         setExtras((prev) => ({ ...prev, [pid]: (prev[pid] ?? qtdsExtras).filter((n) => n !== c.linha.n) }));
       }
     }
@@ -486,7 +490,17 @@ export default function PrecoPorQuantidade({ onToast }) {
                       <tr key={l.n} className={l.cadastrada ? "linha-cad" : ""}>
                         <td>
                           <b className="kit-n">{l.n} un.</b>
-                          <span className="sub">{l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}</span>
+                          <span className="sub">
+                            {l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}
+                            {l.cadastrada && (
+                              <>
+                                {" · "}
+                                <button type="button" className="link-btn" style={{ fontSize: 11 }} onClick={() => setRevisar(variacoesRaw.find((x) => x.id === l.variacaoId) || null)} title="Revisar embalagem, produção e peso desta variação">
+                                  revisar insumos
+                                </button>
+                              </>
+                            )}
+                          </span>
                           {regra4x && !regra4x.ok && anuncioDe(l.n) > 1 && <span className="frete-tag">Shopee: anúncio {anuncioDe(l.n)}</span>}
                           <input
                             className="input-conc"
@@ -578,6 +592,19 @@ export default function PrecoPorQuantidade({ onToast }) {
         </div>
       )}
 
+      {revisar && produto && (
+        <EditorVariacao
+          key={revisar.id}
+          variacao={revisar}
+          produto={produto}
+          produtoEmbalagens={produtoEmbalagens}
+          embalagens={embalagens}
+          materiais={materiais}
+          onToast={onToast}
+          onClose={() => setRevisar(null)}
+          titulo={`Revisar insumos — ${revisar.nome || `Kit ${revisar.quantidade}`}`}
+        />
+      )}
       {confirmar && (
         <ConfirmDialog
           titulo={confirmar.tipo === "criar" ? `Criar Kit ${confirmar.linha.n}?` : confirmar.tipo === "avulso" ? "Salvar preço avulso?" : `Aplicar ${BRL(confirmar.linha.sugerido)}?`}
