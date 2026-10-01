@@ -87,7 +87,6 @@ Item do catálogo tem `pecas` (produto = 1; variação = quantidade; kit = soma 
 - **Com a importação de vendas**: relatório do mês com a "Reserva de produção do mês" (peças vendidas × reserva por peça, um valor só) → sugerir quanto separar pro fundo; opcional: lançamento de transferência pro fundo no Fluxo de Caixa e comparar com o perdido real no Registro de Impressões.
 - **Depois**: formar preço a partir da escada e registrar em mais lugares (hoje já dá pra Aplicar/Criar variação).
 - Extras de marketplace NÃO modelados (dependem da situação do Gustavo): Shopee +2,5% em campanhas destaque e +R$3/item CPF >450 pedidos/90d; incentivos temporários de comissão 0%.
-- **Lembrar o Gustavo**: rodar o `supabase/schema_v32.sql` (compras de material + parcelamento) — ele disse que roda em casa; sem ele, "+ Compra" avisa que falta o schema e o parcelamento dá erro (o ⇄ Filamentos funciona sem).
 - **Lembrar o Gustavo**: criar imagem pro anúncio evidenciando a vantagem de comprar mais peças (preço por peça caindo por quantidade) — a tabela de Por quantidade tem os números e os textos prontos.
 
 ## Taxas oficiais dos marketplaces (conferidas no site oficial em 27/09/2026 pelo navegador do app, só leitura)
