@@ -7,6 +7,8 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CalculadoraPreco from "./CalculadoraPreco.jsx";
+import CompraMaterialDialog from "./CompraMaterialDialog.jsx";
+import { precoMedio } from "../lib/comprasMaterial.js";
 
 const VAZIO = { nome: "", preco: "", unidade: "un", tipo: "filamento", observacao: "" };
 
@@ -37,7 +39,7 @@ function CampoPreco({ material, edicoes, setEdicoes, onSalvar }) {
   );
 }
 
-function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes, onSalvarPreco, onEditar, onExcluir }) {
+function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes, onSalvarPreco, onEditar, onExcluir, onCompra, compras }) {
   return (
     <div className="panel">
       <h3>{titulo}</h3>
@@ -62,11 +64,22 @@ function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes
                   <td>{m.nome}</td>
                   <td className="num">
                     <CampoPreco material={m} edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={onSalvarPreco} />
+                    {(() => {
+                      const media = precoMedio(compras.filter((c) => c.material_id === m.id));
+                      return media ? (
+                        <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.82em" }} title="Preço = média ponderada das últimas compras que contam. Editar o valor na mão vale até a próxima compra.">
+                          média de {media.compras} compra{media.compras > 1 ? "s" : ""}
+                        </div>
+                      ) : null;
+                    })()}
                   </td>
                   {comUnidade && <td>{m.unidade || "un"}</td>}
                   <td>{m.observacao || "—"}</td>
                   <td>{DATA(m.atualizado_em)}</td>
-                  <td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <button className="btn btn-mini" title="Registrar compra deste material (atualiza o preço pela média e lança a saída no caixa)" onClick={() => onCompra(m)}>
+                      + Compra
+                    </button>{" "}
                     <button className="del" title="Editar" onClick={() => onEditar(m)}>✎</button>
                     <button className="del" title="Excluir" onClick={() => onExcluir(m)}>×</button>
                   </td>
@@ -91,6 +104,34 @@ export default function Materiais({ onToast }) {
   const [editItem, setEditItem] = useState(null); // material sendo editado no menu, ou null
   const [edicaoForm, setEdicaoForm] = useState(VAZIO);
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [compraAlvo, setCompraAlvo] = useState(null); // { materialId } com a janela de compra aberta
+  const [compras, setCompras] = useState([]);
+
+  // Compras registradas (schema v32) — só pra mostrar "média de N compras";
+  // sem a tabela, fica vazio e nada muda.
+  useEffect(() => {
+    if (!supabase) return;
+    let ativo = true;
+    async function carregar() {
+      try {
+        let q = supabase.from("compras_material").select("id, material_id, data, quantidade, valor_total, contar_media, criado_em");
+        if (lojaId) q = q.eq("loja_id", lojaId);
+        const { data, error } = await q;
+        if (ativo && !error) setCompras(data || []);
+      } catch {
+        // sem rede/tabela — segue sem a média
+      }
+    }
+    carregar();
+    const ch = supabase
+      .channel("compras-material-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "compras_material" }, carregar)
+      .subscribe();
+    return () => {
+      ativo = false;
+      supabase.removeChannel(ch);
+    };
+  }, [lojaId]);
 
   useEffect(() => {
     if (!supabase) {
@@ -265,8 +306,13 @@ export default function Materiais({ onToast }) {
     <div>
       <div className="panel">
         <h3 className="section-title">
-          Adicionar material
-          <Ajuda texto="Pra atualizar um preço já cadastrado: clique no valor na tabela, edite e aperte Enter (ou clique fora). Filamentos aparecem na lista de Custo de Produção; consumíveis aparecem na seção “Consumíveis” da mesma aba." />
+          <span>
+            Adicionar material
+            <Ajuda texto="Cadastre cada TIPO de material uma vez (PLA comum, PLA Silk, PETG…). Comprou? Use “+ Compra” na linha (ou “Registrar compra” aqui): o preço/kg vira a média ponderada das 3 últimas compras e a saída entra sozinha no Fluxo de Caixa. Dá pra editar o preço na mão clicando no valor (vale até a próxima compra). Filamentos aparecem no Custo de Produção; consumíveis na seção “Consumíveis” da mesma aba." />
+          </span>
+          <button type="button" className="btn btn-sm" onClick={() => setCompraAlvo({ materialId: "" })} disabled={!materiais.length}>
+            + Registrar compra
+          </button>
         </h3>
         <div className="field">
           <label>Tipo</label>
@@ -349,6 +395,8 @@ export default function Materiais({ onToast }) {
             onSalvarPreco={salvarPreco}
             onEditar={abrirEdicao}
             onExcluir={pedirExclusao}
+            onCompra={(m) => setCompraAlvo({ materialId: m.id })}
+            compras={compras}
           />
           <TabelaMateriais
             titulo="Consumíveis"
@@ -360,8 +408,14 @@ export default function Materiais({ onToast }) {
             onSalvarPreco={salvarPreco}
             onEditar={abrirEdicao}
             onExcluir={pedirExclusao}
+            onCompra={(m) => setCompraAlvo({ materialId: m.id })}
+            compras={compras}
           />
         </>
+      )}
+
+      {compraAlvo && (
+        <CompraMaterialDialog materialIdInicial={compraAlvo.materialId} onToast={onToast} onClose={() => setCompraAlvo(null)} />
       )}
 
       {excluirAlvo && (

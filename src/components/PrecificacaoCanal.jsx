@@ -16,6 +16,7 @@ import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMini
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
 import ResumoFixo from "./ResumoFixo.jsx";
+import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -46,6 +47,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | "p:<id>" | "k:<id>"
   const [canalProprioId, setCanalProprioId] = useState("");
   const [confirmarKit, setConfirmarKit] = useState(false);
+  const [verFilamentos, setVerFilamentos] = useState(false);
   const { itens: baseItens, canais, produtos, precos, composicaoDoKit, materiais } = useRankingData();
   // margem de partida: a do produto escolhido (se tiver regras próprias) ou a da loja
   const produtoEscolhido = baseSelecionada.startsWith("p:") ? produtos.find((p) => p.id === baseSelecionada.slice(2)) : null;
@@ -497,6 +499,11 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           sub: itemSel?.peso
             ? `${qtdSel > 1 ? `${qtdSel} un. · ` : ""}peso de envio ${formatarPeso(itemSel.peso)}`
             : "produção + frete + embalagem",
+          extra: itemSel ? (
+            <button type="button" className="btn btn-mini kpi-acao" onClick={() => setVerFilamentos(true)} title="Custo, preço sugerido e lucro deste item em cada filamento cadastrado">
+              ⇄ Filamentos
+            </button>
+          ) : null,
         },
         {
           label: `Preço pela margem de ${n(lucratividadeEf)}%`,
@@ -910,6 +917,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         </div>
       </div>
     </div>
+    {verFilamentos && itemSel && (
+      <CustoFilamentosDialog itemId={itemSel.id} canalIdInicial={canalIdAtual || undefined} onToast={onToast} onClose={() => setVerFilamentos(false)} />
+    )}
     </>
   );
 }

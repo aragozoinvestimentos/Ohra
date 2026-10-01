@@ -972,3 +972,10 @@ tr:hover .ficha-sku-btn, .ficha-sku-btn:focus { opacity: 1; }
 .ficha-valor:hover { background: var(--accent-soft); }
 .ficha-copiar-ic { font-size: 11px; color: var(--accent-ink); opacity: 0; transition: opacity 0.12s; }
 tr:hover .ficha-copiar-ic, .ficha-valor.ok .ficha-copiar-ic { opacity: 1; }
+
+/* Janelas suspensas mais largas (⇄ Filamentos, compra de material) */
+.modal-box.modal-box-larga.modal-box-xl { max-width: 880px; }
+.modal-box.modal-box-larga.modal-box-md { max-width: 620px; }
+.lista-pendentes { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.lista-pendentes li { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 6px; border-top: 1px dashed color-mix(in oklab, var(--warn) 30%, transparent); }
+.kpi .kpi-acao { margin-top: 6px; align-self: flex-start; }

@@ -10,6 +10,7 @@ import TopbarAcoes from "./TopbarAcoes.jsx";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import CanalTag from "./CanalTag.jsx";
 import ResumoFixo from "./ResumoFixo.jsx";
+import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { configEscada, precoParaMargem, r90up } from "../lib/escada.js";
 
@@ -40,6 +41,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   const [materiaisCarregando, setMateriaisCarregando] = useState(true);
   const [produtos, setProdutos] = useState([]);
   const [produtoId, setProdutoId] = useState("");
+  const [verFilamentos, setVerFilamentos] = useState(false);
 
   // Troca de loja invalida a seleção anterior de produto cadastrado.
   useEffect(() => {
@@ -159,13 +161,13 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
 
   const custoConsumiveis = totalItens(consumiveisCatalogo, f.consumiveisItens);
 
-  const resultado = useMemo(() => {
-    return calcProducao({
+  // Entradas do cálculo com um preço/kg qualquer — o ⇄ Filamentos troca só ele.
+  const entradaCalc = (precoKg) => ({
       comprimento: n(f.comprimento),
       diametro: n(f.diametro),
       densidade: n(f.densidade),
       tempo: n(f.tempo),
-      precoKg: materialSelecionado?.preco ?? 0,
+      precoKg,
       kwh: n(f.kwh),
       consumo: n(f.consumo),
       falhasPct: n(f.falhasPct) / 100,
@@ -180,8 +182,11 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       markupRapido: n(f.markupRapido) / 100,
       pecasPorPlaca: n(f.pecasPorPlaca) || 1,
     });
+  const resultado = useMemo(
+    () => calcProducao(entradaCalc(materialSelecionado?.preco ?? 0)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f, materialSelecionado, custoConsumiveis]);
+    [f, materialSelecionado, custoConsumiveis]
+  );
 
   // Preço de venda de referência no canal principal (Shopee, ou o 1º canal):
   // margem desejada da loja + taxas reais do canal, com a embalagem/frete do
@@ -338,7 +343,12 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
             </div>
           </div>
           <div className="field">
-            <label>Filamento</label>
+            <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              Filamento
+              <button type="button" className="link-btn" onClick={() => setVerFilamentos(true)} title="Custo, preço sugerido e lucro desta peça em cada filamento cadastrado">
+                ⇄ comparar filamentos
+              </button>
+            </label>
             <select value={materialSelecionado?.nome || ""} onChange={setStr("materialNome")}>
               {filamentos.map((m) => (
                 <option key={m.id} value={m.nome}>
@@ -482,6 +492,23 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         </div>
       </div>
     </div>
+    {verFilamentos && (
+      <CustoFilamentosDialog
+        canalIdInicial={canalRef?.id}
+        onClose={() => setVerFilamentos(false)}
+        base={{
+          titulo: produtoSelecionado?.nome || "simulação atual",
+          custoAtual: custoVenda,
+          producaoAtual: resultado.total,
+          producaoCom: (_, fil) => calcProducao(entradaCalc(Number(fil.preco) || 0)).total,
+          materialAtual: materialSelecionado?.nome || null,
+          peso: pesoRef,
+          produtoId: produtoId || null,
+          itemId: produtoId ? `p:${produtoId}` : null,
+          semCriar: true,
+        }}
+      />
+    )}
     </>
   );
 }

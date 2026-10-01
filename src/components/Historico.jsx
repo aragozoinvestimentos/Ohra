@@ -14,6 +14,7 @@ import TopbarAcoes from "./TopbarAcoes.jsx";
 import { itemTipoDoId, formatarPeso } from "../lib/variacoes.js";
 import { precoSalvoAoVivo } from "../lib/aoVivo.js";
 import CanalTag from "./CanalTag.jsx";
+import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
 // instantâneo do que foi salvo em Precificação por Canal, sem ligação real
@@ -28,6 +29,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
   const { itens, canais, carregando: carregandoBase, escada, precos: precosVivos, cfgLoja } = useEscada();
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
+  const [filamentosAlvo, setFilamentosAlvo] = useState(null); // id do item com a janela ⇄ Filamentos aberta
   const [excluirVariacao, setExcluirVariacao] = useState(null); // item "v:<id>" // { item, canal, sugerido, linha }
   const [salvandoAplicar, setSalvandoAplicar] = useState(false);
   const [precos, setPrecos] = useState([]);
@@ -656,6 +658,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
                     <td className="num">
                       {BRL(item.custoTotal)}
                       {variacao && item.quantidade > 1 && <div className="sub-num">{BRL(item.custoTotal / item.quantidade)}/un.</div>}
+                      <div>
+                        <button type="button" className="link-btn" title="Custo, preço sugerido e lucro em cada filamento cadastrado" onClick={() => setFilamentosAlvo(item.id)}>
+                          ⇄ filamentos
+                        </button>
+                      </div>
                     </td>
                     {canais.map((c) => {
                       const p = precoDe(item, c);
@@ -749,6 +756,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
           </div>
         </>
       )}
+
+      {filamentosAlvo && <CustoFilamentosDialog itemId={filamentosAlvo} onToast={onToast} onClose={() => setFilamentosAlvo(null)} />}
 
       {editAlvo && (
         <EditarDialog

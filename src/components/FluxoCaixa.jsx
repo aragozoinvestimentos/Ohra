@@ -21,8 +21,22 @@ import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import CompraMaterialDialog from "./CompraMaterialDialog.jsx";
+import { dividirParcelas, linhasParceladas } from "../lib/comprasMaterial.js";
 
 const ESTIMATIVA_KEY = "ohra:caixa:estimativas";
+const IGNORAR_COMPRA_KEY = "ohra:caixa:ignorar-compra";
+
+function loadIgnorados() {
+  try {
+    return JSON.parse(localStorage.getItem(IGNORAR_COMPRA_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+// "Compra PLA (2/3)" → "Compra PLA"
+const semSufixoParcela = (d) => String(d || "").replace(/\s*\(\d+\/\d+\)\s*$/, "");
 
 function loadEstimativas(lojaId) {
   try {
@@ -55,6 +69,8 @@ const novoForm = (tipo) => ({
   data_realizada: hojeISO(),
   recorrente: false,
   recorrencia_ate: "",
+  parcelado: false,
+  parcelas: 2,
   observacao: "",
   modeloId: null, // confirmando uma ocorrência de recorrente
 });
@@ -75,6 +91,10 @@ export default function FluxoCaixa({ onToast }) {
   const [form, setForm] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
+  const [excluirGrupo, setExcluirGrupo] = useState(false); // ao excluir uma parcela: também as outras em aberto
+  const [compraDialog, setCompraDialog] = useState(null); // {} nova | { lancamento, grupo } completar | { inicial }
+  const [ignorados, setIgnorados] = useState(loadIgnorados);
+  const [verPendentes, setVerPendentes] = useState(false);
   const hoje = hojeISO();
   const mesAtual = mesDe(hoje);
   const [mesFiltro, setMesFiltro] = useState(mesAtual);
@@ -150,6 +170,68 @@ export default function FluxoCaixa({ onToast }) {
   const totalMesSaidas = listaMes.filter((l) => l.tipo === "saida").reduce((s, l) => s + Number(l.valor || 0), 0);
 
   const modelos = lancamentos.filter((l) => l.recorrencia === "mensal");
+
+  // Parcelamentos: linhas com o mesmo parcela_grupo (schema v32).
+  const grupos = useMemo(() => {
+    const m = new Map();
+    for (const l of lancamentos) {
+      if (!l.parcela_grupo) continue;
+      if (!m.has(l.parcela_grupo)) m.set(l.parcela_grupo, []);
+      m.get(l.parcela_grupo).push(l);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => (a.parcela_num || 0) - (b.parcela_num || 0));
+    return m;
+  }, [lancamentos]);
+  const parcelamentos = useMemo(
+    () =>
+      [...grupos.entries()]
+        .map(([id, arr]) => {
+          const abertas = arr.filter((l) => !l.data_realizada);
+          return {
+            id,
+            linhas: arr,
+            tipo: arr[0].tipo,
+            categoria: arr[0].categoria,
+            descricao: semSufixoParcela(arr[0].descricao),
+            total: arr.reduce((s, l) => s + Number(l.valor || 0), 0),
+            n: arr[0].parcela_total || arr.length,
+            pagas: arr.length - abertas.length,
+            abertas,
+            proxima: abertas[0] || null,
+          };
+        })
+        .filter((g) => g.abertas.length > 0)
+        .sort((a, b) => a.proxima.data_prevista.localeCompare(b.proxima.data_prevista)),
+    [grupos]
+  );
+
+  // Saídas de material sem os dados da compra (só depois do schema v32, quando
+  // a coluna compra_material_id existe) — uma por compra (parcelas juntas).
+  const pendentesCompra = useMemo(() => {
+    const vistos = new Set();
+    const out = [];
+    for (const l of lancamentos) {
+      if (l.tipo !== "saida" || l.categoria !== "filamento" || l.recorrencia === "mensal") continue;
+      if (!("compra_material_id" in l) || l.compra_material_id) continue;
+      const chave = l.parcela_grupo || l.id;
+      if (vistos.has(chave) || ignorados.includes(chave)) continue;
+      vistos.add(chave);
+      out.push({ chave, lancamento: l, grupo: l.parcela_grupo ? grupos.get(l.parcela_grupo) : null });
+    }
+    return out.sort((a, b) => b.lancamento.data_prevista.localeCompare(a.lancamento.data_prevista));
+  }, [lancamentos, grupos, ignorados]);
+
+  function ignorarPendente(chave) {
+    setIgnorados((prev) => {
+      const next = [...prev, chave];
+      try {
+        localStorage.setItem(IGNORAR_COMPRA_KEY, JSON.stringify(next));
+      } catch {
+        // sem problema
+      }
+      return next;
+    });
+  }
   const canalNome = (id) => canais.find((c) => c.id === id)?.nome || "";
 
   // --- Ações ---
@@ -209,13 +291,28 @@ export default function FluxoCaixa({ onToast }) {
       recorrencia_origem_id: form.modeloId || null,
       observacao: form.observacao.trim() || null,
     };
+    const parcelado = !form.id && !form.modeloId && !form.recorrente && form.parcelado;
+    const nParc = Math.max(2, Math.min(60, Math.round(Number(form.parcelas)) || 2));
     setSalvando(true);
     const { error } = form.id
       ? await supabase.from("lancamentos_caixa").update(registro).eq("id", form.id)
-      : await supabase.from("lancamentos_caixa").insert(registro);
+      : parcelado
+        ? await supabase.from("lancamentos_caixa").insert(
+            linhasParceladas(registro, {
+              valorTotal: valor,
+              parcelas: nParc,
+              data1: form.data_prevista,
+              primeiraRealizada: form.realizado,
+              hoje,
+            })
+          )
+        : await supabase.from("lancamentos_caixa").insert(registro);
     setSalvando(false);
-    if (error) return onToast?.(`Não foi possível salvar: ${error.message}`);
-    onToast?.(form.id ? "Lançamento atualizado" : form.recorrente ? "Lançamento recorrente criado" : "Lançamento registrado");
+    if (error)
+      return onToast?.(
+        parcelado && /parcela_/.test(error.message) ? "Falta rodar o supabase/schema_v32.sql no Supabase pra parcelar." : `Não foi possível salvar: ${error.message}`
+      );
+    onToast?.(form.id ? "Lançamento atualizado" : form.recorrente ? "Lançamento recorrente criado" : parcelado ? `Parcelado em ${nParc}× registrado` : "Lançamento registrado");
     setForm(null);
   }
 
@@ -228,11 +325,25 @@ export default function FluxoCaixa({ onToast }) {
     setLancamentos((prev) => prev.map((x) => (x.id === l.id ? { ...x, data_realizada: l.data_realizada ? null : hoje } : x)));
   }
 
-  async function excluir(l) {
+  async function excluir(l, comGrupo = false) {
     const { error } = await supabase.from("lancamentos_caixa").delete().eq("id", l.id);
     if (error) return onToast?.(`Não foi possível excluir: ${error.message}`);
-    setLancamentos((prev) => prev.filter((x) => x.id !== l.id));
-    onToast?.("Lançamento excluído");
+    let ids = [l.id];
+    if (comGrupo && l.parcela_grupo) {
+      const r = await supabase.from("lancamentos_caixa").delete().eq("parcela_grupo", l.parcela_grupo).is("data_realizada", null);
+      if (!r.error) ids = ids.concat((grupos.get(l.parcela_grupo) || []).filter((x) => !x.data_realizada).map((x) => x.id));
+    }
+    setLancamentos((prev) => prev.filter((x) => !ids.includes(x.id)));
+    onToast?.(ids.length > 1 ? `${ids.length} parcelas excluídas` : "Lançamento excluído");
+  }
+
+  // Parcelamento: exclui só as parcelas ainda em aberto (as pagas ficam).
+  async function excluirAbertas(g) {
+    const { error } = await supabase.from("lancamentos_caixa").delete().eq("parcela_grupo", g.id).is("data_realizada", null);
+    if (error) return onToast?.(`Não foi possível excluir: ${error.message}`);
+    const ids = g.abertas.map((x) => x.id);
+    setLancamentos((prev) => prev.filter((x) => !ids.includes(x.id)));
+    onToast?.(`${ids.length} parcela${ids.length > 1 ? "s" : ""} em aberto excluída${ids.length > 1 ? "s" : ""}`);
   }
 
   // --- Telas de estado ---
@@ -268,6 +379,9 @@ export default function FluxoCaixa({ onToast }) {
   return (
     <>
       <TopbarAcoes aba="caixa">
+        <button type="button" className="btn so-pc" onClick={() => setCompraDialog({})} title="Registra a compra (atualiza o preço/kg do material) e cria a saída — à vista ou parcelada">
+          Compra de material
+        </button>
         <button type="button" className="btn" onClick={() => abrirNovo("saida")}>
           − Saída
         </button>
@@ -385,6 +499,38 @@ export default function FluxoCaixa({ onToast }) {
           Lançamentos
           <Ajuda texto="Entradas e saídas do mês escolhido. “Previsto” é o que ainda vai cair/sair (ex.: repasse da Shopee que só libera depois da entrega) — marque como recebido/pago quando acontecer. Linhas com ↻ são ocorrências de um lançamento recorrente: “Confirmar” grava o valor real daquele mês." />
         </h3>
+        {pendentesCompra.length > 0 && (
+          <div className="alerta alerta-warn">
+            <b>
+              {pendentesCompra.length} saída{pendentesCompra.length > 1 ? "s" : ""} de material sem os dados da compra
+            </b>
+            Sem material e quantidade, essas compras não entram na média de preço/kg.{" "}
+            <button type="button" className="btn btn-mini" onClick={() => setVerPendentes((v) => !v)}>
+              {verPendentes ? "Esconder" : "Ver e completar"}
+            </button>
+            {verPendentes && (
+              <ul className="lista-pendentes">
+                {pendentesCompra.map((p) => (
+                  <li key={p.chave}>
+                    <span>
+                      {p.lancamento.data_prevista.slice(8, 10)}/{p.lancamento.data_prevista.slice(5, 7)} · {semSufixoParcela(p.lancamento.descricao)} ·{" "}
+                      {BRL(p.grupo ? p.grupo.reduce((s, l) => s + Number(l.valor || 0), 0) : p.lancamento.valor)}
+                      {p.grupo ? ` (${p.grupo.length}×)` : ""}
+                    </span>
+                    <span style={{ whiteSpace: "nowrap" }}>
+                      <button type="button" className="btn btn-mini primary" onClick={() => setCompraDialog({ lancamento: p.lancamento, grupo: p.grupo })}>
+                        Completar
+                      </button>{" "}
+                      <button type="button" className="btn btn-mini" title="Não é compra de material (ex.: frete, ferramenta) — não avisar mais" onClick={() => ignorarPendente(p.chave)}>
+                        Ignorar
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <div className="toolbar">
           <select value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} aria-label="Mês" style={{ width: "auto" }}>
             {mesesFiltro.map((m) => (
@@ -436,6 +582,16 @@ export default function FluxoCaixa({ onToast }) {
                       <td>
                         {(l.virtual || l.recorrencia_origem_id) && <span title="Recorrente" style={{ color: "var(--ink-faint)", marginRight: 4 }}>↻</span>}
                         {l.descricao}
+                        {l.parcela_grupo && grupos.get(l.parcela_grupo) && (() => {
+                          const g = grupos.get(l.parcela_grupo);
+                          const pagas = g.filter((x) => x.data_realizada).length;
+                          return (
+                            <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>
+                              Parcelado {l.parcela_total || g.length}× · total {BRL(g.reduce((s, x) => s + Number(x.valor || 0), 0))} · {pagas} de {l.parcela_total || g.length}{" "}
+                              {l.tipo === "entrada" ? "recebida" : "paga"}{pagas !== 1 ? "s" : ""}
+                            </div>
+                          );
+                        })()}
                         {l.observacao && <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>{l.observacao}</div>}
                       </td>
                       <td className="muted-cel">{rotuloCategoria(l.tipo, l.categoria)}</td>
@@ -472,6 +628,55 @@ export default function FluxoCaixa({ onToast }) {
           </div>
         )}
       </div>
+
+      {parcelamentos.length > 0 && (
+        <div className="panel">
+          <h3 className="section-title">
+            Parcelados em aberto
+            <Ajuda texto="Compras e recebimentos parcelados (uma linha por parcela, todo mês). Marque cada parcela como paga/recebida na lista do mês. “Excluir em aberto” apaga só as parcelas que ainda não foram pagas — as pagas continuam registradas." />
+          </h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Descrição</th>
+                  <th>Categoria</th>
+                  <th>Parcelas</th>
+                  <th>Próxima</th>
+                  <th className="num">Total</th>
+                  <th className="num">Em aberto</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {parcelamentos.map((g) => (
+                  <tr key={g.id}>
+                    <td>{g.descricao}</td>
+                    <td className="muted-cel">{rotuloCategoria(g.tipo, g.categoria)}</td>
+                    <td>
+                      {g.n}× · {g.pagas} de {g.n} {g.tipo === "entrada" ? "recebida" : "paga"}
+                      {g.pagas !== 1 ? "s" : ""}
+                    </td>
+                    <td>
+                      {g.proxima.data_prevista.slice(8, 10)}/{g.proxima.data_prevista.slice(5, 7)}/{g.proxima.data_prevista.slice(0, 4)} · {BRL(g.proxima.valor)}
+                    </td>
+                    <td className="num">{BRL(g.total)}</td>
+                    <td className="num" style={{ fontWeight: 600, color: g.tipo === "entrada" ? "var(--good)" : "var(--ink)" }}>
+                      {g.tipo === "entrada" ? "+" : "−"}
+                      {BRL(g.abertas.reduce((s, l) => s + Number(l.valor || 0), 0))}
+                    </td>
+                    <td className="num" style={{ whiteSpace: "nowrap" }}>
+                      <span className="acoes-linha">
+                        <button className="del" title="Excluir as parcelas em aberto" onClick={() => setExcluirAlvo({ grupoParcelas: g })}>×</button>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="panel">
         <h3 className="section-title">
@@ -557,7 +762,7 @@ export default function FluxoCaixa({ onToast }) {
           </div>
           <div className="row2">
             <div className="field">
-              <label>Valor (R$)</label>
+              <label>{form.parcelado && !form.recorrente ? "Valor total (R$)" : "Valor (R$)"}</label>
               <input type="number" step="0.01" min="0" value={form.valor} onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} />
             </div>
             <div className="field">
@@ -571,7 +776,7 @@ export default function FluxoCaixa({ onToast }) {
           </div>
           <div className="row2">
             <div className="field">
-              <label>{form.recorrente ? "Primeira data" : "Data prevista"}</label>
+              <label>{form.recorrente ? "Primeira data" : form.parcelado ? "Data da 1ª parcela" : "Data prevista"}</label>
               <input type="date" value={form.data_prevista} onChange={(e) => setForm((p) => ({ ...p, data_prevista: e.target.value }))} />
             </div>
             <div className="field">
@@ -585,12 +790,51 @@ export default function FluxoCaixa({ onToast }) {
             </div>
           </div>
 
-          {!form.modeloId && (
+          {!form.id && !form.modeloId && form.tipo === "saida" && form.categoria === "filamento" && (
+            <div className="aviso-fluxo">
+              É compra de filamento/material?{" "}
+              <button
+                type="button"
+                className="btn btn-mini primary"
+                onClick={() => {
+                  setCompraDialog({ inicial: { valor: form.valor, data: form.data_prevista, pago: form.realizado, observacao: form.observacao } });
+                  setForm(null);
+                }}
+              >
+                Registrar como compra de material
+              </button>{" "}
+              — informa material e quantidade, atualiza o preço/kg pela média e cria a saída (à vista ou parcelada).
+            </div>
+          )}
+          {!form.modeloId && !form.parcelado && (
             <label className="check-linha">
               <input type="checkbox" checked={form.recorrente} onChange={(e) => setForm((p) => ({ ...p, recorrente: e.target.checked }))} />
               Repete todo mês
             </label>
           )}
+          {!form.id && !form.modeloId && !form.recorrente && (
+            <label className="check-linha">
+              <input type="checkbox" checked={form.parcelado} onChange={(e) => setForm((p) => ({ ...p, parcelado: e.target.checked }))} />
+              Parcelado (uma parcela por mês)
+            </label>
+          )}
+          {form.parcelado && !form.recorrente && (() => {
+            const total = Number(String(form.valor).replace(",", ".")) || 0;
+            const n = Math.max(2, Math.min(60, Math.round(Number(form.parcelas)) || 2));
+            const vals = total > 0 ? dividirParcelas(total, n) : null;
+            return (
+              <div className="field">
+                <label>Nº de parcelas</label>
+                <input type="number" min="2" max="60" step="1" value={form.parcelas} onChange={(e) => setForm((p) => ({ ...p, parcelas: e.target.value }))} />
+                {vals && (
+                  <div className="hint" style={{ margin: "4px 0 0" }}>
+                    {n}× de {BRL(vals[n - 1])}
+                    {vals[0] !== vals[n - 1] ? ` (1ª ${BRL(vals[0])})` : ""} — a 1ª na data acima, as outras no mesmo dia dos meses seguintes.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {form.recorrente ? (
             <div className="field">
               <label>Até (opcional — em branco = sem fim)</label>
@@ -600,7 +844,7 @@ export default function FluxoCaixa({ onToast }) {
             <>
               <label className="check-linha">
                 <input type="checkbox" checked={form.realizado} onChange={(e) => setForm((p) => ({ ...p, realizado: e.target.checked }))} />
-                {form.tipo === "entrada" ? "Já recebido" : "Já pago"}
+                {form.parcelado ? (form.tipo === "entrada" ? "1ª parcela já recebida" : "1ª parcela já paga") : form.tipo === "entrada" ? "Já recebido" : "Já pago"}
               </label>
               {form.realizado && (
                 <div className="field">
@@ -617,7 +861,20 @@ export default function FluxoCaixa({ onToast }) {
         </EditarDialog>
       )}
 
-      {excluirAlvo && (
+      {excluirAlvo?.grupoParcelas && (
+        <ConfirmDialog
+          titulo="Excluir parcelas em aberto"
+          mensagem={`Excluir as ${excluirAlvo.grupoParcelas.abertas.length} parcela(s) ainda em aberto de "${excluirAlvo.grupoParcelas.descricao}"? As já pagas/recebidas continuam registradas.`}
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={() => {
+            excluirAbertas(excluirAlvo.grupoParcelas);
+            setExcluirAlvo(null);
+          }}
+          onCancel={() => setExcluirAlvo(null)}
+        />
+      )}
+      {excluirAlvo && !excluirAlvo.grupoParcelas && (
         <ConfirmDialog
           titulo="Excluir lançamento"
           mensagem={
@@ -628,11 +885,26 @@ export default function FluxoCaixa({ onToast }) {
           confirmarLabel="Excluir"
           perigo
           onConfirm={() => {
-            excluir(excluirAlvo);
+            excluir(excluirAlvo, excluirGrupo);
             setExcluirAlvo(null);
+            setExcluirGrupo(false);
           }}
-          onCancel={() => setExcluirAlvo(null)}
-        />
+          onCancel={() => {
+            setExcluirAlvo(null);
+            setExcluirGrupo(false);
+          }}
+        >
+          {excluirAlvo.parcela_grupo && (grupos.get(excluirAlvo.parcela_grupo) || []).filter((x) => !x.data_realizada && x.id !== excluirAlvo.id).length > 0 && (
+            <label className="check-linha">
+              <input type="checkbox" checked={excluirGrupo} onChange={(e) => setExcluirGrupo(e.target.checked)} />
+              Excluir também as outras parcelas em aberto ({(grupos.get(excluirAlvo.parcela_grupo) || []).filter((x) => !x.data_realizada && x.id !== excluirAlvo.id).length})
+            </label>
+          )}
+        </ConfirmDialog>
+      )}
+
+      {compraDialog && (
+        <CompraMaterialDialog lancamento={compraDialog.lancamento} grupo={compraDialog.grupo} inicial={compraDialog.inicial} onToast={onToast} onClose={() => setCompraDialog(null)} />
       )}
     </>
   );
