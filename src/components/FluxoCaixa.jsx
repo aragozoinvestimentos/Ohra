@@ -8,6 +8,7 @@ import {
   hojeISO,
   mesDe,
   somarMeses,
+  dataNoMes,
   rotuloMes,
   ocorrenciasRecorrentes,
   lancamentosReais,
@@ -95,6 +96,8 @@ export default function FluxoCaixa({ onToast }) {
   const [compraDialog, setCompraDialog] = useState(null); // {} nova | { lancamento, grupo } completar | { inicial }
   const [ignorados, setIgnorados] = useState(loadIgnorados);
   const [verPendentes, setVerPendentes] = useState(false);
+  const [editGrupo, setEditGrupo] = useState(null); // { g, descricao, categoria, data1 } editando um parcelamento
+  const [salvandoGrupo, setSalvandoGrupo] = useState(false);
   const hoje = hojeISO();
   const mesAtual = mesDe(hoje);
   const [mesFiltro, setMesFiltro] = useState(mesAtual);
@@ -335,6 +338,39 @@ export default function FluxoCaixa({ onToast }) {
     }
     setLancamentos((prev) => prev.filter((x) => !ids.includes(x.id)));
     onToast?.(ids.length > 1 ? `${ids.length} parcelas excluídas` : "Lançamento excluído");
+  }
+
+  // Editar parcelamento: descrição/categoria em todas as parcelas; a data da
+  // 1ª parcela redistribui as datas das parcelas EM ABERTO (uma por mês, mesmo
+  // dia). As já pagas/recebidas mantêm a data em que aconteceram.
+  function abrirEdicaoGrupo(g) {
+    const primeira = g.linhas.find((l) => l.parcela_num === 1) || g.linhas[0];
+    setEditGrupo({ g, descricao: g.descricao, categoria: g.categoria, data1: primeira.data_prevista });
+  }
+
+  async function salvarGrupo() {
+    const { g, descricao, categoria, data1 } = editGrupo;
+    if (!descricao.trim()) return onToast?.("Informe uma descrição");
+    if (!data1) return onToast?.("Informe a data da 1ª parcela");
+    setSalvandoGrupo(true);
+    const n = g.n;
+    const mudancas = g.linhas.map((l, i) => {
+      const num = l.parcela_num || i + 1;
+      const upd = { descricao: `${descricao.trim()} (${num}/${n})`, categoria };
+      if (!l.data_realizada) upd.data_prevista = num === 1 ? data1 : dataNoMes(data1, somarMeses(mesDe(data1), num - 1));
+      return { id: l.id, upd };
+    });
+    for (const { id, upd } of mudancas) {
+      const { error } = await supabase.from("lancamentos_caixa").update(upd).eq("id", id);
+      if (error) {
+        setSalvandoGrupo(false);
+        return onToast?.(`Não foi possível salvar: ${error.message}`);
+      }
+    }
+    setLancamentos((prev) => prev.map((x) => ({ ...x, ...(mudancas.find((m) => m.id === x.id)?.upd || {}) })));
+    setSalvandoGrupo(false);
+    setEditGrupo(null);
+    onToast?.("Parcelamento atualizado");
   }
 
   // Parcelamento: exclui só as parcelas ainda em aberto (as pagas ficam).
@@ -666,6 +702,9 @@ export default function FluxoCaixa({ onToast }) {
                       {BRL(g.abertas.reduce((s, l) => s + Number(l.valor || 0), 0))}
                     </td>
                     <td className="num" style={{ whiteSpace: "nowrap" }}>
+                      <button className="btn btn-mini" title="Editar descrição, categoria e a data da 1ª parcela (as outras acompanham, uma por mês)" onClick={() => abrirEdicaoGrupo(g)}>
+                        Editar
+                      </button>
                       <span className="acoes-linha">
                         <button className="del" title="Excluir as parcelas em aberto" onClick={() => setExcluirAlvo({ grupoParcelas: g })}>×</button>
                       </span>
@@ -860,6 +899,46 @@ export default function FluxoCaixa({ onToast }) {
           </div>
         </EditarDialog>
       )}
+
+      {editGrupo && (() => {
+        const { g, data1 } = editGrupo;
+        const datas = data1 ? g.linhas.map((l, i) => {
+          const num = l.parcela_num || i + 1;
+          return l.data_realizada ? null : num === 1 ? data1 : dataNoMes(data1, somarMeses(mesDe(data1), num - 1));
+        }).filter(Boolean) : [];
+        const fmt = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+        return (
+          <EditarDialog titulo="Editar parcelamento" salvando={salvandoGrupo} onSalvar={salvarGrupo} onCancelar={() => setEditGrupo(null)}>
+            <p className="hint" style={{ marginTop: 0 }}>
+              {g.n}× · total {BRL(g.total)} · {g.pagas} de {g.n} {g.tipo === "entrada" ? "recebida" : "paga"}{g.pagas !== 1 ? "s" : ""}. Valores das parcelas não mudam.
+            </p>
+            <div className="field">
+              <label>Descrição</label>
+              <input type="text" value={editGrupo.descricao} onChange={(e) => setEditGrupo((p) => ({ ...p, descricao: e.target.value }))} />
+            </div>
+            <div className="row2">
+              <div className="field">
+                <label>Data da 1ª parcela (vencimento)</label>
+                <input type="date" value={editGrupo.data1} onChange={(e) => setEditGrupo((p) => ({ ...p, data1: e.target.value }))} />
+              </div>
+              <div className="field">
+                <label>Categoria</label>
+                <select value={editGrupo.categoria} onChange={(e) => setEditGrupo((p) => ({ ...p, categoria: e.target.value }))}>
+                  {CATEGORIAS[g.tipo].map((c) => (
+                    <option key={c.key} value={c.key}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {datas.length > 0 && (
+              <p className="hint" style={{ marginTop: 0 }}>
+                Parcelas em aberto vão vencer de <b>{fmt(datas[0])}</b> a <b>{fmt(datas[datas.length - 1])}</b>, uma por mês
+                {g.pagas > 0 ? " (as já pagas ficam com a data em que foram pagas)" : ""}.
+              </p>
+            )}
+          </EditarDialog>
+        );
+      })()}
 
       {excluirAlvo?.grupoParcelas && (
         <ConfirmDialog
