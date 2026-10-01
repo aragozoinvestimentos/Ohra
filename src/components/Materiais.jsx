@@ -244,6 +244,7 @@ export default function Materiais({ onToast }) {
       return;
     }
     setSalvandoEdicao(true);
+    const nomeAntigo = editItem.nome;
     const { error } = await supabase
       .from("materiais")
       .update({
@@ -255,13 +256,59 @@ export default function Materiais({ onToast }) {
         atualizado_em: new Date().toISOString(),
       })
       .eq("id", editItem.id);
-    setSalvandoEdicao(false);
     if (error) {
+      setSalvandoEdicao(false);
       onToast(`Não foi possível salvar: ${error.message}`);
       return;
     }
+    // Renomeou? Produtos e variações acham o filamento pelo NOME — atualiza
+    // todos que usavam o nome antigo, senão eles passariam a calcular com
+    // outro filamento da lista sem avisar.
+    let atualizados = 0;
+    if (nome !== nomeAntigo) {
+      try {
+        atualizados = await renomearNosProdutos(nomeAntigo, nome, editItem.id);
+      } catch (e) {
+        onToast(`Material renomeado, mas falhou ao atualizar os produtos: ${e.message}`);
+      }
+    }
+    setSalvandoEdicao(false);
     setEditItem(null);
-    onToast("Material atualizado");
+    onToast(atualizados ? `Material atualizado · ${atualizados} produto(s)/variação(ões) passaram pro nome novo` : "Material atualizado");
+  }
+
+  async function renomearNosProdutos(antigo, novo, materialId) {
+    let n = 0;
+    let qp = supabase.from("produtos_cadastro").select("id, material_nome, material_id, producao_detalhe");
+    if (lojaId) qp = qp.eq("loja_id", lojaId);
+    const { data: prods, error: e1 } = await qp;
+    if (e1) throw e1;
+    for (const p of prods || []) {
+      const usaNome = p.material_nome === antigo;
+      const usaDetalhe = p.producao_detalhe?.materialNome === antigo;
+      if (!usaNome && !usaDetalhe) continue;
+      const upd = {};
+      if (usaNome) {
+        upd.material_nome = novo;
+        if (!p.material_id) upd.material_id = materialId;
+      }
+      if (usaDetalhe) upd.producao_detalhe = { ...p.producao_detalhe, materialNome: novo };
+      const { error } = await supabase.from("produtos_cadastro").update(upd).eq("id", p.id);
+      if (error) throw error;
+      n++;
+    }
+    let qv = supabase.from("produto_variacoes").select("id, producao_detalhe");
+    if (lojaId) qv = qv.eq("loja_id", lojaId);
+    const { data: vars, error: e2 } = await qv;
+    if (!e2) {
+      for (const v of vars || []) {
+        if (v.producao_detalhe?.materialNome !== antigo) continue;
+        const { error } = await supabase.from("produto_variacoes").update({ producao_detalhe: { ...v.producao_detalhe, materialNome: novo } }).eq("id", v.id);
+        if (error) throw error;
+        n++;
+      }
+    }
+    return n;
   }
 
   // Antes de excluir, confere se o material está em uso em algum produto
