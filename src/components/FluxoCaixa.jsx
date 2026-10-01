@@ -96,6 +96,13 @@ export default function FluxoCaixa({ onToast }) {
   const [compraDialog, setCompraDialog] = useState(null); // {} nova | { lancamento, grupo } completar | { inicial }
   const [ignorados, setIgnorados] = useState(loadIgnorados);
   const [verPendentes, setVerPendentes] = useState(false);
+  const [verTabela, setVerTabela] = useState(() => {
+    try {
+      return localStorage.getItem("ohra:caixa:ver-tabela") === "1";
+    } catch {
+      return false;
+    }
+  });
   const [editGrupo, setEditGrupo] = useState(null); // { g, descricao, categoria, data1 } editando um parcelamento
   const [salvandoGrupo, setSalvandoGrupo] = useState(false);
   const hoje = hojeISO();
@@ -169,6 +176,7 @@ export default function FluxoCaixa({ onToast }) {
       .filter((l) => tipoFiltro === "todos" || l.tipo === tipoFiltro)
       .sort((a, b) => (a.data_realizada || a.data_prevista).localeCompare(b.data_realizada || b.data_prevista));
   }, [lancamentos, mesFiltro, tipoFiltro]);
+  const mostrarCanal = listaMes.some((l) => l.canal_id);
   const totalMesEntradas = listaMes.filter((l) => l.tipo === "entrada").reduce((s, l) => s + Number(l.valor || 0), 0);
   const totalMesSaidas = listaMes.filter((l) => l.tipo === "saida").reduce((s, l) => s + Number(l.valor || 0), 0);
 
@@ -237,9 +245,29 @@ export default function FluxoCaixa({ onToast }) {
   }
   const canalNome = (id) => canais.find((c) => c.id === id)?.nome || "";
 
+  const temSaldoInicial = lancamentos.some((l) => l.categoria === "saldo_inicial");
+  const usandoMediaCustos = estimativas.custos === "" && mediaCustos > 0;
+  const usandoMediaVendas = estimativas.vendas === "" && mediaVendas > 0;
+
   // --- Ações ---
   function abrirNovo(tipo) {
     setForm(novoForm(tipo));
+  }
+
+  function abrirSaldoInicial() {
+    const primeira = lancamentos.reduce((m, l) => (!m || (l.data_realizada || l.data_prevista) < m ? l.data_realizada || l.data_prevista : m), null);
+    setForm({ ...novoForm("entrada"), descricao: "Saldo inicial", categoria: "saldo_inicial", realizado: true, data_prevista: primeira || hoje, data_realizada: primeira || hoje });
+  }
+
+  function alternarTabela() {
+    setVerTabela((v) => {
+      try {
+        localStorage.setItem("ohra:caixa:ver-tabela", v ? "0" : "1");
+      } catch {
+        // sem problema
+      }
+      return !v;
+    });
   }
 
   function abrirEdicao(l) {
@@ -431,14 +459,14 @@ export default function FluxoCaixa({ onToast }) {
           { label: "Saldo atual", valor: BRL(saldoAtual), tom: saldoAtual >= 0 ? "destaque" : "bad", sub: "tudo que já foi recebido − pago" },
           {
             label: `Entradas de ${rotuloMes(mesAtual)}`,
-            valor: BRL(mesCorrente?.entradasRealizadas || 0),
+            valor: BRL((mesCorrente?.entradasRealizadas || 0) + (mesCorrente?.entradasPrevistas || 0)),
             tom: "good",
-            sub: mesCorrente?.entradasPrevistas ? `+ ${BRL(mesCorrente.entradasPrevistas)} a receber` : "recebido no mês",
+            sub: `${BRL(mesCorrente?.entradasRealizadas || 0)} recebido · ${BRL(mesCorrente?.entradasPrevistas || 0)} a receber`,
           },
           {
             label: `Saídas de ${rotuloMes(mesAtual)}`,
-            valor: BRL(mesCorrente?.saidasRealizadas || 0),
-            sub: mesCorrente?.saidasPrevistas ? `+ ${BRL(mesCorrente.saidasPrevistas)} a pagar` : "pago no mês",
+            valor: BRL((mesCorrente?.saidasRealizadas || 0) + (mesCorrente?.saidasPrevistas || 0)),
+            sub: `${BRL(mesCorrente?.saidasRealizadas || 0)} pago · ${BRL(mesCorrente?.saidasPrevistas || 0)} a pagar`,
           },
           {
             label: `Saldo projetado (${rotuloMes(ultimo?.mes || mesAtual)})`,
@@ -451,6 +479,14 @@ export default function FluxoCaixa({ onToast }) {
           },
         ]}
       />
+
+      {!temSaldoInicial && lancamentos.length > 0 && (
+        <div className="alerta alerta-warn">
+          <b>Falta o saldo inicial</b>
+          O saldo começa em zero, então as primeiras saídas deixam ele negativo. Lance quanto a loja tinha em caixa antes do primeiro lançamento.{" "}
+          <button type="button" className="btn btn-mini primary" onClick={abrirSaldoInicial}>Lançar saldo inicial</button>
+        </div>
+      )}
 
       <div className="panel">
         <h3 className="section-title">
@@ -476,6 +512,12 @@ export default function FluxoCaixa({ onToast }) {
               value={estimativas.vendas}
               onChange={(e) => setEstimativas((p) => ({ ...p, vendas: e.target.value }))}
             />
+            {usandoMediaVendas && (
+              <span className="campo-nota">
+                usando a média dos 3 últimos meses ·{" "}
+                <button type="button" className="link-btn" onClick={() => setEstimativas((p) => ({ ...p, vendas: "0" }))}>usar 0</button>
+              </span>
+            )}
           </div>
           <div className="field">
             <label title="Saídas variáveis que você espera por mês (material, frete, anúncios…) além das recorrentes">Custos variáveis / mês (R$)</label>
@@ -487,12 +529,24 @@ export default function FluxoCaixa({ onToast }) {
               value={estimativas.custos}
               onChange={(e) => setEstimativas((p) => ({ ...p, custos: e.target.value }))}
             />
+            {usandoMediaCustos && (
+              <span className="campo-nota aviso">
+                somando {BRL(mediaCustos)}/mês de estimativa (média) ·{" "}
+                <button type="button" className="link-btn" onClick={() => setEstimativas((p) => ({ ...p, custos: "0" }))}>usar 0</button>
+              </span>
+            )}
           </div>
         </div>
 
         <GraficoProjecao linhas={projecao.linhas} />
 
-        <div className="table-wrap" style={{ marginTop: 12 }}>
+        <div className="tabela-toggle">
+          <button type="button" className={`variacoes-toggle${verTabela ? " aberto" : ""}`} onClick={alternarTabela}>
+            <span className="seta">▸</span> {verTabela ? "Esconder" : "Ver"} mês a mês
+          </button>
+        </div>
+        {verTabela && (
+        <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -512,9 +566,11 @@ export default function FluxoCaixa({ onToast }) {
                   </td>
                   <td className="num" title={`Recebido ${BRL(l.entradasRealizadas)} · previsto ${BRL(l.entradasPrevistas)} · estimado ${BRL(l.entradasEstimadas)}`}>
                     {BRL(l.entradas)}
+                    {l.entradasEstimadas > 0 && <div className="sub-num">{BRL(l.entradasEstimadas)} estimado</div>}
                   </td>
                   <td className="num" title={`Pago ${BRL(l.saidasRealizadas)} · previsto ${BRL(l.saidasPrevistas)} · estimado ${BRL(l.saidasEstimadas)}`}>
                     {BRL(l.saidas)}
+                    {l.saidasEstimadas > 0 && <div className="sub-num">{BRL(l.saidasEstimadas)} estimado</div>}
                   </td>
                   <td className="num" style={{ color: l.resultado >= 0 ? "var(--good)" : "var(--bad)" }}>
                     {l.resultado >= 0 ? "+" : ""}
@@ -528,6 +584,7 @@ export default function FluxoCaixa({ onToast }) {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       <div className="panel">
@@ -601,7 +658,7 @@ export default function FluxoCaixa({ onToast }) {
                   <th>Data</th>
                   <th>Descrição</th>
                   <th>Categoria</th>
-                  <th>Canal</th>
+                  {mostrarCanal && <th>Canal</th>}
                   <th>Status</th>
                   <th className="num">Valor</th>
                   <th></th>
@@ -631,7 +688,7 @@ export default function FluxoCaixa({ onToast }) {
                         {l.observacao && <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>{l.observacao}</div>}
                       </td>
                       <td className="muted-cel">{rotuloCategoria(l.tipo, l.categoria)}</td>
-                      <td className="muted-cel">{canalNome(l.canal_id) || "—"}</td>
+                      {mostrarCanal && <td className="muted-cel">{canalNome(l.canal_id) || "—"}</td>}
                       <td>
                         <span className={`badge${tom ? ` ${tom}` : " neutro"}`}>{texto}</span>
                       </td>
@@ -692,6 +749,9 @@ export default function FluxoCaixa({ onToast }) {
                     <td>
                       {g.n}× · {g.pagas} de {g.n} {g.tipo === "entrada" ? "recebida" : "paga"}
                       {g.pagas !== 1 ? "s" : ""}
+                      <div className="barra-progresso" title={`${Math.round((g.pagas / g.n) * 100)}% ${g.tipo === "entrada" ? "recebido" : "pago"}`}>
+                        <i style={{ width: `${(g.pagas / g.n) * 100}%` }} />
+                      </div>
                     </td>
                     <td>
                       {g.proxima.data_prevista.slice(8, 10)}/{g.proxima.data_prevista.slice(5, 7)}/{g.proxima.data_prevista.slice(0, 4)} · {BRL(g.proxima.valor)}
@@ -723,7 +783,7 @@ export default function FluxoCaixa({ onToast }) {
           <Ajuda texto="Contas e receitas que se repetem todo mês (energia, internet, assinatura, parcela da impressora, mensalidade…). Elas entram sozinhas na projeção, uma vez por mês, até a data final (ou sem fim). Pra criar, marque “Repete todo mês” no lançamento." />
         </h3>
         {modelos.length === 0 ? (
-          <div className="empty">Nenhum lançamento recorrente. Crie um marcando “Repete todo mês” em + Entrada / − Saída.</div>
+          <p className="hint" style={{ margin: "4px 0 2px" }}>Nenhum ainda — marque “Repete todo mês” em + Entrada / − Saída (energia, internet, assinatura…).</p>
         ) : (
           <div className="table-wrap">
             <table>
@@ -989,76 +1049,106 @@ export default function FluxoCaixa({ onToast }) {
   );
 }
 
-// Barras de entradas (verde) e saídas (vermelho) por mês + linha do saldo no
-// fim de cada mês, tudo no mesmo eixo em R$. Passar o mouse num mês mostra os
-// valores (tooltip nativo do SVG); a tabela logo abaixo tem os números exatos.
+// Gráfico da projeção: entradas sobem (verde) e saídas descem (vermelho) a
+// partir do zero, com a parte ESTIMADA (campos de estimativa) mais clara e
+// tracejada — assim dá pra ver o que é conta de verdade (realizado/previsto/
+// parcelas) e o que é chute. A linha é o saldo no fim de cada mês. Eixo com
+// números "redondos". Passar o mouse/tocar num mês mostra os valores.
+function passoBonito(bruto) {
+  const p = Math.pow(10, Math.floor(Math.log10(bruto || 1)));
+  const f = bruto / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+
 function GraficoProjecao({ linhas }) {
   const [hover, setHover] = useState(null);
   if (!linhas.length) return null;
   const W = 960;
-  const H = 240;
-  const padL = 64;
+  const H = 260;
+  const padL = 58;
   const padR = 12;
-  const padT = 14;
-  const padB = 28;
-  const valores = linhas.flatMap((l) => [l.entradas, l.saidas, l.saldoFinal, 0]);
-  let max = Math.max(...valores);
-  let min = Math.min(...valores);
-  if (max === min) max = min + 1;
-  const pad = (max - min) * 0.08;
-  max += pad;
-  if (min < 0) min -= pad;
+  const padT = 12;
+  const padB = 26;
+  const reaisE = (l) => l.entradas - l.entradasEstimadas;
+  const reaisS = (l) => l.saidas - l.saidasEstimadas;
+  let max = Math.max(0, ...linhas.flatMap((l) => [l.entradas, l.saldoFinal]));
+  let min = Math.min(0, ...linhas.flatMap((l) => [-l.saidas, l.saldoFinal]));
+  if (max === min) max = min + 100;
+  const passo = passoBonito((max - min) / 4);
+  max = Math.ceil(max / passo) * passo;
+  min = Math.floor(min / passo) * passo;
+  const ticks = [];
+  for (let t = min; t <= max + 1e-6; t += passo) ticks.push(t);
   const y = (v) => padT + ((max - v) / (max - min)) * (H - padT - padB);
   const larguraMes = (W - padL - padR) / linhas.length;
-  const barra = Math.min(18, larguraMes * 0.28);
+  const barra = Math.min(26, larguraMes * 0.42);
   const cx = (i) => padL + larguraMes * i + larguraMes / 2;
-  const ticks = Array.from({ length: 5 }, (_, i) => min + ((max - min) * i) / 4);
   const fmtCurto = (v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : Math.round(v).toLocaleString("pt-BR"));
   const pontos = linhas.map((l, i) => `${cx(i)},${y(l.saldoFinal)}`).join(" ");
   const h = hover != null ? linhas[hover] : null;
+  const temEstimado = linhas.some((l) => l.entradasEstimadas || l.saidasEstimadas);
+  const y0 = y(0);
+  const ret = (x, v0, v1, cls) => {
+    const a = y(v0);
+    const b = y(v1);
+    const top = Math.min(a, b);
+    const alt = Math.abs(b - a);
+    return alt > 0.3 ? <rect x={x} y={top} width={barra} height={alt} rx="2" className={cls} /> : null;
+  };
 
   return (
     <div className="grafico-caixa">
       <div className="grafico-legenda">
         <span><i className="leg-entrada" />Entradas</span>
         <span><i className="leg-saida" />Saídas</span>
+        {temEstimado && <span><i className="leg-estimado" />Estimativa</span>}
         <span><i className="leg-saldo" />Saldo no fim do mês</span>
-        {h && (
-          <span className="grafico-hover">
-            <strong>{rotuloMes(h.mes)}</strong> · entradas {BRL(h.entradas)} · saídas {BRL(h.saidas)} · saldo {BRL(h.saldoFinal)}
-          </span>
-        )}
+        <span className="grafico-hover">
+          {h ? (
+            <>
+              <strong>{rotuloMes(h.mes)}</strong> · entradas {BRL(h.entradas)} · saídas {BRL(h.saidas)}
+              {h.saidasEstimadas || h.entradasEstimadas ? " (com estimativa)" : ""} · saldo <b style={{ color: h.saldoFinal < 0 ? "var(--bad)" : undefined }}>{BRL(h.saldoFinal)}</b>
+            </>
+          ) : (
+            <span className="muted-cel">passe o mouse num mês</span>
+          )}
+        </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Projeção de entradas, saídas e saldo por mês" onMouseLeave={() => setHover(null)}>
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} className="grade" />
+            <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} className={t === 0 ? "zero" : "grade"} />
             <text x={padL - 8} y={y(t) + 4} textAnchor="end" className="eixo">{fmtCurto(t)}</text>
           </g>
         ))}
-        <line x1={padL} x2={W - padR} y1={y(0)} y2={y(0)} className="zero" />
-        {linhas.map((l, i) => (
-          <g key={l.mes}>
-            {hover === i && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-hover" />}
-            <rect x={cx(i) - barra - 1} y={y(Math.max(l.entradas, 0))} width={barra} height={Math.max(0, y(0) - y(l.entradas))} rx="3" className="barra-entrada" />
-            <rect x={cx(i) + 1} y={y(Math.max(l.saidas, 0))} width={barra} height={Math.max(0, y(0) - y(l.saidas))} rx="3" className="barra-saida" />
-            <text x={cx(i)} y={H - 8} textAnchor="middle" className="eixo">{rotuloMes(l.mes, i === 0 || l.mes.endsWith("-01"))}</text>
-            <rect
-              x={padL + larguraMes * i}
-              y={0}
-              width={larguraMes}
-              height={H}
-              fill="transparent"
-              onMouseEnter={() => setHover(i)}
-              onClick={() => setHover(i)}
-            >
-              <title>{`${rotuloMes(l.mes)}: entradas ${BRL(l.entradas)}, saídas ${BRL(l.saidas)}, saldo ${BRL(l.saldoFinal)}`}</title>
-            </rect>
-          </g>
-        ))}
+        {linhas.map((l, i) => {
+          const x = cx(i) - barra / 2;
+          return (
+            <g key={l.mes}>
+              {hover === i && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-hover" />}
+              {ret(x, 0, reaisE(l), "barra-entrada")}
+              {ret(x, reaisE(l), l.entradas, "barra-entrada estimada")}
+              {ret(x, 0, -reaisS(l), "barra-saida")}
+              {ret(x, -reaisS(l), -l.saidas, "barra-saida estimada")}
+              <text x={cx(i)} y={H - 8} textAnchor="middle" className={`eixo${i === 0 ? " eixo-atual" : ""}`}>{rotuloMes(l.mes, i === 0 || l.mes.endsWith("-01"))}</text>
+            </g>
+          );
+        })}
+        <line x1={padL} x2={W - padR} y1={y0} y2={y0} className="zero" />
+        <defs>
+          <clipPath id="fc-acima"><rect x="0" y="0" width={W} height={y0} /></clipPath>
+          <clipPath id="fc-abaixo"><rect x="0" y={y0} width={W} height={H - y0} /></clipPath>
+        </defs>
+        <polygon points={`${cx(0)},${y0} ${pontos} ${cx(linhas.length - 1)},${y0}`} className="area-saldo positivo" clipPath="url(#fc-acima)" />
+        <polygon points={`${cx(0)},${y0} ${pontos} ${cx(linhas.length - 1)},${y0}`} className="area-saldo negativo" clipPath="url(#fc-abaixo)" />
         <polyline points={pontos} className="linha-saldo" />
         {linhas.map((l, i) => (
           <circle key={l.mes} cx={cx(i)} cy={y(l.saldoFinal)} r={hover === i ? 5 : 3.5} className={l.saldoFinal < 0 ? "ponto-saldo negativo" : "ponto-saldo"} />
+        ))}
+        {linhas.map((l, i) => (
+          <rect key={l.mes} x={padL + larguraMes * i} y={0} width={larguraMes} height={H} fill="transparent" onMouseEnter={() => setHover(i)} onClick={() => setHover(i)}>
+            <title>{`${rotuloMes(l.mes)}: entradas ${BRL(l.entradas)}, saídas ${BRL(l.saidas)}, saldo ${BRL(l.saldoFinal)}`}</title>
+          </rect>
         ))}
       </svg>
     </div>
