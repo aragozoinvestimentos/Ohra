@@ -35,10 +35,9 @@ function loadInitial() {
 
 export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMateriais }) {
   const { lojaId, lojas } = useLoja();
-  const { canais: canaisVivos, itens: itensVivos, produtos: produtosVivos } = useRankingData();
+  // Materiais vêm do store único do catálogo (mesma lista ao vivo do app todo).
+  const { canais: canaisVivos, itens: itensVivos, produtos: produtosVivos, materiais, carregando: materiaisCarregando } = useRankingData();
   const [f, setF] = useState(loadInitial);
-  const [materiais, setMateriais] = useState([]);
-  const [materiaisCarregando, setMateriaisCarregando] = useState(true);
   const [produtos, setProdutos] = useState([]);
   const [produtoId, setProdutoId] = useState("");
   const [verFilamentos, setVerFilamentos] = useState(false);
@@ -103,37 +102,6 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     }
   }, [f]);
 
-  useEffect(() => {
-    if (!supabase) {
-      setMateriaisCarregando(false);
-      return;
-    }
-    let ativo = true;
-    async function carregar() {
-      try {
-        let query = supabase.from("materiais").select("*").order("nome", { ascending: true });
-        if (lojaId) query = query.eq("loja_id", lojaId);
-        const { data, error } = await query;
-        if (!ativo) return;
-        // Só mostra o que está realmente cadastrado — nada de filamento
-        // fictício aparecendo antes de você cadastrar algo de verdade.
-        if (!error) setMateriais(data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setMateriaisCarregando(false);
-      }
-    }
-    carregar();
-    const canal = supabase
-      .channel("materiais-custo-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "materiais" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
 
   const set = (key) => (e) => {
     const v = e.target.value;

@@ -327,7 +327,7 @@ export default function Crescimento({ onToast }) {
       {semanaAberta && <RegistrarSemanaDialog linhas={linhas} onToast={onToast} onClose={() => setSemanaAberta(false)} />}
       {mudar && (
         <ConfirmDialog
-          titulo={mudar.dir > 0 ? "Subir degrau" : "Voltar degrau"}
+          titulo={mudar.dir > 1 ? "Subir 2 degraus" : mudar.dir > 0 ? "Subir degrau" : "Voltar degrau"}
           confirmarLabel={salvando ? "Salvando…" : mudar.dir > 0 ? "Subir" : "Voltar"}
           onConfirm={aplicarMudanca}
           onCancel={() => setMudar(null)}
@@ -341,6 +341,8 @@ export default function Crescimento({ onToast }) {
                 {mudar.linha.produto.nome} em {mudar.linha.canal.nome}: <b>{BRL(e.preco)}</b> → <b>{BRL(novo)}</b> (lucro {BRL(e.lucroAtual)} → {BRL(lNovo)}).
                 Os kits e o preço original/promo são recalculados na tela pra você atualizar o anúncio. O preço salvo (alvo) não muda.
                 {mudar.dir > 0 && !e.portoesOk ? " Atenção: nem todos os portões estão ✓." : ""}
+                {e.dias < e.diasMin ? ` Mudança recente: o preço mudou há ${e.dias} dia${e.dias === 1 ? "" : "s"} — o ideal é esperar ${e.diasMin} pra não mexer no preço o tempo todo.` : ""}
+                {mudar.dir > 0 && e.campanhaPerto ? ` Campanha em ${e.diasAteCampanha} dia(s): aumentar agora pode barrar a entrada na campanha ou parecer preço inflado.` : ""}
               </p>
             );
           })()}
@@ -382,9 +384,14 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
         <span className="acoes-detalhe">
           <button type="button" className="btn btn-mini" onClick={onEditar}>Editar degraus</button>
           <button type="button" className="btn btn-mini" onClick={() => onMudar(-1)} disabled={e.i === 0}>↓ Voltar degrau</button>
-          <button type="button" className={`btn btn-mini${e.sugestao.chave === "subir" ? " primary" : ""}`} onClick={() => onMudar(1)} disabled={noAlvo}>
+          <button type="button" className={`btn btn-mini${e.sugestao.chave === "subir" && e.sugestao.saltos !== 2 ? " primary" : ""}`} onClick={() => onMudar(1)} disabled={noAlvo}>
             ↑ Subir{e.proximo ? ` para ${BRL(e.proximo)}` : ""}
           </button>
+          {e.sugestao.saltos === 2 && (
+            <button type="button" className="btn btn-mini primary" onClick={() => onMudar(2)}>
+              ↑↑ Subir 2 (para {BRL(e.degraus[e.i + 2])})
+            </button>
+          )}
           <button type="button" className="del" title="Encerrar rampa" onClick={onEncerrar}>×</button>
         </span>
       </h3>
@@ -408,6 +415,13 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
           {!noAlvo && (
             <>
               <h4 className="sub-h">Portões para subir <span className="muted-cel">(todos precisam estar ✓)</span></h4>
+              <div className="campanha-linha">
+                <label>
+                  Próxima campanha da plataforma <span className="muted-cel">(opcional)</span>
+                </label>
+                <input type="date" value={l.r.checklist?.campanha || ""} onChange={(ev) => onChecklist(l, "campanha", ev.target.value || null)} />
+                {e.campanhaPerto && <span className="badge warn">não subir até a campanha</span>}
+              </div>
               <ul className="lista-portoes">
                 {e.portoes.map((p) => (
                   <li key={p.chave} className={p.ok ? "ok" : "no"}>
@@ -424,7 +438,16 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
               )}
               {e.sugestao.chave === "subir" ? (
                 <div className="alerta alerta-good">
-                  <b>Pronto pra subir para {BRL(e.proximo)}</b>Não mexa no Ads na mesma semana — senão não dá pra saber o que mudou as vendas.
+                  {e.sugestao.saltos === 2 ? (
+                    <>
+                      <b>Vendendo muito: dá pra subir 2 degraus, para {BRL(e.degraus[e.i + 2])}</b>
+                      {e.vendasDesde} vendas desde o degrau (2× o portão). Com essa procura, um aumento maior compensa: vende um pouco menos, mas o lucro total se mantém. Depois do salto, o app pede {regras.diasAposSalto} dias parado. Não mexa no Ads na mesma semana.
+                    </>
+                  ) : (
+                    <>
+                      <b>Pronto pra subir para {BRL(e.proximo)}</b>Não mexa no Ads na mesma semana — senão não dá pra saber o que mudou as vendas.
+                    </>
+                  )}
                 </div>
               ) : e.sugestao.chave === "segurar" && faltam.length ? (
                 <div className="alerta alerta-warn">
@@ -598,6 +621,10 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
     ["notaAlerta", "Nota que gera alerta", 0.1],
     ["roasInviavel", "Ads inviável com ROAS mínimo acima de", 0.5],
     ["revisarDias", "Dias no lançamento até sugerir revisar", 1],
+    ["maxDegraus", "Máximo de degraus até o alvo", 1],
+    ["saltoVendas", "Salto de 2 degraus com vendas ≥ (× o portão)", 0.5],
+    ["diasAposSalto", "Dias parado depois de salto ou de voltar", 1],
+    ["diasCampanha", "Não subir nos dias antes de campanha", 1],
   ];
   const [f, setF] = useState(() => Object.fromEntries(campos.map(([k, , , pct]) => [k, String(pct ? Math.round(regras[k] * 1000) / 10 : regras[k])])));
   const [salvando, setSalvando] = useState(false);
@@ -783,7 +810,7 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
           {!editar && (
             <div className="row2">
               <div className="field">
-                <label>Preço que já está vendendo hoje <span className="muted-cel">(ou clique num degrau)</span></label>
+                <label>Preço pra vender agora <span className="muted-cel">(vazio = 1º degrau; ou clique num degrau)</span></label>
                 <input type="text" inputMode="decimal" placeholder={listaFinal[0] ? virgula(listaFinal[0]) : ""} value={precoHoje} onChange={(e) => setPrecoHoje(e.target.value)} />
               </div>
               <div className="field">

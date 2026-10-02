@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useRankingData } from "../hooks/useRankingData.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import { arredondarPreco, DATA } from "../lib/format.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -95,8 +97,9 @@ function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes
 
 export default function Materiais({ onToast }) {
   const { lojaId } = useLoja();
-  const [materiais, setMateriais] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  // Materiais vêm do store único do catálogo (mesma lista, ao vivo, que o
+  // resto do app usa); depois de gravar, pede uma recarga.
+  const { materiais, carregando } = useRankingData();
   const [novo, setNovo] = useState(VAZIO);
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [edicoes, setEdicoes] = useState({}); // id -> valor em edição (preco como string)
@@ -133,39 +136,6 @@ export default function Materiais({ onToast }) {
     };
   }, [lojaId]);
 
-  useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
-    let ativo = true;
-
-    async function carregar() {
-      try {
-        let query = supabase.from("materiais").select("*").order("nome", { ascending: true });
-        if (lojaId) query = query.eq("loja_id", lojaId);
-        const { data, error } = await query;
-        if (!ativo) return;
-        if (!error) setMateriais(data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    }
-    carregar();
-
-    const canal = supabase
-      .channel("materiais-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "materiais" }, carregar)
-      .subscribe();
-
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
   async function adicionar() {
     const nome = novo.nome.trim();
     const precoBruto = parseFloat(novo.preco);
@@ -192,6 +162,7 @@ export default function Materiais({ onToast }) {
       return;
     }
     setNovo({ ...VAZIO, tipo: novo.tipo });
+    recarregarCatalogo();
     onToast("Material adicionado");
   }
 
@@ -214,6 +185,7 @@ export default function Materiais({ onToast }) {
       delete next[id];
       return next;
     });
+    recarregarCatalogo();
     return true;
   }
 
@@ -274,6 +246,7 @@ export default function Materiais({ onToast }) {
     }
     setSalvandoEdicao(false);
     setEditItem(null);
+    recarregarCatalogo();
     onToast(atualizados ? `Material atualizado · ${atualizados} produto(s)/variação(ões) passaram pro nome novo` : "Material atualizado");
   }
 
@@ -334,7 +307,7 @@ export default function Materiais({ onToast }) {
       onToast(`Não foi possível excluir: ${error.message}`);
       return;
     }
-    setMateriais((prev) => prev.filter((m) => m.id !== id));
+    recarregarCatalogo();
   }
 
   if (!supabase) {

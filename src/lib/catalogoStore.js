@@ -67,7 +67,7 @@ async function carregar() {
       porLoja(supabase.from("kits").select("*").order("nome")),
       porLoja(supabase.from("embalagens").select("*").order("nome")),
       porLoja(supabase.from("precos_canal").select("*")),
-      porLoja(supabase.from("materiais").select("*")),
+      porLoja(supabase.from("materiais").select("*").order("nome", { ascending: true })),
       // Só existe depois do schema v26 — sem ela, segue sem variações.
       porLoja(supabase.from("produto_variacoes").select("*").order("quantidade")),
       // Só existem depois do schema v27 — sem elas, segue sem concorrentes/publicações.

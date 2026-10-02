@@ -1,6 +1,3 @@
-import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient.js";
-import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import Ajuda from "./Ajuda.jsx";
 
@@ -15,40 +12,7 @@ import Ajuda from "./Ajuda.jsx";
 // conta de "faltam N passos essenciais" (hoje só Kits é opcional — dá pra
 // ter um produto precificado de ponta a ponta sem nunca montar um kit).
 function useChecklist() {
-  const { lojaId } = useLoja();
-  const { produtos, canais, precos, kits, carregando: carregandoRanking } = useRankingData();
-  const [materiais, setMateriais] = useState([]);
-  // Começa "carregando" só se o Supabase estiver configurado — sem isso o
-  // efeito abaixo nunca roda e o checklist ficaria preso em "Carregando…".
-  const [carregandoMateriais, setCarregandoMateriais] = useState(() => !!supabase);
-
-  useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      try {
-        let query = supabase.from("materiais").select("id");
-        if (lojaId) query = query.eq("loja_id", lojaId);
-        const { data, error } = await query;
-        if (!ativo) return;
-        if (!error) setMateriais(data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregandoMateriais(false);
-      }
-    }
-    carregar();
-    const canal = supabase
-      .channel("tutorial-materiais-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "materiais" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
+  const { produtos, canais, precos, kits, materiais, carregando: carregandoRanking } = useRankingData();
   const passos = [
     {
       key: "materiais",
@@ -88,7 +52,7 @@ function useChecklist() {
     },
   ];
 
-  return { passos, carregando: carregandoRanking || carregandoMateriais };
+  return { passos, carregando: carregandoRanking };
 }
 
 function ChecklistProgresso() {

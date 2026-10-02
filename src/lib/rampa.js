@@ -21,6 +21,10 @@ export const REGRAS_PADRAO = {
   notaAlerta: 4.5, // abaixo disso: alerta pra revisar o produto
   roasInviavel: 8, // ROAS mínimo acima disso = Ads inviável no degrau
   revisarDias: 14, // dias no lançamento com < metade das vendas → revisar anúncio
+  maxDegraus: 8, // máximo de degraus do 1º ao alvo (passo cresce se a distância for grande)
+  saltoVendas: 2, // vendas desde o degrau ≥ 2× o portão → sugere subir 2 degraus
+  diasAposSalto: 14, // depois de salto duplo ou de voltar: dias mínimos até a próxima mudança
+  diasCampanha: 14, // não subir nos X dias antes de uma campanha marcada
 };
 
 const num = (v) => {
@@ -60,7 +64,20 @@ export function sugerirDegraus({ canal, custo, peso, cfg, alvo, regras = REGRAS_
     p = prox;
   }
   out.push(a);
-  return out;
+  const max = Math.max(2, Math.round(num(regras.maxDegraus)) || 8);
+  if (out.length <= max) return out;
+  // Muitos degraus: reparte a distância em `max` degraus iguais em % (finais ,49/,99).
+  const p0 = out[0];
+  const r = Math.pow(a / p0, 1 / (max - 1));
+  const lim = [p0];
+  for (let k = 1; k < max - 1; k++) {
+    let v = finalAbaixo(p0 * Math.pow(r, k));
+    if (v <= lim[lim.length - 1]) v = finalAcima(lim[lim.length - 1] + 0.02);
+    if (v >= a - 0.2) break;
+    lim.push(v);
+  }
+  lim.push(a);
+  return lim;
 }
 
 // Normaliza a lista digitada: números > 0, ordem crescente, sem repetidos.
@@ -110,13 +127,27 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const ruins7 = regs.filter((r) => r.data > corte7).reduce((s, r) => s + num(r.avaliacoes_ruins), 0);
   const noAlvo = i >= degraus.length - 1;
 
+  // Última mudança de preço: salto duplo ou descida pedem mais tempo parado.
+  const mudancas = regs.filter((r) => r.tipo === "subida" || r.tipo === "descida");
+  const ultMud = mudancas[mudancas.length - 1] || null;
+  let saltoAnterior = 1;
+  if (ultMud) {
+    const antes = [...regs].reverse().find((r) => r !== ultMud && r.degrau != null && (r.data < ultMud.data || (r.data === ultMud.data && String(r.criado_em || "") < String(ultMud.criado_em || ""))));
+    if (antes) saltoAnterior = Math.abs(num(ultMud.degrau) - num(antes.degrau)) || 1;
+  }
+  const diasMin = ultMud && (ultMud.tipo === "descida" || saltoAnterior >= 2) ? Math.max(regras.dias, num(regras.diasAposSalto)) : regras.dias;
+  const campanha = rampa.checklist?.campanha || null;
+  const diasAteCampanha = campanha ? diasEntre(hoje, campanha) : null;
+  const campanhaPerto = diasAteCampanha != null && diasAteCampanha >= 0 && diasAteCampanha <= num(regras.diasCampanha);
+
   const portoes = [
     { chave: "avaliacoes", rotulo: "Avaliações desde o último degrau", ok: avaliacoesDesde >= regras.avaliacoes, valor: `+${avaliacoesDesde} de +${regras.avaliacoes}`, falta: Math.max(0, regras.avaliacoes - avaliacoesDesde), curto: "avaliações" },
     { chave: "vendas", rotulo: "Vendas desde o último degrau", ok: vendasDesde >= regras.vendas, valor: `+${vendasDesde} de +${regras.vendas}`, falta: Math.max(0, regras.vendas - vendasDesde), curto: "vendas" },
     { chave: "nota", rotulo: `Nota ≥ ${String(regras.nota).replace(".", ",")}`, ok: nota != null && nota >= regras.nota, valor: nota != null ? String(nota).replace(".", ",") : "—", curto: "nota" },
-    { chave: "dias", rotulo: `Tempo no degrau ≥ ${regras.dias} dias`, ok: dias >= regras.dias, valor: `${dias} dia${dias === 1 ? "" : "s"}`, falta: Math.max(0, regras.dias - dias), curto: "dias" },
+    { chave: "dias", rotulo: `Tempo no degrau ≥ ${diasMin} dias${diasMin > regras.dias ? (ultMud?.tipo === "descida" ? " (voltou de degrau)" : " (depois de salto duplo)") : ""}`, ok: dias >= diasMin, valor: `${dias} dia${dias === 1 ? "" : "s"}`, falta: Math.max(0, diasMin - dias), curto: "dias" },
     { chave: "ruins", rotulo: "Nenhuma avaliação 1–2★ nos últimos 7 dias", ok: ruins7 === 0, valor: String(ruins7), curto: "sem 1–2★" },
   ];
+  if (campanha) portoes.push({ chave: "campanha", rotulo: `Sem campanha nos próximos ${regras.diasCampanha} dias`, ok: !campanhaPerto, valor: diasAteCampanha >= 0 ? `campanha em ${diasAteCampanha} dia${diasAteCampanha === 1 ? "" : "s"}` : "já passou", curto: campanhaPerto ? "campanha perto" : "campanha" });
   const portoesOk = portoes.every((p) => p.ok);
 
   // Check depois da última mudança de degrau (subida): compara cada semana
@@ -198,7 +229,9 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   else if (check && !check.pendente && check.falhasSeguidas >= 2) sugestao = { chave: "voltar", tom: "bad", rotulo: "Voltar degrau" };
   else if (revisar) sugestao = { chave: "revisar", tom: "bad", rotulo: "Revisar anúncio" };
   else if (check && !check.pendente && check.falhasSeguidas === 1) sugestao = { chave: "segurar", tom: "warn", rotulo: "Segurar" };
-  else if (portoesOk && !alertaNota) sugestao = { chave: "subir", tom: "good", rotulo: "Subir degrau" };
+  else if (portoesOk && !alertaNota && vendasDesde >= num(regras.saltoVendas) * regras.vendas && i + 2 <= degraus.length - 1)
+    sugestao = { chave: "subir", tom: "good", rotulo: "Subir 2 degraus", saltos: 2 };
+  else if (portoesOk && !alertaNota) sugestao = { chave: "subir", tom: "good", rotulo: "Subir degrau", saltos: 1 };
   else sugestao = { chave: "segurar", tom: "warn", rotulo: "Segurar" };
 
   const lucroSemana = ultimaSemana && ultimaSemana.data > corte7 ? num(ultimaSemana.vendas) * (lucroEm(num(ultimaSemana.preco) || preco) ?? 0) : null;
@@ -211,7 +244,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     zero: ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
     avaliacoesTotal, nota, vendasDesde, vendasTotal, avaliacoesDesde, dias, ruins7,
     portoes, portoesOk, check, roasMin, roas, organico, organicoAntes, ads, viavelEm, ultAds,
-    revisar, revisarPorAds, revisarPorLancamento, alertaNota, sugestao, ultimaSemana,
+    revisar, revisarPorAds, revisarPorLancamento, alertaNota, sugestao, ultimaSemana, diasMin, campanha, diasAteCampanha, campanhaPerto,
     lucroSemana, lucroSemanaAds, lucroSemanaAlvo, semanas, registros: regs,
   };
 }
