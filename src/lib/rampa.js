@@ -25,6 +25,33 @@ export const REGRAS_PADRAO = {
   saltoVendas: 2, // vendas desde o degrau ≥ 2× o portão → sugere subir 2 degraus
   diasAposSalto: 14, // depois de salto duplo ou de voltar: dias mínimos até a próxima mudança
   diasCampanha: 14, // não subir nos X dias antes de uma campanha marcada
+  // Teste de lançamento com Ads (rampa que começou sem vendas)
+  testeObservarDias: 5, // dias observando só o orgânico antes de recomendar
+  testeDispensaVendas: 3, // vendas que dispensam o teste (o orgânico pegou)
+  testeMeta: 10, // vendas que o teste busca
+  testeMin: 30, // orçamento mínimo (R$)
+  testeMax: 100, // orçamento máximo (R$)
+  testeDias: 7, // prazo do teste
+  testeCliquesSemVenda: 50, // tantos cliques sem venda = problema é o anúncio
+  // Acima do alvo
+  acimaDias: 14, // dias no alvo antes de sugerir testar acima / duração do teste acima
+  acimaSemanas: 3, // semanas de vendas estáveis no alvo
+  acimaMax: 0.2, // no máximo +20% acima do alvo
+  acimaBloqueioDias: 30, // se o teste acima falhar, não tenta de novo por X dias
+};
+
+// Orçamento sugerido do teste de lançamento: meta × lucro por venda no alvo,
+// entre o mínimo e o máximo, arredondado pra cima de 5 em 5.
+export function orcamentoTeste(lucroAlvo, regras = REGRAS_PADRAO) {
+  const bruto = num(regras.testeMeta) * Math.max(0, num(lucroAlvo));
+  const lim = Math.min(num(regras.testeMax), Math.max(num(regras.testeMin), bruto));
+  return Math.ceil(lim / 5) * 5;
+}
+
+const maisDias = (iso, n) => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
 };
 
 const num = (v) => {
@@ -108,8 +135,10 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const degraus = (rampa.degraus || []).map(num);
   const i = Math.max(0, Math.min(degraus.length - 1, rampa.degrau_atual ?? 0));
   const preco = degraus[i] ?? null;
-  const alvo = degraus[degraus.length - 1] ?? null;
-  const proximo = i < degraus.length - 1 ? degraus[i + 1] : null;
+  // Alvo = preço salvo do produto no canal (ao vivo); sem ele, o último degrau.
+  const alvo = num(ctx.alvo) > 0 ? cent(num(ctx.alvo)) : degraus[degraus.length - 1] ?? null;
+  const acimaAtivo = preco != null && alvo != null && preco > alvo + 0.004;
+  const proximo = i < degraus.length - 1 && !(preco >= alvo - 0.004) ? degraus[i + 1] : null;
   const lucroEm = (p) => (p > 0 && ctx.canal ? lucroNoPreco(ctx.canal, p, ctx.custo, ctx.peso, ctx.cfg) : null);
   const regs = (registros || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.criado_em || "").localeCompare(String(b.criado_em || "")));
   const semanas = regs.filter((r) => r.tipo === "semana");
@@ -125,7 +154,14 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const dias = Math.max(0, diasEntre(desde, hoje));
   const corte7 = menosDias(hoje, 7);
   const ruins7 = regs.filter((r) => r.data > corte7).reduce((s, r) => s + num(r.avaliacoes_ruins), 0);
-  const noAlvo = i >= degraus.length - 1;
+  const noAlvo = preco != null && alvo != null && preco >= alvo - 0.004;
+  const fase = acimaAtivo
+    ? { chave: "acima", rotulo: "Acima do alvo" }
+    : noAlvo
+      ? { chave: "alvo", rotulo: "No alvo" }
+      : i === 0
+        ? { chave: "lancamento", rotulo: "Lançamento" }
+        : { chave: "tracao", rotulo: "Tração" };
 
   // Última mudança de preço: salto duplo ou descida pedem mais tempo parado.
   const mudancas = regs.filter((r) => r.tipo === "subida" || r.tipo === "descida");
@@ -224,8 +260,105 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const revisar = revisarPorAds || revisarPorLancamento;
   const alertaNota = nota != null && nota < regras.notaAlerta;
 
+  // ---- Teste de lançamento (Ads com orçamento fechado) ----
+  const inicioReg = regs.find((r) => r.tipo === "inicio");
+  const inicioRampa = inicioReg?.data || String(rampa.criado_em || hoje).slice(0, 10);
+  const diasRampa = Math.max(0, diasEntre(inicioRampa, hoje));
+  const lucroNoAlvo = lucroEm(alvo);
+  const orcSugerido = orcamentoTeste(lucroNoAlvo, regras);
+  let teste;
+  if (rampa.teste_status === "pulado") teste = { status: "pulado" };
+  else if (rampa.teste_status === "iniciado" || rampa.teste_status === "concluido") {
+    const ini = rampa.teste_inicio || hoje;
+    const prazo = num(rampa.teste_dias) || regras.testeDias;
+    const meta = num(rampa.teste_meta) || regras.testeMeta;
+    const orc = num(rampa.teste_orcamento) || orcSugerido;
+    const ate = rampa.teste_fim || maisDias(ini, prazo);
+    const doTeste = regs.filter((r) => r.data >= ini && r.data <= ate);
+    const gasto = doTeste.reduce((s, r) => s + num(r.ads_gasto), 0);
+    const cliques = doTeste.reduce((s, r) => s + num(r.ads_cliques), 0);
+    const vendasAds = doTeste.reduce((s, r) => s + num(r.ads_vendas), 0);
+    const custoVenda = vendasAds > 0 ? gasto / vendasAds : null;
+    const diasPassados = Math.max(0, diasEntre(ini, hoje));
+    const semVenda = cliques >= regras.testeCliquesSemVenda && vendasAds === 0;
+    const acabou = rampa.teste_status === "concluido" || vendasAds >= meta || (orc > 0 && gasto >= orc - 0.01) || diasPassados >= prazo || semVenda;
+    let resultado = null;
+    if (acabou) {
+      if (semVenda) resultado = { chave: "revisar", tom: "bad", titulo: "Revisar anúncio", texto: `${cliques} cliques e nenhuma venda: as pessoas chegam mas não compram — o problema é foto, título ou preço, não visita.` };
+      else if (custoVenda == null) resultado = { chave: "sem-dados", tom: "warn", titulo: "Sem vendas pelo Ads", texto: gasto > 0 ? `Gastou ${moeda(gasto)} sem venda.` : "Registre o gasto, os cliques e as vendas via Ads do teste." };
+      else if (lucroNoAlvo > 0 && custoVenda <= lucroNoAlvo) resultado = { chave: "valeu", tom: "good", titulo: "Valeu a pena", texto: `Custo por venda ${moeda(custoVenda)} ≤ lucro no alvo (${moeda(lucroNoAlvo)}). Desligue o Ads e siga no orgânico com a rampa.` };
+      else if (lucroNoAlvo > 0 && custoVenda > 2 * lucroNoAlvo) resultado = { chave: "caro", tom: "bad", titulo: "Saiu caro", texto: `Custo por venda ${moeda(custoVenda)}, mais que 2× o lucro no alvo (${moeda(lucroNoAlvo)}). Não repita — foque no orgânico e no anúncio.` };
+      else resultado = { chave: "ok", tom: "warn", titulo: "Aceitável", texto: `Custo por venda ${moeda(custoVenda)} (lucro no alvo ${moeda(lucroNoAlvo)}). Cumpriu o papel; não repita sem necessidade.` };
+    }
+    teste = {
+      status: acabou ? "concluido" : "andamento",
+      salvoConcluido: rampa.teste_status === "concluido",
+      inicio: ini, ate, prazo, meta, orc, gasto, cliques, vendasAds, custoVenda,
+      diasRestantes: Math.max(0, prazo - diasPassados), resultado,
+    };
+  } else if (num(rampa.vendas_iniciais) >= regras.testeMeta) teste = { status: "nao-aplica" };
+  else if (vendasTotal >= regras.testeDispensaVendas) teste = { status: "nao-precisa" };
+  else if (diasRampa < regras.testeObservarDias) teste = { status: "observando", dia: diasRampa + 1, de: regras.testeObservarDias };
+  else teste = { status: "recomendado" };
+  teste.orcSugerido = orcSugerido;
+  teste.porDia = Math.ceil((orcSugerido / regras.testeDias) * 2) / 2;
+
+  // ---- Acima do alvo (teste controlado, até +acimaMax) ----
+  let acima = null;
+  const bloqueadoAte = rampa.checklist?.acimaBloqueadoAte || null;
+  if ((noAlvo || acimaAtivo) && alvo > 0) {
+    const tetoAcima = finalAbaixo(alvo * (1 + num(regras.acimaMax)));
+    const semNoPreco = semanas.filter((s) => s.data >= desde);
+    const ult3 = semNoPreco.slice(-regras.acimaSemanas);
+    const estaveis = ult3.length >= regras.acimaSemanas && num(ult3[ult3.length - 1].vendas) >= 0.9 * num(ult3[0].vendas) && num(ult3[0].vendas) > 0;
+    if (acimaAtivo) {
+      // Testando acima: compara o lucro médio por semana neste preço com as semanas no preço anterior.
+      const antesSem = semanas.filter((s) => s.data < desde).slice(-regras.acimaSemanas);
+      const lucroSem = (s) => num(s.vendas) * (lucroEm(num(s.preco) || preco) ?? 0);
+      const media = (arr) => (arr.length ? arr.reduce((t, s) => t + lucroSem(s), 0) / arr.length : null);
+      const lAntes = media(antesSem);
+      const lDepois = media(semNoPreco);
+      const pronto = dias >= regras.acimaDias && semNoPreco.length > 0 && lAntes != null;
+      acima = {
+        ativo: true,
+        preco,
+        anterior: degraus[i - 1] ?? alvo,
+        lucroAntes: lAntes,
+        lucroDepois: lDepois,
+        diasFaltam: Math.max(0, regras.acimaDias - dias),
+        aprovado: pronto && lDepois >= lAntes - 0.005,
+        reprovado: pronto && lDepois < lAntes - 0.005,
+        proximo: (() => {
+          const pn = finalAbaixo(preco * (1 + num(regras.passo)));
+          return pn > preco && pn <= tetoAcima ? pn : null;
+        })(),
+      };
+    } else {
+      let prox = finalAbaixo(alvo * (1 + num(regras.passo)));
+      if (prox <= alvo) prox = finalAcima(alvo + 0.02);
+      const lAgora = lucroEm(alvo);
+      const lProx = lucroEm(prox);
+      const podePerder = lAgora > 0 && lProx > lAgora ? 1 - lAgora / lProx : null;
+      const bloqueado = bloqueadoAte && bloqueadoAte > hoje;
+      const criterios = [
+        { rotulo: `${regras.acimaDias} dias no alvo`, ok: dias >= regras.acimaDias, valor: `${dias} dia${dias === 1 ? "" : "s"}` },
+        { rotulo: `${regras.acimaSemanas} semanas de vendas estáveis`, ok: estaveis, valor: ult3.length ? ult3.map((s) => num(s.vendas)).join(" → ") : "sem registro" },
+        { rotulo: `Nota ≥ ${String(regras.nota).replace(".", ",")} e nenhuma 1–2★ recente`, ok: nota != null && nota >= regras.nota && ruins7 === 0, valor: nota != null ? String(nota).replace(".", ",") : "—" },
+      ];
+      if (campanha) criterios.push({ rotulo: "Sem campanha perto", ok: !campanhaPerto, valor: campanhaPerto ? `em ${diasAteCampanha} dias` : "ok" });
+      if (bloqueado) criterios.push({ rotulo: "Teste anterior falhou", ok: false, valor: `liberado em ${bloqueadoAte.slice(8, 10)}/${bloqueadoAte.slice(5, 7)}` });
+      acima = { ativo: false, prox: prox <= tetoAcima ? prox : null, teto: tetoAcima, lucroAgora: lAgora, lucroProx: lProx, podePerder, criterios, pronto: criterios.every((c) => c.ok) && prox <= tetoAcima };
+    }
+  }
+
   let sugestao;
-  if (noAlvo) sugestao = { chave: "alvo", tom: "good", rotulo: "No alvo" };
+  if (acimaAtivo) {
+    sugestao = acima?.aprovado
+      ? { chave: "acima-aprovado", tom: "good", rotulo: "Acima aprovado" }
+      : acima?.reprovado
+        ? { chave: "acima-voltar", tom: "bad", rotulo: "Voltar ao alvo" }
+        : { chave: "acima-testando", tom: "warn", rotulo: `Testando acima (${acima?.diasFaltam ?? 0}d)` };
+  } else if (noAlvo) sugestao = acima?.pronto ? { chave: "testar-acima", tom: "good", rotulo: "Testar acima do alvo" } : { chave: "alvo", tom: "good", rotulo: "No alvo" };
   else if (check && !check.pendente && check.falhasSeguidas >= 2) sugestao = { chave: "voltar", tom: "bad", rotulo: "Voltar degrau" };
   else if (revisar) sugestao = { chave: "revisar", tom: "bad", rotulo: "Revisar anúncio" };
   else if (check && !check.pendente && check.falhasSeguidas === 1) sugestao = { chave: "segurar", tom: "warn", rotulo: "Segurar" };
@@ -239,7 +372,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const lucroSemanaAlvo = ultimaSemana && ultimaSemana.data > corte7 ? num(ultimaSemana.vendas) * (lucroEm(alvo) ?? 0) : null;
 
   return {
-    degraus, i, preco, alvo, proximo, fase: faseDe(rampa),
+    degraus, i, preco, alvo, proximo, fase, acimaAtivo, noAlvo, teste, acima, diasRampa,
     lucroAtual, lucroAlvo: lucroEm(alvo), lucroProximo: lucroEm(proximo), lucroEm,
     zero: ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
     avaliacoesTotal, nota, vendasDesde, vendasTotal, avaliacoesDesde, dias, ruins7,

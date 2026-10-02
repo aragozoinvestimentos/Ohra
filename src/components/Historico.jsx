@@ -204,8 +204,10 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const r = rampas.find((x) => x.produto_id === item.id.slice(2) && x.canal_id === canalObj.id);
     if (!r) return null;
     const d = r.degraus || [];
-    const i = r.degrau_atual ?? 0;
-    return i < d.length - 1 ? Number(d[i]) : null;
+    const atual = Number(d[r.degrau_atual ?? 0]);
+    const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === item.id.slice(2) && p.canal_id === canalObj.id);
+    // só informa quando está vendendo num preço diferente do salvo (abaixo na rampa ou testando acima)
+    return atual > 0 && (!salvo || Math.abs(atual - Number(salvo.preco)) >= 0.005) ? atual : null;
   }
 
   function precoDe(item, canalObj) {

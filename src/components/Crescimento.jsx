@@ -71,6 +71,7 @@ export default function Crescimento({ onToast }) {
   const [mudar, setMudar] = useState(null); // { linha, dir: 1 | -1 }
   const [encerrar, setEncerrar] = useState(null);
   const [verRegras, setVerRegras] = useState(false);
+  const [acimaConfirma, setAcimaConfirma] = useState(null); // { tipo: "testar"|"voltar"|"aprovar", linha, preco }
   const [salvando, setSalvando] = useState(false);
 
   // Uma linha por rampa, com tudo calculado ao vivo.
@@ -82,14 +83,15 @@ export default function Crescimento({ onToast }) {
         const item = itens.find((i) => i.id === `p:${r.produto_id}`);
         if (!produto || !canal || !item) return null;
         const cfg = cfgDoProduto(r.produto_id);
-        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg };
+        const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === r.produto_id && p.canal_id === r.canal_id);
+        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null };
         const regs = registros.filter((g) => g.rampa_id === r.id);
         const est = estadoRampa(r, regs, regras, ctx, hoje);
         return { r, produto, canal, item, cfg, ctx, est };
       })
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, registros, produtos, canais, itens, cfgDoProduto, regras, hoje]);
+  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje]);
 
   const sel = linhas.find((l) => l.r.id === selId) || linhas[0] || null;
 
@@ -163,6 +165,74 @@ export default function Crescimento({ onToast }) {
     onToast?.(`Rampa de ${l.produto.nome} encerrada (o preço salvo continua o mesmo)`);
   }
 
+  async function atualizarRampa(l, campos, msg) {
+    const { error } = await supabase.from("rampas_preco").update({ ...campos, atualizado_em: new Date().toISOString() }).eq("id", l.r.id);
+    if (error) {
+      onToast?.(/teste_/.test(error.message) ? "Falta rodar o supabase/schema_v34.sql no Supabase" : `Não foi possível salvar: ${error.message}`);
+      return false;
+    }
+    if (msg) onToast?.(msg);
+    return true;
+  }
+
+  const acoesTeste = {
+    iniciar: (l, orc) =>
+      atualizarRampa(
+        l,
+        { teste_status: "iniciado", teste_inicio: hoje, teste_fim: null, teste_orcamento: orc, teste_dias: regras.testeDias, teste_meta: regras.testeMeta },
+        `Teste de lançamento iniciado: ${BRL(orc)} em ${regras.testeDias} dias (≈ ${BRL(orc / regras.testeDias)}/dia). Registre gasto, cliques e vendas via Ads.`
+      ),
+    pular: (l) => atualizarRampa(l, { teste_status: "pulado" }, "Teste de lançamento pulado"),
+    concluir: (l) => atualizarRampa(l, { teste_status: "concluido", teste_fim: hoje }, "Teste concluído — desligue o Ads na plataforma"),
+    reabrir: (l) => atualizarRampa(l, { teste_status: null, teste_inicio: null, teste_fim: null }, "Teste de lançamento reaberto"),
+  };
+
+  async function testarAcima(l, preco) {
+    const lista = normalizarDegraus([...l.est.degraus, preco]);
+    const idx = lista.findIndex((d) => Math.abs(d - preco) < 0.005);
+    setSalvando(true);
+    const ok = await atualizarRampa(l, { degraus: lista, degrau_atual: idx, desde: hoje, base_avaliacoes: l.est.avaliacoesTotal });
+    if (ok) await supabase.from("rampa_registros").insert({ loja_id: lojaId || null, rampa_id: l.r.id, tipo: "subida", data: hoje, degrau: idx, preco, observacao: "acima do alvo" });
+    setSalvando(false);
+    setAcimaConfirma(null);
+    if (ok) onToast?.(`Testando ${BRL(preco)} (acima do alvo) por ${regras.acimaDias} dias — atualize o anúncio`);
+  }
+
+  async function voltarAoAlvo(l) {
+    const idx = l.est.degraus.findIndex((d) => Math.abs(d - l.est.alvo) < 0.005);
+    const novo = idx >= 0 ? idx : Math.max(0, l.est.i - 1);
+    const bloq = new Date(`${hoje}T12:00:00`);
+    bloq.setDate(bloq.getDate() + regras.acimaBloqueioDias);
+    setSalvando(true);
+    const ok = await atualizarRampa(l, {
+      degrau_atual: novo,
+      desde: hoje,
+      base_avaliacoes: l.est.avaliacoesTotal,
+      checklist: { ...(l.r.checklist || {}), acimaBloqueadoAte: bloq.toISOString().slice(0, 10) },
+    });
+    if (ok) await supabase.from("rampa_registros").insert({ loja_id: lojaId || null, rampa_id: l.r.id, tipo: "descida", data: hoje, degrau: novo, preco: l.est.degraus[novo], observacao: "volta ao alvo" });
+    setSalvando(false);
+    setAcimaConfirma(null);
+    if (ok) onToast?.(`De volta ao alvo (${BRL(l.est.degraus[novo])}). Novo teste acima só daqui a ${regras.acimaBloqueioDias} dias.`);
+  }
+
+  // Teste acima aprovado: o preço salvo (alvo) passa a ser o preço testado — só com confirmação.
+  async function aprovarAcima(l) {
+    const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === l.r.produto_id && p.canal_id === l.r.canal_id);
+    if (!salvo) return onToast?.("Preço salvo não encontrado");
+    const preco = l.est.preco;
+    const lucro = l.est.lucroEm(preco);
+    setSalvando(true);
+    const { error } = await supabase
+      .from("precos_canal")
+      .update({ preco, custo_total: l.ctx.custo, lucro, margem: preco > 0 ? lucro / preco : null, atualizado_em: new Date().toISOString() })
+      .eq("id", salvo.id);
+    setSalvando(false);
+    setAcimaConfirma(null);
+    if (error) return onToast?.(`Não foi possível atualizar o preço salvo: ${error.message}`);
+    onToast?.(`Preço salvo de ${l.produto.nome} em ${l.canal.nome} atualizado para ${BRL(preco)} — é o novo alvo`);
+  }
+
   async function marcarChecklist(l, chave, valor) {
     const novo = { ...(l.r.checklist || {}), [chave]: valor };
     const { error } = await supabase.from("rampas_preco").update({ checklist: novo }).eq("id", l.r.id);
@@ -198,7 +268,16 @@ export default function Crescimento({ onToast }) {
 
       <Kpis
         itens={[
-          { label: "Em rampa", valor: String(linhas.length), sub: linhas.length ? `${new Set(linhas.map((l) => l.canal.id)).size} canal(is)` : "nenhum produto ainda" },
+          {
+            label: "Em rampa",
+            valor: String(linhas.length),
+            sub: !linhas.length
+              ? "nenhum produto ainda"
+              : linhas.filter((l) => l.est.teste.status === "recomendado").length
+                ? `${linhas.filter((l) => l.est.teste.status === "recomendado").length} com teste de lançamento recomendado`
+                : `${new Set(linhas.map((l) => l.canal.id)).size} canal(is)`,
+            tom: linhas.some((l) => l.est.teste.status === "recomendado") ? "warn" : undefined,
+          },
           { label: "Prontos pra subir", valor: String(prontos.length), tom: prontos.length ? "good" : undefined, sub: prontos.map((l) => l.produto.nome).join(", ") || "—" },
           {
             label: "Segurando / revisar",
@@ -253,9 +332,11 @@ export default function Crescimento({ onToast }) {
                         <div className="sub-linha">
                           <CanalTag canal={l.canal} /> · {e.avaliacoesTotal} avaliações{e.nota != null ? ` · nota ${virgula(e.nota, 1)}` : ""}
                         </div>
+                        <TagTeste teste={e.teste} />
                       </td>
                       <td>
-                        {e.fase.rotulo} · {e.i + 1} de {e.degraus.length}
+                        {e.fase.rotulo}
+                        {e.fase.chave !== "acima" ? ` · ${e.i + 1} de ${e.degraus.length}` : ` · ${BRL(e.preco)}`}
                         <div className="degrau-dots">
                           {e.degraus.map((d, k) => (
                             <i key={k} className={k < e.i ? "ok" : k === e.i ? "at" : ""} />
@@ -297,7 +378,42 @@ export default function Crescimento({ onToast }) {
         )}
       </div>
 
-      {sel && <Detalhe l={sel} anuncio={anuncio} regras={regras} onMudar={(dir) => setMudar({ linha: sel, dir })} onEditar={() => setIniciar({ rampa: sel.r })} onEncerrar={() => setEncerrar(sel)} onChecklist={marcarChecklist} />}
+      {sel && (
+        <Detalhe
+          l={sel}
+          anuncio={anuncio}
+          regras={regras}
+          onMudar={(dir) => setMudar({ linha: sel, dir })}
+          onEditar={() => setIniciar({ rampa: sel.r })}
+          onEncerrar={() => setEncerrar(sel)}
+          onChecklist={marcarChecklist}
+          acoesTeste={acoesTeste}
+          onAcima={(tipo, preco) => setAcimaConfirma({ tipo, linha: sel, preco })}
+        />
+      )}
+      {acimaConfirma && (
+        <ConfirmDialog
+          titulo={{ testar: "Testar acima do alvo", voltar: "Voltar ao alvo", aprovar: "Atualizar o preço salvo" }[acimaConfirma.tipo]}
+          confirmarLabel={salvando ? "Salvando…" : { testar: "Testar", voltar: "Voltar", aprovar: "Atualizar preço salvo" }[acimaConfirma.tipo]}
+          onConfirm={() =>
+            acimaConfirma.tipo === "testar"
+              ? testarAcima(acimaConfirma.linha, acimaConfirma.preco)
+              : acimaConfirma.tipo === "voltar"
+                ? voltarAoAlvo(acimaConfirma.linha)
+                : aprovarAcima(acimaConfirma.linha)
+          }
+          onCancel={() => setAcimaConfirma(null)}
+        >
+          <p className="modal-msg">
+            {acimaConfirma.tipo === "testar" &&
+              `${acimaConfirma.linha.produto.nome}: ${BRL(acimaConfirma.linha.est.alvo)} → ${BRL(acimaConfirma.preco)} por ${regras.acimaDias} dias. O preço salvo continua ${BRL(acimaConfirma.linha.est.alvo)} até você aprovar. Atualize o anúncio com o preço original e a promo da tela.`}
+            {acimaConfirma.tipo === "voltar" &&
+              `Volta pra ${BRL(acimaConfirma.linha.est.alvo)}. Um novo teste acima do alvo só é sugerido daqui a ${regras.acimaBloqueioDias} dias.`}
+            {acimaConfirma.tipo === "aprovar" &&
+              `O preço salvo de ${acimaConfirma.linha.produto.nome} em ${acimaConfirma.linha.canal.nome} muda de ${BRL(acimaConfirma.linha.est.alvo)} para ${BRL(acimaConfirma.linha.est.preco)} — vira o novo alvo e aparece em Produtos precificados, Anunciar e no resto do app.`}
+          </p>
+        </ConfirmDialog>
+      )}
 
       <div className={`panel${verRegras ? "" : " panel-recolhido"}`}>
         <h3 className="section-title">
@@ -362,9 +478,24 @@ export default function Crescimento({ onToast }) {
   );
 }
 
-function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklist }) {
+const TESTE_TAG = {
+  observando: ["neutro", (t) => `observando orgânico · dia ${t.dia} de ${t.de}`],
+  recomendado: ["warn", () => "teste de lançamento recomendado"],
+  andamento: ["acc", (t) => `teste em andamento · ${t.diasRestantes}d`],
+  concluido: ["good", (t) => `teste concluído${t.resultado ? ` · ${t.resultado.titulo.toLowerCase()}` : ""}`],
+};
+function TagTeste({ teste }) {
+  const c = TESTE_TAG[teste?.status];
+  if (!c) return null;
+  return <span className={`tag-teste tag-${c[0]}`}>{c[1](teste)}</span>;
+}
+
+function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklist, acoesTeste, onAcima }) {
   const e = l.est;
-  const noAlvo = e.fase.chave === "alvo";
+  const noAlvo = e.noAlvo;
+  const [orcEdit, setOrcEdit] = useState("");
+  const t = e.teste;
+  const checklistIncompleto = ["foto", "uso", "titulo"].filter((k) => !l.r.checklist?.[k]);
   const maxD = Math.max(...e.degraus, 1);
   const minD = Math.min(...e.degraus, maxD);
   const alt = (d) => 26 + ((d - minD) / Math.max(0.01, maxD - minD)) * 84;
@@ -384,7 +515,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
         <span className="acoes-detalhe">
           <button type="button" className="btn btn-mini" onClick={onEditar}>Editar degraus</button>
           <button type="button" className="btn btn-mini" onClick={() => onMudar(-1)} disabled={e.i === 0}>↓ Voltar degrau</button>
-          <button type="button" className={`btn btn-mini${e.sugestao.chave === "subir" && e.sugestao.saltos !== 2 ? " primary" : ""}`} onClick={() => onMudar(1)} disabled={noAlvo}>
+          <button type="button" className={`btn btn-mini${e.sugestao.chave === "subir" && e.sugestao.saltos !== 2 ? " primary" : ""}`} onClick={() => onMudar(1)} disabled={noAlvo || !e.proximo}>
             ↑ Subir{e.proximo ? ` para ${BRL(e.proximo)}` : ""}
           </button>
           {e.sugestao.saltos === 2 && (
@@ -401,10 +532,10 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
           <h4 className="sub-h">Plano de preço</h4>
           <div className="ladder">
             {e.degraus.map((d, k) => (
-              <div key={k} className={`deg${k < e.i ? " ok" : k === e.i ? " at" : ""}${k === e.degraus.length - 1 ? " alvo" : ""}`}>
+              <div key={k} className={`deg${k < e.i ? " ok" : k === e.i ? " at" : ""}${Math.abs(d - e.alvo) < 0.005 ? " alvo" : ""}${d > e.alvo + 0.004 ? " acima" : ""}`}>
                 <div className="bar" style={{ height: alt(d) }} />
                 <b>{virgula(d)}</b>
-                <span className="lu">{k === e.degraus.length - 1 ? "alvo · " : ""}{BRL(e.lucroEm(d))}</span>
+                <span className="lu">{Math.abs(d - e.alvo) < 0.005 ? "alvo · " : d > e.alvo + 0.004 ? "teste · " : ""}{BRL(e.lucroEm(d))}</span>
               </div>
             ))}
           </div>
@@ -458,7 +589,81 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
             </>
           )}
 
-          {e.check && (
+          {e.acima && !e.acima.ativo && (
+            <>
+              <h4 className="sub-h">Acima do alvo <span className="muted-cel">(teste controlado, até +{Math.round(regras.acimaMax * 100)}%)</span></h4>
+              <ul className="lista-portoes">
+                {e.acima.criterios.map((c) => (
+                  <li key={c.rotulo} className={c.ok ? "ok" : "no"}>
+                    <span className="ic">{c.ok ? "✓" : "✗"}</span>
+                    {c.rotulo}
+                    <span className="val">{c.valor}</span>
+                  </li>
+                ))}
+              </ul>
+              {e.acima.prox ? (
+                <div className={`alerta ${e.acima.pronto ? "alerta-good" : "alerta-neutro"}`}>
+                  <b>
+                    {e.acima.pronto ? "Vale testar" : "Quando os critérios fecharem"}: {BRL(e.alvo)} → {BRL(e.acima.prox)}
+                  </b>
+                  Lucro por venda {BRL(e.acima.lucroAgora)} → {BRL(e.acima.lucroProx)}.
+                  {e.acima.podePerder != null && ` Dá pra perder até ${Math.floor(e.acima.podePerder * 100)}% das vendas e ainda lucrar o mesmo no total.`} O teste dura {regras.acimaDias} dias e o preço salvo só muda se você aprovar.
+                  {e.acima.pronto && (
+                    <div style={{ marginTop: 8 }}>
+                      <button type="button" className="btn btn-mini primary" onClick={() => onAcima("testar", e.acima.prox)}>
+                        Testar {BRL(e.acima.prox)}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="hint" style={{ margin: 0 }}>Já está no teto de +{Math.round(regras.acimaMax * 100)}% acima do alvo.</p>
+              )}
+            </>
+          )}
+          {e.acima?.ativo && (
+            <>
+              <h4 className="sub-h">Teste acima do alvo ({BRL(e.alvo)} → {BRL(e.preco)})</h4>
+              <ul className="lista-portoes">
+                <li className={e.acima.diasFaltam === 0 ? "ok" : "no"}>
+                  <span className="ic">{e.acima.diasFaltam === 0 ? "✓" : "…"}</span>
+                  {regras.acimaDias} dias de teste
+                  <span className="val">{e.acima.diasFaltam === 0 ? "completo" : `faltam ${e.acima.diasFaltam}`}</span>
+                </li>
+                <li className={e.acima.lucroDepois != null && e.acima.lucroAntes != null && e.acima.lucroDepois >= e.acima.lucroAntes ? "ok" : "no"}>
+                  <span className="ic">{e.acima.lucroDepois != null && e.acima.lucroAntes != null && e.acima.lucroDepois >= e.acima.lucroAntes ? "✓" : "✗"}</span>
+                  Lucro médio por semana ≥ no alvo
+                  <span className="val">
+                    {e.acima.lucroDepois != null ? BRL(e.acima.lucroDepois) : "—"} vs {e.acima.lucroAntes != null ? BRL(e.acima.lucroAntes) : "—"}
+                  </span>
+                </li>
+              </ul>
+              {e.acima.aprovado ? (
+                <div className="alerta alerta-good">
+                  <b>Aprovado: {BRL(e.preco)} lucra mais que o alvo</b>
+                  Atualize o preço salvo pra {BRL(e.preco)} (vira o novo alvo){e.acima.proximo ? ` — depois o app pode sugerir testar ${BRL(e.acima.proximo)}` : ""}.
+                  <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button type="button" className="btn btn-mini primary" onClick={() => onAcima("aprovar")}>Atualizar preço salvo para {BRL(e.preco)}</button>
+                    <button type="button" className="btn btn-mini" onClick={() => onAcima("voltar")}>Voltar ao alvo</button>
+                  </div>
+                </div>
+              ) : e.acima.reprovado ? (
+                <div className="alerta alerta-bad">
+                  <b>Lucrou menos que no alvo: voltar</b>O preço mais alto derrubou as vendas mais do que compensou. Volte pra {BRL(e.alvo)}; novo teste só daqui a {regras.acimaBloqueioDias} dias.
+                  <div style={{ marginTop: 8 }}>
+                    <button type="button" className="btn btn-mini primary" onClick={() => onAcima("voltar")}>Voltar ao alvo</button>
+                  </div>
+                </div>
+              ) : (
+                <p className="hint" style={{ margin: 0 }}>
+                  Registre as semanas normalmente. Em {e.acima.diasFaltam} dia(s) o app compara o lucro com o do alvo.{" "}
+                  <button type="button" className="link-btn" onClick={() => onAcima("voltar")}>voltar agora</button>
+                </p>
+              )}
+            </>
+          )}
+
+          {e.check && !e.acimaAtivo && (
             <>
               <h4 className="sub-h">Check da última subida ({virgula(e.check.de)} → {virgula(e.check.para)})</h4>
               {e.check.pendente ? (
@@ -494,6 +699,92 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
         </div>
 
         <div>
+          {["observando", "recomendado", "andamento", "concluido"].includes(t.status) && (
+            <div className={`teste-card teste-${t.status}`}>
+              <h4 className="sub-h">
+                Teste de lançamento <TagTeste teste={t} />
+              </h4>
+              {(t.status === "observando" || t.status === "recomendado") && (
+                <>
+                  <p className="teste-texto">
+                    {t.status === "observando"
+                      ? `Anúncio novo, sem vendas: os primeiros ${t.de} dias são só orgânico — use o Impulsionar nos horários de pico e o tráfego de item novo. Se chegar a ${regras.testeDispensaVendas} vendas, o teste nem é preciso.`
+                      : `Passaram ${regras.testeObservarDias} dias com menos de ${regras.testeDispensaVendas} vendas. Um Ads com orçamento fechado compra as primeiras vendas e avaliações — é investimento, não lucro.`}
+                  </p>
+                  <div className="teste-linha">
+                    <div className="field" style={{ margin: 0 }}>
+                      <label>Orçamento (R$)</label>
+                      <input type="number" min="0" step="5" value={orcEdit || t.orcSugerido} onChange={(ev) => setOrcEdit(ev.target.value)} style={{ width: 110 }} />
+                    </div>
+                    <span className="muted-cel">
+                      sugerido {BRL(t.orcSugerido)} = {regras.testeMeta} vendas × lucro no alvo ({BRL(e.lucroAlvo)}) · ≈ {BRL((num(orcEdit) || t.orcSugerido) / regras.testeDias)}/dia por {regras.testeDias} dias
+                    </span>
+                  </div>
+                  {checklistIncompleto.length > 0 && (
+                    <div className="alerta alerta-warn" style={{ marginTop: 8 }}>
+                      <b>Anúncio incompleto</b>
+                      Falta marcar no checklist: {checklistIncompleto.map((k) => CHECKLIST_ANUNCIO.find((c) => c[0] === k)?.[1]).join(", ")}. Você pagaria pra mandar gente pra um anúncio que ainda não convence.
+                    </div>
+                  )}
+                  <div className="teste-botoes">
+                    <button type="button" className={`btn btn-mini${t.status === "recomendado" ? " primary" : ""}`} onClick={() => acoesTeste.iniciar(l, num(orcEdit) || t.orcSugerido)}>
+                      {t.status === "observando" ? "Iniciar teste agora" : "Iniciar teste"}
+                    </button>
+                    <button type="button" className="btn btn-mini" onClick={() => acoesTeste.pular(l)}>Pular</button>
+                  </div>
+                </>
+              )}
+              {(t.status === "andamento" || t.status === "concluido") && (
+                <>
+                  <div className="teste-metricas">
+                    <div>
+                      <small>Investido</small>
+                      <b>{BRL(t.gasto)}</b>
+                      <span className="muted-cel"> de {BRL(t.orc)}</span>
+                      <div className="barra-progresso"><i style={{ width: `${Math.min(100, (t.gasto / Math.max(1, t.orc)) * 100)}%` }} /></div>
+                    </div>
+                    <div>
+                      <small>Vendas via Ads</small>
+                      <b>{t.vendasAds}</b>
+                      <span className="muted-cel"> de {t.meta}</span>
+                      <div className="barra-progresso"><i style={{ width: `${Math.min(100, (t.vendasAds / Math.max(1, t.meta)) * 100)}%` }} /></div>
+                    </div>
+                    <div>
+                      <small>Cliques</small>
+                      <b>{t.cliques}</b>
+                    </div>
+                    <div>
+                      <small>Custo por venda</small>
+                      <b style={{ color: t.custoVenda == null ? undefined : e.lucroAlvo > 0 && t.custoVenda <= e.lucroAlvo ? "var(--good)" : "var(--bad)" }}>{t.custoVenda != null ? BRL(t.custoVenda) : "—"}</b>
+                      <span className="muted-cel"> (lucro no alvo {BRL(e.lucroAlvo)})</span>
+                    </div>
+                  </div>
+                  {t.status === "andamento" ? (
+                    <p className="teste-texto">
+                      {t.diasRestantes} dia(s) restante(s) · registre gasto, cliques e vendas via Ads no “Registrar semana” (pode ser todo dia). O teste acaba sozinho ao bater {t.meta} vendas, gastar o orçamento, passar {t.prazo} dias ou chegar a {regras.testeCliquesSemVenda} cliques sem venda.
+                    </p>
+                  ) : (
+                    t.resultado && (
+                      <div className={`alerta alerta-${{ good: "good", warn: "warn", bad: "bad" }[t.resultado.tom]}`}>
+                        <b>{t.resultado.titulo}</b>
+                        {t.resultado.texto}
+                      </div>
+                    )
+                  )}
+                  <div className="teste-botoes">
+                    {t.status === "concluido" && !t.salvoConcluido && (
+                      <button type="button" className="btn btn-mini primary" onClick={() => acoesTeste.concluir(l)}>Concluir e desligar o Ads</button>
+                    )}
+                    {t.status === "andamento" && (
+                      <button type="button" className="btn btn-mini" onClick={() => acoesTeste.concluir(l)}>Encerrar teste agora</button>
+                    )}
+                    <button type="button" className="link-btn" onClick={() => acoesTeste.reabrir(l)}>refazer</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <h4 className="sub-h">
             O que digitar em {l.canal.nome} <span className="muted-cel">({anuncio?.desconto > 0.005 ? `riscado fixo do alvo, desconto ${Math.round(anuncio.desconto * 100)}% — só a promo muda` : "canal sem desconto configurado"})</span>
           </h4>
@@ -565,11 +856,18 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
               </div>
             </div>
           )}
+          {t.status === "andamento" ? (
+            <div className="alerta alerta-neutro">
+              <b>Teste de lançamento em andamento</b>Durante o teste vale o orçamento fechado acima, não a régua do ROAS. Depois dele, a régua volta a valer.
+            </div>
+          ) : (
           <div className={`alerta alerta-${{ good: "good", warn: "warn", bad: "bad" }[ads.tom] || "neutro"}`}>
             <b>{ads.titulo}</b>
             {ads.texto}
             {ads.chave === "inviavel" && e.viavelEm && e.viavelEm.preco !== e.preco ? ` Ads passa a ser viável a partir de ${BRL(e.viavelEm.preco)} (ROAS mínimo ${virgula(e.viavelEm.roasMin, 1)}).` : ""}
+            {ads.chave === "inviavel" && (t.status === "observando" || t.status === "recomendado") ? " A exceção é o teste de lançamento acima: orçamento fechado pra comprar as primeiras vendas." : ""}
           </div>
+          )}
           <p className="hint" style={{ margin: 0 }}>Lembrete: não suba de degrau e mexa no Ads na mesma semana.</p>
         </div>
       </div>
@@ -625,6 +923,17 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
     ["saltoVendas", "Salto de 2 degraus com vendas ≥ (× o portão)", 0.5],
     ["diasAposSalto", "Dias parado depois de salto ou de voltar", 1],
     ["diasCampanha", "Não subir nos dias antes de campanha", 1],
+    ["testeObservarDias", "Teste: dias só no orgânico antes de recomendar", 1],
+    ["testeDispensaVendas", "Teste: vendas que dispensam o teste", 1],
+    ["testeMeta", "Teste: meta de vendas", 1],
+    ["testeMin", "Teste: orçamento mínimo (R$)", 5],
+    ["testeMax", "Teste: orçamento máximo (R$)", 5],
+    ["testeDias", "Teste: prazo (dias)", 1],
+    ["testeCliquesSemVenda", "Teste: cliques sem venda = revisar anúncio", 5],
+    ["acimaDias", "Acima do alvo: dias no alvo / duração do teste", 1],
+    ["acimaSemanas", "Acima do alvo: semanas de vendas estáveis", 1],
+    ["acimaMax", "Acima do alvo: máximo acima (%)", 1, true],
+    ["acimaBloqueioDias", "Acima do alvo: espera se falhar (dias)", 1],
   ];
   const [f, setF] = useState(() => Object.fromEntries(campos.map(([k, , , pct]) => [k, String(pct ? Math.round(regras[k] * 1000) / 10 : regras[k])])));
   const [salvando, setSalvando] = useState(false);
@@ -901,7 +1210,7 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
 function RegistrarSemanaDialog({ linhas, onToast, onClose }) {
   const { lojaId } = useLoja();
   const [data, setData] = useState(hojeISO());
-  const [f, setF] = useState(() => Object.fromEntries(linhas.map((l) => [l.r.id, { vendas: "", avaliacoes: "", nota: "", ruins: "", gasto: "", adsVendas: "" }])));
+  const [f, setF] = useState(() => Object.fromEntries(linhas.map((l) => [l.r.id, { vendas: "", avaliacoes: "", nota: "", ruins: "", gasto: "", cliques: "", adsVendas: "" }])));
   const [salvando, setSalvando] = useState(false);
   const set = (id, k) => (e) => setF((p) => ({ ...p, [id]: { ...p[id], [k]: e.target.value } }));
   async function salvar() {
@@ -922,13 +1231,14 @@ function RegistrarSemanaDialog({ linhas, onToast, onClose }) {
           avaliacoes_ruins: Math.round(num(v.ruins)),
           ads_gasto: v.gasto === "" ? null : num(v.gasto),
           ads_vendas: v.adsVendas === "" ? null : Math.round(num(v.adsVendas)),
+          ...(v.cliques !== "" ? { ads_cliques: Math.round(num(v.cliques)) } : {}),
         };
       });
     if (!linhasSalvar.length) return onToast?.("Preencha pelo menos um produto");
     setSalvando(true);
     const { error } = await supabase.from("rampa_registros").insert(linhasSalvar);
     setSalvando(false);
-    if (error) return onToast?.(`Não foi possível salvar: ${error.message}`);
+    if (error) return onToast?.(/ads_cliques/.test(error.message) ? "Falta rodar o supabase/schema_v34.sql no Supabase (coluna de cliques)" : `Não foi possível salvar: ${error.message}`);
     onToast?.(`Semana registrada (${linhasSalvar.length} produto${linhasSalvar.length > 1 ? "s" : ""})`);
     onClose();
   }
@@ -953,6 +1263,7 @@ function RegistrarSemanaDialog({ linhas, onToast, onClose }) {
             <div className="field"><label>Nota</label><input type="text" inputMode="decimal" value={f[l.r.id].nota} onChange={set(l.r.id, "nota")} /></div>
             <div className="field"><label>1–2★ na semana</label><input type="number" min="0" value={f[l.r.id].ruins} onChange={set(l.r.id, "ruins")} /></div>
             <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={f[l.r.id].gasto} onChange={set(l.r.id, "gasto")} /></div>
+            <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={f[l.r.id].cliques} onChange={set(l.r.id, "cliques")} /></div>
             <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={f[l.r.id].adsVendas} onChange={set(l.r.id, "adsVendas")} /></div>
           </div>
         </div>

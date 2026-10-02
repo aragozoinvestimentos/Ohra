@@ -1074,7 +1074,7 @@ tr.linha-clicavel:hover td { background: var(--surface-3); }
 .modal-box .busca-item-lista { position: static; margin-top: 4px; box-shadow: none; max-height: 240px; }
 .bloco-semana { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
 .bloco-semana-titulo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; margin-bottom: 6px; }
-.grid-semana { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 10px; }
+.grid-semana { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 10px; }
 .grid-semana .field { margin-bottom: 6px; }
 .grid-semana .field label { font-size: 11.5px; }
 .rampa-tag { display: inline-block; margin-top: 3px; font-size: 10.5px; padding: 1px 6px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; white-space: nowrap; }
@@ -1111,3 +1111,25 @@ tr.linha-clicavel:hover td { background: var(--surface-3); }
 .panel.panel-recolhido > h3:first-child { border-bottom: 0; margin-bottom: -14px; }
 .campanha-linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-soft); margin: -2px 0 8px; }
 .campanha-linha input { width: auto; padding: 4px 8px; font-size: 12.5px; }
+
+/* Crescimento — teste de lançamento e acima do alvo */
+.tag-teste { display: inline-block; margin-top: 4px; font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 5px; white-space: nowrap; }
+.tag-teste.tag-neutro { background: var(--surface-2); color: var(--ink-soft); }
+.tag-teste.tag-warn { background: var(--warn-soft); color: var(--warn); }
+.tag-teste.tag-acc { background: var(--accent-soft); color: var(--accent-ink); }
+.tag-teste.tag-good { background: var(--good-soft); color: var(--good); }
+.sub-h .tag-teste { margin: 0 0 0 6px; text-transform: none; letter-spacing: 0; vertical-align: 1px; }
+.teste-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; background: var(--surface-3); }
+.teste-card.teste-recomendado { border-color: color-mix(in oklab, var(--warn) 40%, var(--border)); background: color-mix(in oklab, var(--warn-soft) 55%, var(--surface)); }
+.teste-card.teste-andamento { border-color: color-mix(in oklab, var(--accent) 40%, var(--border)); }
+.teste-card .sub-h { margin-top: 0; }
+.teste-texto { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 8px; line-height: 1.5; }
+.teste-linha { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.teste-botoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.teste-metricas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin-bottom: 8px; }
+.teste-metricas small { display: block; color: var(--ink-faint); font-size: 11px; }
+.teste-metricas b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.teste-metricas .barra-progresso { width: 100%; }
+.ladder .deg.acima .bar { background: var(--accent2, #b0503f); opacity: .55; box-shadow: none; }
+.ladder .deg.acima.at .bar { opacity: 1; }
+@media (max-width: 1100px) { .grid-semana { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
