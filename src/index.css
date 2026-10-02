@@ -1133,3 +1133,20 @@ tr.linha-clicavel:hover td { background: var(--surface-3); }
 .ladder .deg.acima .bar { background: var(--accent2, #b0503f); opacity: .55; box-shadow: none; }
 .ladder .deg.acima.at .bar { opacity: 1; }
 @media (max-width: 1100px) { .grid-semana { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Impacto da mudança de custo */
+.impacto-custo { border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 10px 14px; margin: 14px 0; background: var(--surface-3); font-size: 12.5px; }
+.impacto-custo.bom { border-color: color-mix(in oklab, var(--good) 35%, var(--border)); background: color-mix(in oklab, var(--good-soft) 60%, var(--surface)); }
+.impacto-custo.pior { border-color: color-mix(in oklab, var(--warn) 35%, var(--border)); background: color-mix(in oklab, var(--warn-soft) 55%, var(--surface)); }
+.impacto-custo.ruim { border-color: color-mix(in oklab, var(--bad) 40%, var(--border)); background: color-mix(in oklab, var(--bad-soft) 55%, var(--surface)); }
+.impacto-topo { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; }
+.impacto-topo > b { font-size: 13px; }
+.impacto-topo .variacoes-toggle { margin-left: auto; }
+.impacto-custo .pos, .custo-mudou.pos b { color: var(--good); }
+.impacto-custo .neg, .custo-mudou.neg b { color: var(--bad); }
+.impacto-alerta { margin-top: 6px; color: var(--bad); font-weight: 600; }
+.impacto-custo .table-wrap { margin-top: 8px; }
+.impacto-custo tr.linha-ruim td { background: var(--bad-soft); }
+.mv-impacto { padding: 0 18px; }
+.mv-impacto .impacto-custo { margin: 8px 0 0; }
+.custo-mudou { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px; white-space: normal; line-height: 1.3; max-width: 150px; margin-left: auto; }

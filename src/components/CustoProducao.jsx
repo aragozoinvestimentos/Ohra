@@ -11,7 +11,9 @@ import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import CanalTag from "./CanalTag.jsx";
 import ResumoFixo from "./ResumoFixo.jsx";
 import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
-import { useRankingData } from "../hooks/useRankingData.js";
+import ImpactoCusto from "./ImpactoCusto.jsx";
+import { useEscada } from "../hooks/useEscada.js";
+import { impactoProduto } from "../lib/impactoCusto.js";
 import { configEscada, precoParaMargem, r90up } from "../lib/escada.js";
 
 const STORAGE_KEY = "ohra:custo-producao:v2";
@@ -36,7 +38,8 @@ function loadInitial() {
 export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMateriais }) {
   const { lojaId, lojas } = useLoja();
   // Materiais vêm do store único do catálogo (mesma lista ao vivo do app todo).
-  const { canais: canaisVivos, itens: itensVivos, produtos: produtosVivos, materiais, carregando: materiaisCarregando } = useRankingData();
+  const dadosEscada = useEscada();
+  const { canais: canaisVivos, itens: itensVivos, produtos: produtosVivos, materiais, carregando: materiaisCarregando } = dadosEscada;
   const [f, setF] = useState(loadInitial);
   const [produtos, setProdutos] = useState([]);
   const [produtoId, setProdutoId] = useState("");
@@ -171,6 +174,39 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   const sugeridoCanal = pSug != null ? r90up(pSug) : null;
   const minimoCanal = pZero != null ? Math.ceil(pZero * 100 - 1e-6) / 100 : null;
 
+  // Simulação × produto cadastrado: quanto muda o lucro de tudo que usa ele.
+  const impacto = (() => {
+    if (!produtoId) return null;
+    const atual = dadosEscada.produtos.find((p) => p.id === produtoId);
+    if (!atual) return null;
+    const novoRaw = {
+      ...atual,
+      producao_detalhe: {
+        ...(atual.producao_detalhe || {}),
+        comprimento: n(f.comprimento),
+        diametro: n(f.diametro),
+        densidade: n(f.densidade),
+        tempo: n(f.tempo),
+        materialNome: materialSelecionado?.nome || "",
+        kwh: n(f.kwh),
+        consumo: n(f.consumo),
+        falhasPct: n(f.falhasPct),
+        manutencaoPct: n(f.manutencaoPct),
+        acabamentoPct: n(f.acabamentoPct),
+        consumiveisItens: f.consumiveisItens,
+        maquina: n(f.maquina),
+        prazoMeses: n(f.prazoMeses),
+        horasDia: n(f.horasDia),
+        diasMes: n(f.diasMes),
+        modelagem: n(f.modelagem),
+      },
+      pecas_por_impressao: Math.max(1, n(f.pecasPorPlaca) || 1),
+      material_nome: materialSelecionado?.nome || atual.material_nome,
+      peso_g: isFinite(Number(resultado.peso)) && Number(resultado.peso) > 0 ? Math.round(Number(resultado.peso)) : atual.peso_g,
+    };
+    return impactoProduto({ produtoId, produtoNovoRaw: novoRaw, dados: dadosEscada, cfgDoProduto: dadosEscada.cfgDoProduto });
+  })();
+
   if (materiaisCarregando) {
     return (
       <div className="panel">
@@ -252,6 +288,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       ]}
     />
     </ResumoFixo>
+    {produtoId && <ImpactoCusto impacto={impacto} titulo="Impacto se atualizar o produto" />}
     <div className="grid2">
       <div>
         <div className="panel">

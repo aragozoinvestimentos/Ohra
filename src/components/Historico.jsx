@@ -43,6 +43,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [recemSalvoId, setRecemSalvoId] = useState(null);
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos"); // todos | Produto | Kit
+  const [soCustoMudou, setSoCustoMudou] = useState(false);
   const [expandidos, setExpandidos] = useState(() => new Set()); // produtos com variações abertas
   const [expandirTudo, setExpandirTudo] = useState(false);
   const [clonarAlvo, setClonarAlvo] = useState(null); // item original sendo clonado
@@ -218,6 +219,18 @@ export default function Historico({ onEditarCompleto, onToast }) {
     // taxas atuais do canal — nunca o número congelado no dia do "Salvar".
     return linha ? precoSalvoAoVivo(linha, item.custoTotal, canalObj, item.peso) : null;
   }
+
+  // Custo de hoje × custo gravado no dia do "Salvar" (mudou a fabricação, a
+  // embalagem ou o preço médio do filamento): quanto isso mexeu no lucro.
+  function mudancaCusto(item, canalObj) {
+    const p = precoDe(item, canalObj);
+    if (!p || p.custo_salvo == null || p.lucro_salvo == null) return null;
+    const dCusto = Number(item.custoTotal) - Number(p.custo_salvo);
+    if (Math.abs(dCusto) < 0.05) return null;
+    // só o efeito do custo (mudança de taxa do canal fica de fora — essa já aparece no ↻)
+    return { dCusto, dLucro: -dCusto };
+  }
+  const itemCustoMudou = (item) => canais.some((c) => mudancaCusto(item, c));
 
   // Canais onde esse item já tem preço salvo — são as opções válidas de
   // "origem" pra clonar preço pra outro canal ainda vazio.
@@ -463,6 +476,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const topo = itens
     .filter((item) => item.tipo !== "Variação")
     .filter((item) => filtroTipo === "todos" || item.tipo === filtroTipo)
+    .filter((item) => !soCustoMudou || itemCustoMudou(item) || (item.tipo === "Produto" && variacoesDe(item.id.split(":")[1]).some(itemCustoMudou)))
     .filter((item) => bate(item) || (item.tipo === "Produto" && variacoesDe(item.id.split(":")[1]).some(bate)));
   const linhasTabela = topo.flatMap((item) => {
     if (item.tipo !== "Produto") return [{ item }];
@@ -587,6 +601,14 @@ export default function Historico({ onEditarCompleto, onToast }) {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            className={`btn btn-mini${soCustoMudou ? " primary" : ""}`}
+            title="Itens cujo custo mudou desde que o preço foi salvo (fabricação, embalagem, frete ou preço médio do filamento)"
+            onClick={() => setSoCustoMudou((v) => !v)}
+          >
+            Custo mudou
+          </button>
           {totalVariacoes > 0 && (
             <button type="button" className="btn btn-mini" onClick={() => { setExpandirTudo((v) => !v); setExpandidos(new Set()); }}>
               {expandirTudo ? "Recolher variações" : "Abrir todas as variações"}
@@ -714,6 +736,15 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 {p.desatualizado && <span className="ponto-recalc" aria-label="recalculado">↻</span>}
                                 {p.lucro != null ? BRL(p.lucro) : "—"} · {p.margem != null ? PCT(p.margem) : "—"}
                               </div>
+                              {mudancaCusto(item, c) && (() => {
+                                const m = mudancaCusto(item, c);
+                                const f = (v) => `${v >= 0 ? "+" : "−"}${BRL(Math.abs(v))}`;
+                                return (
+                                  <div className={`custo-mudou ${m.dLucro >= 0 ? "pos" : "neg"}`} title="Desde o dia em que este preço foi salvo">
+                                    custo {f(m.dCusto)} → lucro <b>{f(m.dLucro)}</b>/venda
+                                  </div>
+                                );
+                              })()}
                               {rampaDe(item, c) != null && (
                                 <span className="rampa-tag" title="Em rampa de preço (Vender → Crescimento): o preço salvo aqui é o alvo">em rampa · vendendo {BRL(rampaDe(item, c))}</span>
                               )}

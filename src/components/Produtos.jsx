@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import ImpactoCusto from "./ImpactoCusto.jsx";
+import { useEscada } from "../hooks/useEscada.js";
+import { impactoProduto } from "../lib/impactoCusto.js";
 import { arredondarPreco } from "../lib/format.js";
 import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
 import { lerUltimosPercentuais, salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
@@ -286,6 +289,26 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.producao_detalhe, form.pecas_por_impressao, filamentos, custoConsumiveisDetalhe]);
 
+  // Impacto da edição no lucro do produto, das variações e dos kits (ao vivo).
+  const dadosVivos = useEscada();
+  const impacto = useMemo(() => {
+    if (!editandoId) return null;
+    const atual = dadosVivos.produtos.find((p) => p.id === editandoId);
+    if (!atual) return null;
+    const receita = (form.embalagemItens || []).filter((it) => it.itemId).map((it) => ({ embalagem_id: it.itemId, quantidade: Number(it.quantidade) || 0 }));
+    const novoRaw = {
+      ...atual,
+      custo_producao: resultadoDetalhe ? resultadoDetalhe.total : parseFloat(form.custo_producao) || 0,
+      frete_padrao: parseFloat(form.frete_padrao) || 0,
+      embalagem_padrao: usaReceitaEmbalagem ? custoEmbalagemReceita : parseFloat(form.embalagem_padrao) || 0,
+      producao_detalhe: form.producao_detalhe || null,
+      pecas_por_impressao: Math.max(1, parseInt(form.pecas_por_impressao, 10) || 1),
+      peso_g: form.peso_g === "" || form.peso_g == null ? null : Number(String(form.peso_g).replace(",", ".")) || null,
+    };
+    return impactoProduto({ produtoId: editandoId, produtoNovoRaw: novoRaw, receitaNova: receita, dados: dadosVivos, cfgDoProduto: dadosVivos.cfgDoProduto });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editandoId, form, resultadoDetalhe, usaReceitaEmbalagem, custoEmbalagemReceita, dadosVivos.produtos, dadosVivos.itens, dadosVivos.precos, dadosVivos.canais]);
+
   function limpar() {
     setForm(VAZIO);
     setEditandoId(null);
@@ -379,7 +402,14 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       salvarUltimosPercentuais(form.producao_detalhe);
     }
     setSalvando(false);
-    onToast(eraNovo ? "Produto cadastrado" : "Produto atualizado");
+    const mediaImpacto = impacto?.relevante && impacto.linhas.length ? impacto.linhas.reduce((s, l) => s + l.diferenca, 0) / impacto.linhas.length : null;
+    onToast(
+      eraNovo
+        ? "Produto cadastrado"
+        : mediaImpacto != null
+          ? `Produto atualizado · lucro ${mediaImpacto >= 0 ? "+" : "−"}R$ ${Math.abs(mediaImpacto).toFixed(2).replace(".", ",")}/venda em média (${impacto.itensAfetados} item(ns))`
+          : "Produto atualizado"
+    );
     setProdutoCriado(eraNovo && produtoId ? { id: produtoId, nome } : null);
     limpar();
   }
@@ -653,6 +683,8 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
             <div className="hint">Cadastre o produto primeiro — depois, ao editar, dá pra criar variações (kit 2, kit 3…).</div>
           </>
         )}
+
+        {editandoId && <ImpactoCusto impacto={impacto} titulo="Impacto da mudança (se salvar)" />}
 
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button className="btn primary" onClick={salvar} disabled={salvando}>

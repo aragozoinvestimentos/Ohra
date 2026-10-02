@@ -7,6 +7,9 @@ import { calcVariacao, catalogoEmbalagens, formatarPeso, resumoProduto } from ".
 import SeletorItens from "./SeletorItens.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
+import ImpactoCusto from "./ImpactoCusto.jsx";
+import { useEscada } from "../hooks/useEscada.js";
+import { impactoVariacao } from "../lib/impactoCusto.js";
 
 // Seção "Variações de quantidade" do cadastro de produto + tela suspensa de
 // edição de cada variação. A variação herda tudo do produto (passado em
@@ -248,6 +251,12 @@ export function EditorVariacao({ formInicial, variacao, produto, produtoEmbalage
   const [salvando, setSalvando] = useState(false);
   const produtoId = produto?.id;
   const ctx = { materiais, embalagens, produtoEmbalagens };
+  const dadosVivos = useEscada();
+  const impacto = useMemo(
+    () => (form?.id ? impactoVariacao({ variacaoId: form.id, variacaoNova: registroDoForm(form, { lojaId, produtoId }), dados: dadosVivos, cfgDoProduto: dadosVivos.cfgDoProduto }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [form, dadosVivos.itens, dadosVivos.precos, dadosVivos.canais]
+  );
   const pai = useMemo(() => (produto ? resumoProduto(produto, { embalagens, produtoEmbalagens }) : null), [produto, embalagens, produtoEmbalagens]);
   const filamentos = (materiais || []).filter((m) => (m.tipo || "filamento") === "filamento");
   const catalogoEmb = catalogoEmbalagens(embalagens);
@@ -269,7 +278,13 @@ export function EditorVariacao({ formInicial, variacao, produto, produtoEmbalage
       : await supabase.from("produto_variacoes").insert(registro);
     setSalvando(false);
     if (error) return onToast?.(`Não foi possível salvar a variação: ${error.message}`);
-    onToast?.(form.id ? "Variação atualizada" : "Variação criada");
+    onToast?.(
+      form.id
+        ? impacto?.relevante && impacto.linhas.length
+          ? `Variação atualizada · lucro ${impacto.linhas[0].diferenca >= 0 ? "+" : "−"}${BRL(Math.abs(impacto.linhas.reduce((s, l) => s + l.diferenca, 0) / impacto.linhas.length))}/venda`
+          : "Variação atualizada"
+        : "Variação criada"
+    );
     onClose();
   }
   const setFormFechar = (v) => (v === null ? onClose() : setForm(v));
@@ -290,6 +305,11 @@ export function EditorVariacao({ formInicial, variacao, produto, produtoEmbalage
                 {salvando ? "Salvando…" : "Salvar variação"}
               </button>
             </div>
+            {impacto?.relevante && (
+              <div className="mv-impacto">
+                <ImpactoCusto impacto={impacto} titulo="Impacto desta mudança na variação" />
+              </div>
+            )}
             <div className="mv-body">
               <div className="mv-form">
                 <div className="mv-sec">

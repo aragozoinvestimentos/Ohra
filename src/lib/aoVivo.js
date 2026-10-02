@@ -75,6 +75,7 @@ export function precoSalvoAoVivo(linha, custoTotalAtual, canal, pesoG = null) {
       return {
         ...linha,
         custo_total: custoAtual,
+        custo_salvo: linha.custo_total, // custo gravado no dia do "Salvar"
         lucro: r.lucro,
         margem: r.margem,
         lucro_salvo: linha.lucro,
@@ -87,7 +88,7 @@ export function precoSalvoAoVivo(linha, custoTotalAtual, canal, pesoG = null) {
     const delta = custoAtual - num(linha.custo_total);
     if (Math.abs(delta) < 0.005) return { ...linha, desatualizado: false };
     const lucro = num(linha.lucro) - delta;
-    return { ...linha, custo_total: custoAtual, lucro, margem: lucro / preco, lucro_salvo: linha.lucro, margem_salva: linha.margem, desatualizado: true };
+    return { ...linha, custo_total: custoAtual, custo_salvo: linha.custo_total, lucro, margem: lucro / preco, lucro_salvo: linha.lucro, margem_salva: linha.margem, desatualizado: true };
   }
   return { ...linha, desatualizado: false };
 }
