@@ -33,7 +33,7 @@ export default function CompraMaterialDialog({ materialIdInicial, lancamento, gr
     data: completar ? lancamento.data_realizada || lancamento.data_prevista : inicial?.data || hoje,
     contar: true,
     parcelado: false,
-    parcelas: 2,
+    parcelas: "",
     data1: completar ? lancamento.data_prevista : inicial?.data || hoje,
     pago: inicial?.pago ?? true,
     observacao: inicial?.observacao || "",
@@ -70,14 +70,16 @@ export default function CompraMaterialDialog({ materialIdInicial, lancamento, gr
     () => (precoCompra != null && f.contar ? precoMedio([...compras, { data: f.data, quantidade: qtd, valor_total: valor, contar_media: true, criado_em: "~" }]) : mediaAntes),
     [compras, precoCompra, f.contar, f.data, qtd, valor, mediaAntes]
   );
-  const nParc = Math.max(2, Math.min(36, Math.round(num(f.parcelas)) || 2));
-  const valoresParc = f.parcelado && valor > 0 ? dividirParcelas(valor, nParc) : null;
+  const parcInformadas = Math.round(num(f.parcelas));
+  const nParc = Math.max(2, Math.min(36, parcInformadas || 2));
+  const valoresParc = f.parcelado && valor > 0 && parcInformadas >= 2 ? dividirParcelas(valor, nParc) : null;
 
   async function salvar() {
     if (!material) return onToast?.("Escolha o material");
     if (!(qtd > 0)) return onToast?.(`Informe a quantidade (${unidade})`);
     if (!(valor > 0)) return onToast?.("Informe o valor pago");
     if (!f.data) return onToast?.("Informe a data da compra");
+    if (!completar && f.parcelado && !(parcInformadas >= 2 && parcInformadas <= 36)) return onToast?.("Informe o nº de parcelas (2 a 36)");
     setSalvando(true);
     const parcelas = completar ? grupo?.length || 1 : f.parcelado ? nParc : 1;
     const { data: compra, error } = await supabase
@@ -228,7 +230,7 @@ export default function CompraMaterialDialog({ materialIdInicial, lancamento, gr
                 <div className="row2">
                   <div className="field">
                     <label>Nº de parcelas</label>
-                    <input type="number" min="2" max="36" step="1" value={f.parcelas} onChange={set("parcelas")} />
+                    <input type="number" min="2" max="36" step="1" placeholder="ex: 10" value={f.parcelas} onChange={set("parcelas")} />
                   </div>
                   <div className="field">
                     <label>Data da 1ª parcela</label>

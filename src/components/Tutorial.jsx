@@ -147,128 +147,126 @@ function ChecklistProgresso() {
 const ETAPAS = [
   {
     titulo: "1. Configuração",
-    intro: "Antes de qualquer coisa, defina em qual loja você está trabalhando e quais canais de venda ela usa.",
+    intro: "Defina a loja e os canais de venda (Configuração → Lojas, canais e taxas).",
     passos: [
       {
         icone: "🏬",
-        nome: "Lojas",
+        nome: "Lojas e metas de preço",
         texto:
-          'Cadastre cada loja/negócio que você usa no app (ex: "Ohra - 3D"). Cada loja pode ter um PIN de 4 números — se tiver, o app pede o PIN toda vez que você entra ou troca pra ela, e nada daquela loja aparece antes disso. Materiais, produtos, preços e histórico são todos separados por loja: troque a loja atual no seletor no topo do menu lateral.',
+          "Cada loja tem seus próprios materiais, produtos, preços e caixa, e pode ter um PIN. Em Lojas → “Metas de preço” ficam a margem desejada, a margem mínima e o lucro mínimo por venda em R$ — o piso de todas as sugestões do app.",
       },
       {
         icone: "🛒",
-        nome: "Canais",
+        nome: "Canais e taxas",
         texto:
-          'As regras de cada canal de venda. Shopee, Mercado Livre, TikTok Shop e Shein seguem as faixas/comissão oficiais de cada plataforma, calculadas automaticamente pelo app (toda loja nova já nasce com Shopee, Mercado Livre e Shein cadastrados — TikTok Shop é opcional, use o botão "+ Adicionar"). Pra um canal próprio (site, WhatsApp etc.) cadastre comissão e taxa fixa na mão em "Adicionar canal próprio". Imposto, custos fixos e % de Ads são configurados por canal, oficial ou próprio — o % de Ads só é usado pra mostrar o lucro com Ads no Comparativo, não muda o preço de venda.',
-      },
-      {
-        icone: "📋",
-        nome: "Taxas Marketplace",
-        texto:
-          "Referência somente-leitura com a tabela oficial de comissão/taxa fixa de Shopee, Mercado Livre, TikTok Shop e Shein (com a data em que cada uma foi validada contra o site oficial), mais os canais próprios que você cadastrou em Canais — útil pra conferir de vez em quando se as faixas usadas no app ainda batem com a realidade.",
+          "Shopee, Mercado Livre, TikTok Shop e Shein usam as taxas oficiais (calculadas pelo app, conferidas em Taxas Marketplace). Em cada canal você define imposto, custos fixos e o desconto padrão do anúncio (o % do preço riscado). Canal próprio (site, WhatsApp) tem comissão e taxa digitadas.",
       },
     ],
   },
   {
     titulo: "2. Cadastros",
-    intro:
-      "É aqui que fica tudo que se repete de produto pra produto — cadastre uma vez e reaproveite no cálculo de custo. Materiais, Embalagens, Produtos e Kits ficam dentro da aba \"Cadastros\", em sub-abas.",
+    intro: "O que se repete de produto pra produto — cadastre uma vez e o app usa em tudo, sempre com o preço atual (“ao vivo”).",
     passos: [
       {
         icone: "🧵",
-        nome: "Materiais (Fabricação)",
+        nome: "Materiais e compras",
         texto:
-          'O que entra na fabricação da peça. Tipo "Filamento" é precificado por kg (PLA, PETG etc.). Tipo "Consumível" é precificado por unidade — cola, lixa, spray, tinta, o que for gasto aos poucos e não entra na receita de peso da peça.',
+          "Cadastre cada TIPO de material uma vez (PLA comum, PLA Silk, PETG…; consumível por unidade). Comprou? “+ Compra” na linha: informe quantidade e valor pago (com frete/desconto), à vista ou parcelado. O preço/kg vira a média das 3 últimas compras, todos os produtos atualizam sozinhos e a saída entra no Fluxo de Caixa. Renomear um material atualiza os produtos que usam ele.",
       },
       {
         icone: "📦",
         nome: "Embalagens",
-        texto:
-          "O que vai junto no envio, fora da peça em si: caixa, plástico bolha, envelope plástico, envelope de segurança, mimo etc. Cadastre nome, preço e unidade — depois é só montar a receita de embalagem de cada produto ou kit puxando daqui.",
+        texto: "Caixa, saquinho, etiqueta, mimo… com preço, unidade e peso. A receita de embalagem de cada produto/kit puxa daqui.",
       },
       {
         icone: "🧱",
-        nome: "Produtos",
+        nome: "Produtos e variações",
         texto:
-          "O cadastro central de cada produto que você vende. Além do nome e custo, dá pra montar a receita de itens de embalagem (quanto de cada item cadastrado acima esse produto gasta pra ser enviado) — o total substitui o campo manual de embalagem e atualiza sozinho se o preço de um item mudar. Esse cadastro é usado em praticamente toda aba do app. Pra ver o lucro por canal de tudo que está cadastrado, use o Ranking por Retorno; pra ver preços reais já definidos por canal, use Produtos precificados. Vende o mesmo produto em quantidade (kit 2, kit 3…)? Ao editar o produto, use “Variações de quantidade”: cada variação herda tudo do produto e você personaliza só o que muda (imprimir junto na mesma chapa, caixa maior, peso) — sem cadastrar outro produto.",
+          "Nome, SKU (o mesmo das plataformas), material, receita de embalagem e peso. Vende em quantidade (kit 2, kit 3)? Use “Variações de quantidade” no produto: cada uma herda tudo e você muda só o que for diferente (chapa, caixa, peso).",
       },
       {
         icone: "🎁",
         nome: "Kits",
-        texto:
-          'Combos de produtos já cadastrados. O custo de fabricação do kit é a soma do custo de cada produto incluso, mas a embalagem do kit é independente — nunca é a soma automática das embalagens de cada produto (às vezes cabe tudo numa caixa só). Use o botão "Sugerir com base nos produtos escolhidos" como ponto de partida e ajuste à mão.',
-      },
-      {
-        icone: "💰",
-        nome: "Produtos precificados",
-        texto:
-          'Fica no menu logo abaixo de "Cadastros", mas é sobre preço, não sobre cadastro-base — por isso vale um destaque à parte (o nome anterior dessa tela era "Produtos precificados"). É uma grade: cada linha é um produto ou kit cadastrado, cada coluna é um canal cadastrado, e cada célula mostra o preço, lucro e margem mais recentes salvos pra essa combinação. Ela se preenche sozinha quando você clica em "Salvar" na Precificação por Canal — célula vazia é só uma combinação que ainda não foi calculada/salva. Em cada célula já preenchida dá pra usar o ✎ pra corrigir o valor na mão, ou o × pra excluir (sempre pede confirmação antes).',
+        texto: "Produtos diferentes num anúncio só (ex.: Gato + Cachorro). A embalagem do kit é própria; o app sugere o preço por canal comparando com as peças vendidas separadas.",
       },
     ],
   },
   {
     titulo: "3. Precificar",
-    intro: "Com os cadastros prontos, calcule o custo de uma peça e o preço ideal pra vender.",
+    intro: "Custo da peça → preço por canal → anúncio pronto. Precificação por Canal tem as sub-abas na ordem de uso (1º a 4º).",
     passos: [
       {
         icone: "🧮",
         nome: "Custo de Produção",
         texto:
-          "Ponto de partida de tudo: digite os dados que o fatiador (slicer) mostra antes de imprimir — comprimento de filamento, tempo de impressão etc. O app calcula o peso da peça e soma material, energia, manutenção, falhas, consumíveis e o rateio (ROI) da impressora até chegar no custo de produção total. Dá pra escolher um produto já cadastrado no topo pra carregar o detalhamento dele e reajustar, ou simular do zero. Dali dá pra levar o custo direto pra Precificação por Canal, ou salvar a peça como Produto (se veio de um produto já cadastrado, isso atualiza ele em vez de criar um novo).",
+          "Dados do fatiador (comprimento, tempo, peças por chapa) + energia, manutenção, falhas, acabamento, consumíveis e o ROI da impressora → custo por peça e o sugerido na Shopee. “⇄ comparar filamentos” mostra quanto a peça custaria em cada filamento. Salve como produto ou leve pra Precificação.",
       },
       {
         icone: "🏷️",
-        nome: "Precificação por Canal",
+        nome: "1º Avulso",
         texto:
-          'Pega um custo (escolhendo um produto ou kit já cadastrado, vindo da Custo de Produção, ou digitado na mão) e calcula o preço de venda pra um canal específico — Shopee, Mercado Livre, TikTok Shop, Shein ou um canal próprio seu — dada a margem líquida que você quer garantir. O app já desconta comissão, taxa fixa, imposto (o seu, sobre a venda) e custos extras daquele canal antes de sugerir o preço. O resultado destaca três números: custo total do produto, preço definido para a plataforma e quanto cai no seu bolso. Escolhendo um produto/kit cadastrado, o botão "Salvar" grava esse preço em Produtos precificados — se já existir um preço salvo pra essa mesma combinação, o app avisa antes, porque salvar de novo substitui o valor anterior.',
+          "Escolha o produto (ou kit) e o canal: o app calcula o preço pela margem desejada já com as taxas reais, mostra o mínimo sem prejuízo e o mínimo aceitável, e “Salvar” grava em Produtos precificados. O botão “⇄ Filamentos” no custo compara filamentos; em kits, compara com as peças separadas.",
       },
       {
-        icone: "📊",
-        nome: "Comparativo",
+        icone: "🪜",
+        nome: "2º Por quantidade",
+        texto: "A escada de preços (kit 2, 3, 4…) a partir do avulso: preço por peça sempre caindo e você mantendo o lucro por peça. Crie a variação direto daqui e revise os insumos dela.",
+      },
+      {
+        icone: "📝",
+        nome: "3º Ficha do anúncio e 4º Anunciar",
         texto:
-          "Mostra todos os canais ativos lado a lado pro mesmo produto, com o termômetro de margem (verde/vermelho conforme a meta) e o lucro com e sem Ads — bom pra decidir onde vale mais a pena vender aquela peça.",
+          "A Ficha monta as tabelas pra criar o anúncio (variações, SKUs, preço original, promo) no formato de cada canal. Anunciar lista, por canal, o preço original (riscado) e a promo pro cliente pagar o preço real, e marca o que mudou pra você atualizar na plataforma. Comparar canais mostra o mesmo produto em todos os canais.",
+      },
+      {
+        icone: "💰",
+        nome: "Produtos precificados",
+        texto: "A grade produto × canal com o preço salvo, lucro e margem recalculados com o custo e as taxas de hoje (↻ = mudou desde que foi salvo), sugeridos de variações/kits e “⇄ filamentos”.",
       },
     ],
   },
   {
     titulo: "4. Vender",
-    intro: "Ferramentas pro dia a dia de atender pedido e rodar promoção.",
+    intro: "Orçamentos, promoções e o crescimento no orgânico.",
     passos: [
       {
         icone: "🧾",
         nome: "Orçamento",
-        texto:
-          'Três sub-abas: "Encomenda avulsa" é pra venda direta, fora de marketplace, sem comissão nem taxa fixa de plataforma — puxe um produto cadastrado ou preencha na mão pra algo sob medida, e o "Salvar" grava numa lista própria. "Encomenda em volume" calcula o preço por lote, diluindo o frete entre as peças (quanto mais peças no lote, menor o frete por unidade). "Orçamentos salvos" lista tudo que foi salvo em "Encomenda avulsa", com editar nome e excluir.',
+        texto: "Encomenda avulsa (venda direta, sem taxa de plataforma) e encomenda em volume (frete diluído no lote), com lista de orçamentos salvos.",
       },
       {
-        icone: "🎁",
+        icone: "🏷",
         nome: "Promoções",
+        texto: "Simula desconto, progressivo por quantidade, combo, venda combinada, frete grátis e liquidação com piso de margem, e avisa o % certo a lançar na campanha da plataforma.",
+      },
+      {
+        icone: "📈",
+        nome: "Crescimento (rampa de preço)",
         texto:
-          "Simula o impacto de uma promoção no lucro, a partir do preço normal já calculado pro canal escolhido (mesmas taxas de Configuração → Canais). Seis formatos pra escolher: desconto direto, progressivo por quantidade, combo (leve mais pague menos), venda combinada (mistura produtos e/ou kits diferentes num pedido só), frete grátis subsidiado, e liquidação com piso de margem (você define a margem mínima aceitável e o app calcula o maior desconto possível sem furar esse piso).",
+          "Entre perto do 0 a 0 pra ganhar vendas e avaliações e suba em degraus pequenos até o preço salvo (o alvo, que não muda). “+ Iniciar rampa” → registre a semana (vendas, avaliações, nota, Ads) → o app mostra os portões e sugere subir, segurar ou voltar, quanto o Ads precisa render, o que digitar no anúncio e um checklist pra melhorar a conversão.",
       },
     ],
   },
   {
     titulo: "5. Gestão",
-    intro: "Pra olhar o negócio de um passo atrás: onde focar produção e divulgação, e sua capacidade real de produzir.",
+    intro: "O dinheiro de verdade e onde focar.",
     passos: [
       {
         icone: "💵",
         nome: "Fluxo de Caixa",
         texto:
-          "O dinheiro de verdade: registre entradas (repasses dos marketplaces, encomendas) e saídas (filamento, embalagem, anúncios, equipamento…). O que ainda vai cair ou sair fica como “previsto” até você marcar como recebido/pago. Contas que se repetem todo mês (energia, parcela da impressora) entram como recorrentes. A projeção mostra o saldo mês a mês por até 12 meses, somando previstos, recorrentes e uma estimativa de vendas/custos (média dos últimos 3 meses, se você não preencher). O faturamento e o resultado reais do mês também aparecem em Metas.",
+          "Entradas e saídas previstas/realizadas, recorrentes mensais e parcelados (N× com uma parcela por mês; “Editar” muda o vencimento de todas). Comece pelo saldo inicial. A projeção soma tudo mês a mês; deixe as estimativas em 0 se não quiser chute. Saída de material sem dados da compra aparece num aviso pra completar.",
+      },
+      {
+        icone: "🎯",
+        nome: "Metas",
+        texto: "Meta de faturamento e lucro do mês, com o real vindo do Fluxo de Caixa.",
       },
       {
         icone: "🏆",
-        nome: "Ranking por Retorno",
+        nome: "Ranking, Otimização e Registro de Impressões",
         texto:
-          'Lista todo produto e kit cadastrado ordenado pelo lucro líquido por unidade. Quando já existe um preço salvo pra aquele item naquele canal (em Produtos precificados), usa o lucro/margem reais desse preço — marcado "salvo". Quando ainda não existe, estima a uma lucratividade padrão fixa só pra dar uma referência — marcado "estimado" (pra simular outra meta, use Precificação por Canal ou Comparativo). Não é ranking de venda/popularidade, é só "onde vale mais a pena focar". Filtros pra ver só Produtos ou só Kits, e pra ver o retorno no melhor canal de cada item ou num canal específico.',
-      },
-      {
-        icone: "📈",
-        nome: "Otimização",
-        texto:
-          "Analisa sua capacidade real de produção: quantas impressoras você tem e quantas horas elas rodam por dia (isso roda sozinho), e quanto do seu próprio tempo (mão de obra) cada peça consome pra trocar impressão, acabar e embalar. Com isso o app mostra se o gargalo é impressora ou é você, e quanto dá pra produzir por dia.",
+          "Ranking: itens por lucro (salvo ou estimado). Otimização: capacidade de produção e se o gargalo é impressora ou mão de obra. Registro de Impressões: taxa de falha real e o lote máximo seguro.",
       },
     ],
   },
@@ -276,24 +274,28 @@ const ETAPAS = [
 
 const GLOSSARIO = [
   {
-    termo: "Markup",
-    def: 'Multiplicador aplicado sobre o custo total pra chegar num preço — 100% de markup significa vender pelo dobro do custo. É uma conta rápida, sem considerar taxa de canal; pra preço final de Shopee/ML, use a Precificação por Canal.',
+    termo: "Preço real",
+    def: "O que o cliente paga. É o único preço que o app calcula e salva; o preço original (riscado) e a promo % só servem pro anúncio.",
   },
   {
-    termo: "Margem líquida (lucratividade)",
-    def: "O quanto sobra de lucro sobre o preço de venda, já descontado tudo (custo, comissão, taxa fixa, imposto, Ads etc.). É a meta que você define, e é ela que decide o preço sugerido.",
+    termo: "Margem líquida",
+    def: "O que sobra de lucro sobre o preço, já descontado custo, comissão, taxa fixa, imposto e custos do canal.",
   },
   {
-    termo: "Comissão e taxa fixa",
-    def: "O que Shopee, Mercado Livre, TikTok Shop e Shein descontam de cada venda, seguindo as faixas oficiais de cada plataforma — calculadas automaticamente a partir do preço (e, no Mercado Livre, da categoria). Confira os valores usados em Configuração → Taxas Marketplace.",
+    termo: "0 a 0 (mínimo sem prejuízo)",
+    def: "O preço em que o lucro é zero com as taxas do canal. Abaixo dele, cada venda dá prejuízo.",
   },
   {
-    termo: "% de Ads",
-    def: "Quanto você costuma investir em anúncio patrocinado dentro do canal, como % do preço. O app usa isso só pra mostrar o lucro \"com Ads\" no Comparativo — o preço de venda não muda.",
+    termo: "Mínimo aceitável",
+    def: "O maior entre a margem mínima e o lucro mínimo em R$ da loja — nenhuma sugestão do app fica abaixo dele.",
+  },
+  {
+    termo: "ROAS",
+    def: "Receita que o Ads trouxe ÷ o que você gastou. O ROAS mínimo (preço ÷ lucro) é o empate: abaixo dele o Ads dá prejuízo.",
   },
   {
     termo: "ROI da máquina",
-    def: "Rateio do valor pago na impressora entre as peças produzidas até você reaver o investimento no prazo que definir — quanto mais peças/horas de uso, menor esse custo por peça.",
+    def: "Rateio do valor da impressora entre as peças até pagar o investimento no prazo que você definir.",
   },
 ];
 

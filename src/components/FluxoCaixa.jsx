@@ -71,7 +71,7 @@ const novoForm = (tipo) => ({
   recorrente: false,
   recorrencia_ate: "",
   parcelado: false,
-  parcelas: 2,
+  parcelas: "",
   observacao: "",
   modeloId: null, // confirmando uma ocorrência de recorrente
 });
@@ -323,7 +323,9 @@ export default function FluxoCaixa({ onToast }) {
       observacao: form.observacao.trim() || null,
     };
     const parcelado = !form.id && !form.modeloId && !form.recorrente && form.parcelado;
-    const nParc = Math.max(2, Math.min(60, Math.round(Number(form.parcelas)) || 2));
+    const parcInformadas = Math.round(Number(form.parcelas));
+    if (parcelado && !(parcInformadas >= 2 && parcInformadas <= 60)) return onToast?.("Informe o nº de parcelas (2 a 60)");
+    const nParc = Math.max(2, Math.min(60, parcInformadas || 2));
     setSalvando(true);
     const { error } = form.id
       ? await supabase.from("lancamentos_caixa").update(registro).eq("id", form.id)
@@ -919,12 +921,13 @@ export default function FluxoCaixa({ onToast }) {
           )}
           {form.parcelado && !form.recorrente && (() => {
             const total = Number(String(form.valor).replace(",", ".")) || 0;
-            const n = Math.max(2, Math.min(60, Math.round(Number(form.parcelas)) || 2));
-            const vals = total > 0 ? dividirParcelas(total, n) : null;
+            const informadas = Math.round(Number(form.parcelas));
+            const n = Math.max(2, Math.min(60, informadas || 2));
+            const vals = total > 0 && informadas >= 2 ? dividirParcelas(total, n) : null;
             return (
               <div className="field">
                 <label>Nº de parcelas</label>
-                <input type="number" min="2" max="60" step="1" value={form.parcelas} onChange={(e) => setForm((p) => ({ ...p, parcelas: e.target.value }))} />
+                <input type="number" min="2" max="60" step="1" placeholder="ex: 10" value={form.parcelas} onChange={(e) => setForm((p) => ({ ...p, parcelas: e.target.value }))} />
                 {vals && (
                   <div className="hint" style={{ margin: "4px 0 0" }}>
                     {n}× de {BRL(vals[n - 1])}

@@ -652,6 +652,7 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
   );
   const [degrausEdit, setDegrausEdit] = useState(editar ? editar.degraus.map((d) => virgula(num(d))) : null);
   const degrausTxt = degrausEdit ?? sugestao.map((d) => virgula(d));
+  const [novoDegrau, setNovoDegrau] = useState("");
   const [precoHoje, setPrecoHoje] = useState(editar ? virgula(num(editar.degraus[editar.degrau_atual])) : "");
   const [aval, setAval] = useState("");
   const [nota, setNota] = useState("");
@@ -674,6 +675,14 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
   }
   const listaFinal = alvo > 0 ? montarLista() : [];
   const ph = cent(num(precoHoje)) || listaFinal[0] || 0;
+
+  function adicionarDegrau() {
+    const v = cent(num(novoDegrau));
+    if (!(v > 0)) return;
+    if (v >= alvo - 0.004) return onToast?.("O degrau tem que ser menor que o alvo (o preço salvo)");
+    setDegrausEdit([...listaFinal.slice(0, -1), v].sort((a, b) => a - b).map((x) => virgula(x)));
+    setNovoDegrau("");
+  }
   const idxHoje = listaFinal.length ? Math.max(0, listaFinal.findIndex((d) => d >= ph - 0.004)) : 0;
 
   async function salvar() {
@@ -774,7 +783,7 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
           {!editar && (
             <div className="row2">
               <div className="field">
-                <label>Preço que já está vendendo hoje</label>
+                <label>Preço que já está vendendo hoje <span className="muted-cel">(ou clique num degrau)</span></label>
                 <input type="text" inputMode="decimal" placeholder={listaFinal[0] ? virgula(listaFinal[0]) : ""} value={precoHoje} onChange={(e) => setPrecoHoje(e.target.value)} />
               </div>
               <div className="field">
@@ -791,31 +800,61 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
               </div>
             </div>
           )}
-          <div className="field">
-            <label>Degraus (até {Math.round(regras.passo * 100)}%, finais ,49/,99 — edite à vontade; o alvo é sempre o último)</label>
-            <div className="degraus-edit">
-              {degrausTxt.map((d, k) => (
-                <span key={k} className="degrau-input">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={d}
-                    onChange={(e) => setDegrausEdit(degrausTxt.map((x, j) => (j === k ? e.target.value : x)))}
-                  />
-                  <button type="button" className="del" title="Tirar degrau" onClick={() => setDegrausEdit(degrausTxt.filter((_, j) => j !== k))}>×</button>
-                </span>
-              ))}
-              <button type="button" className="btn btn-mini" onClick={() => setDegrausEdit([...degrausTxt, ""])}>+ degrau</button>
-              <button type="button" className="link-btn" onClick={() => setDegrausEdit(null)}>sugerir de novo</button>
+          <div className="field" style={{ marginBottom: 6 }}>
+            <label>
+              Degraus <span className="muted-cel">(até {Math.round(regras.passo * 100)}%, finais ,49/,99 · o alvo é sempre o último)</span>
+            </label>
+            <div className="previa-degraus editavel">
+              {listaFinal.map((d, k) => {
+                const ultimo = k === listaFinal.length - 1;
+                const atual = editar ? Math.abs(d - num(editar.degraus[editar.degrau_atual])) < 0.005 : k === idxHoje;
+                return (
+                  <span key={`${d}-${k}`} className={`chip-degrau${atual ? " at" : ""}${ultimo ? " alvo" : ""}`}>
+                    <button
+                      type="button"
+                      className="chip-degrau-valor"
+                      disabled={!!editar || ultimo}
+                      title={editar ? undefined : ultimo ? "Alvo (preço salvo)" : "Estou vendendo neste preço hoje"}
+                      onClick={() => setPrecoHoje(virgula(d))}
+                    >
+                      {virgula(d)}
+                      {ultimo ? " alvo" : ""}
+                    </button>
+                    {!ultimo && !atual && (
+                      <button
+                        type="button"
+                        className="chip-degrau-x"
+                        title="Tirar este degrau"
+                        onClick={() => setDegrausEdit(listaFinal.slice(0, -1).filter((_, j) => j !== k).map((x) => virgula(x)))}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
             </div>
-          </div>
-          <div className="previa-degraus">
-            {listaFinal.map((d, k) => (
-              <span key={k} className={`chip-degrau${k === (editar ? null : idxHoje) ? " at" : ""}${k === listaFinal.length - 1 ? " alvo" : ""}`}>
-                {virgula(d)}
-                {k === listaFinal.length - 1 ? " (alvo)" : ""}
-              </span>
-            ))}
+            <div className="degraus-acoes">
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="novo degrau, ex: 13,79"
+                value={novoDegrau}
+                onChange={(e) => setNovoDegrau(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    adicionarDegrau();
+                  }
+                }}
+              />
+              <button type="button" className="btn btn-mini" onClick={adicionarDegrau} disabled={!(num(novoDegrau) > 0)}>
+                + adicionar
+              </button>
+              <button type="button" className="link-btn" onClick={() => setDegrausEdit(null)}>
+                sugerir de novo
+              </button>
+            </div>
           </div>
           <p className="hint" style={{ margin: "4px 0 0" }}>
             {!editar && <>Começa no degrau destacado ({BRL(listaFinal[idxHoje])}). Os portões contam a partir de hoje. </>}

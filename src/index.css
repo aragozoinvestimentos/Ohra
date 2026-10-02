@@ -1059,13 +1059,19 @@ tr.linha-clicavel:hover td { background: var(--surface-3); }
 .checklist-anuncio input { margin-top: 3px; }
 .checklist-anuncio small { display: block; color: var(--ink-faint); font-size: 11.5px; }
 .pad-painel { padding: 0; }
-.degraus-edit { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.degrau-input { display: inline-flex; align-items: center; gap: 2px; }
-.degrau-input input { width: 74px; text-align: right; }
-.previa-degraus { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
-.chip-degrau { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--surface-2); font-variant-numeric: tabular-nums; }
-.chip-degrau.at { background: var(--accent); color: #fff; font-weight: 600; }
-.chip-degrau.alvo { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.previa-degraus { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.chip-degrau { display: inline-flex; align-items: center; font-size: 12.5px; border-radius: 7px; background: var(--surface-2); font-variant-numeric: tabular-nums; box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+.chip-degrau-valor { font: inherit; border: 0; background: none; color: inherit; padding: 4px 9px; cursor: pointer; }
+.chip-degrau-valor:disabled { cursor: default; }
+.chip-degrau-valor:not(:disabled):hover { background: var(--accent-soft); color: var(--accent-ink); }
+.chip-degrau-x { font: inherit; border: 0; background: none; color: var(--ink-faint); padding: 4px 7px 4px 2px; cursor: pointer; }
+.chip-degrau-x:hover { color: var(--bad); }
+.chip-degrau.at { background: var(--accent); color: #fff; font-weight: 600; box-shadow: none; }
+.chip-degrau.alvo { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); font-weight: 600; }
+.degraus-acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.degraus-acoes input { width: 170px; }
+/* lista do BuscaItem dentro de janela suspensa: empurra o conteúdo em vez de ser cortada */
+.modal-box .busca-item-lista { position: static; margin-top: 4px; box-shadow: none; max-height: 240px; }
 .bloco-semana { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
 .bloco-semana-titulo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; margin-bottom: 6px; }
 .grid-semana { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 10px; }
