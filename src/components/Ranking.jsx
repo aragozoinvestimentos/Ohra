@@ -6,6 +6,8 @@ import { supabase } from "../lib/supabaseClient.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
+import { useRampas } from "../hooks/useRampas.js";
+import AvisoRampa from "./AvisoRampa.jsx";
 
 // Ranking por retorno: pra cada produto E kit cadastrado, olha o lucro
 // líquido por unidade (quanto cai no bolso de verdade, já descontado tudo,
@@ -27,6 +29,7 @@ export default function Ranking() {
     setCanalFiltro("melhor");
   }, [lojaId]);
 
+  const { rampas } = useRampas();
   const ranking = calcularRanking(itens, canais, { canalFiltro, tipoFiltro, precos, margemPct: margemLoja }).filter((linha) => {
     const alvo = busca.trim().toLowerCase();
     if (!alvo) return true;
@@ -44,6 +47,7 @@ export default function Ranking() {
 
   return (
     <div>
+      <AvisoRampa rampas={rampas} />
       <div className="panel">
         <h3 className="section-title">
           Ranking por retorno

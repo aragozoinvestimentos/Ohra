@@ -14,6 +14,7 @@ import TelaDescanso from "./components/TelaDescanso.jsx";
 import Historico from "./components/Historico.jsx";
 import Tutorial from "./components/Tutorial.jsx";
 import Configuracao from "./components/Configuracao.jsx";
+import Crescimento from "./components/Crescimento.jsx";
 import FluxoCaixa from "./components/FluxoCaixa.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
 import LojaGate from "./components/LojaGate.jsx";
@@ -57,6 +58,7 @@ const GRUPOS = [
     tabs: [
       { key: "orcamento", label: "Orçamento", sub: "Encomendas avulsas e em volume" },
       { key: "promocoes", label: "Promoções", sub: "Simule descontos antes de publicar" },
+      { key: "crescimento", label: "Crescimento", sub: "Rampa de preço no orgânico, portões e Ads" },
     ],
   },
   {
@@ -328,6 +330,10 @@ export default function App() {
 
         <section className={`view ${tab === "promocoes" ? "active" : ""}`}>
           <Promocoes onToast={showToast} />
+        </section>
+
+        <section className={`view ${tab === "crescimento" ? "active" : ""}`}>
+          <Crescimento key={lojaId || "sem-loja"} onToast={showToast} />
         </section>
 
         <section className={`view ${tab === "caixa" ? "active" : ""}`}>

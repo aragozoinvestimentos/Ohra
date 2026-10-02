@@ -49,6 +49,12 @@ const PATHS = {
       <path d="M9 7h6M9 11h6" />
     </>
   ),
+  crescimento: (
+    <>
+      <path d="M3 17l5-5 4 4 8-8" />
+      <path d="M14 8h6v6" />
+    </>
+  ),
   promocoes: (
     <>
       <path d="M19 5 5 19" />

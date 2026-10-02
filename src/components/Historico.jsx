@@ -15,6 +15,7 @@ import { itemTipoDoId, formatarPeso } from "../lib/variacoes.js";
 import { precoSalvoAoVivo } from "../lib/aoVivo.js";
 import CanalTag from "./CanalTag.jsx";
 import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
+import { useRampas } from "../hooks/useRampas.js";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
 // instantâneo do que foi salvo em Precificação por Canal, sem ligação real
@@ -29,7 +30,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
   const { itens, canais, carregando: carregandoBase, escada, precos: precosVivos, cfgLoja } = useEscada();
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
-  const [filamentosAlvo, setFilamentosAlvo] = useState(null); // id do item com a janela ⇄ Filamentos aberta
+  const [filamentosAlvo, setFilamentosAlvo] = useState(null);
+  const { rampas } = useRampas(); // id do item com a janela ⇄ Filamentos aberta
   const [excluirVariacao, setExcluirVariacao] = useState(null); // item "v:<id>" // { item, canal, sugerido, linha }
   const [salvandoAplicar, setSalvandoAplicar] = useState(false);
   const [precos, setPrecos] = useState([]);
@@ -193,6 +195,17 @@ export default function Historico({ onEditarCompleto, onToast }) {
       return;
     }
     onToast(`${a.item.nomeVariacao || a.item.nome}: ${BRL(a.linha.sugerido)} salvo em ${a.canal.nome}`);
+  }
+
+  // Rampa de preço (aba Crescimento): só informa em que degrau o produto está
+  // vendendo — o preço salvo (alvo) e os números da célula não mudam.
+  function rampaDe(item, canalObj) {
+    if (!item.id.startsWith("p:")) return null;
+    const r = rampas.find((x) => x.produto_id === item.id.slice(2) && x.canal_id === canalObj.id);
+    if (!r) return null;
+    const d = r.degraus || [];
+    const i = r.degrau_atual ?? 0;
+    return i < d.length - 1 ? Number(d[i]) : null;
   }
 
   function precoDe(item, canalObj) {
@@ -699,6 +712,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 {p.desatualizado && <span className="ponto-recalc" aria-label="recalculado">↻</span>}
                                 {p.lucro != null ? BRL(p.lucro) : "—"} · {p.margem != null ? PCT(p.margem) : "—"}
                               </div>
+                              {rampaDe(item, c) != null && (
+                                <span className="rampa-tag" title="Em rampa de preço (Vender → Crescimento): o preço salvo aqui é o alvo">em rampa · vendendo {BRL(rampaDe(item, c))}</span>
+                              )}
                               {item.pecas > 1 && p.lucro != null && (
                                 <div className="sub-num" title={`Lucro dividido pelas ${item.pecas} peças`}>{BRL(p.lucro / item.pecas)}/peça</div>
                               )}

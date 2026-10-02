@@ -10,6 +10,8 @@ import { somarMeses } from "../lib/fluxoCaixa.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
 import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
+import { useRampas } from "../hooks/useRampas.js";
+import AvisoRampa from "./AvisoRampa.jsx";
 
 const MESES_PT = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -35,6 +37,7 @@ function totalLucroItens(catalogo, itens) {
 // vender" com números que já refletem taxa de canal, imposto etc. de verdade).
 export default function Metas({ onToast }) {
   const margemLoja = useMargemDesejada();
+  const { rampas } = useRampas();
   const { lojaId } = useLoja();
   // Sem Supabase configurado não há nada pra carregar — inicializa já como
   // "não carregando" nesse caso (em vez de sincronizar isso depois, num
@@ -238,6 +241,7 @@ export default function Metas({ onToast }) {
 
   return (
     <>
+    <AvisoRampa rampas={rampas} />
     <Kpis
       itens={[
         {
