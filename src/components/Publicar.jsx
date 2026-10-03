@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
+import { useRampas } from "../hooks/useRampas.js";
 import { BRL } from "../lib/format.js";
 import { calcularAnuncio, anuncioMudou, descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
@@ -25,6 +26,47 @@ export default function Publicar({ onToast }) {
   const [salvando, setSalvando] = useState(false);
   const [abertos, setAbertos] = useState(() => new Set());
   const [descEdit, setDescEdit] = useState(null); // { chave, itemId, canalId, valor }
+  const { rampas } = useRampas();
+
+  // Rampa de preço (aba Crescimento) — só informativo, nenhum número da
+  // célula muda: durante a rampa o preço original (riscado) é o mesmo daqui
+  // e só o % da promo muda, conforme o degrau. Devolve o preço vendendo
+  // quando é diferente do salvo (abaixo do alvo ou testando acima).
+  function rampaVendendo(produtoId, canalId) {
+    const r = rampas.find((x) => x.produto_id === produtoId && x.canal_id === canalId);
+    if (!r) return null;
+    const atual = Number((r.degraus || [])[r.degrau_atual ?? 0]);
+    const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === produtoId && p.canal_id === canalId);
+    return atual > 0 && salvo && Math.abs(atual - Number(salvo.preco)) >= 0.005 ? { atual, salvo: Number(salvo.preco) } : null;
+  }
+  // Etiqueta da célula: produto em rampa mostra a promo do degrau; variação
+  // ou kit que leva um produto em rampa só aponta pra Crescimento.
+  function etiquetaRampa(l, canalId, x) {
+    if (l.tipo === "produto") {
+      const v = rampaVendendo(l.id, canalId);
+      if (!v) return null;
+      if (v.atual < v.salvo) {
+        // Canal sem desconto: a Crescimento manda digitar o preço do degrau direto.
+        if (!(x.desconto > 0.005))
+          return {
+            texto: `em rampa: preço atual ${BRL(v.atual)}`,
+            dica: `Em rampa de preço (Vender → Crescimento): no marketplace o preço é o do degrau (${BRL(v.atual)}), não o salvo. Ao chegar no alvo, fica igual ao daqui.`,
+          };
+        const promo = Math.max(0, Math.floor((1 - v.atual / x.original) * 100 + 1e-9));
+        return {
+          texto: `em rampa: promo atual ${promo}%`,
+          dica: `Em rampa de preço (Vender → Crescimento): vendendo ${BRL(v.atual)}. O preço original é o mesmo daqui; no marketplace use a promo do degrau (${promo}%), não a do alvo. Ao chegar no alvo, as duas ficam iguais.`,
+        };
+      }
+      return { texto: "testando acima do alvo", dica: `Em teste acima do alvo (Vender → Crescimento): vendendo ${BRL(v.atual)}. Veja o que digitar na aba Crescimento.` };
+    }
+    const pids = l.tipo === "variacao" ? [l.item.produtoId] : (l.item.componentes || []).map((c) => c.produtoId);
+    if (!pids.some((pid) => rampaVendendo(pid, canalId))) return null;
+    return {
+      texto: "produto em rampa: ver Crescimento",
+      dica: "Um produto deste item está em rampa de preço neste canal. Veja em Vender → Crescimento o que digitar enquanto ele não chega no alvo.",
+    };
+  }
 
   const linhas = useMemo(() => {
     const ordem = [];
@@ -305,6 +347,14 @@ export default function Publicar({ onToast }) {
                           )}
                         </span>
                         <span className="sub">cliente paga {BRL(x.clientePaga)}</span>
+                        {(() => {
+                          const et = etiquetaRampa(l, c.id, x);
+                          return et ? (
+                            <span className="rampa-tag" title={et.dica}>
+                              {et.texto}
+                            </span>
+                          ) : null;
+                        })()}
                         {x.salvo && x.mudou && (
                           <span className="sub">
                             era {BRL(Number(x.salvo.preco_original))} · {Number(x.salvo.promo)}%
