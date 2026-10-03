@@ -7,6 +7,9 @@ import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
 import { lerUltimosPercentuais, salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useCatalogo } from "../hooks/useCatalogo.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
+import { trocarLinhas } from "../lib/trocarLinhas.js";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import DetalhamentoCusto from "./DetalhamentoCusto.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -29,11 +32,10 @@ const VAZIO = {
 
 export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onProdutoCriado }) {
   const { lojaId } = useLoja();
-  const [produtos, setProdutos] = useState([]);
-  const [carregando, setCarregando] = useState(true);
-  const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
-  const [materiais, setMateriais] = useState([]);
-  const [kitsSku, setKitsSku] = useState([]); // só id/nome/sku, pra conferir SKU duplicado contra Kits também
+  // Produtos (crus, como estão no banco — o formulário edita os valores
+  // gravados), embalagens e materiais (receita e detalhamento) e kits (SKU
+  // duplicado) vêm do catálogo compartilhado: uma busca + um realtime.
+  const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, carregando } = useCatalogo();
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [detalheSalvo, setDetalheSalvo] = useState(null); // snapshot carregado do banco, só pra comparar "valor anterior"
@@ -41,105 +43,6 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   const [salvando, setSalvando] = useState(false);
   const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
   const [produtoCriado, setProdutoCriado] = useState(null); // { id, nome } — só depois de CADASTRAR um produto novo (não numa edição), pro atalho "Ir para Precificação por Canal"
-
-  useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
-    let ativo = true;
-    async function carregar() {
-      try {
-        let query = supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true });
-        if (lojaId) query = query.eq("loja_id", lojaId);
-        const { data, error } = await query;
-        if (!ativo) return;
-        if (!error) setProdutos(data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    }
-    carregar();
-    const canal = supabase
-      .channel("produtos-cadastro-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
-  // Catálogo de embalagens, pra escolher os itens da receita de cada produto.
-  useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      let query = supabase.from("embalagens").select("*").order("nome", { ascending: true });
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo) return;
-      if (!error) setEmbalagensCatalogo(data || []);
-    }
-    carregar();
-    const canal = supabase
-      .channel("produtos-embalagens-catalogo-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
-  // Catálogo de materiais, só pro Detalhamento do custo de produção (mesmas
-  // listas de filamento/consumível que a aba Custo de Produção usa).
-  useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      let query = supabase.from("materiais").select("*").order("nome", { ascending: true });
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo) return;
-      if (!error) setMateriais(data || []);
-    }
-    carregar();
-    const canal = supabase
-      .channel("produtos-materiais-catalogo-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "materiais" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
-  // Só nome/SKU dos Kits, pra conferir SKU duplicado contra os dois
-  // catálogos (Produtos e Kits) — SKU é pensado como identificador único
-  // pra qualquer item, não só dentro de Produtos.
-  useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      let query = supabase.from("kits").select("id, nome, sku");
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo) return;
-      if (!error) setKitsSku(data || []);
-    }
-    carregar();
-    const canal = supabase
-      .channel("produtos-kits-sku-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
 
   // Abre um produto específico pra edição vindo de outra aba (hoje: o ✎ de
   // "editar cadastro completo" em Produtos precificados) — mesma ação de clicar
@@ -384,18 +287,18 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     // Grava a receita de embalagem: apaga o que já existia e recria — lista
     // curta, mais simples e seguro que tentar diferenciar linha por linha.
     if (produtoId) {
-      await supabase.from("produto_embalagens").delete().eq("produto_id", produtoId);
       const linhas = (form.embalagemItens || [])
         .filter((it) => it.itemId)
         .map((it) => ({ produto_id: produtoId, embalagem_id: it.itemId, quantidade: Number(it.quantidade) || 0 }));
-      if (linhas.length > 0) {
-        const { error: erroReceita } = await supabase.from("produto_embalagens").insert(linhas);
-        if (erroReceita) {
-          setSalvando(false);
-          onToast(`Produto salvo, mas a receita de embalagem falhou: ${erroReceita.message}`);
-          limpar();
-          return;
-        }
+      // Grava a receita nova antes de apagar a antiga — se falhar, a antiga
+      // continua lá (antes apagava primeiro e o produto podia ficar sem receita).
+      const { error: erroReceita } = await trocarLinhas(supabase, "produto_embalagens", "produto_id", produtoId, linhas);
+      recarregarCatalogo();
+      if (erroReceita) {
+        setSalvando(false);
+        onToast(`Produto salvo, mas a receita de embalagem não foi atualizada (a anterior foi mantida): ${erroReceita.message}`);
+        limpar();
+        return;
       }
     }
     if (form.producao_detalhe) {

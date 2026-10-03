@@ -31,7 +31,14 @@ function hojeStr() {
 //    versão leve, só frase + versículo — some ao primeiro mexer do mouse.
 export default function TelaDescanso() {
   const margemLoja = useMargemDesejada();
-  const [modo, setModo] = useState(null); // null | "cheia" | "leve"
+  // null | "cheia" | "leve" — primeira abertura do dia já nasce "cheia".
+  const [modo, setModo] = useState(() => {
+    try {
+      return localStorage.getItem(CHAVE_ULTIMA_DATA) !== hojeStr() ? "cheia" : null;
+    } catch {
+      return null;
+    }
+  });
   const [versiculo] = useState(() => versiculoDoDia());
   const modoRef = useRef(null);
   const ultimaAtividadeRef = useRef(null);
@@ -44,23 +51,13 @@ export default function TelaDescanso() {
     modoRef.current = modo;
   }, [modo]);
 
-  // Primeira abertura/atualização do dia.
+  // Marca o dia como visto (a tela cheia só aparece na 1ª abertura do dia).
   useEffect(() => {
-    let ultima = null;
     try {
-      ultima = localStorage.getItem(CHAVE_ULTIMA_DATA);
+      localStorage.setItem(CHAVE_ULTIMA_DATA, hojeStr());
     } catch {
       // sem localStorage disponível — a tela cheia só não vai "lembrar" o
       // dia, sem problema nenhum além disso
-    }
-    const hoje = hojeStr();
-    if (ultima !== hoje) {
-      setModo("cheia");
-      try {
-        localStorage.setItem(CHAVE_ULTIMA_DATA, hoje);
-      } catch {
-        // idem
-      }
     }
   }, []);
 

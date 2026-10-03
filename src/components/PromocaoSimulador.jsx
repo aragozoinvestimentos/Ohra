@@ -145,13 +145,15 @@ export default function PromocaoSimulador({ onToast }) {
   // Produtos (custo e embalagem AO VIVO), kits, variações e preços salvos
   // (com lucro recalculado) vêm do catálogo compartilhado, que já tem
   // realtime em todas as tabelas envolvidas.
-  const { itens: itensCatalogo, produtos, kits: kitsCatalogo, precos } = useRankingData();
-  const [canais, setCanais] = useState([]);
+  const { itens: itensCatalogo, produtos, kits: kitsCatalogo, precos, canais } = useRankingData();
   const [nomesPromocoesSalvas, setNomesPromocoesSalvas] = useState([]); // pro autocomplete/sugestão ao salvar
   const [carregando, setCarregando] = useState(true);
 
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | `p:<id>` | `k:<id>`
-  const [canalId, setCanalId] = useState("");
+  // Canal escolhido; se ele não existir nesta loja (troca de loja, canal
+  // desativado), cai no primeiro canal da lista.
+  const [canalIdEscolhido, setCanalId] = useState("");
+  const canalId = canais.some((c) => c.id === canalIdEscolhido) ? canalIdEscolhido : canais[0]?.id || "";
   const [custoManual, setCustoManual] = useState("");
   const [frete, setFrete] = useState(0);
   const [embalagem, setEmbalagem] = useState(0);
@@ -194,22 +196,10 @@ export default function PromocaoSimulador({ onToast }) {
     let ativo = true;
     async function carregar() {
       try {
-        let qc = supabase.from("canais").select("*").eq("ativo", true).order("tipo");
         let qps = supabase.from("promocoes_salvas").select("nome");
-        if (lojaId) {
-          qc = qc.eq("loja_id", lojaId);
-          qps = qps.eq("loja_id", lojaId);
-        }
-        const [rc, rps] = await Promise.all([qc, qps]);
+        if (lojaId) qps = qps.eq("loja_id", lojaId);
+        const rps = await qps;
         if (!ativo) return;
-        // Troca de loja invalida seleções antigas — se o produto/canal/kit
-        // escolhido não existir mais na lista desta loja, volta pro padrão
-        // (manual/primeiro canal) em vez de manter um id de outra loja preso.
-        if (!rc.error) {
-          const listaC = rc.data || [];
-          setCanais(listaC);
-          setCanalId((prev) => (listaC.some((c) => c.id === prev) ? prev : listaC[0]?.id || ""));
-        }
         // Nomes já usados em promoções salvas — só pra sugerir/autocompletar
         // na hora de salvar (dedupe por texto normalizado, guarda a 1ª grafia).
         if (!rps.error) {
@@ -230,11 +220,10 @@ export default function PromocaoSimulador({ onToast }) {
       }
     }
     carregar();
-    // Sem isso, cadastrar/editar/excluir um produto, kit OU canal em
-    // Cadastros só refletia aqui depois de recarregar a página inteira.
+    // Canais/produtos/kits vêm do catálogo compartilhado (já ao vivo); aqui
+    // só os nomes de promoções salvas.
     const ch = supabase
       .channel("promocoes-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
       .on("postgres_changes", { event: "*", schema: "public", table: "promocoes_salvas" }, carregar)
       .subscribe();
     return () => {

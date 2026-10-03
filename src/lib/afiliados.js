@@ -52,6 +52,30 @@ export function comissaoMaxima(preco, lucro, cfg) {
   return Math.floor((folga / preco) * 100 + 1e-9) / 100;
 }
 
+// Fração das vendas via afiliado que é venda NOVA (o resto o cliente já ia
+// comprar de qualquer jeito, e a comissão só tira do lucro). Com 50%, a
+// comissão compensa enquanto for ≤ metade do lucro ÷ preço.
+export const FRACAO_VENDA_NOVA = 0.5;
+
+// Comissão "ideal": a que ainda deixa a SUA margem desejada inteira — o
+// afiliado só fica com o que sobra acima dela (prioridade é o seu lucro).
+export function comissaoIdeal(preco, lucro, cfg) {
+  if (!(preco > 0) || lucro == null) return 0;
+  const folga = lucro - num(cfg?.margemDesejada) * preco;
+  if (folga <= 0) return 0;
+  return Math.floor((folga / preco) * 100 + 1e-9) / 100;
+}
+
+// Comissão recomendada = a menor entre a ideal (sua margem desejada), o teto
+// de venda nova (FRACAO_VENDA_NOVA × lucro ÷ preço) e a máxima (lucro
+// mínimo). null = sem espaço acima da sua margem: não ativar afiliado.
+export function comissaoRecomendada(preco, lucro, cfg) {
+  if (!(preco > 0) || lucro == null || lucro <= 0) return null;
+  const tetoNova = Math.floor(((FRACAO_VENDA_NOVA * lucro) / preco) * 100 + 1e-9) / 100;
+  const c = Math.min(comissaoIdeal(preco, lucro, cfg), tetoNova, comissaoMaxima(preco, lucro, cfg));
+  return c >= 0.01 ? c : null;
+}
+
 const mesmoItem = (c, tipo, id, canalId) => c.item_tipo === tipo && c.item_id === id && c.canal_id === canalId;
 
 export function padraoDoCanal(config, canalId) {
@@ -93,13 +117,18 @@ export function linhasComissao({ itens, canais, precos, cfgDoProduto, config, li
       const lucroEm = (p) => lucroNoPreco(canal, p, it.custoTotal, it.peso, cfg);
       const lucro = lucroEm(preco);
       const max = comissaoMaxima(preco, lucro, cfg);
+      const recomendada = comissaoRecomendada(preco, lucro, cfg);
       const conf = comissaoDoItem(config, tipo, id, canal.id);
       const lucroCom = conf.ativo && lucro != null ? lucro - conf.comissao * preco : null;
+      // acima = passa da máxima (prejuízo pro mínimo); alta = cabe na máxima
+      // mas come a sua margem desejada; apertado = há folga até o mínimo,
+      // mas nada acima da sua margem (não vale ativar).
       let situacao;
       if (conf.ativo && conf.comissao > max + 1e-9) situacao = "acima";
       else if (emRampa) situacao = "rampa";
-      else if (conf.ativo) situacao = "ok";
-      else if (max >= 0.01) situacao = "pode";
+      else if (conf.ativo) situacao = recomendada != null && conf.comissao <= recomendada + 1e-9 ? "ok" : "alta";
+      else if (recomendada != null) situacao = "pode";
+      else if (max >= 0.01) situacao = "apertado";
       else situacao = "sem";
       out.push({
         chave: `${tipo}|${id}|${canal.id}`,
@@ -113,6 +142,7 @@ export function linhasComissao({ itens, canais, precos, cfgDoProduto, config, li
         lucro,
         lucroEm,
         max,
+        recomendada,
         conf,
         lucroCom,
         situacao,
@@ -122,7 +152,7 @@ export function linhasComissao({ itens, canais, precos, cfgDoProduto, config, li
       });
     }
   }
-  const ordem = { acima: 0, ok: 1, rampa: 3, pode: 2, sem: 4 };
+  const ordem = { acima: 0, alta: 1, ok: 2, pode: 3, rampa: 4, apertado: 5, sem: 6 };
   return out.sort((a, b) => ordem[a.situacao] - ordem[b.situacao] || a.item.nome.localeCompare(b.item.nome) || a.canal.nome.localeCompare(b.canal.nome));
 }
 
@@ -137,9 +167,14 @@ export function custoAmostra(parceiro, itens) {
 }
 
 // Status que vale na tela: amostra enviada há mais de DIAS_SEM_DIVULGAR dias sem post = parado (só na tela).
-export function statusEfetivo(p, hoje) {
+// registros = afiliado_registros: se já há venda registrada no nome do
+// parceiro, ele divulgou (mesmo que o status não tenha sido marcado) — nunca
+// aparece como "parado".
+export function statusEfetivo(p, hoje, registros = []) {
   if (p.status === "amostra") {
     const d = diasEntre(p.amostra_data || p.status_desde, hoje);
+    const vendeu = registros.filter((g) => g.parceiro_id === p.id).reduce((s, g) => s + num(g.vendas), 0);
+    if (vendeu > 0) return { chave: "amostra", dias: d, vendeu };
     if (d != null && d > DIAS_SEM_DIVULGAR) return { chave: "parado", auto: true, dias: d };
     return { chave: "amostra", dias: d };
   }
@@ -237,23 +272,39 @@ export function vendasPorOrigem({ afRegistros, rampaRegistros, rampas, hoje, n =
 // Sugestões com ação. `regras` = regras da rampa (avaliações/nota pra amostra).
 export function sugestoesAfiliado({ linhas, parceiros, afRegistros, regras, itens, hoje }) {
   const out = [];
+  const pctTxt = (c) => `${Math.round(c * 100)}%`;
   // 1) comissão acima da máxima
   for (const l of linhas.filter((x) => x.situacao === "acima")) {
     const pct = Math.round(l.conf.comissao * 100);
+    const alvo = l.recomendada ?? (l.max >= 0.01 ? l.max : null);
     out.push({
       chave: `acima|${l.chave}`,
       tom: "bad",
       icone: "!",
       titulo: `${l.item.nome}: comissão acima da máxima`,
-      texto:
-        l.max >= 0.01
-          ? `${pct}% deixa ${fmt(l.lucroCom)} de lucro, abaixo do mínimo (${fmt(l.lucroMin)}). Use ${Math.round(l.max * 100)}% só neste item ou tire ele da campanha.`
-          : `${pct}% deixa ${fmt(l.lucroCom)} de lucro e não sobra margem pra comissão neste preço. Tire o item da campanha.`,
-      acao: l.max >= 0.01 ? { tipo: "usar", linha: l, comissao: l.max, rotulo: `Usar ${Math.round(l.max * 100)}%` } : { tipo: "desativar", linha: l, rotulo: "Tirar da campanha" },
+      texto: alvo
+        ? `${pct}% deixa ${fmt(l.lucroCom)} de lucro, abaixo do mínimo (${fmt(l.lucroMin)}). Use ${pctTxt(alvo)} só neste item${l.recomendada ? " (recomendado)" : ""} ou tire ele da campanha.`
+        : `${pct}% deixa ${fmt(l.lucroCom)} de lucro e não sobra margem pra comissão neste preço. Tire o item da campanha.`,
+      acao: alvo ? { tipo: "usar", linha: l, comissao: alvo, rotulo: `Usar ${pctTxt(alvo)}` } : { tipo: "desativar", linha: l, rotulo: "Tirar da campanha" },
     });
   }
-  // 2) item no alvo que pode entrar na campanha (canal com campanha aberta)
-  const podem = linhas.filter((l) => l.situacao === "pode" && l.conf.padrao && l.max + 1e-9 >= l.conf.padrao);
+  // 1b) comissão dentro da máxima, mas comendo a sua margem desejada
+  for (const l of linhas.filter((x) => x.situacao === "alta")) {
+    out.push({
+      chave: `alta|${l.chave}`,
+      tom: "warn",
+      icone: "%",
+      titulo: `${l.item.nome}: ${pctTxt(l.conf.comissao)} come a sua margem (${l.canal.nome})`,
+      texto: l.recomendada
+        ? `Cabe no mínimo, mas tira da sua margem desejada. Recomendado: ${pctTxt(l.recomendada)} (afiliado ganha ${fmt(l.recomendada * l.preco)} por venda).`
+        : `Cabe no mínimo, mas neste preço não sobra nada acima da sua margem desejada — afiliado só se houver espaço.`,
+      acao: l.recomendada
+        ? { tipo: "usar", linha: l, comissao: l.recomendada, rotulo: `Usar ${pctTxt(l.recomendada)}` }
+        : { tipo: "desativar", linha: l, rotulo: "Tirar da campanha" },
+    });
+  }
+  // 2) item que pode entrar na campanha aberta sem passar do recomendado
+  const podem = linhas.filter((l) => l.situacao === "pode" && l.conf.padrao && l.recomendada + 1e-9 >= l.conf.padrao);
   for (const l of podem.slice(0, 3)) {
     const nota = l.rampa?.est.nota;
     out.push({
@@ -261,7 +312,7 @@ export function sugestoesAfiliado({ linhas, parceiros, afRegistros, regras, iten
       tom: "good",
       icone: "↑",
       titulo: `${l.item.nome} pode entrar na campanha (${l.canal.nome})`,
-      texto: `${l.rampa ? "No alvo" : "Preço salvo"}${nota != null ? `, nota ${String(nota).replace(".", ",")}` : ""} e até ${Math.round(l.max * 100)}% de comissão sem passar do mínimo.`,
+      texto: `${l.rampa ? "No alvo" : "Preço salvo"}${nota != null ? `, nota ${String(nota).replace(".", ",")}` : ""}: os ${pctTxt(l.conf.padrao)} da campanha cabem no recomendado (até ${pctTxt(l.recomendada)}) sem tocar na sua margem.`,
       acao: { tipo: "ativar", linha: l, rotulo: "Ativar" },
     });
   }
@@ -269,7 +320,7 @@ export function sugestoesAfiliado({ linhas, parceiros, afRegistros, regras, iten
     out.push({ chave: "pode-mais", tom: "neutro", icone: "↑", titulo: podem.length - 3 === 1 ? "Mais 1 item pode entrar na campanha" : `Mais ${podem.length - 3} itens podem entrar na campanha`, texto: "Veja os marcados “pode ativar” na tabela de comissão." });
   // 3) hora de mandar amostra (rampa no alvo, com avaliações e nota boas, folga
   //    pra comissão e sem amostra desse produto ainda)
-  for (const l of linhas.filter((x) => x.rampa && x.tipo === "produto" && !x.emRampa && x.max >= 0.01)) {
+  for (const l of linhas.filter((x) => x.rampa && x.tipo === "produto" && !x.emRampa && x.recomendada != null)) {
     const e = l.rampa.est;
     if (!(e.avaliacoesTotal >= regras.avaliacoes && e.nota != null && e.nota >= regras.nota)) continue;
     if (parceiros.some((p) => p.amostra_item_tipo === "produto" && p.amostra_item_id === l.id)) continue;
@@ -286,7 +337,18 @@ export function sugestoesAfiliado({ linhas, parceiros, afRegistros, regras, iten
   }
   // 4) parceiro com amostra e sem divulgar
   for (const p of parceiros.filter((x) => x.status === "amostra")) {
-    const st = statusEfetivo(p, hoje);
+    const st = statusEfetivo(p, hoje, afRegistros);
+    if (st.vendeu) {
+      out.push({
+        chave: `divulgou|${p.id}`,
+        tom: "good",
+        icone: "✓",
+        titulo: `${p.nome} já vendeu ${st.vendeu}`,
+        texto: "Tem venda registrada no nome desse parceiro — ele divulgou. Marque pra acompanhar como ativo.",
+        acao: { tipo: "divulgou", parceiro: p, rotulo: "Marcar divulgou" },
+      });
+      continue;
+    }
     out.push({
       chave: `divulgou|${p.id}`,
       tom: st.auto ? "bad" : "warn",
@@ -298,12 +360,12 @@ export function sugestoesAfiliado({ linhas, parceiros, afRegistros, regras, iten
       acao: { tipo: "divulgou", parceiro: p, rotulo: "Marcar divulgou" },
     });
   }
-  // 5) comissão ativa há 30 dias com poucas vendas → subir até a máxima
+  // 5) comissão ativa há 30 dias com poucas vendas → subir até a recomendada
   const corte30 = somarDias(hoje, -DIAS_TESTE_COMISSAO);
   for (const l of linhas.filter((x) => x.situacao === "ok" && x.conf.row)) {
     const desde = String(l.conf.row.atualizado_em || l.conf.row.criado_em || "").slice(0, 10);
     if (!desde || desde > corte30) continue;
-    if (l.max < l.conf.comissao + 0.01) continue;
+    if (l.recomendada == null || l.recomendada < l.conf.comissao + 0.01) continue;
     const v30 = afRegistros.filter((g) => g.item_tipo === l.tipo && g.item_id === l.id && g.canal_id === l.canal.id && g.data > corte30).reduce((s, g) => s + num(g.vendas), 0);
     if (v30 >= POUCAS_VENDAS_30D) continue;
     out.push({
@@ -311,11 +373,58 @@ export function sugestoesAfiliado({ linhas, parceiros, afRegistros, regras, iten
       tom: "neutro",
       icone: "%",
       titulo: `${l.item.nome}: ${v30 ? "poucas" : "nenhuma"} venda${v30 === 1 ? "" : "s"} via afiliado em ${DIAS_TESTE_COMISSAO} dias`,
-      texto: `A margem permite subir de ${Math.round(l.conf.comissao * 100)}% pra ${Math.round(l.max * 100)}% (máxima). Teste por ${DIAS_TESTE_COMISSAO} dias.`,
-      acao: { tipo: "usar", linha: l, comissao: l.max, rotulo: `Subir pra ${Math.round(l.max * 100)}%` },
+      texto: `Dá pra subir de ${pctTxt(l.conf.comissao)} pra ${pctTxt(l.recomendada)} (recomendado — sua margem continua inteira). Teste por ${DIAS_TESTE_COMISSAO} dias.`,
+      acao: { tipo: "usar", linha: l, comissao: l.recomendada, rotulo: `Subir pra ${pctTxt(l.recomendada)}` },
+    });
+  }
+  // 6) afiliado tomando venda do orgânico → descer 2 pontos
+  for (const l of linhas.filter((x) => x.conf.ativo && x.conf.comissao >= 0.03)) {
+    const sem = semanasDoItem(l, afRegistros);
+    if (sem.length < SEMANAS_CANIBAL * 2) continue;
+    const rec = sem.slice(-SEMANAS_CANIBAL);
+    const ant = sem.slice(-SEMANAS_CANIBAL * 2, -SEMANAS_CANIBAL);
+    const tot = (xs) => xs.reduce((s, w) => s + w.total, 0);
+    const afRec = rec.reduce((s, w) => s + w.af, 0);
+    const totRec = tot(rec);
+    if (!(totRec > 0) || afRec < 0.5 * totRec || totRec > tot(ant)) continue;
+    const nova = Math.max(0.01, Math.round((l.conf.comissao - 0.02) * 100) / 100);
+    out.push({
+      chave: `descer|${l.chave}`,
+      tom: "warn",
+      icone: "↓",
+      titulo: `${l.item.nome}: afiliado tomando venda do orgânico (${l.canal.nome})`,
+      texto: `Nas últimas ${SEMANAS_CANIBAL} semanas ${afRec} das ${totRec} vendas vieram de afiliado, mas o total não cresceu (${tot(ant)} nas ${SEMANAS_CANIBAL} anteriores) — parte é venda que viria de qualquer jeito. Desça pra ${pctTxt(nova)} e compare de novo.`,
+      acao: { tipo: "usar", linha: l, comissao: nova, rotulo: `Descer pra ${pctTxt(nova)}` },
     });
   }
   return out;
+}
+
+const SEMANAS_CANIBAL = 3;
+
+// Vendas por semana de um item×canal: total (rampa = registro da semana;
+// fora de rampa = vendas_total do registro de afiliado) e quantas via afiliado.
+// Só entram semanas com o total informado.
+function semanasDoItem(l, afRegistros) {
+  const m = new Map();
+  const pegar = (data) => {
+    const k = semanaDe(data);
+    if (!m.has(k)) m.set(k, { semana: k, total: null, af: 0 });
+    return m.get(k);
+  };
+  for (const g of afRegistros) {
+    if (g.item_tipo !== l.tipo || g.item_id !== l.id || g.canal_id !== l.canal.id) continue;
+    const w = pegar(g.data);
+    w.af += num(g.vendas);
+    if (!l.rampa && g.vendas_total != null) w.total = (w.total ?? 0) + num(g.vendas_total);
+  }
+  if (l.rampa)
+    for (const r of l.rampa.est.registros || []) {
+      if (r.tipo !== "semana" || r.vendas == null) continue;
+      const w = pegar(r.data);
+      w.total = (w.total ?? 0) + num(r.vendas);
+    }
+  return [...m.values()].filter((w) => w.total != null).sort((a, b) => (a.semana < b.semana ? -1 : 1));
 }
 
 function fmt(v) {

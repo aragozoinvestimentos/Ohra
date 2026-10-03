@@ -113,15 +113,6 @@ export function normalizarDegraus(lista) {
   return vals;
 }
 
-export function faseDe(rampa) {
-  const n = (rampa?.degraus || []).length;
-  const i = rampa?.degrau_atual ?? 0;
-  if (!n) return { chave: "lancamento", rotulo: "Lançamento" };
-  if (i >= n - 1) return { chave: "alvo", rotulo: "No alvo" };
-  if (i === 0) return { chave: "lancamento", rotulo: "Lançamento" };
-  return { chave: "tracao", rotulo: "Tração" };
-}
-
 const diasEntre = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
 const menosDias = (iso, n) => {
   const d = new Date(`${iso}T12:00:00`);

@@ -1,7 +1,9 @@
 import Portal from "./Portal.jsx";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useCatalogo } from "../hooks/useCatalogo.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { BRL, arredondarPreco } from "../lib/format.js";
 import { calcVariacao, catalogoEmbalagens, formatarPeso, resumoProduto } from "../lib/variacoes.js";
 import SeletorItens from "./SeletorItens.jsx";
@@ -69,34 +71,15 @@ function registroDoForm(f, { lojaId, produtoId }) {
 }
 
 export default function VariacoesProduto({ produto, produtoEmbalagens, embalagens, materiais, onToast }) {
-  const [variacoes, setVariacoes] = useState([]);
-  const [indisponivel, setIndisponivel] = useState(false);
   const [form, setForm] = useState(null);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const produtoId = produto?.id;
-
-  useEffect(() => {
-    if (!supabase || !produtoId) return;
-    let ativo = true;
-    async function carregar() {
-      const { data, error } = await supabase.from("produto_variacoes").select("*").eq("produto_id", produtoId).order("quantidade");
-      if (!ativo) return;
-      if (error) setIndisponivel(true);
-      else {
-        setIndisponivel(false);
-        setVariacoes(data || []);
-      }
-    }
-    carregar();
-    const ch = supabase
-      .channel(`variacoes-produto-${produtoId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "produto_variacoes" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(ch);
-    };
-  }, [produtoId]);
+  // Variações vêm do catálogo compartilhado (ao vivo, sem busca própria).
+  const { variacoes: todasVariacoes } = useCatalogo();
+  const variacoes = useMemo(
+    () => todasVariacoes.filter((v) => v.produto_id === produtoId).sort((x, y) => (Number(x.quantidade) || 0) - (Number(y.quantidade) || 0)),
+    [todasVariacoes, produtoId]
+  );
 
   const ctx = { materiais, embalagens, produtoEmbalagens };
   const pai = useMemo(() => (produto ? resumoProduto(produto, { embalagens, produtoEmbalagens }) : null), [produto, embalagens, produtoEmbalagens]);
@@ -115,9 +98,8 @@ export default function VariacoesProduto({ produto, produtoEmbalagens, embalagen
     // Preço salvo por canal da variação não tem FK — limpa na mão.
     await supabase.from("precos_canal").delete().eq("item_tipo", "variacao").eq("item_id", v.id);
     await supabase.from("precos_concorrente").delete().eq("item_tipo", "variacao").eq("item_id", v.id);
-    await supabase.from("publicacoes_olist").delete().eq("item_tipo", "variacao").eq("item_id", v.id);
     await supabase.from("publicacoes_canal").delete().eq("item_tipo", "variacao").eq("item_id", v.id);
-    setVariacoes((prev) => prev.filter((x) => x.id !== v.id));
+    recarregarCatalogo();
     onToast?.("Variação excluída");
   }
 
@@ -127,15 +109,11 @@ export default function VariacoesProduto({ produto, produtoEmbalagens, embalagen
         Variações de quantidade
         <Ajuda texto="Jeitos de vender o mesmo produto em quantidade (kit 2, kit 3…) sem cadastrar outro produto. Cada variação herda tudo do produto e você personaliza só o que muda — produção (ex.: imprimir as 3 juntas na mesma chapa), embalagem, frete e peso — em ✎ Editar. O produto pai não é alterado, e o que não foi personalizado acompanha o produto sozinho. Cada variação ganha preço próprio por canal em Precificação por Canal." />
         <span style={{ flex: 1 }} />
-        {!indisponivel && (
-          <button type="button" className="btn btn-mini" onClick={abrirNova}>
-            + Adicionar variação
-          </button>
-        )}
+        <button type="button" className="btn btn-mini" onClick={abrirNova}>
+          + Adicionar variação
+        </button>
       </h3>
-      {indisponivel ? (
-        <div className="hint">Pra usar variações, rode o <strong>supabase/schema_v26.sql</strong> no SQL Editor do Supabase e recarregue a página.</div>
-      ) : variacoes.length === 0 ? (
+      {variacoes.length === 0 ? (
         <div className="hint">Nenhuma variação ainda. Vende esse produto em kits de 2, 3, 5…? Use “+ Adicionar variação”.</div>
       ) : (
         <div className="table-wrap tabela-variacoes">
@@ -278,6 +256,7 @@ export function EditorVariacao({ formInicial, variacao, produto, produtoEmbalage
       : await supabase.from("produto_variacoes").insert(registro);
     setSalvando(false);
     if (error) return onToast?.(`Não foi possível salvar a variação: ${error.message}`);
+    recarregarCatalogo();
     onToast?.(
       form.id
         ? impacto?.relevante && impacto.linhas.length

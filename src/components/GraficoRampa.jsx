@@ -17,7 +17,13 @@ export default function GraficoRampa({ est }) {
   const regs = est.registros || [];
   const datas = [...new Set(regs.map((r) => r.data))].sort();
   if (datas.length < 2)
-    return <div className="empty">Registre a primeira semana pra ver a evolução (preço, vendas e avaliações).</div>;
+    return (
+      <div className="empty">
+        {datas.length === 0
+          ? "Registre a primeira semana pra ver a evolução (preço, vendas e avaliações)."
+          : "Registre mais uma semana pra ver a evolução (o gráfico precisa de pelo menos duas datas)."}
+      </div>
+    );
 
   // Série por data
   const pontos = [];

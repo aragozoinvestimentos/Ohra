@@ -11,7 +11,7 @@ import EditarDialog from "./EditarDialog.jsx";
 export default function Orcamentos({ onToast }) {
   const { lojaId } = useLoja();
   const [orcamentos, setOrcamentos] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  const [carregando, setCarregando] = useState(!!supabase);
   const [editandoId, setEditandoId] = useState(null);
   const [nomeEditado, setNomeEditado] = useState("");
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
@@ -19,10 +19,7 @@ export default function Orcamentos({ onToast }) {
   const [excluirAlvo, setExcluirAlvo] = useState(null);
 
   useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
+    if (!supabase) return;
 
     let ativo = true;
 

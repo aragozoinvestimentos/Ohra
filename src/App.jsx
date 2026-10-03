@@ -1,25 +1,56 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import logo from "./assets/logo.png";
-import CustoProducao from "./components/CustoProducao.jsx";
-import RegistroImpressoes from "./components/RegistroImpressoes.jsx";
-import PrecificacaoPagina from "./components/PrecificacaoPagina.jsx";
-import ImportarVendas from "./components/ImportarVendas.jsx";
-import Cadastros from "./components/Cadastros.jsx";
-import Orcamento from "./components/Orcamento.jsx";
-import Promocoes from "./components/Promocoes.jsx";
-import Otimizacao from "./components/Otimizacao.jsx";
-import Metas from "./components/Metas.jsx";
-import Ranking from "./components/Ranking.jsx";
 import TelaDescanso from "./components/TelaDescanso.jsx";
-import Historico from "./components/Historico.jsx";
-import Tutorial from "./components/Tutorial.jsx";
-import Configuracao from "./components/Configuracao.jsx";
-import Crescimento from "./components/Crescimento.jsx";
-import FluxoCaixa from "./components/FluxoCaixa.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
 import LojaGate from "./components/LojaGate.jsx";
 import Icone from "./components/Icone.jsx";
 import { useLoja } from "./lib/LojaContext.jsx";
+
+// Se um deploy novo saiu com o app aberto, o pedaço antigo da aba não existe
+// mais no servidor — recarrega a página uma vez pra pegar a versão nova.
+function lazyAba(importar) {
+  return lazy(() =>
+    importar()
+      .then((m) => {
+        try {
+          sessionStorage.removeItem("ohra:recarregou-aba");
+        } catch {
+          // sem sessionStorage — tudo bem
+        }
+        return m;
+      })
+      .catch((err) => {
+        try {
+          if (!sessionStorage.getItem("ohra:recarregou-aba")) {
+            sessionStorage.setItem("ohra:recarregou-aba", "1");
+            window.location.reload();
+            return new Promise(() => {});
+          }
+        } catch {
+          // sem sessionStorage — segue pro erro
+        }
+        throw err;
+      })
+  );
+}
+
+// Cada aba vira um pedaço separado do JS, baixado só quando a aba é aberta
+// pela primeira vez (o app abre mais rápido, principalmente no celular).
+const CustoProducao = lazyAba(() => import("./components/CustoProducao.jsx"));
+const RegistroImpressoes = lazyAba(() => import("./components/RegistroImpressoes.jsx"));
+const PrecificacaoPagina = lazyAba(() => import("./components/PrecificacaoPagina.jsx"));
+const ImportarVendas = lazyAba(() => import("./components/ImportarVendas.jsx"));
+const Cadastros = lazyAba(() => import("./components/Cadastros.jsx"));
+const Orcamento = lazyAba(() => import("./components/Orcamento.jsx"));
+const Promocoes = lazyAba(() => import("./components/Promocoes.jsx"));
+const Otimizacao = lazyAba(() => import("./components/Otimizacao.jsx"));
+const Metas = lazyAba(() => import("./components/Metas.jsx"));
+const Ranking = lazyAba(() => import("./components/Ranking.jsx"));
+const Historico = lazyAba(() => import("./components/Historico.jsx"));
+const Tutorial = lazyAba(() => import("./components/Tutorial.jsx"));
+const Configuracao = lazyAba(() => import("./components/Configuracao.jsx"));
+const Crescimento = lazyAba(() => import("./components/Crescimento.jsx"));
+const FluxoCaixa = lazyAba(() => import("./components/FluxoCaixa.jsx"));
 
 const THEME_KEY = "ohra:theme";
 
@@ -106,6 +137,10 @@ function loadTab() {
 export default function App() {
   const { lojas, disponivel: lojasDisponivel, carregando: carregandoLoja, lojaId, precisaPin } = useLoja();
   const [tab, setTab] = useState(loadTab);
+  // Abas já abertas nesta sessão: só montam na primeira visita e depois
+  // continuam montadas (escondidas) — o que você digitou não se perde.
+  const [visitadas, setVisitadas] = useState(() => new Set([tab]));
+  if (!visitadas.has(tab)) setVisitadas(new Set(visitadas).add(tab));
   const [configSub, setConfigSub] = useState("lojas");
   const [canalSub, setCanalSub] = useState(() => {
     try {
@@ -294,70 +329,130 @@ export default function App() {
 
         <div className="content">
         <section className={`view ${tab === "config" ? "active" : ""}`}>
-          <Configuracao sub={configSub} onSub={setConfigSub} onToast={showToast} />
+          {visitadas.has("config") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Configuracao sub={configSub} onSub={setConfigSub} onToast={showToast} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "cadastros" ? "active" : ""}`}>
-          <Cadastros produtoRecebido={produtoRecebido} abrirItem={abrirItem} onToast={showToast} onProdutoCriado={irParaPrecificarProduto} />
+          {visitadas.has("cadastros") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Cadastros produtoRecebido={produtoRecebido} abrirItem={abrirItem} onToast={showToast} onProdutoCriado={irParaPrecificarProduto} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "producao" ? "active" : ""}`}>
-          <CustoProducao onUsarCusto={usarCusto} onSalvarProduto={salvarComoProduto} onIrParaMateriais={irParaMateriais} />
+          {visitadas.has("producao") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <CustoProducao onUsarCusto={usarCusto} onSalvarProduto={salvarComoProduto} onIrParaMateriais={irParaMateriais} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "registroImpressoes" ? "active" : ""}`}>
-          <RegistroImpressoes onToast={showToast} />
+          {visitadas.has("registroImpressoes") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <RegistroImpressoes onToast={showToast} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "canal" ? "active" : ""}`}>
-          <PrecificacaoPagina
-            sub={canalSub}
-            onSub={setCanalSub}
-            ativo={tab === "canal"}
-            custoRecebido={custoRecebido}
-            produtoParaSelecionar={produtoParaPrecificar}
-            onToast={showToast}
-          />
+          {visitadas.has("canal") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <PrecificacaoPagina
+                sub={canalSub}
+                onSub={setCanalSub}
+                ativo={tab === "canal"}
+                custoRecebido={custoRecebido}
+                produtoParaSelecionar={produtoParaPrecificar}
+                onToast={showToast}
+              />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "importarVendas" ? "active" : ""}`}>
-          <ImportarVendas />
+          {visitadas.has("importarVendas") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <ImportarVendas />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "orcamento" ? "active" : ""}`}>
-          <Orcamento onToast={showToast} />
+          {visitadas.has("orcamento") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Orcamento onToast={showToast} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "promocoes" ? "active" : ""}`}>
-          <Promocoes onToast={showToast} />
+          {visitadas.has("promocoes") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Promocoes onToast={showToast} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "crescimento" ? "active" : ""}`}>
-          <Crescimento key={lojaId || "sem-loja"} onToast={showToast} />
+          {visitadas.has("crescimento") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Crescimento key={lojaId || "sem-loja"} onToast={showToast} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "caixa" ? "active" : ""}`}>
-          <FluxoCaixa key={lojaId || "sem-loja"} onToast={showToast} />
+          {visitadas.has("caixa") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <FluxoCaixa key={lojaId || "sem-loja"} onToast={showToast} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "metas" ? "active" : ""}`}>
-          <Metas onToast={showToast} />
+          {visitadas.has("metas") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Metas onToast={showToast} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "ranking" ? "active" : ""}`}>
-          <Ranking />
+          {visitadas.has("ranking") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Ranking />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "otimizacao" ? "active" : ""}`}>
-          <Otimizacao onToast={showToast} />
+          {visitadas.has("otimizacao") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Otimizacao onToast={showToast} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "historico" ? "active" : ""}`}>
-          <Historico onEditarCompleto={editarItemCompleto} onToast={showToast} />
+          {visitadas.has("historico") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Historico onEditarCompleto={editarItemCompleto} onToast={showToast} />
+            </Suspense>
+          )}
         </section>
 
         <section className={`view ${tab === "tutorial" ? "active" : ""}`}>
-          <Tutorial />
+          {visitadas.has("tutorial") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Tutorial />
+            </Suspense>
+          )}
         </section>
 
         <footer className="note">

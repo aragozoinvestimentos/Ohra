@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useCatalogo } from "../hooks/useCatalogo.js";
 import { BRL } from "../lib/format.js";
 import {
   CATEGORIAS,
@@ -86,7 +87,8 @@ const STATUS_BADGE = {
 export default function FluxoCaixa({ onToast }) {
   const { lojaId } = useLoja();
   const [lancamentos, setLancamentos] = useState([]);
-  const [canais, setCanais] = useState([]);
+  const { canaisTodos } = useCatalogo();
+  const canais = useMemo(() => [...canaisTodos].sort((a, b) => (a.nome || "").localeCompare(b.nome || "", "pt-BR")), [canaisTodos]);
   const [carregando, setCarregando] = useState(!!supabase);
   const [erroTabela, setErroTabela] = useState(null);
   const [form, setForm] = useState(null);
@@ -122,19 +124,14 @@ export default function FluxoCaixa({ onToast }) {
     async function carregar() {
       try {
         let ql = supabase.from("lancamentos_caixa").select("*").order("data_prevista", { ascending: false });
-        let qc = supabase.from("canais").select("id, nome, tipo").order("nome");
-        if (lojaId) {
-          ql = ql.eq("loja_id", lojaId);
-          qc = qc.eq("loja_id", lojaId);
-        }
-        const [rl, rc] = await Promise.all([ql, qc]);
+        if (lojaId) ql = ql.eq("loja_id", lojaId);
+        const rl = await ql;
         if (!ativo) return;
         if (rl.error) setErroTabela(rl.error.message);
         else {
           setErroTabela(null);
           setLancamentos(rl.data || []);
         }
-        if (!rc.error) setCanais(rc.data || []);
       } catch {
         // falha de rede — mantém o que já estava carregado
       } finally {
@@ -145,7 +142,6 @@ export default function FluxoCaixa({ onToast }) {
     const ch = supabase
       .channel("fluxo-caixa-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "lancamentos_caixa" }, carregar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
       .subscribe();
     return () => {
       ativo = false;

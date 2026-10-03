@@ -89,8 +89,6 @@ export function custoEnvioML(pesoG, preco) {
 export function mlFaixas(pesoG) {
   return ML_ENVIO_FAIXAS_PRECO.map((f) => ({ label: f.label, min: f.min, max: f.max, fixo: custoEnvioML(pesoG, f.min > 0 ? f.min : 18.99) }));
 }
-// Compatibilidade: faixas pro peso padrão (até 0,3 kg).
-export const ML_FEE_TIERS = mlFaixas(ML_PESO_PADRAO_G);
 
 // Taxas do TikTok Shop Brasil vigentes desde 15/jul/2026 — só duas faixas,
 // definidas pelo preço do item já com desconto aplicado (não por categoria).

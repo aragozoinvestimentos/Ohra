@@ -41,36 +41,15 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   const dadosEscada = useEscada();
   const { canais: canaisVivos, itens: itensVivos, produtos: produtosVivos, materiais, carregando: materiaisCarregando } = dadosEscada;
   const [f, setF] = useState(loadInitial);
-  const [produtos, setProdutos] = useState([]);
+  // Produtos cadastrados (pra carregar o detalhamento salvo de um deles e
+  // reajustar em vez de simular do zero) — do catálogo compartilhado.
+  const produtos = produtosVivos;
   const [produtoId, setProdutoId] = useState("");
   const [verFilamentos, setVerFilamentos] = useState(false);
 
   // Troca de loja invalida a seleção anterior de produto cadastrado.
   useEffect(() => {
     setProdutoId("");
-  }, [lojaId]);
-
-  // Produtos cadastrados, pra carregar o detalhamento salvo de um deles (se
-  // tiver) e reajustar em vez de simular sempre do zero.
-  useEffect(() => {
-    if (!supabase) return;
-    let ativo = true;
-    async function carregar() {
-      let query = supabase.from("produtos_cadastro").select("id, nome, material_nome, producao_detalhe, pecas_por_impressao").order("nome");
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo) return;
-      if (!error) setProdutos(data || []);
-    }
-    carregar();
-    const canal = supabase
-      .channel("custo-producao-produtos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
   }, [lojaId]);
 
   const produtoSelecionado = produtos.find((p) => p.id === produtoId) || null;

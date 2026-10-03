@@ -1,5 +1,5 @@
 import { ordenarCanais } from "../lib/canais.js";
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useMemo } from "react";
 import {
   resolverFaixaShopee,
   resolverFaixaML,
@@ -8,13 +8,12 @@ import {
   calcCanalCustom,
 } from "../lib/calc.js";
 import { arredondarPreco } from "../lib/format.js";
-import { useLoja } from "../lib/LojaContext.jsx";
 import { totalItens } from "../components/SeletorItens.jsx";
 import { calcVariacao, itemTipoDoId, resumoProduto } from "../lib/variacoes.js";
 
 import { LUCRATIVIDADE_PADRAO, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../lib/constantesCanal.js";
 import { produtoAoVivo, precoSalvoAoVivo } from "../lib/aoVivo.js";
-import { usarCatalogo, assinarCatalogo, lerCatalogo } from "../lib/catalogoStore.js";
+import { useCatalogo } from "./useCatalogo.js";
 export { LUCRATIVIDADE_PADRAO, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO };
 
 
@@ -89,11 +88,9 @@ export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFil
 // catálogo unificado de itens com custo total — a mesma base de dados que
 // alimenta o Ranking e a tela de descanso.
 export function useRankingData() {
-  const { lojaId } = useLoja();
   // Dados crus vêm do store compartilhado (uma busca + um realtime pra todas
   // as telas); aqui só se derivam os valores ao vivo.
-  const cat = useSyncExternalStore(assinarCatalogo, lerCatalogo, lerCatalogo);
-  useEffect(() => usarCatalogo(lojaId), [lojaId]);
+  const cat = useCatalogo();
   const {
     produtos,
     kits,
@@ -240,7 +237,6 @@ export function useRankingData() {
     precosBrutos: precos,
     variacoes,
     concorrentes: cat.concorrentes || [],
-    publicacoes: cat.publicacoes || [],
     publicacoesCanal: cat.publicacoesCanal || [],
     materiais,
     embalagens: embalagensCatalogo,

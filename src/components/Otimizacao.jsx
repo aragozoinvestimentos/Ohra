@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useCatalogo } from "../hooks/useCatalogo.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import Ajuda from "./Ajuda.jsx";
 
@@ -11,10 +13,12 @@ import Ajuda from "./Ajuda.jsx";
 function CampoTempo({ valor, sufixo, largura = 64, onSalvar }) {
   const [editando, setEditando] = useState(valor ?? "");
   const [salvo, disparar] = useSalvoFlash();
-
-  useEffect(() => {
+  // Valor mudou na origem (outro aparelho, recarga) → mostra o novo.
+  const [valorVisto, setValorVisto] = useState(valor);
+  if (valor !== valorVisto) {
+    setValorVisto(valor);
     setEditando(valor ?? "");
-  }, [valor]);
+  }
 
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
@@ -84,46 +88,18 @@ function calcularCapacidade(produto, loja, pedidosDia) {
 export default function Otimizacao({ onToast }) {
   const { lojaId, lojas, disponivel } = useLoja();
   const loja = lojas.find((l) => l.id === lojaId) || null;
-  const [produtos, setProdutos] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  const { produtos, carregando } = useCatalogo();
   const [pedidosDia, setPedidosDia] = useState("");
   const [simProdutoId, setSimProdutoId] = useState("");
   const [simPecas, setSimPecas] = useState("");
 
-  useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
-    let ativo = true;
-    async function carregar() {
-      try {
-        let query = supabase.from("produtos_cadastro").select("*").order("nome");
-        if (lojaId) query = query.eq("loja_id", lojaId);
-        const { data, error } = await query;
-        if (!ativo) return;
-        if (!error) setProdutos(data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    }
-    carregar();
-    const canal = supabase
-      .channel("otimizacao-produtos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
-
-  useEffect(() => {
+  // Troca de loja: puxa os pedidos/dia dela e limpa o simulador.
+  const [lojaVista, setLojaVista] = useState(undefined);
+  if (loja?.id !== lojaVista) {
+    setLojaVista(loja?.id);
     setPedidosDia(loja?.pedidos_estimados_dia ?? "");
     setSimProdutoId("");
-  }, [loja?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
   async function salvarConfigLoja(campo, valor) {
     if (!supabase || !lojaId) return false;
@@ -141,6 +117,7 @@ export default function Otimizacao({ onToast }) {
     if (!supabase) return false;
     const { error } = await supabase.from("produtos_cadastro").update({ [campo]: valor }).eq("id", id);
     if (error) onToast?.(`Não foi possível salvar: ${error.message}`);
+    else recarregarCatalogo();
     return !error;
   }
 

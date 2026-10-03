@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useCatalogo } from "../hooks/useCatalogo.js";
 import { BRL, PCT } from "../lib/format.js";
 import { custoProdutoPorPeca } from "../lib/calc.js";
 import {
@@ -40,8 +41,9 @@ const VAZIO_FORM = {
 
 export default function RegistroImpressoes({ onToast }) {
   const { lojaId } = useLoja();
-  const [produtos, setProdutos] = useState([]);
-  const [materiais, setMateriais] = useState([]);
+  // Produtos (detalhamento de produção) e materiais (preço atual) vêm do
+  // catálogo compartilhado — ao vivo, sem busca própria.
+  const { produtos, materiais } = useCatalogo();
   const [registros, setRegistros] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [form, setForm] = useState(VAZIO_FORM);
@@ -58,49 +60,10 @@ export default function RegistroImpressoes({ onToast }) {
     }
   }, [tetoReais]);
 
-  // Produtos cadastrados (pra puxar o detalhamento de produção e sugerir
-  // quantidade/tempo) e materiais (pra recalcular o custo com o preço
-  // atual) — troca de loja invalida o que estava selecionado.
+  // Troca de loja invalida o que estava selecionado.
   useEffect(() => {
     setForm(VAZIO_FORM);
     setProdutoSimuladorId("");
-  }, [lojaId]);
-
-  useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
-    let ativo = true;
-    async function carregarProdutos() {
-      let query = supabase.from("produtos_cadastro").select("id, nome, producao_detalhe, pecas_por_impressao").order("nome");
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo) return;
-      if (!error) setProdutos(data || []);
-    }
-    async function carregarMateriais() {
-      let query = supabase.from("materiais").select("*");
-      if (lojaId) query = query.eq("loja_id", lojaId);
-      const { data, error } = await query;
-      if (!ativo) return;
-      if (!error) setMateriais(data || []);
-    }
-    carregarProdutos();
-    carregarMateriais();
-    const canalProdutos = supabase
-      .channel("registro-impressao-produtos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregarProdutos)
-      .subscribe();
-    const canalMateriais = supabase
-      .channel("registro-impressao-materiais-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "materiais" }, carregarMateriais)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canalProdutos);
-      supabase.removeChannel(canalMateriais);
-    };
   }, [lojaId]);
 
   useEffect(() => {

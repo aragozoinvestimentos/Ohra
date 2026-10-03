@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useCatalogo } from "../hooks/useCatalogo.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
@@ -84,6 +86,7 @@ function CampoDesconto({ canal, onToast, onAtualizado }) {
       return;
     }
     const { error } = await supabase.from("canais").update({ desconto_anuncio_pct: novo }).eq("id", canal.id);
+    recarregarCatalogo();
     if (error) {
       onToast(/desconto_anuncio_pct|column/i.test(error.message) ? "Rode o SQL v30 no Supabase pra salvar o desconto" : "Não foi possível atualizar — tente de novo");
       return;
@@ -115,42 +118,12 @@ function CampoDesconto({ canal, onToast, onAtualizado }) {
 
 export default function Canais({ onToast }) {
   const { lojaId } = useLoja();
-  const [canais, setCanais] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  const { canaisTodos: canais, carregando } = useCatalogo();
   const [novo, setNovo] = useState(NOVO_VAZIO);
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [edicoes, setEdicoes] = useState({});
   const [excluirAlvo, setExcluirAlvo] = useState(null);
 
-  useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
-    let ativo = true;
-    async function carregar() {
-      try {
-        let query = supabase.from("canais").select("*").order("tipo", { ascending: true }).order("nome");
-        if (lojaId) query = query.eq("loja_id", lojaId);
-        const { data, error } = await query;
-        if (!ativo) return;
-        if (!error) setCanais(data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    }
-    carregar();
-    const canal = supabase
-      .channel("canais-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "canais" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
 
   function chave(id, campo) {
     return `${id}:${campo}`;
@@ -179,6 +152,7 @@ export default function Canais({ onToast }) {
       }
     }
     const { error } = await supabase.from("canais").update({ [campo]: valorFinal }).eq("id", id);
+    recarregarCatalogo();
     if (error) {
       onToast("Não foi possível atualizar — tente de novo");
       return false;
@@ -219,6 +193,7 @@ export default function Canais({ onToast }) {
       custos_fixos_pct: custosFixosPct / 100,
       ...(lojaId ? { loja_id: lojaId } : {}),
     });
+    recarregarCatalogo();
     setSalvandoNovo(false);
     if (error) {
       onToast("Não foi possível adicionar — tente de novo");
@@ -230,6 +205,7 @@ export default function Canais({ onToast }) {
 
   async function excluir(id) {
     const { error } = await supabase.from("canais").delete().eq("id", id);
+    recarregarCatalogo();
     if (error) onToast("Não foi possível excluir — tente de novo");
   }
 
@@ -242,6 +218,7 @@ export default function Canais({ onToast }) {
       tipo: "tiktok",
       ...(lojaId ? { loja_id: lojaId } : {}),
     });
+    recarregarCatalogo();
     if (error) {
       onToast("Não foi possível adicionar — tente de novo");
       return;
@@ -255,6 +232,7 @@ export default function Canais({ onToast }) {
       tipo: "shein",
       ...(lojaId ? { loja_id: lojaId } : {}),
     });
+    recarregarCatalogo();
     if (error) {
       onToast("Não foi possível adicionar — tente de novo");
       return;

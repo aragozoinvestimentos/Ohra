@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useCatalogo } from "../hooks/useCatalogo.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
@@ -78,8 +80,7 @@ function CampoPreco({ item, edicoes, setEdicoes, onSalvar }) {
 
 export default function Embalagens({ onToast }) {
   const { lojaId } = useLoja();
-  const [itens, setItens] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  const { embalagens: itens, produtoEmbalagens, kitEmbalagens, variacoes, carregando } = useCatalogo();
   const [novo, setNovo] = useState(VAZIO);
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [edicoes, setEdicoes] = useState({});
@@ -87,39 +88,6 @@ export default function Embalagens({ onToast }) {
   const [editItem, setEditItem] = useState(null); // embalagem sendo editada no menu, ou null
   const [edicaoForm, setEdicaoForm] = useState(VAZIO);
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
-
-  useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
-    let ativo = true;
-
-    async function carregar() {
-      try {
-        let query = supabase.from("embalagens").select("*").order("nome", { ascending: true });
-        if (lojaId) query = query.eq("loja_id", lojaId);
-        const { data, error } = await query;
-        if (!ativo) return;
-        if (!error) setItens(data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    }
-    carregar();
-
-    const canal = supabase
-      .channel("embalagens-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregar)
-      .subscribe();
-
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
 
   async function adicionar() {
     const nome = novo.nome.trim();
@@ -151,6 +119,7 @@ export default function Embalagens({ onToast }) {
       return;
     }
     setNovo(VAZIO);
+    recarregarCatalogo();
     onToast("Embalagem adicionada");
   }
 
@@ -172,6 +141,7 @@ export default function Embalagens({ onToast }) {
       onToast(`Não foi possível atualizar: ${error.message}`);
       return false;
     }
+    recarregarCatalogo();
     setEdicoes((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -224,24 +194,20 @@ export default function Embalagens({ onToast }) {
       return;
     }
     setEditItem(null);
+    recarregarCatalogo();
     onToast("Embalagem atualizada");
   }
 
   // Antes de excluir, avisa se o item está em uso em alguma receita — pra
   // não sumir silenciosamente de um produto ou kit já montado (mesmo
   // problema que já mordeu a gente com loja sem aviso de PIN).
-  async function pedirExclusao(item) {
-    const [{ count: emProdutos }, { count: emKits }] = await Promise.all([
-      supabase.from("produto_embalagens").select("id", { count: "exact", head: true }).eq("embalagem_id", item.id),
-      supabase.from("kit_embalagens").select("id", { count: "exact", head: true }).eq("embalagem_id", item.id),
-    ]);
+  function pedirExclusao(item) {
+    const emProdutos = produtoEmbalagens.filter((r) => r.embalagem_id === item.id).length;
+    const emKits = kitEmbalagens.filter((r) => r.embalagem_id === item.id).length;
     // Variações com embalagem personalizada guardam os itens em jsonb (sem
     // chave estrangeira) — confere na mão quais usam essa embalagem.
-    const { data: vars, error: eVars } = await supabase.from("produto_variacoes").select("id, embalagem_itens");
-    const variacoesComItem = eVars
-      ? []
-      : (vars || []).filter((v) => Array.isArray(v.embalagem_itens) && v.embalagem_itens.some((it) => it.itemId === item.id));
-    setExcluirAlvo({ ...item, emProdutos: emProdutos || 0, emKits: emKits || 0, variacoesComItem });
+    const variacoesComItem = variacoes.filter((v) => Array.isArray(v.embalagem_itens) && v.embalagem_itens.some((it) => it.itemId === item.id));
+    setExcluirAlvo({ ...item, emProdutos, emKits, variacoesComItem });
   }
 
   async function excluir(id, variacoesComItem = []) {
@@ -258,7 +224,7 @@ export default function Embalagens({ onToast }) {
         .update({ embalagem_itens: v.embalagem_itens.filter((it) => it.itemId !== id), atualizado_em: new Date().toISOString() })
         .eq("id", v.id);
     }
-    setItens((prev) => prev.filter((m) => m.id !== id));
+    recarregarCatalogo();
   }
 
   if (!supabase) {

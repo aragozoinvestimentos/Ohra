@@ -25,7 +25,7 @@ function labelTipo(tipo) {
 export default function PromocoesSalvas({ onToast }) {
   const { lojaId } = useLoja();
   const [promocoes, setPromocoes] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  const [carregando, setCarregando] = useState(!!supabase);
   const [busca, setBusca] = useState("");
   const [editAlvo, setEditAlvo] = useState(null); // linha inteira sendo editada
   const [modoEdicaoSimples, setModoEdicaoSimples] = useState(false);
@@ -42,10 +42,7 @@ export default function PromocoesSalvas({ onToast }) {
   const { produtos: produtosCatalogo } = useRankingData();
 
   useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
+    if (!supabase) return;
 
     let ativo = true;
 

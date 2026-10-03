@@ -57,7 +57,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
   const termos = normalizarTexto(busca).split(" ").filter(Boolean);
   const tabela = linhasAf.filter((l) => {
     if (filtro === "ativos" && !l.conf.ativo) return false;
-    if (filtro === "relevantes" && l.situacao === "sem") return false;
+    if (filtro === "relevantes" && (l.situacao === "sem" || l.situacao === "apertado")) return false;
     if (termos.length) {
       const t = normalizarTexto(`${l.item.nome} ${l.item.sku || ""} ${l.canal.nome}`);
       if (!termos.every((x) => t.includes(x))) return false;
@@ -185,7 +185,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
         <h3 className="section-title">
           <span>
             Comissão por item
-            <Ajuda texto="Comissão máxima = maior % (inteiro) que ainda deixa o lucro mínimo da loja (margem mínima ou lucro mínimo em R$, o que for maior), com o custo e as taxas de hoje. A comissão é sobre o preço de venda e sai do seu lucro. Produto em rampa abaixo do alvo usa o preço do degrau e fica como “não usar ainda”: com lucro perto do 0 a 0 não sobra pra comissão. Clique na comissão atual pra ativar, desativar ou dar um % próprio ao item." />
+            <Ajuda texto="Sua margem vem primeiro: afiliado só entra com o que sobra. Recomendada = o menor entre (1) o % que ainda deixa a sua margem desejada inteira, (2) metade do lucro ÷ preço — parte das vendas via afiliado o cliente faria de qualquer jeito, e nelas a comissão só tira do lucro — e (3) a máxima. Máxima = maior % que ainda deixa o lucro mínimo da loja (margem mínima ou lucro mínimo em R$); acima dela é prejuízo pro seu mínimo. Sem recomendada = não há espaço acima da sua margem neste preço: não precisa ativar. Tudo com o custo e as taxas de hoje; a comissão é sobre o preço e sai do seu lucro. Produto em rampa abaixo do alvo usa o preço do degrau e fica como “não usar ainda”: com lucro perto do 0 a 0 não sobra pra comissão. Clique na comissão atual pra ativar, desativar ou dar um % próprio ao item." />
           </span>
           <span className="h3-contagem">quanto dá pra pagar sem passar do lucro mínimo</span>
         </h3>
@@ -221,7 +221,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                   <th>Canal</th>
                   <th className="num">Preço</th>
                   <th className="num">Lucro</th>
-                  <th className="num">Comissão máxima</th>
+                  <th className="num">Recomendada</th>
                   <th className="centro">Comissão atual</th>
                   <th className="num">Lucro com afiliado</th>
                   <th>Situação</th>
@@ -243,12 +243,34 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                     </td>
                     <td className="num">{BRL(l.preco)}</td>
                     <td className="num">{BRL(l.lucro)}</td>
-                    <td className="num">{l.emRampa && l.situacao !== "acima" ? "—" : l.max >= 0.01 ? `até ${pct(l.max)}` : <span className="neg">sem folga</span>}</td>
+                    <td className="num">
+                      {l.emRampa && l.situacao !== "acima" ? (
+                        "—"
+                      ) : l.recomendada != null ? (
+                        <>
+                          <b>{pct(l.recomendada)}</b>
+                          <div className="sub-num" title="Afiliado ganha por venda · máxima = o que ainda deixa o lucro mínimo">
+                            {BRL(l.recomendada * l.preco)}/venda · máx. {pct(l.max)}
+                          </div>
+                        </>
+                      ) : l.max >= 0.01 ? (
+                        <>
+                          <span className="muted-cel">—</span>
+                          <div className="sub-num">máx. {pct(l.max)}</div>
+                        </>
+                      ) : (
+                        <span className="neg">sem folga</span>
+                      )}
+                    </td>
                     <td className="centro">
                       {l.conf.ativo ? (
                         <button type="button" className="badge acc comissao-chip" onClick={() => setEditItem(l)} title="Mudar o %, dar um % próprio ou desativar">
                           {pct(l.conf.comissao)} · {l.conf.fonte === "propria" ? "do item" : "padrão"} <span aria-hidden="true">✎</span>
                         </button>
+                      ) : l.emRampa ? (
+                        <span className="muted-cel" title="Em rampa abaixo do alvo: o lucro perto do 0 a 0 não deixa espaço pra comissão">
+                          —
+                        </span>
                       ) : (
                         <button type="button" className="btn btn-mini" onClick={() => setEditItem(l)} title="Ativar a comissão neste item">
                           + Ativar
@@ -257,7 +279,10 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                     </td>
                     <td className={`num${l.lucroCom != null && l.lucroCom < l.lucroMin - 0.004 ? " neg" : ""}`}>{l.lucroCom != null ? BRL(l.lucroCom) : "—"}</td>
                     <td>
-                      <Situacao l={l} onUsar={() => salvarItem(l, { ativo: true, comissao: l.max }, `${l.item.nome}: comissão ${pct(l.max)} neste item`)} />
+                      <Situacao
+                        l={l}
+                        onUsar={(c) => salvarItem(l, { ativo: true, comissao: c }, `${l.item.nome}: comissão ${pct(c)} neste item`)}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -319,7 +344,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
               <tbody>
                 {parceiros.map((p) => {
                   const r = resumoParceiro(p, { registros, mapaLinhas: mapaAf, itens });
-                  const st = statusEfetivo(p, hoje);
+                  const st = statusEfetivo(p, hoje, registros);
                   const canal = canais.find((c) => c.id === p.canal_id);
                   const amostraItem = r.amostra?.item;
                   // comissão do parceiro acima da máxima do item da amostra?
@@ -348,6 +373,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                           ))}
                         </select>
                         {st.auto && <div className="sub-num neg">parado · {st.dias} dias sem divulgar</div>}
+                        {st.vendeu > 0 && <div className="sub-num pos">já vendeu {st.vendeu} — marque “divulgou”</div>}
                       </td>
                       <td>
                         {amostraItem ? (
@@ -503,13 +529,15 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
 }
 
 function Situacao({ l, onUsar }) {
-  if (l.situacao === "acima")
+  // % pra onde levar a comissão quando ela está alta demais.
+  const alvo = l.recomendada ?? (l.situacao === "acima" && l.max >= 0.01 ? l.max : null);
+  if (l.situacao === "acima" || l.situacao === "alta")
     return (
       <div className="sit-af">
-        <span className="badge bad">acima da máxima</span>
-        {l.max >= 0.01 ? (
-          <button type="button" className="link-btn" onClick={onUsar}>
-            usar {pct(l.max)} só neste item
+        <span className={`badge ${l.situacao === "acima" ? "bad" : "warn"}`}>{l.situacao === "acima" ? "acima da máxima" : "come sua margem"}</span>
+        {alvo ? (
+          <button type="button" className="link-btn" onClick={() => onUsar(alvo)}>
+            usar {pct(alvo)} só neste item
           </button>
         ) : (
           <span className="sub-num">tire da campanha</span>
@@ -518,7 +546,13 @@ function Situacao({ l, onUsar }) {
     );
   if (l.situacao === "rampa") return <span className="badge neutro">em rampa: não usar ainda</span>;
   if (l.situacao === "ok") return <span className="badge good">✓ ok</span>;
-  if (l.situacao === "pode") return <span className="badge acc">pode ativar até {pct(l.max)}</span>;
+  if (l.situacao === "pode") return <span className="badge acc">pode ativar até {pct(l.recomendada)}</span>;
+  if (l.situacao === "apertado")
+    return (
+      <span className="badge neutro" title="Há folga até o lucro mínimo, mas nada acima da sua margem desejada — afiliado só se houver espaço">
+        sem espaço acima da sua margem
+      </span>
+    );
   return <span className="badge neutro">sem folga pra comissão</span>;
 }
 
@@ -575,7 +609,7 @@ function ItemComissaoDialog({ l, salvando, onCancelar, onSalvar }) {
       onSalvar={() => !invalido && onSalvar({ ativo, comissao: valor === "" ? null : num(valor) / 100 })}
     >
       <p className="hint" style={{ marginTop: 0 }}>
-        <CanalTag canal={l.canal} /> · vendendo {BRL(l.preco)} · lucro {BRL(l.lucro)} · mínimo {BRL(l.lucroMin)} · comissão máxima <b>{l.max >= 0.01 ? pct(l.max) : "sem folga"}</b>
+        <CanalTag canal={l.canal} /> · vendendo {BRL(l.preco)} · lucro {BRL(l.lucro)} · mínimo {BRL(l.lucroMin)} · recomendada <b>{l.recomendada != null ? pct(l.recomendada) : "—"}</b> · máxima <b>{l.max >= 0.01 ? pct(l.max) : "sem folga"}</b>
         {l.emRampa ? " · em rampa abaixo do alvo (o ideal é esperar chegar no alvo)" : ""}
       </p>
       <label className="check-inline">
@@ -713,7 +747,8 @@ function ParceiroDialog({ parceiro, inicial, itens, canais, mapaAf, hoje, lojaId
         <p className="hint">
           Custo da amostra: <b>{BRL(ca.total)}</b> (peças {BRL(ca.pecas)}
           {ca.frete ? ` + frete ${BRL(ca.frete)}` : ""}).
-          {maxAm != null && ` Comissão máxima desse item no canal: ${maxAm >= 0.01 ? pct(maxAm) : "sem folga"}.`}
+          {maxAm != null &&
+            ` Comissão desse item no canal: recomendada ${linhaAm.recomendada != null ? pct(linhaAm.recomendada) : "— (sem espaço acima da sua margem)"} · máxima ${maxAm >= 0.01 ? pct(maxAm) : "sem folga"}.`}
           {linhaAm?.emRampa && " Item em rampa abaixo do alvo: ainda sem folga pra comissão."}
           {maxAm != null && f.comissao !== "" && num(f.comissao) / 100 > maxAm + 1e-9 && <b className="neg"> A comissão do parceiro passa da máxima.</b>}
         </p>

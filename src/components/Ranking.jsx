@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { BRL, PCT } from "../lib/format.js";
-import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
 import { supabase } from "../lib/supabaseClient.js";
 import Ajuda from "./Ajuda.jsx";
@@ -17,17 +16,14 @@ import AvisoRampa from "./AvisoRampa.jsx";
 // divulgação" do ponto de vista financeiro.
 export default function Ranking() {
   const margemLoja = useMargemDesejada();
-  const { lojaId } = useLoja();
   const { itens, canais, precos, carregando } = useRankingData();
-  const [canalFiltro, setCanalFiltro] = useState("melhor"); // "melhor" ou o id de um canal específico
+  const [canalEscolhido, setCanalFiltro] = useState("melhor"); // "melhor" ou o id de um canal específico
   const [tipoFiltro, setTipoFiltro] = useState("todos"); // "todos" | "produtos" | "kits"
   const [busca, setBusca] = useState("");
 
-  // Troca de loja invalida o filtro de canal escolhido (o canal pode nem
-  // existir na loja nova).
-  useEffect(() => {
-    setCanalFiltro("melhor");
-  }, [lojaId]);
+  // Troca de loja (ou canal desativado) invalida o filtro — o canal pode nem
+  // existir na loja nova; aí volta pro "melhor".
+  const canalFiltro = canalEscolhido === "melhor" || canais.some((c) => c.id === canalEscolhido) ? canalEscolhido : "melhor";
 
   const { rampas } = useRampas();
   const ranking = calcularRanking(itens, canais, { canalFiltro, tipoFiltro, precos, margemPct: margemLoja }).filter((linha) => {

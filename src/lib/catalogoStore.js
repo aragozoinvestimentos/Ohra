@@ -13,12 +13,12 @@ const VAZIO = {
   kitEmbalagens: [],
   embalagens: [],
   canais: [],
+  canaisTodos: [],
   precos: [],
   materiais: [],
   produtoEmbalagens: [],
   variacoes: [],
   concorrentes: [],
-  publicacoes: [],
   publicacoesCanal: [],
   carregando: true,
 };
@@ -35,7 +35,6 @@ const TABELAS = [
   "produto_embalagens",
   "materiais",
   "precos_concorrente",
-  "publicacoes_olist",
   "publicacoes_canal",
 ];
 
@@ -61,18 +60,19 @@ async function carregar() {
   const lojaId = lojaAtual;
   const porLoja = (q) => (lojaId ? q.eq("loja_id", lojaId) : q);
   try {
-    const [rp, rc, rk, re, rpc, rm, rv, rcc, rpo, rpcn] = await Promise.all([
+    const [rp, rc, rk, re, rpc, rm, rv, rcc, rpcn] = await Promise.all([
       porLoja(supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true })),
-      porLoja(supabase.from("canais").select("*").eq("ativo", true).order("tipo")),
+      // Todos os canais (inclusive desativados — Configuração → Canais e o
+      // Fluxo de Caixa precisam deles); `canais` = só os ativos.
+      porLoja(supabase.from("canais").select("*").order("tipo").order("nome")),
       porLoja(supabase.from("kits").select("*").order("nome")),
       porLoja(supabase.from("embalagens").select("*").order("nome")),
       porLoja(supabase.from("precos_canal").select("*")),
       porLoja(supabase.from("materiais").select("*").order("nome", { ascending: true })),
       // Só existe depois do schema v26 — sem ela, segue sem variações.
       porLoja(supabase.from("produto_variacoes").select("*").order("quantidade")),
-      // Só existem depois do schema v27 — sem elas, segue sem concorrentes/publicações.
+      // Só existe depois do schema v27 — sem ela, segue sem concorrentes.
       porLoja(supabase.from("precos_concorrente").select("*")),
-      porLoja(supabase.from("publicacoes_olist").select("*")),
       // Só existe depois do schema v30 — sem ela, nada marcado como atualizado.
       porLoja(supabase.from("publicacoes_canal").select("*")),
     ]);
@@ -87,16 +87,17 @@ async function carregar() {
       kitIds.length ? supabase.from("kit_embalagens").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
     ]);
     if (minhaGeracao !== geracao) return;
+    const canaisTodos = rc.error ? estado.canaisTodos : rc.data || [];
     emitir({
       produtos,
       kits,
-      canais: rc.error ? estado.canais : rc.data || [],
+      canaisTodos,
+      canais: canaisTodos.filter((c) => c.ativo === true),
       embalagens: re.error ? estado.embalagens : re.data || [],
       precos: rpc.error ? estado.precos : rpc.data || [],
       materiais: rm.error ? estado.materiais : rm.data || [],
       variacoes: rv.error ? [] : rv.data || [],
       concorrentes: rcc.error ? [] : rcc.data || [],
-      publicacoes: rpo.error ? [] : rpo.data || [],
       publicacoesCanal: rpcn.error ? [] : rpcn.data || [],
       produtoEmbalagens: rpe.error ? [] : rpe.data || [],
       kitProdutos: rkp.error ? estado.kitProdutos : rkp.data || [],

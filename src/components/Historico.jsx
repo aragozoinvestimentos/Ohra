@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { resultadoNoPreco } from "../lib/calc.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../hooks/useRankingData.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { statusPrecoSalvo, sugestaoKit, configEscada } from "../lib/escada.js";
@@ -28,14 +29,12 @@ import { useRampas } from "../hooks/useRampas.js";
 // foram simplificadas pra só o formulário.
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, carregando: carregandoBase, escada, precos: precosVivos, cfgLoja } = useEscada();
+  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja } = useEscada();
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
   const [filamentosAlvo, setFilamentosAlvo] = useState(null);
   const { rampas } = useRampas(); // id do item com a janela ⇄ Filamentos aberta
   const [excluirVariacao, setExcluirVariacao] = useState(null); // item "v:<id>" // { item, canal, sugerido, linha }
   const [salvandoAplicar, setSalvandoAplicar] = useState(false);
-  const [precos, setPrecos] = useState([]);
-  const [carregandoPrecos, setCarregandoPrecos] = useState(true);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const [editAlvo, setEditAlvo] = useState(null); // { id, nomeItem, nomeCanal, custoTotal, canal }
   const [edicao, setEdicao] = useState({ preco: "" });
@@ -53,36 +52,6 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [clonarPrecoAlvo, setClonarPrecoAlvo] = useState(null); // { item, canalDestino } — clonar preço já salvo de outro canal
   const [canalOrigemId, setCanalOrigemId] = useState("");
   const [salvandoClonePreco, setSalvandoClonePreco] = useState(false);
-
-  useEffect(() => {
-    if (!supabase) {
-      setCarregandoPrecos(false);
-      return;
-    }
-    let ativo = true;
-    async function carregar() {
-      try {
-        let query = supabase.from("precos_canal").select("*");
-        if (lojaId) query = query.eq("loja_id", lojaId);
-        const { data, error } = await query;
-        if (!ativo) return;
-        if (!error) setPrecos(data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregandoPrecos(false);
-      }
-    }
-    carregar();
-    const canal = supabase
-      .channel("precos-canal-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "precos_canal" }, carregar)
-      .subscribe();
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
 
   function numOuNull(v) {
     const n = parseFloat(String(v).replace(",", "."));
@@ -165,9 +134,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
     }
     await supabase.from("precos_canal").delete().eq("item_tipo", "variacao").eq("item_id", vid);
     await supabase.from("precos_concorrente").delete().eq("item_tipo", "variacao").eq("item_id", vid);
-    await supabase.from("publicacoes_olist").delete().eq("item_tipo", "variacao").eq("item_id", vid);
     await supabase.from("publicacoes_canal").delete().eq("item_tipo", "variacao").eq("item_id", vid);
-    setPrecos((prev) => prev.filter((p) => !(p.item_tipo === "variacao" && p.item_id === vid)));
+    recarregarCatalogo();
     onToast(`${item.nomeVariacao || item.nome} excluída`);
   }
 
@@ -296,7 +264,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
       onToast(`Não foi possível clonar o preço: ${error.message}`);
       return;
     }
-    setPrecos((prev) => [...prev.filter((p) => p.id !== data.id), data]);
+    recarregarCatalogo();
     setClonarPrecoAlvo(null);
     setRecemSalvoId(data.id);
     setTimeout(() => setRecemSalvoId((atual) => (atual === data.id ? null : atual)), 1000);
@@ -311,7 +279,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
       onToast("Não foi possível excluir agora — tente de novo");
       return;
     }
-    setPrecos((prev) => prev.filter((p) => p.id !== precoId));
+    recarregarCatalogo();
   }
 
   function iniciarEdicao(p, item, canalObj) {
@@ -342,7 +310,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
       onToast("Não foi possível salvar — tente de novo");
       return;
     }
-    setPrecos((prev) => prev.map((p) => (p.id === precoId ? { ...p, preco: arredondarPreco(preco), lucro, margem } : p)));
+    recarregarCatalogo();
     setEditAlvo(null);
     setRecemSalvoId(precoId);
     setTimeout(() => setRecemSalvoId((atual) => (atual === precoId ? null : atual)), 1000);
@@ -381,44 +349,50 @@ export default function Historico({ onEditarCompleto, onToast }) {
       const { data: criado, error: e2 } = await supabase.from(tabela).insert(novo).select().single();
       if (e2 || !criado) throw new Error(e2?.message || "Não foi possível clonar");
       const novoId = criado.id;
+      // Cada parte copiada é conferida: se alguma falhar, o clone continua
+      // existindo, mas o aviso diz exatamente o que faltou (antes dizia
+      // "Clonado com sucesso" mesmo com um kit sem peças, custo 0).
+      const falhas = [];
+      const copiar = async (rotulo, tabelaFilha, campoPai, transformar) => {
+        const { data, error: eLer } = await supabase.from(tabelaFilha).select("*").eq(campoPai, id);
+        if (eLer) {
+          // Tabela que ainda não existe (schema antigo) não conta como falha.
+          if (!/relation|does not exist|schema cache/i.test(eLer.message)) falhas.push(rotulo);
+          return;
+        }
+        if (!data?.length) return;
+        const { error: eIns } = await supabase.from(tabelaFilha).insert(data.map(transformar));
+        if (eIns) falhas.push(rotulo);
+      };
 
       if (tabela === "produtos_cadastro") {
-        const { data: embs } = await supabase.from("produto_embalagens").select("*").eq("produto_id", id);
-        if (embs?.length) {
-          const linhas = embs.map(({ id: _oid, produto_id: _pid, ...resto }) => ({ ...resto, produto_id: novoId }));
-          await supabase.from("produto_embalagens").insert(linhas);
-        }
+        await copiar("receita de embalagem", "produto_embalagens", "produto_id", ({ id: _oid, produto_id: _pid, ...resto }) => ({ ...resto, produto_id: novoId }));
         // Variações de quantidade vão junto (sem os preços salvos delas).
-        const { data: vars, error: eVars } = await supabase.from("produto_variacoes").select("*").eq("produto_id", id);
-        if (!eVars && vars?.length) {
-          const linhas = vars.map(({ id: _oid, produto_id: _pid, criado_em: _c, ...resto }) => ({
-            ...resto,
-            produto_id: novoId,
-            sku: null,
-            atualizado_em: new Date().toISOString(),
-          }));
-          await supabase.from("produto_variacoes").insert(linhas);
-        }
+        await copiar("variações", "produto_variacoes", "produto_id", ({ id: _oid, produto_id: _pid, criado_em: _c, ...resto }) => ({
+          ...resto,
+          produto_id: novoId,
+          sku: null,
+          atualizado_em: new Date().toISOString(),
+        }));
       } else {
-        const { data: kp } = await supabase.from("kit_produtos").select("*").eq("kit_id", id);
-        if (kp?.length) {
-          const linhas = kp.map(({ id: _oid, kit_id: _kid, ...resto }) => ({ ...resto, kit_id: novoId }));
-          await supabase.from("kit_produtos").insert(linhas);
-        }
-        const { data: ke } = await supabase.from("kit_embalagens").select("*").eq("kit_id", id);
-        if (ke?.length) {
-          const linhas = ke.map(({ id: _oid, kit_id: _kid, ...resto }) => ({ ...resto, kit_id: novoId }));
-          await supabase.from("kit_embalagens").insert(linhas);
-        }
+        await copiar("peças do kit", "kit_produtos", "kit_id", ({ id: _oid, kit_id: _kid, ...resto }) => ({ ...resto, kit_id: novoId }));
+        await copiar("embalagens do kit", "kit_embalagens", "kit_id", ({ id: _oid, kit_id: _kid, ...resto }) => ({ ...resto, kit_id: novoId }));
       }
 
       const itemTipo = tipoLetra === "k" ? "kit" : "produto";
       const precosOriginais = precos.filter((p) => p.item_tipo === itemTipo && p.item_id === id);
       if (precosOriginais.length) {
         const linhas = precosOriginais.map(({ id: _oid, item_id: _iid, ...resto }) => ({ ...resto, item_id: novoId }));
-        await supabase.from("precos_canal").insert(linhas);
+        const { error: ePrecos } = await supabase.from("precos_canal").insert(linhas);
+        if (ePrecos) falhas.push("preços salvos");
       }
 
+      recarregarCatalogo();
+      if (falhas.length) {
+        onToast(`Clone criado, mas não copiou: ${falhas.join(", ")} — confira em Cadastros`);
+        setClonarAlvo(null);
+        return;
+      }
       onToast("Clonado com sucesso");
       setClonarAlvo(null);
     } catch (err) {
@@ -465,7 +439,6 @@ export default function Historico({ onEditarCompleto, onToast }) {
     onToast("Excluído por completo");
   }
 
-  const carregando = carregandoBase || carregandoPrecos;
   const alvoBusca = busca.trim().toLowerCase();
   // Variações ficam dentro do produto (linha "suspensa" que abre ao clicar
   // na seta) — a lista principal só tem produtos e kits. Uma busca que acha

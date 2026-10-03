@@ -71,14 +71,11 @@ export function LojaProvider({ children }) {
   const [lojas, setLojas] = useState([]);
   const [lojaId, setLojaId] = useState(null);
   const [disponivel, setDisponivel] = useState(false);
-  const [carregando, setCarregando] = useState(true);
+  const [carregando, setCarregando] = useState(!!supabase);
   const [desbloqueadas, setDesbloqueadas] = useState(lerDesbloqueadas);
 
   const carregar = useCallback(async () => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
+    if (!supabase) return;
     try {
       const { data, error } = await supabase.from("lojas").select("*").order("criado_em", { ascending: true });
       if (error) throw error;

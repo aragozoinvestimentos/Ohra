@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useCatalogo } from "../hooks/useCatalogo.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
+import { trocarLinhas } from "../lib/trocarLinhas.js";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import Ajuda from "./Ajuda.jsx";
@@ -13,81 +16,20 @@ const VAZIO = { nome: "", sku: "", observacao: "", produtosItens: [], embalagemI
 export default function Kits({ abrirKitId, onToast }) {
   const { produtos: produtosVivos, itens: itensVivos, canais: canaisVivos, precos: precosVivos } = useRankingData();
   const { lojaId, lojas } = useLoja();
-  const [produtos, setProdutos] = useState([]);
-  const [embalagensCatalogo, setEmbalagensCatalogo] = useState([]);
-  const [produtoEmbalagensTodos, setProdutoEmbalagensTodos] = useState([]);
-  const [kits, setKits] = useState([]);
-  const [kitProdutosTodos, setKitProdutosTodos] = useState([]);
-  const [kitEmbalagensTodos, setKitEmbalagensTodos] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  // Dados crus do catálogo compartilhado (uma busca + um realtime pro app todo).
+  const {
+    produtos,
+    embalagens: embalagensCatalogo,
+    produtoEmbalagens: produtoEmbalagensTodos,
+    kits,
+    kitProdutos: kitProdutosTodos,
+    kitEmbalagens: kitEmbalagensTodos,
+    carregando,
+  } = useCatalogo();
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
-
-  useEffect(() => {
-    if (!supabase) {
-      setCarregando(false);
-      return;
-    }
-    let ativo = true;
-
-    async function carregarTudo() {
-      try {
-        let qProdutos = supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true });
-        if (lojaId) qProdutos = qProdutos.eq("loja_id", lojaId);
-        let qEmbalagens = supabase.from("embalagens").select("*").order("nome", { ascending: true });
-        if (lojaId) qEmbalagens = qEmbalagens.eq("loja_id", lojaId);
-        let qKits = supabase.from("kits").select("*").order("nome", { ascending: true });
-        if (lojaId) qKits = qKits.eq("loja_id", lojaId);
-
-        const [{ data: produtosData, error: e1 }, { data: embalagensData, error: e2 }, { data: kitsData, error: e3 }] =
-          await Promise.all([qProdutos, qEmbalagens, qKits]);
-        if (!ativo) return;
-        if (e1 || e2 || e3) return;
-
-        const produtoIds = (produtosData || []).map((p) => p.id);
-        const kitIds = (kitsData || []).map((k) => k.id);
-
-        const [peResp, kpResp, keResp] = await Promise.all([
-          produtoIds.length
-            ? supabase.from("produto_embalagens").select("*").in("produto_id", produtoIds)
-            : Promise.resolve({ data: [] }),
-          kitIds.length ? supabase.from("kit_produtos").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
-          kitIds.length ? supabase.from("kit_embalagens").select("*").in("kit_id", kitIds) : Promise.resolve({ data: [] }),
-        ]);
-        if (!ativo) return;
-
-        setProdutos(produtosData || []);
-        setEmbalagensCatalogo(embalagensData || []);
-        setKits(kitsData || []);
-        setProdutoEmbalagensTodos(peResp.data || []);
-        setKitProdutosTodos(kpResp.data || []);
-        setKitEmbalagensTodos(keResp.data || []);
-      } catch {
-        // falha de rede — mantém o que já estava carregado
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    }
-
-    carregarTudo();
-
-    const canal = supabase
-      .channel("kits-tudo-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "produtos_cadastro" }, carregarTudo)
-      .on("postgres_changes", { event: "*", schema: "public", table: "embalagens" }, carregarTudo)
-      .on("postgres_changes", { event: "*", schema: "public", table: "produto_embalagens" }, carregarTudo)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kits" }, carregarTudo)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kit_produtos" }, carregarTudo)
-      .on("postgres_changes", { event: "*", schema: "public", table: "kit_embalagens" }, carregarTudo)
-      .subscribe();
-
-    return () => {
-      ativo = false;
-      supabase.removeChannel(canal);
-    };
-  }, [lojaId]);
 
   // Veio de "Editar completo" em Produtos precificados — carrega o kit certo pra
   // edição. Essa sub-aba pode acabar de montar (troca vinda de outra aba de
@@ -219,27 +161,27 @@ export default function Kits({ abrirKitId, onToast }) {
     }
 
     if (kitId) {
-      await Promise.all([
-        supabase.from("kit_produtos").delete().eq("kit_id", kitId),
-        supabase.from("kit_embalagens").delete().eq("kit_id", kitId),
-      ]);
       const linhasProdutos = (form.produtosItens || [])
         .filter((it) => it.itemId)
         .map((it) => ({ kit_id: kitId, produto_id: it.itemId, quantidade: Number(it.quantidade) || 0 }));
       const linhasEmbalagens = (form.embalagemItens || [])
         .filter((it) => it.itemId)
         .map((it) => ({ kit_id: kitId, embalagem_id: it.itemId, quantidade: Number(it.quantidade) || 0 }));
+      // Grava a composição nova antes de apagar a antiga — se falhar, a
+      // antiga continua lá (antes apagava primeiro e o kit podia ficar vazio).
       const [{ error: erroP }, { error: erroE }] = await Promise.all([
-        linhasProdutos.length ? supabase.from("kit_produtos").insert(linhasProdutos) : Promise.resolve({ error: null }),
-        linhasEmbalagens.length ? supabase.from("kit_embalagens").insert(linhasEmbalagens) : Promise.resolve({ error: null }),
+        trocarLinhas(supabase, "kit_produtos", "kit_id", kitId, linhasProdutos),
+        trocarLinhas(supabase, "kit_embalagens", "kit_id", kitId, linhasEmbalagens),
       ]);
+      recarregarCatalogo();
       if (erroP || erroE) {
         setSalvando(false);
-        onToast(`Kit salvo, mas houve erro na receita: ${(erroP || erroE).message}`);
+        onToast(`Kit salvo, mas a composição não foi atualizada (a anterior foi mantida): ${(erroP || erroE).message}`);
         limpar();
         return;
       }
     }
+    recarregarCatalogo();
     setSalvando(false);
     onToast(editandoId ? "Kit atualizado" : "Kit cadastrado");
     limpar();
