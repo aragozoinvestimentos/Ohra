@@ -15,6 +15,9 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import BuscaItem from "./BuscaItem.jsx";
 import GraficoRampa from "./GraficoRampa.jsx";
+import Afiliados from "./Afiliados.jsx";
+import { useAfiliados } from "../hooks/useAfiliados.js";
+import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -58,21 +61,28 @@ function Copiavel({ valor, texto }) {
   );
 }
 
+const SUBABAS_CRESC = [
+  { key: "rampa", label: "Rampa de preço" },
+  { key: "afiliados", label: "Afiliados" },
+];
+const lerSub = () => {
+  try {
+    return localStorage.getItem("ohra:crescimento-sub") === "afiliados" ? "afiliados" : "rampa";
+  } catch {
+    return "rampa";
+  }
+};
+
 export default function Crescimento({ onToast }) {
-  const { lojas, lojaId, atualizar } = useLoja();
   const dados = useEscada();
-  const { itens, produtos, kits, canais, precos, concorrentes, cfgDoProduto, cfgLoja } = dados;
-  const { rampas, registros, disponivel, carregando } = useRampas({ comRegistros: true });
+  const { itens, produtos, canais, precos, cfgDoProduto, cfgLoja } = dados;
+  const rampasH = useRampas({ comRegistros: true });
+  const { rampas, registros } = rampasH;
+  const af = useAfiliados();
   const regras = useMemo(() => regrasDaLoja(cfgLoja), [cfgLoja]);
   const hoje = hojeISO();
-  const [selId, setSelId] = useState(null);
-  const [iniciar, setIniciar] = useState(null); // {} novo | { rampa } editar degraus
+  const [sub, setSub] = useState(lerSub);
   const [semanaAberta, setSemanaAberta] = useState(false);
-  const [mudar, setMudar] = useState(null); // { linha, dir: 1 | -1 }
-  const [encerrar, setEncerrar] = useState(null);
-  const [verRegras, setVerRegras] = useState(false);
-  const [acimaConfirma, setAcimaConfirma] = useState(null); // { tipo: "testar"|"voltar"|"aprovar", linha, preco }
-  const [salvando, setSalvando] = useState(false);
 
   // Uma linha por rampa, com tudo calculado ao vivo.
   const linhas = useMemo(() => {
@@ -92,6 +102,83 @@ export default function Crescimento({ onToast }) {
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
   }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje]);
+
+  // Comissão de afiliado por item × canal (ao vivo).
+  const linhasAf = useMemo(
+    () => linhasComissao({ itens, canais, precos, cfgDoProduto, config: af.config, linhasRampa: linhas }),
+    [itens, canais, precos, cfgDoProduto, af.config, linhas]
+  );
+  const mapaAf = useMemo(() => new Map(linhasAf.map((l) => [l.chave, l])), [linhasAf]);
+  const semanaAf = useMemo(
+    () => resumoSemana({ afRegistros: af.registros, rampaRegistros: registros, rampas, mapaLinhas: mapaAf, linhasRampa: linhas, hoje }),
+    [af.registros, registros, rampas, mapaAf, linhas, hoje]
+  );
+
+  function trocarSub(k) {
+    setSub(k);
+    try {
+      localStorage.setItem("ohra:crescimento-sub", k);
+    } catch {
+      // sem localStorage — só não lembra
+    }
+  }
+
+  const podeRegistrar = linhas.length > 0 || linhasAf.some((l) => l.conf.ativo);
+
+  return (
+    <>
+      <div className="subabas">
+        {SUBABAS_CRESC.map((s) => (
+          <button key={s.key} type="button" data-sub={s.key} className={`btn${sub === s.key ? " primary" : ""}`} onClick={() => trocarSub(s.key)}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {sub === "rampa" ? (
+        <RampaPreco
+          dados={dados}
+          rampasH={rampasH}
+          regras={regras}
+          linhas={linhas}
+          hoje={hoje}
+          comissaoSemana={semanaAf.comissaoRampa}
+          podeRegistrar={podeRegistrar}
+          onRegistrar={() => setSemanaAberta(true)}
+          onToast={onToast}
+        />
+      ) : (
+        <Afiliados
+          dados={dados}
+          af={af}
+          rampasH={rampasH}
+          regras={regras}
+          linhasAf={linhasAf}
+          mapaAf={mapaAf}
+          semana={semanaAf}
+          hoje={hoje}
+          podeRegistrar={podeRegistrar}
+          onRegistrar={() => setSemanaAberta(true)}
+          onToast={onToast}
+        />
+      )}
+      {semanaAberta && (
+        <RegistrarSemanaDialog linhas={linhas} linhasAf={linhasAf} af={af} onToast={onToast} onClose={() => setSemanaAberta(false)} />
+      )}
+    </>
+  );
+}
+
+function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, podeRegistrar, onRegistrar, onToast }) {
+  const { lojas, lojaId, atualizar } = useLoja();
+  const { itens, produtos, kits, precos, concorrentes, cfgDoProduto } = dados;
+  const { rampas, disponivel, carregando } = rampasH;
+  const [selId, setSelId] = useState(null);
+  const [iniciar, setIniciar] = useState(null); // {} novo | { rampa } editar degraus
+  const [mudar, setMudar] = useState(null); // { linha, dir: 1 | -1 }
+  const [encerrar, setEncerrar] = useState(null);
+  const [verRegras, setVerRegras] = useState(false);
+  const [acimaConfirma, setAcimaConfirma] = useState(null); // { tipo: "testar"|"voltar"|"aprovar", linha, preco }
+  const [salvando, setSalvando] = useState(false);
 
   const sel = linhas.find((l) => l.r.id === selId) || linhas[0] || null;
 
@@ -135,8 +222,8 @@ export default function Crescimento({ onToast }) {
   // --- KPIs ---
   const prontos = linhas.filter((l) => l.est.sugestao.chave === "subir");
   const segurando = linhas.filter((l) => ["segurar", "revisar", "voltar"].includes(l.est.sugestao.chave));
-  const lucroSemana = linhas.reduce((s, l) => s + (l.est.lucroSemana || 0), 0);
-  const lucroSemanaAds = linhas.reduce((s, l) => s + (l.est.lucroSemanaAds ?? l.est.lucroSemana ?? 0), 0);
+  const lucroSemana = linhas.reduce((s, l) => s + (l.est.lucroSemana || 0), 0) - (comissaoSemana || 0);
+  const lucroSemanaAds = linhas.reduce((s, l) => s + (l.est.lucroSemanaAds ?? l.est.lucroSemana ?? 0), 0) - (comissaoSemana || 0);
   const lucroSemanaAlvo = linhas.reduce((s, l) => s + (l.est.lucroSemanaAlvo || 0), 0);
   const temSemana = linhas.some((l) => l.est.lucroSemana != null);
 
@@ -261,7 +348,7 @@ export default function Crescimento({ onToast }) {
         <button type="button" className="btn" onClick={() => setIniciar({})}>
           + Iniciar rampa
         </button>
-        <button type="button" className="btn primary" onClick={() => setSemanaAberta(true)} disabled={!linhas.length}>
+        <button type="button" className="btn primary" onClick={onRegistrar} disabled={!podeRegistrar}>
           Registrar semana
         </button>
       </TopbarAcoes>
@@ -288,7 +375,9 @@ export default function Crescimento({ onToast }) {
           {
             label: "Lucro da semana",
             valor: temSemana ? BRL(lucroSemana) : "—",
-            sub: temSemana ? `${BRL(lucroSemanaAds)} depois de Ads · no alvo seria ${BRL(lucroSemanaAlvo)}` : "registre a semana pra ver",
+            sub: temSemana
+              ? `${BRL(lucroSemanaAds)} depois de Ads${comissaoSemana > 0 ? ` · já sem ${BRL(comissaoSemana)} de comissão` : ""} · no alvo seria ${BRL(lucroSemanaAlvo)}`
+              : "registre a semana pra ver",
           },
         ]}
       />
@@ -440,7 +529,6 @@ export default function Crescimento({ onToast }) {
           }}
         />
       )}
-      {semanaAberta && <RegistrarSemanaDialog linhas={linhas} onToast={onToast} onClose={() => setSemanaAberta(false)} />}
       {mudar && (
         <ConfirmDialog
           titulo={mudar.dir > 1 ? "Subir 2 degraus" : mudar.dir > 0 ? "Subir degrau" : "Voltar degrau"}
@@ -1207,18 +1295,33 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
   );
 }
 
-function RegistrarSemanaDialog({ linhas, onToast, onClose }) {
+const VAZIO_RAMPA = { vendas: "", avaliacoes: "", nota: "", ruins: "", gasto: "", cliques: "", adsVendas: "" };
+const VAZIO_AF = { afVendas: "", afComissao: "", parceiro: "" };
+
+// Uma janela só pra semana: produtos em rampa (vendas, avaliações, nota, 1–2★,
+// Ads) + bloco Afiliado nos itens com comissão ativa — e os itens com
+// afiliado fora de rampa (kits, variações, produtos no alvo sem rampa).
+function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
   const { lojaId } = useLoja();
   const [data, setData] = useState(hojeISO());
-  const [f, setF] = useState(() => Object.fromEntries(linhas.map((l) => [l.r.id, { vendas: "", avaliacoes: "", nota: "", ruins: "", gasto: "", cliques: "", adsVendas: "" }])));
+  const afDe = (l) => linhasAf.find((x) => x.chave === `produto|${l.r.produto_id}|${l.r.canal_id}` && x.conf.ativo) || null;
+  const foraRampa = linhasAf.filter((x) => x.conf.ativo && !x.rampa);
+  const [f, setF] = useState(() => ({
+    ...Object.fromEntries(linhas.map((l) => [l.r.id, { ...VAZIO_RAMPA, ...VAZIO_AF }])),
+    ...Object.fromEntries(foraRampa.map((x) => [x.chave, { ...VAZIO_RAMPA, ...VAZIO_AF }])),
+  }));
   const [salvando, setSalvando] = useState(false);
   const set = (id, k) => (e) => setF((p) => ({ ...p, [id]: { ...p[id], [k]: e.target.value } }));
+  const preenchido = (v, campos) => campos.some((k) => v[k] !== "");
+  const intOuNull = (x) => (x === "" ? null : Math.round(num(x)));
+
   async function salvar() {
-    const linhasSalvar = linhas
-      .filter((l) => Object.values(f[l.r.id]).some((v) => v !== ""))
-      .map((l) => {
-        const v = f[l.r.id];
-        return {
+    const rampaSalvar = [];
+    const afSalvar = [];
+    for (const l of linhas) {
+      const v = f[l.r.id];
+      if (preenchido(v, Object.keys(VAZIO_RAMPA)))
+        rampaSalvar.push({
           loja_id: lojaId || null,
           rampa_id: l.r.id,
           tipo: "semana",
@@ -1226,46 +1329,146 @@ function RegistrarSemanaDialog({ linhas, onToast, onClose }) {
           degrau: l.est.i,
           preco: l.est.preco,
           vendas: v.vendas === "" ? 0 : Math.round(num(v.vendas)),
-          avaliacoes: v.avaliacoes === "" ? null : Math.round(num(v.avaliacoes)),
+          avaliacoes: intOuNull(v.avaliacoes),
           nota: v.nota === "" ? null : num(v.nota),
           avaliacoes_ruins: Math.round(num(v.ruins)),
           ads_gasto: v.gasto === "" ? null : num(v.gasto),
-          ads_vendas: v.adsVendas === "" ? null : Math.round(num(v.adsVendas)),
+          ads_vendas: intOuNull(v.adsVendas),
           ...(v.cliques !== "" ? { ads_cliques: Math.round(num(v.cliques)) } : {}),
-        };
+        });
+      const la = afDe(l);
+      if (la && preenchido(v, ["afVendas", "afComissao"]))
+        afSalvar.push({
+          loja_id: lojaId || null,
+          item_tipo: "produto",
+          item_id: l.r.produto_id,
+          canal_id: l.r.canal_id,
+          data,
+          preco: l.est.preco,
+          vendas: Math.round(num(v.afVendas)),
+          comissao: v.afComissao === "" ? cent(num(v.afVendas) * l.est.preco * la.conf.comissao) : num(v.afComissao),
+          parceiro_id: v.parceiro || null,
+        });
+    }
+    for (const x of foraRampa) {
+      const v = f[x.chave];
+      if (!preenchido(v, ["vendas", "gasto", "cliques", "adsVendas", "afVendas", "afComissao"])) continue;
+      afSalvar.push({
+        loja_id: lojaId || null,
+        item_tipo: x.tipo,
+        item_id: x.id,
+        canal_id: x.canal.id,
+        data,
+        preco: x.preco,
+        vendas: Math.round(num(v.afVendas)),
+        comissao: v.afComissao === "" ? cent(num(v.afVendas) * x.preco * x.conf.comissao) : num(v.afComissao),
+        vendas_total: v.vendas === "" ? null : Math.round(num(v.vendas)),
+        ads_gasto: v.gasto === "" ? null : num(v.gasto),
+        ads_cliques: intOuNull(v.cliques),
+        ads_vendas: intOuNull(v.adsVendas),
+        parceiro_id: v.parceiro || null,
       });
-    if (!linhasSalvar.length) return onToast?.("Preencha pelo menos um produto");
+    }
+    if (!rampaSalvar.length && !afSalvar.length) return onToast?.("Preencha pelo menos um item");
+    const semAf = afSalvar.find((g) => g.vendas_total != null && g.vendas > g.vendas_total);
+    if (semAf) return onToast?.("Vendas via afiliado não podem passar das vendas da semana");
     setSalvando(true);
-    const { error } = await supabase.from("rampa_registros").insert(linhasSalvar);
+    if (rampaSalvar.length) {
+      const { error } = await supabase.from("rampa_registros").insert(rampaSalvar);
+      if (error) {
+        setSalvando(false);
+        return onToast?.(/ads_cliques/.test(error.message) ? "Falta rodar o supabase/schema_v34.sql no Supabase (coluna de cliques)" : `Não foi possível salvar: ${error.message}`);
+      }
+    }
+    if (afSalvar.length) {
+      const { error } = await supabase.from("afiliado_registros").insert(afSalvar);
+      if (error) {
+        setSalvando(false);
+        return onToast?.(/afiliado_registros|schema cache|does not exist/.test(error.message) ? "Falta rodar o supabase/schema_v35.sql no Supabase (afiliados)" : `Não foi possível salvar o afiliado: ${error.message}`);
+      }
+    }
     setSalvando(false);
-    if (error) return onToast?.(/ads_cliques/.test(error.message) ? "Falta rodar o supabase/schema_v34.sql no Supabase (coluna de cliques)" : `Não foi possível salvar: ${error.message}`);
-    onToast?.(`Semana registrada (${linhasSalvar.length} produto${linhasSalvar.length > 1 ? "s" : ""})`);
+    const n = new Set([
+      ...rampaSalvar.map((r) => {
+        const l = linhas.find((x) => x.r.id === r.rampa_id);
+        return `produto|${l.r.produto_id}|${l.r.canal_id}`;
+      }),
+      ...afSalvar.map((g) => `${g.item_tipo}|${g.item_id}|${g.canal_id}`),
+    ]).size;
+    onToast?.(`Semana registrada (${n} item${n > 1 ? "s" : ""})`);
     onClose();
   }
+
+  const blocoAfiliado = (chave, la, preco) => {
+    const v = f[chave];
+    const parceiros = (af.parceiros || []).filter((p) => !p.canal_id || p.canal_id === la.canal.id);
+    const estimada = num(v.afVendas) > 0 ? cent(num(v.afVendas) * preco * la.conf.comissao) : null;
+    return (
+      <div className="bloco-afiliado">
+        <div className="bloco-afiliado-titulo">Afiliado · comissão {Math.round(la.conf.comissao * 100)}%</div>
+        <div className="grid-semana">
+          <div className="field"><label>Vendas via afiliado</label><input type="number" min="0" value={v.afVendas} onChange={set(chave, "afVendas")} /></div>
+          <div className="field">
+            <label>Comissão paga (R$)</label>
+            <input type="text" inputMode="decimal" value={v.afComissao} placeholder={estimada != null ? virgula(estimada) : ""} onChange={set(chave, "afComissao")} />
+          </div>
+          <div className="field">
+            <label>Parceiro (opcional)</label>
+            <select value={v.parceiro} onChange={set(chave, "parceiro")}>
+              <option value="">campanha aberta</option>
+              {parceiros.map((p) => (
+                <option key={p.id} value={p.id}>{p.nome}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <EditarDialog titulo="Registrar semana" salvando={salvando} onSalvar={salvar} onCancelar={onClose} salvarLabel="Registrar" classe="modal-box-md">
       <p className="hint" style={{ marginTop: 0 }}>
         Do painel do canal: vendas da semana (unidades vendidas do anúncio), o total de avaliações que aparece no anúncio, a nota, quantas avaliações de 1–2★
-        chegaram na semana e, se usou Ads, o gasto e as vendas via Ads. Deixe em branco o produto que não quiser registrar.
+        chegaram na semana e, se usou Ads, o gasto e as vendas via Ads. Itens com afiliado ganham o bloco Afiliado (vendas e comissão do painel de afiliados;
+        comissão em branco = estimada pelo %). Deixe em branco o que não quiser registrar.
       </p>
       <div className="field" style={{ maxWidth: 200 }}>
         <label>Data</label>
         <input type="date" value={data} onChange={(e) => setData(e.target.value)} />
       </div>
-      {linhas.map((l) => (
-        <div key={l.r.id} className="bloco-semana">
+      {linhas.map((l) => {
+        const la = afDe(l);
+        return (
+          <div key={l.r.id} className="bloco-semana">
+            <div className="bloco-semana-titulo">
+              <b>{l.produto.nome}</b> <CanalTag canal={l.canal} /> <span className="muted-cel">em rampa · vendendo {BRL(l.est.preco)} · {l.est.avaliacoesTotal} avaliações até agora</span>
+            </div>
+            <div className="grid-semana">
+              <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={f[l.r.id].vendas} onChange={set(l.r.id, "vendas")} /></div>
+              <div className="field"><label>Avaliações (total)</label><input type="number" min="0" value={f[l.r.id].avaliacoes} onChange={set(l.r.id, "avaliacoes")} /></div>
+              <div className="field"><label>Nota</label><input type="text" inputMode="decimal" value={f[l.r.id].nota} onChange={set(l.r.id, "nota")} /></div>
+              <div className="field"><label>1–2★ na semana</label><input type="number" min="0" value={f[l.r.id].ruins} onChange={set(l.r.id, "ruins")} /></div>
+              <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={f[l.r.id].gasto} onChange={set(l.r.id, "gasto")} /></div>
+              <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={f[l.r.id].cliques} onChange={set(l.r.id, "cliques")} /></div>
+              <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={f[l.r.id].adsVendas} onChange={set(l.r.id, "adsVendas")} /></div>
+            </div>
+            {la && blocoAfiliado(l.r.id, la, l.est.preco)}
+          </div>
+        );
+      })}
+      {foraRampa.map((x) => (
+        <div key={x.chave} className="bloco-semana">
           <div className="bloco-semana-titulo">
-            <b>{l.produto.nome}</b> <CanalTag canal={l.canal} /> <span className="muted-cel">vendendo {BRL(l.est.preco)} · {l.est.avaliacoesTotal} avaliações até agora</span>
+            <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">fora de rampa · vendendo {BRL(x.preco)}</span>
           </div>
           <div className="grid-semana">
-            <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={f[l.r.id].vendas} onChange={set(l.r.id, "vendas")} /></div>
-            <div className="field"><label>Avaliações (total)</label><input type="number" min="0" value={f[l.r.id].avaliacoes} onChange={set(l.r.id, "avaliacoes")} /></div>
-            <div className="field"><label>Nota</label><input type="text" inputMode="decimal" value={f[l.r.id].nota} onChange={set(l.r.id, "nota")} /></div>
-            <div className="field"><label>1–2★ na semana</label><input type="number" min="0" value={f[l.r.id].ruins} onChange={set(l.r.id, "ruins")} /></div>
-            <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={f[l.r.id].gasto} onChange={set(l.r.id, "gasto")} /></div>
-            <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={f[l.r.id].cliques} onChange={set(l.r.id, "cliques")} /></div>
-            <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={f[l.r.id].adsVendas} onChange={set(l.r.id, "adsVendas")} /></div>
+            <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={f[x.chave].vendas} onChange={set(x.chave, "vendas")} /></div>
+            <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={f[x.chave].gasto} onChange={set(x.chave, "gasto")} /></div>
+            <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={f[x.chave].cliques} onChange={set(x.chave, "cliques")} /></div>
+            <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={f[x.chave].adsVendas} onChange={set(x.chave, "adsVendas")} /></div>
           </div>
+          {blocoAfiliado(x.chave, x, x.preco)}
         </div>
       ))}
     </EditarDialog>

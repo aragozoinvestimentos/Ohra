@@ -58,7 +58,7 @@ const GRUPOS = [
     tabs: [
       { key: "orcamento", label: "Orçamento", sub: "Encomendas avulsas e em volume" },
       { key: "promocoes", label: "Promoções", sub: "Simule descontos antes de publicar" },
-      { key: "crescimento", label: "Crescimento", sub: "Rampa de preço no orgânico, portões e Ads" },
+      { key: "crescimento", label: "Crescimento", sub: "Rampa de preço no orgânico, Ads e afiliados" },
     ],
   },
   {
