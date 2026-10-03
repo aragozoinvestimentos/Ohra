@@ -5,6 +5,9 @@ import { useEscada } from "../hooks/useEscada.js";
 import { useRampas } from "../hooks/useRampas.js";
 import { BRL, PCT } from "../lib/format.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
+
+// "2026-10-03" → "03/10" (sem passar por Date, que no fuso do Brasil voltaria um dia).
+const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
 import { descontoDoItem, escadaDoProduto, sugestaoKit, lucroNoPreco } from "../lib/escada.js";
 import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, estadoRampa, normalizarDegraus, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
 import Kpis from "./Kpis.jsx";
@@ -421,6 +424,15 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
                         <div className="sub-linha">
                           <CanalTag canal={l.canal} /> · {e.avaliacoesTotal} avaliações{e.nota != null ? ` · nota ${virgula(e.nota, 1)}` : ""}
                         </div>
+                        {l.r.checklist?.pronto ? (
+                          <span className="badge good tag-pronto" title={`Você marcou como pronto em ${diaMes(l.r.checklist.pronto)}: agora é só acompanhar e registrar a semana`}>
+                            ✓ pronto
+                          </span>
+                        ) : (
+                          <span className="badge neutro tag-pronto" title="Ainda não marcado como pronto (botão no fim do painel do produto, em Revisar anúncio)">
+                            preparando
+                          </span>
+                        )}
                         <TagTeste teste={e.teste} />
                       </td>
                       <td>
@@ -990,6 +1002,23 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
           ))}
         </div>
         <p className="hint" style={{ margin: "6px 0 0" }}>As marcações ficam salvas por produto. Depois de mexer nas fotos, espere 7 dias antes de tirar conclusões.</p>
+        <div className="pronto-linha">
+          {l.r.checklist?.pronto ? (
+            <>
+              <span className="badge good">✓ Pronto desde {diaMes(l.r.checklist.pronto)}</span>
+              <button type="button" className="link-btn" onClick={() => onChecklist(l, "pronto", null)}>
+                desfazer
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="btn btn-sm" onClick={() => onChecklist(l, "pronto", hojeISO())}>
+                ✓ Marcar como pronto
+              </button>
+              <span className="muted-cel">já fiz tudo o que ia fazer neste anúncio — daqui em diante é só acompanhar (não precisa marcar todo o checklist)</span>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
