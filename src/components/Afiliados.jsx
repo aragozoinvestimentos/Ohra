@@ -222,7 +222,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                   <th className="num">Preço</th>
                   <th className="num">Lucro</th>
                   <th className="num">Comissão máxima</th>
-                  <th>Comissão atual</th>
+                  <th className="centro">Comissão atual</th>
                   <th className="num">Lucro com afiliado</th>
                   <th>Situação</th>
                 </tr>
@@ -244,10 +244,16 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                     <td className="num">{BRL(l.preco)}</td>
                     <td className="num">{BRL(l.lucro)}</td>
                     <td className="num">{l.emRampa && l.situacao !== "acima" ? "—" : l.max >= 0.01 ? `até ${pct(l.max)}` : <span className="neg">sem folga</span>}</td>
-                    <td>
-                      <button type="button" className="link-btn" onClick={() => setEditItem(l)} title="Ativar, desativar ou dar um % próprio">
-                        {l.conf.ativo ? `${pct(l.conf.comissao)} (${l.conf.fonte === "propria" ? "do item" : "padrão"})` : "— ativar"}
-                      </button>
+                    <td className="centro">
+                      {l.conf.ativo ? (
+                        <button type="button" className="badge acc comissao-chip" onClick={() => setEditItem(l)} title="Mudar o %, dar um % próprio ou desativar">
+                          {pct(l.conf.comissao)} · {l.conf.fonte === "propria" ? "do item" : "padrão"} <span aria-hidden="true">✎</span>
+                        </button>
+                      ) : (
+                        <button type="button" className="btn btn-mini" onClick={() => setEditItem(l)} title="Ativar a comissão neste item">
+                          + Ativar
+                        </button>
+                      )}
                     </td>
                     <td className={`num${l.lucroCom != null && l.lucroCom < l.lucroMin - 0.004 ? " neg" : ""}`}>{l.lucroCom != null ? BRL(l.lucroCom) : "—"}</td>
                     <td>

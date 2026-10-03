@@ -407,6 +407,7 @@ th {
 tbody tr:hover td { background: var(--surface-3); }
 td.num { text-align: right; white-space: nowrap; }
 th.num { text-align: right; }
+th.centro, td.centro { text-align: center; }
 .empty { color: var(--ink-faint); font-size: 13px; padding: 18px 0; text-align: center; }
 .table-wrap { overflow-x: auto; }
 .del { background: none; border: none; color: var(--ink-faint); font-size: 16px; padding: 2px 6px; border-radius: 5px; }
@@ -735,6 +736,9 @@ footer.note { margin-top: 32px; font-size: 12px; color: var(--ink-faint); line-h
 .panel h3.h3-split > span { display: inline-flex; align-items: center; gap: 2px; }
 .btn.btn-sm { padding: 4px 10px; font-size: 12px; }
 .badge.acc { background: var(--accent-soft); color: var(--accent-ink); }
+.comissao-chip { border: 0; cursor: pointer; font-family: inherit; }
+.comissao-chip:hover { filter: brightness(0.95); }
+.comissao-chip span { opacity: 0.6; font-size: 10.5px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-height: 30px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--ink); }
 .chip button { border: 0; background: none; padding: 0 0 0 2px; color: var(--ink-faint); cursor: pointer; font-size: 13px; line-height: 1; }
