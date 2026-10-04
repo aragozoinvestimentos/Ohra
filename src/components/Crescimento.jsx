@@ -8,7 +8,8 @@ import { hojeISO } from "../lib/fluxoCaixa.js";
 
 // "2026-10-03" → "03/10" (sem passar por Date, que no fuso do Brasil voltaria um dia).
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
-import { descontoDoItem, escadaDoProduto, sugestaoKit, lucroNoPreco } from "../lib/escada.js";
+import { anuncioDaRampa } from "../lib/rampaAnuncio.js";
+import { gravarPrecoNovo } from "../lib/estrategia.js";
 import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, estadoRampa, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -27,19 +28,9 @@ const num = (v) => {
   return isFinite(x) ? x : 0;
 };
 const cent = (v) => Math.round(v * 100) / 100;
-const centavoAcima = (x) => Math.ceil(x * 100 - 1e-6) / 100;
 const virgula = (v, casas = 2) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
 const dataBR = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—");
 
-// Riscado FIXO (do alvo) e promo do degrau: o cliente vê o mesmo "de R$ X" o
-// tempo todo, só o desconto diminui conforme o preço sobe.
-function anuncioFixo(real, alvo, desconto) {
-  if (!(real > 0)) return null;
-  if (!(desconto > 0.005) || !(alvo > 0)) return { original: real, promo: 0, clientePaga: real, real };
-  const original = centavoAcima(Math.max(alvo, real) / (1 - desconto));
-  const promo = Math.max(0, Math.floor((1 - real / original) * 100 + 1e-9));
-  return { original, promo, clientePaga: cent(original * (1 - promo / 100)), real };
-}
 
 function Copiavel({ valor, texto }) {
   const [ok, setOk] = useState(false);
@@ -199,34 +190,14 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
     return precos.map((p) => (p.item_tipo === "produto" && mapa.has(`${p.item_id}|${p.canal_id}`) ? { ...p, preco: mapa.get(`${p.item_id}|${p.canal_id}`) } : p));
   }, [precos, linhas]);
 
-  // O que digitar no canal pro produto selecionado (avulso, variações, kits).
+  // O que digitar no canal pro produto selecionado (avulso, variações, kits)
+  // — conta compartilhada com a Anunciar e a Ficha (lib/rampaAnuncio.js).
   const anuncio = useMemo(() => {
     if (!sel) return null;
     const { canal, est, cfg, r } = sel;
-    const desc = descontoDoItem(`p:${r.produto_id}`, canal, { itens, produtos, kits }).desconto;
-    const out = [];
-    const av = anuncioFixo(est.preco, est.alvo, desc);
-    if (av) out.push({ id: "avulso", nome: "Avulso (1 un.)", ...av, lucro: est.lucroAtual });
-    const noDegrau = escadaDoProduto({ produtoId: r.produto_id, canal, itens, precos: precosRampa, concorrentes, cfg, p1Override: est.preco });
-    const noAlvo = escadaDoProduto({ produtoId: r.produto_id, canal, itens, precos, concorrentes, cfg, p1Override: est.alvo });
-    for (const l of noDegrau?.escada?.linhas || []) {
-      if (l.base || !l.cadastrada) continue;
-      const la = noAlvo?.escada?.linhas.find((x) => x.n === l.n);
-      const alvoV = l.salvo ?? la?.sugerido ?? l.sugerido;
-      const a = anuncioFixo(Math.min(l.sugerido, alvoV), alvoV, desc);
-      if (a) out.push({ id: l.itemId, nome: l.nome || `Kit ${l.n}`, ...a, lucro: lucroNoPreco(canal, a.real, l.custo, l.peso, cfg), naoCompensa: l.naoCompensa });
-    }
-    const cfgKit = cfgDoProduto(null);
-    for (const k of itens.filter((i) => i.tipo === "Kit" && (i.componentes || []).some((c) => c.produtoId === r.produto_id))) {
-      const sg = sugestaoKit({ canal, kitItem: k, itens, precos: precosRampa, cfg: cfgKit });
-      if (!sg) continue;
-      const salvoK = precos.find((p) => p.item_tipo === "kit" && p.item_id === k.id.slice(2) && p.canal_id === canal.id);
-      const alvoK = salvoK ? num(salvoK.preco) : sugestaoKit({ canal, kitItem: k, itens, precos, cfg: cfgKit })?.sugerido ?? sg.sugerido;
-      const dk = descontoDoItem(k.id, canal, { itens, produtos, kits }).desconto;
-      const a = anuncioFixo(Math.min(sg.sugerido, alvoK), alvoK, dk);
-      if (a) out.push({ id: k.id, nome: k.nome, ...a, lucro: lucroNoPreco(canal, a.real, sg.custo, sg.peso, cfgKit), kit: true, naoCompensa: sg.naoCompensa });
-    }
-    return { linhas: out, desconto: desc };
+    const res = anuncioDaRampa({ produtoId: r.produto_id, canal, preco: est.preco, alvo: est.alvo, cfg, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto });
+    // Lucro do avulso = o da rampa (mesmo custo/taxas ao vivo).
+    return { ...res, linhas: res.linhas.map((l) => (l.id === "avulso" ? { ...l, lucro: est.lucroAtual } : l)) };
   }, [sel, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto]);
 
   // --- KPIs ---
@@ -320,10 +291,13 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
     const preco = l.est.preco;
     const lucro = l.est.lucroEm(preco);
     setSalvando(true);
-    const { error } = await supabase
-      .from("precos_canal")
-      .update({ preco, custo_total: l.ctx.custo, lucro, margem: preco > 0 ? lucro / preco : null, atualizado_em: new Date().toISOString() })
-      .eq("id", salvo.id);
+    // Preço novo = decisão nova: zera a estratégia (estrategia.js).
+    const { error } = await gravarPrecoNovo((extra) =>
+      supabase
+        .from("precos_canal")
+        .update({ preco, custo_total: l.ctx.custo, lucro, margem: preco > 0 ? lucro / preco : null, atualizado_em: new Date().toISOString(), ...extra })
+        .eq("id", salvo.id)
+    );
     setSalvando(false);
     setAcimaConfirma(null);
     if (error) return onToast?.(`Não foi possível atualizar o preço salvo: ${error.message}`);

@@ -4,6 +4,7 @@ import BuscaItem from "./BuscaItem.jsx";
 import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, reservaProducao } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { gravarPrecoNovo } from "../lib/estrategia.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import Termometro from "./Termometro.jsx";
@@ -372,8 +373,10 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   async function salvarSugeridoKit() {
     setConfirmarKit(false);
     if (!supabase || !sugKit || !canalIdAtual) return;
-    const { error } = await supabase.from("precos_canal").upsert(
+    // Preço novo = decisão nova: zera a estratégia (estrategia.js).
+    const { error } = await gravarPrecoNovo((extra) => supabase.from("precos_canal").upsert(
       {
+        ...extra,
         loja_id: lojaId || null,
         item_tipo: "kit",
         item_id: kitSelecionadoId,
@@ -385,7 +388,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         atualizado_em: new Date().toISOString(),
       },
       { onConflict: "item_tipo,item_id,canal_id" }
-    );
+    ));
     if (error) {
       onToast(`Não foi possível salvar: ${error.message}`);
       return;
@@ -413,8 +416,10 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     }
     const id = baseSelecionada.split(":")[1];
     setSalvando(true);
-    const { error } = await supabase.from("precos_canal").upsert(
+    // Preço novo = decisão nova: zera a estratégia (estrategia.js).
+    const { error } = await gravarPrecoNovo((extra) => supabase.from("precos_canal").upsert(
       {
+        ...extra,
         loja_id: lojaId || null,
         item_tipo: itemTipoDoId(baseSelecionada),
         item_id: id,
@@ -426,7 +431,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         atualizado_em: new Date().toISOString(),
       },
       { onConflict: "item_tipo,item_id,canal_id" }
-    );
+    ));
     setSalvando(false);
     if (error) {
       onToast(`Não foi possível salvar: ${error.message}`);

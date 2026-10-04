@@ -4,6 +4,7 @@
 // retorno de amostra e sugestões. Nada aqui grava no banco.
 import { lucroNoPreco } from "./escada.js";
 import { itemTipoDoId } from "./variacoes.js";
+import { estrategiaEfetiva } from "./estrategia.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -101,8 +102,12 @@ export const idPrefixado = (tipo, id) => `${PREFIXO[tipo] || "p"}:${id}`;
 // Uma linha por item (produto, variação, kit) × canal com preço salvo.
 // `linhasRampa` = linhas da aba Rampa (r, est): produto em rampa abaixo do
 // alvo usa o preço do degrau e fica "em rampa: não usar ainda".
+// Estratégia do preço (estrategia.js) manda: crescimento (escolhido, rampa ou
+// kit com peça em rampa) = "não usar ainda"; atração = mostra os números mas
+// não sugere ativar.
 export function linhasComissao({ itens, canais, precos, cfgDoProduto, config, linhasRampa = [] }) {
   const out = [];
+  const emRampaSet = new Set(linhasRampa.filter((l) => !["alvo", "acima"].includes(l.est.fase.chave)).map((l) => `${l.r.produto_id}|${l.r.canal_id}`));
   for (const it of itens) {
     const tipo = itemTipoDoId(it.id);
     const id = it.id.slice(2);
@@ -113,6 +118,8 @@ export function linhasComissao({ itens, canais, precos, cfgDoProduto, config, li
       if (!salvo || !(num(salvo.preco) > 0)) continue;
       const rampa = tipo === "produto" ? linhasRampa.find((l) => l.r.produto_id === id && l.r.canal_id === canal.id) : null;
       const emRampa = !!rampa && !["alvo", "acima"].includes(rampa.est.fase.chave);
+      const estrategia = estrategiaEfetiva(it, canal, { precos, emRampa: emRampaSet });
+      const naoUsar = estrategia.chave === "crescimento";
       const preco = rampa ? num(rampa.est.preco) : num(salvo.preco);
       const lucroEm = (p) => lucroNoPreco(canal, p, it.custoTotal, it.peso, cfg);
       const lucro = lucroEm(preco);
@@ -124,8 +131,9 @@ export function linhasComissao({ itens, canais, precos, cfgDoProduto, config, li
       // mas come a sua margem desejada; apertado = há folga até o mínimo,
       // mas nada acima da sua margem (não vale ativar).
       let situacao;
-      if (conf.ativo && conf.comissao > max + 1e-9) situacao = "acima";
-      else if (emRampa) situacao = "rampa";
+      if (naoUsar) situacao = "rampa";
+      else if (conf.ativo && conf.comissao > max + 1e-9) situacao = "acima";
+      else if (estrategia.chave === "atracao" && !conf.ativo) situacao = "atracao";
       else if (conf.ativo) situacao = recomendada != null && conf.comissao <= recomendada + 1e-9 ? "ok" : "alta";
       else if (recomendada != null) situacao = "pode";
       else if (max >= 0.01) situacao = "apertado";
@@ -148,11 +156,13 @@ export function linhasComissao({ itens, canais, precos, cfgDoProduto, config, li
         situacao,
         rampa,
         emRampa,
+        estrategia,
+        naoUsar,
         lucroMin: lucroMinimoNoPreco(preco, cfg),
       });
     }
   }
-  const ordem = { acima: 0, alta: 1, ok: 2, pode: 3, rampa: 4, apertado: 5, sem: 6 };
+  const ordem = { acima: 0, alta: 1, ok: 2, pode: 3, rampa: 4, atracao: 5, apertado: 6, sem: 7 };
   return out.sort((a, b) => ordem[a.situacao] - ordem[b.situacao] || a.item.nome.localeCompare(b.item.nome) || a.canal.nome.localeCompare(b.canal.nome));
 }
 

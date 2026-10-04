@@ -6,8 +6,11 @@
 //   peça do avulso — toda a economia de taxa fixa/embalagem/frete vai pro
 //   cliente —, o kit 10 mantém `r10` (80%) e o resto segue uma curva
 //   logarítmica suave entre os dois, nunca abaixo de `piso` (70%).
-// - Se o avulso estiver como "atração" (margem abaixo da desejada), a base
-//   passa a ser o lucro por peça da margem desejada: o lucro vem dos kits.
+// - Base do lucro por peça (estratégia do preço, schema v37): avulso em
+//   Atração/Crescimento escolhidos ou em rampa → o maior entre o lucro do
+//   avulso e o da margem desejada (o lucro vem dos kits); Normal escolhido de
+//   propósito → o lucro do próprio avulso; nada escolhido → o maior (como
+//   sempre foi) e a tela só SUGERE marcar como atração.
 // - Travas: o cliente sempre economiza pelo menos `vantagemMin` vs. N
 //   avulsos; preço por peça sempre cai conforme a quantidade; nunca abaixo da
 //   margem mínima; concorrente (se houver) é teto, mas NUNCA derruba abaixo
@@ -21,6 +24,7 @@
 // salva; o preço original (riscado) + promo % só aparece em Anunciar.
 import { SHOPEE_TIERS, ML_ENVIO_FAIXAS_PRECO, TIKTOK_TIERS, resolverTaxasNoPreco, custoEnvioML } from "./calc.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "./constantesCanal.js";
+import { estrategiaGravada } from "./estrategia.js";
 
 export const ESCADA_PADRAO = {
   r2: 1, // kit 2 mantém 100% do lucro/peça
@@ -170,15 +174,17 @@ export function referenciasAvulso(canal, custo1, peso1, cfg, concorrente) {
  * @param kits      [{ n, custo, peso, id?, nome?, salvo?, concorrente? }] quantidades > 1
  * @param cfg       configEscada(...)
  */
-export function calcularEscada({ canal, p1, base1, kits, cfg }) {
+export function calcularEscada({ canal, p1, base1, kits, cfg, estrategia = null, emRampa = false }) {
   const custo1 = num(base1?.custo);
   const peso1 = num(base1?.peso);
   const preco1 = num(p1);
   const l1 = lucroNoPreco(canal, preco1, custo1, peso1, cfg) ?? 0;
   const pRef = precoParaMargem(canal, cfg.margemDesejada, custo1, peso1, cfg);
   const lRef = pRef != null ? lucroNoPreco(canal, pRef, custo1, peso1, cfg) : l1;
-  const lBase = Math.max(l1, lRef ?? l1);
-  const baseRef = (lRef ?? 0) > l1 + 0.005;
+  const lBase = estrategia === "normal" && !emRampa ? l1 : Math.max(l1, lRef ?? l1);
+  const baseRef = lBase > l1 + 0.005;
+  // Por que a base é a margem desejada (pra tela explicar).
+  const baseMotivo = !baseRef ? null : emRampa ? "rampa" : estrategia === "atracao" ? "atracao" : estrategia === "crescimento" ? "crescimento" : "sugerido";
 
   const linhas = [
     {
@@ -279,13 +285,24 @@ export function calcularEscada({ canal, p1, base1, kits, cfg }) {
     prevSug = p;
     prevN = n;
   }
-  return { linhas, l1, lBase, baseRef };
+  return { linhas, l1, lBase, baseRef, baseMotivo, estrategia };
+}
+
+// O avulso "parece atração": margem abaixo da desejada mas o kit 2 compensa.
+// Só SUGESTÃO — quem decide é a estratégia escolhida (estrategia.js).
+export function pareceAtracao(escada, p1, cfg) {
+  if (!escada || !(p1 > 0)) return false;
+  const m1 = escada.l1 / p1;
+  const k2 = escada.linhas.find((l) => l.n === 2) || escada.linhas.find((l) => !l.base);
+  return !!(k2 && k2.margem != null && escada.l1 > 0 && m1 < cfg.margemDesejada && k2.margem >= cfg.margemDesejada - 0.001);
 }
 
 // Status de um preço salvo comparado ao sugerido.
-export function statusPrecoSalvo(salvo, linha, salvoPorPecaAnterior) {
+// silenciarPiso = a estratégia do item (crescimento/atração/rampa) explica o
+// preço abaixo do mínimo — não marca "abaixo do piso" (alertaPreco decide).
+export function statusPrecoSalvo(salvo, linha, salvoPorPecaAnterior, { silenciarPiso = false } = {}) {
   if (salvo == null || !linha || linha.base) return null;
-  if (linha.pisoMargem != null && salvo < linha.pisoMargem - 0.005) return { tom: "bad", texto: "▼ abaixo do piso" };
+  if (!silenciarPiso && linha.pisoMargem != null && salvo < linha.pisoMargem - 0.005) return { tom: "bad", texto: "▼ abaixo do piso" };
   if (salvoPorPecaAnterior != null && salvo / linha.n > salvoPorPecaAnterior + 0.005) return { tom: "warn", texto: "⚠ escada invertida" };
   const d = (salvo - linha.sugerido) / linha.sugerido;
   if (d < -0.03) return { tom: "acc", texto: "↑ dá pra cobrar mais" };
@@ -294,7 +311,8 @@ export function statusPrecoSalvo(salvo, linha, salvoPorPecaAnterior) {
 }
 
 // Alertas do avulso ("atração", barato demais, acima do concorrente).
-export function alertasAvulso({ canal, p1, base1, cfg, escada, concorrente }) {
+// estrategia = estratégia efetiva do avulso no canal (estrategia.js).
+export function alertasAvulso({ canal, p1, base1, cfg, escada, concorrente, estrategia = null }) {
   const out = [];
   if (canal?.tipo === "ml" && !(num(base1?.peso) > 0)) {
     out.push({ tom: "warn", titulo: "Produto sem peso cadastrado", texto: "No Mercado Livre o custo de envio depende do peso (peça + embalagem). Sem peso, o app está usando a faixa mais leve (até 300 g) — preencha o peso no cadastro do produto e das embalagens pra conta ficar exata." });
@@ -304,7 +322,11 @@ export function alertasAvulso({ canal, p1, base1, cfg, escada, concorrente }) {
   const k2 = escada.linhas.find((l) => l.n === 2) || escada.linhas.find((l) => !l.base);
   if (k2 && k2.margem != null) {
     if (m1 < cfg.margemDesejada && k2.margem >= cfg.margemDesejada - 0.001 && l1 > 0) {
-      out.push({ tom: "good", titulo: "🧲 Avulso funcionando como atração", texto: `O avulso está com margem ${(m1 * 100).toFixed(1).replace(".", ",")}% (abaixo da desejada), mas o Kit ${k2.n} dá ${(k2.margem * 100).toFixed(1).replace(".", ",")}%. Tudo bem: o avulso puxa o clique na busca, o lucro vem no kit.` });
+      const pctTxt = (v) => (v * 100).toFixed(1).replace(".", ",");
+      if (estrategia?.origem === "escolhida" && estrategia.chave === "atracao")
+        out.push({ tom: "good", titulo: "🧲 Avulso como atração (escolhido)", texto: `Margem ${pctTxt(m1)}% no avulso; o Kit ${k2.n} dá ${pctTxt(k2.margem)}%. O avulso puxa o clique na busca, o lucro vem no kit.` });
+      else if (!estrategia || (estrategia.origem === "padrao" && !estrategia.linha?.estrategia) || estrategia.vencida)
+        out.push({ tom: "neutro", titulo: "🧲 Parece atração — marcar?", texto: `O avulso está com margem ${pctTxt(m1)}% (abaixo da desejada), mas o Kit ${k2.n} dá ${pctTxt(k2.margem)}%. Se for de propósito (o avulso puxa o clique, o lucro vem no kit), marque como atração.`, acao: "marcar-atracao" });
     } else if (k2.margem < cfg.margemMin || l1 <= 0) {
       out.push({ tom: "bad", titulo: "Avulso barato demais", texto: `Com esse avulso, nem o Kit ${k2.n} passa da margem mínima. Suba o avulso ou revise o custo.` });
     }
@@ -392,7 +414,7 @@ export function promoParaPreco(anunciado, precoFinal) {
 // - avulso = preço salvo do produto nesse canal (ou `p1Override`); sem
 //   preço salvo, parte do preço da margem desejada.
 // - kits = variações do produto (+ quantidades extras simuladas).
-export function escadaDoProduto({ produtoId, canal, itens, precos, concorrentes, cfg, p1Override, quantidadesExtras = [], concorrenteOverrides = {} }) {
+export function escadaDoProduto({ produtoId, canal, itens, precos, concorrentes, cfg, p1Override, quantidadesExtras = [], concorrenteOverrides = {}, emRampa = false }) {
   const itemPai = itens.find((i) => i.id === `p:${produtoId}`);
   if (!itemPai || !canal) return null;
   const salvoDe = (tipo, id) => precos.find((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === canal.id) || null;
@@ -447,7 +469,10 @@ export function escadaDoProduto({ produtoId, canal, itens, precos, concorrentes,
     });
   }
   const kits = [...porN.values()];
-  const escada = calcularEscada({ canal, p1, base1: { custo: custo1, peso: peso1 }, kits, cfg });
+  // Estratégia escolhida pro avulso nesse canal (vencida = como se não houvesse).
+  const g = salvo1 ? estrategiaGravada(salvo1, lucroNoPreco(canal, num(salvo1.preco), custo1, peso1, cfg)) : null;
+  const estrategia = g && !g.vencida ? g.chave : null;
+  const escada = calcularEscada({ canal, p1, base1: { custo: custo1, peso: peso1 }, kits, cfg, estrategia, emRampa });
   return { escada, p1, p1Origem, salvo1: salvo1 ? num(salvo1.preco) : null, concorrente1: conc1, itemPai, custo1, peso1 };
 }
 
@@ -487,7 +512,9 @@ export function sugestaoKit({ canal, kitItem, itens, precos, cfg }) {
     componentes.push({ produtoId: c.produtoId, nome: it.nome, quantidade: q, preco, origem: salvo ? "salvo" : "margem", lucro: l });
     separado += q * preco;
     lucroSeparado += q * l;
-    lucroBase += q * Math.max(l, lRef);
+    // Normal escolhido de propósito → lucro da própria peça; senão o maior.
+    const g = salvo ? estrategiaGravada(salvo, l) : null;
+    lucroBase += q * (g && !g.vencida && g.chave === "normal" ? l : Math.max(l, lRef));
   }
   if (!componentes.length || !(separado > 0)) return null;
   const pecas = componentes.reduce((s, c) => s + c.quantidade, 0);

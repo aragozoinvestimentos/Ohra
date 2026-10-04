@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import BuscaItem from "./BuscaItem.jsx";
 import { supabase } from "../lib/supabaseClient.js";
+import { gravarPrecoNovo } from "../lib/estrategia.js";
+import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
@@ -36,7 +38,8 @@ const CAMPOS_MARGEM = [
 
 export default function PrecoPorQuantidade({ onToast }) {
   const { lojaId, atualizar } = useLoja();
-  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais } = useEscada();
+  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe } = useEscada();
+  const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // diálogo "Manter assim" do avulso
   const [revisar, setRevisar] = useState(null); // linha de produto_variacoes aberta na tela suspensa (revisar insumos)
   const [produtoId, setProdutoId] = useState("");
   const [canalId, setCanalId] = useState("");
@@ -67,7 +70,16 @@ export default function PrecoPorQuantidade({ onToast }) {
   const dados = pid && canal ? escada(pid, canal, { p1Override: p1Edit[chave], quantidadesExtras: qtdsExtras, concorrenteOverrides: concOverrides }) : null;
   const e = dados?.escada;
   const refs = dados ? referenciasAvulso(canal, dados.custo1, dados.peso1, cfg, dados.concorrente1) : null;
-  const alertas = dados ? alertasAvulso({ canal, p1: dados.p1, base1: { custo: dados.custo1, peso: dados.peso1 }, cfg, escada: e, concorrente: dados.concorrente1 }) : [];
+  const itemPai = pid ? itens.find((i) => i.id === `p:${pid}`) || null : null;
+  // Estratégia do avulso nesse canal (estrategia.js) — decide se "parece atração" vira sugestão.
+  const estrategiaAvulso = itemPai && canal ? estrategiaDe(itemPai, canal) : null;
+  const alertas = dados ? alertasAvulso({ canal, p1: dados.p1, base1: { custo: dados.custo1, peso: dados.peso1 }, cfg, escada: e, concorrente: dados.concorrente1, estrategia: estrategiaAvulso }) : [];
+  function abrirEstrategiaAvulso(inicial) {
+    const linha = estrategiaAvulso?.linha || precosEsc.find((p) => p.item_tipo === "produto" && p.item_id === pid && p.canal_id === canal?.id);
+    if (!linha) return onToast("Salve o preço do avulso nesse canal primeiro (1º Avulso)");
+    const outras = canais.map((c) => ({ canal: c, linha: precosEsc.find((p) => p.item_tipo === "produto" && p.item_id === pid && p.canal_id === c.id) })).filter((o) => o.linha);
+    setEstrategiaAlvo({ alvo: { item: itemPai, canal, linha, outras }, inicial });
+  }
   const kits = e ? e.linhas.filter((l) => !l.base) : [];
   // Regra da Shopee (4×): preço usado = salvo (ou o sugerido, se não tem salvo);
   // preço original = com o desconto exibido no anúncio (canal ou do produto).
@@ -109,9 +121,11 @@ export default function PrecoPorQuantidade({ onToast }) {
     });
   }
 
+  // Preço novo = decisão nova: zera a estratégia do preço (estrategia.js).
   async function salvarPreco({ itemTipo, itemId, preco, custo, lucro, margem }) {
-    return supabase.from("precos_canal").upsert(
+    return gravarPrecoNovo((extra) => supabase.from("precos_canal").upsert(
       {
+        ...extra,
         loja_id: lojaId || null,
         item_tipo: itemTipo,
         item_id: itemId,
@@ -123,7 +137,7 @@ export default function PrecoPorQuantidade({ onToast }) {
         atualizado_em: new Date().toISOString(),
       },
       { onConflict: "item_tipo,item_id,canal_id" }
-    );
+    ));
   }
 
   async function executar() {
@@ -359,8 +373,16 @@ export default function PrecoPorQuantidade({ onToast }) {
         <div key={a.titulo} className={`alerta alerta-${a.tom}`}>
           <b>{a.titulo}</b>
           {a.texto}
+          {a.acao === "marcar-atracao" && (
+            <div style={{ marginTop: 6 }}>
+              <button type="button" className="btn btn-mini" onClick={() => abrirEstrategiaAvulso("atracao")}>
+                Marcar como atração…
+              </button>
+            </div>
+          )}
         </div>
       ))}
+      {estrategiaAlvo && <EstrategiaDialog alvo={estrategiaAlvo.alvo} inicial={estrategiaAlvo.inicial} onToast={onToast} onClose={() => setEstrategiaAlvo(null)} />}
 
       {e && (
         <Kpis
@@ -459,7 +481,12 @@ export default function PrecoPorQuantidade({ onToast }) {
                           <td className="num">
                             {BRL(l.custo)}
                             <span className="sub">alvo {BRL(e.lBase)}/peça</span>
-                            {e.baseRef && <span className="nota">base = margem desejada (avulso é atração)</span>}
+                            {e.baseRef && (
+                              <span className="nota">
+                                base = margem desejada (
+                                {{ atracao: "avulso em atração — escolhido", crescimento: "avulso em crescimento — escolhido", rampa: "avulso em rampa", sugerido: "sugerido: avulso parece atração" }[e.baseMotivo] || "avulso abaixo da margem desejada"})
+                              </span>
+                            )}
                           </td>
                           <td className="num">
                             <b>{BRL(l.sugerido)}</b>

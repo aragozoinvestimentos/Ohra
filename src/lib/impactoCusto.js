@@ -6,6 +6,7 @@
 import { produtoAoVivo } from "./aoVivo.js";
 import { calcVariacao, resumoProduto } from "./variacoes.js";
 import { lucroNoPreco, precoMinimoAceitavel } from "./escada.js";
+import { alertaPreco, estrategiaEfetiva, produtosEmRampa } from "./estrategia.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -16,8 +17,13 @@ const cent = (v) => Math.round(v * 100) / 100;
 const PREFIXO = { produto: "p", variacao: "v", kit: "k" };
 
 // Linhas por item afetado × canal com preço salvo.
-function montarLinhas(afetados, { canais, precos, cfgDoProduto }) {
+// O alerta (prejuízo / abaixo do mínimo) é o da função única alertaPreco, com
+// a estratégia do item (crescimento/atração/rampa silenciam o mínimo) e o
+// lucro NOVO — se a mudança derrubar o lucro abaixo do lucro de referência
+// da decisão, a estratégia vence e o aviso volta.
+function montarLinhas(afetados, { canais, precos, cfgDoProduto, itens = [], rampas = [] }) {
   const linhas = [];
+  const emRampa = produtosEmRampa(rampas, precos);
   for (const a of afetados) {
     const tipo = Object.keys(PREFIXO).find((k) => PREFIXO[k] === a.id[0]);
     const idCru = a.id.slice(2);
@@ -29,6 +35,9 @@ function montarLinhas(afetados, { canais, precos, cfgDoProduto }) {
       const lucroHoje = lucroNoPreco(c, preco, a.custoAtual, a.pesoAtual, cfg);
       const lucroNovo = lucroNoPreco(c, preco, a.custoNovo, a.pesoNovo, cfg);
       const minimo = precoMinimoAceitavel(c, a.custoNovo, a.pesoNovo, cfg);
+      const item = itens.find((i) => i.id === a.id) || { id: a.id, produtoId: a.produtoId };
+      const estrategia = estrategiaEfetiva(item, c, { precos, emRampa, lucroAoVivo: lucroNovo });
+      const al = alertaPreco({ lucro: lucroNovo, preco, minimo, estrategia });
       linhas.push({
         id: `${a.id}|${c.id}`,
         nome: a.nome,
@@ -38,8 +47,9 @@ function montarLinhas(afetados, { canais, precos, cfgDoProduto }) {
         lucroNovo,
         diferenca: lucroNovo - lucroHoje,
         margemNova: preco > 0 ? lucroNovo / preco : null,
-        prejuizo: lucroNovo < 0,
-        abaixoMinimo: minimo != null && preco < minimo - 0.004,
+        prejuizo: al.tipo === "prejuizo",
+        abaixoMinimo: al.tipo === "abaixo-minimo",
+        estrategia,
       });
     }
   }
@@ -83,7 +93,7 @@ export function impactoProduto({ produtoId, produtoNovoRaw, receitaNova = null, 
     afetados.push({ id: k.id, nome: k.nome, produtoId: null, custoAtual: k.custoTotal, pesoAtual: k.peso, custoNovo: cent(k.custoTotal + q * dProd), pesoNovo: k.peso + q * dPeso });
   }
 
-  const linhas = montarLinhas(afetados, { canais, precos, cfgDoProduto });
+  const linhas = montarLinhas(afetados, { canais, precos, cfgDoProduto, itens: dados.itens, rampas: dados.rampas });
   return resumo({
     custoPecaAtual: num(atual.custo_producao),
     custoPecaNovo: num(novo.custo_producao),
@@ -102,7 +112,7 @@ export function impactoVariacao({ variacaoId, variacaoNova, dados, cfgDoProduto 
   if (!it || !produto || !variacaoNova) return null;
   const c = calcVariacao({ ...variacaoNova, id: variacaoId }, produto, { materiais, embalagens, produtoEmbalagens });
   const afetados = [{ id: it.id, nome: it.nome, produtoId: produto.id, custoAtual: it.custoTotal, pesoAtual: it.peso, custoNovo: cent(c.custoTotal), pesoNovo: c.peso }];
-  return resumo({ custoTotalAtual: it.custoTotal, custoTotalNovo: cent(c.custoTotal), afetados, linhas: montarLinhas(afetados, { canais, precos, cfgDoProduto }) });
+  return resumo({ custoTotalAtual: it.custoTotal, custoTotalNovo: cent(c.custoTotal), afetados, linhas: montarLinhas(afetados, { canais, precos, cfgDoProduto, itens: dados.itens, rampas: dados.rampas }) });
 }
 
 function resumo(r) {

@@ -2,11 +2,14 @@ import { useMemo, useState } from "react";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { resultadoNoPreco } from "../lib/calc.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { gravarPrecoNovo } from "../lib/estrategia.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../hooks/useRankingData.js";
 import { useEscada } from "../hooks/useEscada.js";
-import { statusPrecoSalvo, sugestaoKit, configEscada } from "../lib/escada.js";
+import { statusPrecoSalvo, sugestaoKit, configEscada, pareceAtracao, precoMinimoAceitavel } from "../lib/escada.js";
+import { alertaPreco, rotuloEstrategia } from "../lib/estrategia.js";
+import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -29,7 +32,8 @@ import { useRampas } from "../hooks/useRampas.js";
 // foram simplificadas pra só o formulário.
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja } = useEscada();
+  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe } = useEscada();
+  const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // { alvo, inicial } — diálogo "Manter assim"
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
   const [filamentosAlvo, setFilamentosAlvo] = useState(null);
   const { rampas } = useRampas(); // id do item com a janela ⇄ Filamentos aberta
@@ -99,7 +103,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
         let salvoPPAnterior = d.p1;
         for (const l of d.escada.linhas) {
           if (l.base || !l.itemId) continue;
-          const st = statusPrecoSalvo(l.salvo, l, salvoPPAnterior);
+          const itV = itens.find((i) => i.id === l.itemId);
+          const st = statusPrecoSalvo(l.salvo, l, salvoPPAnterior, { silenciarPiso: !!itV && estrategiaDe(itV, c).chave !== "normal" });
           if (l.salvo != null) salvoPPAnterior = l.salvo / l.n;
           mapa.set(`${l.itemId}|${c.id}`, { linha: l, st, p1Origem: d.p1Origem });
         }
@@ -112,14 +117,29 @@ export default function Historico({ onEditarCompleto, onToast }) {
         const sug = sugestaoKit({ canal: c, kitItem: k, itens, precos: precosVivos, cfg: cfgKit });
         if (!sug) continue;
         const salvo = precosVivos.find((p) => p.item_tipo === "kit" && p.item_id === k.id.slice(2) && p.canal_id === c.id);
-        let st = salvo ? statusPrecoSalvo(Number(salvo.preco), sug, null) : null;
+        let st = salvo ? statusPrecoSalvo(Number(salvo.preco), sug, null, { silenciarPiso: estrategiaDe(k, c).chave !== "normal" }) : null;
         if (salvo && st?.tom !== "bad" && Number(salvo.preco) >= sug.separado - 0.005) st = { tom: "neu", texto: "↓ sem vantagem vs separado" };
         mapa.set(`${k.id}|${c.id}`, { linha: sug, st });
       }
     }
     return mapa;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itens, canais, escada, precosVivos, cfgLoja]);
+  }, [itens, canais, escada, precosVivos, cfgLoja, estrategiaDe]);
+
+  // "Manter assim": abre o diálogo de estratégia pro preço salvo do item no canal.
+  function abrirEstrategia(item, canalObj, inicial) {
+    const linha = precoDe(item, canalObj);
+    if (!linha) return;
+    const outras = canais.map((c) => ({ canal: c, linha: precoDe(item, c) })).filter((o) => o.linha);
+    setEstrategiaAlvo({ alvo: { item, canal: canalObj, linha, outras }, inicial });
+  }
+  // Avulso que "parece atração" (margem abaixo da desejada, kit 2 compensa) e
+  // ainda sem estratégia escolhida → só sugestão.
+  function sugereAtracao(item, canalObj, al) {
+    if (!item.id.startsWith("p:") || !al || al.estrategia.origem !== "padrao" || al.linha?.estrategia) return false;
+    const d = escada(item.id.slice(2), canalObj);
+    return !!d && pareceAtracao(d.escada, d.p1, cfgDoProduto(item.id.slice(2)));
+  }
 
   // Exclui a variação (e os preços salvos dela, que não têm FK) — o produto não muda.
   async function confirmarExcluirVariacao() {
@@ -143,8 +163,10 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const a = aplicarAlvo;
     if (!a || !supabase) return;
     setSalvandoAplicar(true);
-    const { error } = await supabase.from("precos_canal").upsert(
+    // Preço novo = decisão nova: zera a estratégia (estrategia.js).
+    const { error } = await gravarPrecoNovo((extra) => supabase.from("precos_canal").upsert(
       {
+        ...extra,
         loja_id: lojaId || null,
         item_tipo: itemTipoDoId(a.item.id),
         item_id: a.item.id.slice(2),
@@ -156,7 +178,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
         atualizado_em: new Date().toISOString(),
       },
       { onConflict: "item_tipo,item_id,canal_id" }
-    );
+    ));
     setSalvandoAplicar(false);
     setAplicarAlvo(null);
     if (error) {
@@ -241,10 +263,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const { item, canalDestino } = clonarPrecoAlvo;
     const id = item.id.split(":")[1];
     setSalvandoClonePreco(true);
-    const { data, error } = await supabase
+    const { data, error } = await gravarPrecoNovo((extra) => supabase
       .from("precos_canal")
       .upsert(
         {
+          ...extra,
           loja_id: lojaId || null,
           item_tipo: itemTipoDoId(item.id),
           item_id: id,
@@ -258,7 +281,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
         { onConflict: "item_tipo,item_id,canal_id" }
       )
       .select()
-      .single();
+      .single());
     setSalvandoClonePreco(false);
     if (error) {
       onToast(`Não foi possível clonar o preço: ${error.message}`);
@@ -283,7 +306,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   }
 
   function iniciarEdicao(p, item, canalObj) {
-    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal, canal: canalObj, pecas: item.pecas || 1, peso: item.peso || null });
+    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal, canal: canalObj, pecas: item.pecas || 1, peso: item.peso || null, produtoId: item.produtoId || (item.id.startsWith("p:") ? item.id.slice(2) : null), linha: p });
     setEdicao({ preco: Number(p.preco || 0).toFixed(2) });
   }
 
@@ -301,10 +324,12 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const lucro = arredondarPreco(resultadoEdicao.lucro);
     const margem = resultadoEdicao.margem;
     setSalvandoEdicao(true);
-    const { error } = await supabase
-      .from("precos_canal")
-      .update({ preco: arredondarPreco(preco), lucro, margem, atualizado_em: new Date().toISOString() })
-      .eq("id", precoId);
+    const { error } = await gravarPrecoNovo((extra) =>
+      supabase
+        .from("precos_canal")
+        .update({ preco: arredondarPreco(preco), lucro, margem, atualizado_em: new Date().toISOString(), ...extra })
+        .eq("id", precoId)
+    );
     setSalvandoEdicao(false);
     if (error) {
       onToast("Não foi possível salvar — tente de novo");
@@ -382,8 +407,10 @@ export default function Historico({ onEditarCompleto, onToast }) {
       const itemTipo = tipoLetra === "k" ? "kit" : "produto";
       const precosOriginais = precos.filter((p) => p.item_tipo === itemTipo && p.item_id === id);
       if (precosOriginais.length) {
-        const linhas = precosOriginais.map(({ id: _oid, item_id: _iid, ...resto }) => ({ ...resto, item_id: novoId }));
-        const { error: ePrecos } = await supabase.from("precos_canal").insert(linhas);
+        // Item novo = decisão nova: a estratégia do preço não é copiada.
+        const { error: ePrecos } = await gravarPrecoNovo((extra) =>
+          supabase.from("precos_canal").insert(precosOriginais.map(({ id: _oid, item_id: _iid, ...resto }) => ({ ...resto, ...extra, item_id: novoId })))
+        );
         if (ePrecos) falhas.push("preços salvos");
       }
 
@@ -698,8 +725,12 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 </button>
                                 </span>
                               </div>
+                              {(() => {
+                                const al = alertaDe(item, c);
+                                return (
+                                  <>
                               <div
-                                className={`preco-canal-linha ${p.margem == null ? "" : Number(p.margem) < 0 ? "ruim" : Number(p.margem) < 0.1 ? "atencao" : "boa"}`}
+                                className={`preco-canal-linha ${p.margem == null || !al ? "" : al.tipo === "prejuizo" ? "ruim" : al.tipo === "abaixo-minimo" ? "atencao" : "boa"}`}
                                 title={
                                   p.desatualizado
                                     ? `Atualizado pro custo e as taxas de hoje (o custo do item ou a tarifa do canal mudou desde que o preço foi salvo). No dia em que foi salvo: lucro ${BRL(p.lucro_salvo)}${p.margem_salva != null ? ` · ${PCT(p.margem_salva)}` : ""}.`
@@ -709,6 +740,41 @@ export default function Historico({ onEditarCompleto, onToast }) {
                                 {p.desatualizado && <span className="ponto-recalc" aria-label="recalculado">↻</span>}
                                 {p.lucro != null ? BRL(p.lucro) : "—"} · {p.margem != null ? PCT(p.margem) : "—"}
                               </div>
+                              {al && (al.tipo === "abaixo-minimo" || (al.tipo === "prejuizo" && !al.discreto)) && (
+                                <div className="alerta-cel">
+                                  <span className={al.tipo === "prejuizo" ? "neg" : "atencao-txt"} title={al.minimo != null ? `Mínimo aceitável neste canal: ${BRL(al.minimo)}` : undefined}>
+                                    {al.tipo === "prejuizo" ? "prejuízo" : `abaixo do mínimo (${BRL(al.minimo)})`}
+                                  </span>{" "}
+                                  {sugereAtracao(item, c, al) ? (
+                                    <button type="button" className="link-btn" onClick={() => abrirEstrategia(item, c, "atracao")} title="Margem abaixo da desejada, mas o kit 2 compensa">
+                                      parece atração — marcar?
+                                    </button>
+                                  ) : (
+                                    <button type="button" className="link-btn" onClick={() => abrirEstrategia(item, c)}>
+                                      manter assim
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              {/* Produto em rampa já tem a etiqueta "em rampa · vendendo R$X" abaixo. */}
+                              {al && rotuloEstrategia(al.estrategia) && !(al.estrategia.origem === "rampa" && rampaDe(item, c) != null) && (
+                                <button
+                                  type="button"
+                                  className={`estrategia-tag${al.estrategia.vencida ? " vencida" : ""}${al.tipo === "prejuizo" ? " com-prejuizo" : ""}${al.estrategia.origem === "escolhida" || al.estrategia.vencida ? " clicavel" : ""}`}
+                                  title={
+                                    al.estrategia.origem === "escolhida" || al.estrategia.vencida
+                                      ? `${al.estrategia.vencida ? "A decisão venceu" : "Decisão sua"}${al.linha?.estrategia_motivo ? ` — ${al.linha.estrategia_motivo}` : ""}. Clique pra mudar.${al.tipo === "prejuizo" ? " Atenção: está dando prejuízo." : ""}`
+                                      : "Em rampa de preço (Vender → Crescimento): abaixo do mínimo de propósito"
+                                  }
+                                  onClick={al.estrategia.origem === "escolhida" || al.estrategia.vencida ? () => abrirEstrategia(item, c) : undefined}
+                                >
+                                  {rotuloEstrategia(al.estrategia)}
+                                  {al.tipo === "prejuizo" ? " · prejuízo" : ""}
+                                </button>
+                              )}
+                                  </>
+                                );
+                              })()}
                               {mudancaCusto(item, c) && (() => {
                                 const m = mudancaCusto(item, c);
                                 const f = (v) => `${v >= 0 ? "+" : "−"}${BRL(Math.abs(v))}`;
@@ -779,6 +845,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
         </>
       )}
 
+      {estrategiaAlvo && <EstrategiaDialog alvo={estrategiaAlvo.alvo} inicial={estrategiaAlvo.inicial} onToast={onToast} onClose={() => setEstrategiaAlvo(null)} />}
+
       {filamentosAlvo && <CustoFilamentosDialog itemId={filamentosAlvo} onToast={onToast} onClose={() => setFilamentosAlvo(null)} />}
 
       {editAlvo && (
@@ -825,6 +893,27 @@ export default function Historico({ onEditarCompleto, onToast }) {
               <span className="v">{BRL(resultadoEdicao.lucro / editAlvo.pecas)}</span>
             </div>
           )}
+          {resultadoEdicao && (() => {
+            // Preço novo = decisão nova (Normal) — o alerta é o da função única.
+            const minimo = precoMinimoAceitavel(editAlvo.canal, Number(editAlvo.custoTotal) || 0, Number(editAlvo.peso) || 0, cfgDoProduto(editAlvo.produtoId));
+            const al = alertaPreco({ lucro: resultadoEdicao.lucro, preco: numOuNull(edicao.preco), minimo, estrategia: { chave: "normal" } });
+            const atual = editAlvo.linha?.estrategia;
+            return (
+              <>
+                {al.tipo && (
+                  <div className={`alerta alerta-${al.tipo === "prejuizo" ? "bad" : "warn"}`} style={{ marginTop: 8 }}>
+                    <b>{al.tipo === "prejuizo" ? "Esse preço dá prejuízo" : `Abaixo do mínimo aceitável (${BRL(minimo)})`}</b>
+                    {al.tipo === "abaixo-minimo" ? "Se for de propósito, salve e depois use “manter assim” na célula (crescimento ou atração)." : "Cada venda nesse preço tira dinheiro do seu bolso."}
+                  </div>
+                )}
+                {atual && atual !== "normal" && (
+                  <p className="hint" style={{ margin: "6px 0 0" }}>
+                    Hoje este preço está marcado como <b>{atual === "atracao" ? "atração" : "crescimento"}</b>. Salvar um preço novo desfaz essa decisão.
+                  </p>
+                )}
+              </>
+            );
+          })()}
         </EditarDialog>
       )}
 

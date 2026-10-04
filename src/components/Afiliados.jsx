@@ -1,3 +1,4 @@
+import { rotuloEstrategia } from "../lib/estrategia.js";
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -236,6 +237,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                         {TIPO_ROTULO[l.tipo]}
                         {l.tipo === "kit" && l.item.pecas ? ` · ${l.item.pecas} peças` : ""}
                         {l.rampa ? (l.emRampa ? ` · em rampa (vendendo ${BRL(l.preco)})` : " · no alvo") : ""}
+                        {!l.emRampa && rotuloEstrategia(l.estrategia) ? ` · ${rotuloEstrategia(l.estrategia)}` : ""}
                       </div>
                     </td>
                     <td>
@@ -244,7 +246,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                     <td className="num">{BRL(l.preco)}</td>
                     <td className="num">{BRL(l.lucro)}</td>
                     <td className="num">
-                      {l.emRampa && l.situacao !== "acima" ? (
+                      {l.naoUsar ? (
                         "—"
                       ) : l.recomendada != null ? (
                         <>
@@ -267,7 +269,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                         <button type="button" className="badge acc comissao-chip" onClick={() => setEditItem(l)} title="Mudar o %, dar um % próprio ou desativar">
                           {pct(l.conf.comissao)} · {l.conf.fonte === "propria" ? "do item" : "padrão"} <span aria-hidden="true">✎</span>
                         </button>
-                      ) : l.emRampa ? (
+                      ) : l.naoUsar ? (
                         <span className="muted-cel" title="Em rampa abaixo do alvo: o lucro perto do 0 a 0 não deixa espaço pra comissão">
                           —
                         </span>
@@ -544,7 +546,18 @@ function Situacao({ l, onUsar }) {
         )}
       </div>
     );
-  if (l.situacao === "rampa") return <span className="badge neutro">em rampa: não usar ainda</span>;
+  if (l.situacao === "rampa")
+    return (
+      <span className="badge neutro" title="Estratégia do preço em crescimento (escolhida, rampa ou peça em rampa): lucro baixo de propósito, sem espaço pra comissão">
+        {l.emRampa || l.estrategia?.origem === "rampa" ? "em rampa" : l.estrategia?.origem === "kit-em-rampa" ? "peça em rampa" : "em crescimento"}: não usar ainda
+      </span>
+    );
+  if (l.situacao === "atracao")
+    return (
+      <span className="badge neutro" title="Avulso marcado como atração: o lucro vem do kit. Dá pra ativar, mas o app não sugere">
+        atração: só se quiser
+      </span>
+    );
   if (l.situacao === "ok") return <span className="badge good">✓ ok</span>;
   if (l.situacao === "pode") return <span className="badge acc">pode ativar até {pct(l.recomendada)}</span>;
   if (l.situacao === "apertado")

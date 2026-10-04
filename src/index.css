@@ -1062,6 +1062,20 @@ tr.linha-clicavel:hover td { background: var(--surface-3); }
 .checklist-anuncio label { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 5px 0; cursor: pointer; }
 .checklist-anuncio input { margin-top: 3px; }
 .tag-pronto { margin-top: 4px; }
+/* Estratégia do preço (schema v37) */
+.alerta-cel { font-size: 11px; margin-top: 2px; white-space: nowrap; }
+.alerta-cel .link-btn { font-size: 11px; }
+.atencao-txt { color: var(--warn); font-weight: 600; }
+.estrategia-tag { display: inline-block; margin-top: 3px; font-size: 10.5px; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink-soft); font-weight: 600; white-space: nowrap; cursor: default; font-family: inherit; }
+.estrategia-tag.clicavel { cursor: pointer; }
+.estrategia-tag.clicavel:hover { border-color: var(--ink-faint); }
+.estrategia-tag.vencida { border-style: dashed; color: var(--warn); }
+.estrategia-tag.com-prejuizo { color: var(--bad); }
+.estrategia-opcoes { display: grid; gap: 6px; }
+.estrategia-op { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px; }
+.estrategia-op.ativa { border-color: var(--accent); background: var(--accent-soft); }
+.estrategia-op input { margin-top: 3px; }
+.estrategia-op small { display: block; color: var(--ink-soft); font-size: 11.5px; }
 .funil-anuncio { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .funil-etapa { flex: 1 1 140px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; background: var(--surface); }
 .funil-etapa b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
-import { useRankingData } from "../hooks/useRankingData.js";
+import { useEscada } from "../hooks/useEscada.js";
+import { mapaAnuncioRampa } from "../lib/rampaAnuncio.js";
 import { BRL } from "../lib/format.js";
 import { calcularAnuncio, descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
 import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
@@ -39,7 +40,13 @@ function combinacoes(variacoes) {
 // em anúncios; ML/Shein = um anúncio por quantidade, com as variações. SKU do
 // item editável direto na tabela (✎).
 export default function FichaAnuncio({ onToast, onIrPara }) {
-  const { itens, canais, precos, produtos, kits } = useRankingData();
+  const { itens, canais, precos, produtos, kits, rampas, concorrentes, cfgDoProduto } = useEscada();
+  // Itens em rampa (Crescimento) vendendo num preço diferente do salvo: a
+  // ficha usa os números da Rampa (riscado fixo no alvo + promo do degrau).
+  const rampaMapa = useMemo(
+    () => mapaAnuncioRampa({ rampas, canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto }),
+    [rampas, canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto]
+  );
   const [sel, setSel] = useState("");
   const [canalId, setCanalId] = useState("");
   const [novaOpcao, setNovaOpcao] = useState({}); // { [idxVariacao]: { nome, sufixo } }
@@ -79,7 +86,12 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
       const tipo = itemTipoDoId(it.id);
       const s = precos.find((p) => p.item_tipo === tipo && p.item_id === it.id.slice(2) && p.canal_id === canal.id);
       const { desconto } = descontoDoItem(it.id, canal, { itens, produtos, kits });
-      const an = s && Number(s.preco) > 0 ? calcularAnuncio(Number(s.preco), desconto) : null;
+      const ra = rampaMapa.get(`${it.id}|${canal.id}`) || null;
+      const an = ra
+        ? { original: ra.original, promo: ra.promo, clientePaga: ra.clientePaga, real: ra.real, emRampa: true, acima: ra.acima }
+        : s && Number(s.preco) > 0
+          ? calcularAnuncio(Number(s.preco), desconto)
+          : null;
       return combos.map((combo) => ({
         item: it,
         sku: `${it.sku || ""}${combo.map((o) => o.sufixo || "").join("")}`,
@@ -135,7 +147,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
     const semSku = [...new Set(todasLinhas.filter((l) => l.semSku).map((l) => l.item.id))].map((id) => itensLista.find((i) => i.id === id));
     const attrsForaML = mlShein ? ativas.filter((v) => !ATRIBUTOS_ML.includes(v.nome.trim().toLowerCase())).map((v) => v.nome) : [];
     return { anuncios, colunasAttr, valoresAttr, nomesLongos, semPreco, semSku, quantidadeSeparada, regra4x, temQtd, tresVariacoes, attrsForaML };
-  }, [canal, itensLista, precos, itens, produtos, kits, variacoes, isKit, itemBase, modoTres]);
+  }, [canal, itensLista, precos, itens, produtos, kits, variacoes, isKit, itemBase, modoTres, rampaMapa]);
 
   const kitsComProduto = !isKit && donoId ? itens.filter((i) => i.id.startsWith("k:") && (i.componentes || []).some((c) => c.produtoId === donoId)) : [];
 
@@ -508,6 +520,13 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                                 <td className="num" style={{ color: "var(--ink-soft)" }}>
                                   {BRL(l.an.clientePaga)}
                                   {l.an.clientePaga - l.an.real > 0.004 && <span className="ficha-centavo"> +{Math.round((l.an.clientePaga - l.an.real) * 100)}¢</span>}
+                                  {l.an.emRampa && (
+                                    <div>
+                                      <span className="rampa-tag" title="Em rampa de preço (Vender → Crescimento): números do degrau atual — riscado fixo no alvo, só a promo muda. No alvo volta pro preço salvo.">
+                                        {l.an.acima ? "testando acima · preço da Rampa" : "em rampa · preço da Rampa"}
+                                      </span>
+                                    </div>
+                                  )}
                                 </td>
                               </>
                             ) : (

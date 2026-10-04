@@ -1,3 +1,4 @@
+import { rotuloEstrategia } from "../lib/estrategia.js";
 import { useState } from "react";
 import { BRL, PCT } from "../lib/format.js";
 import CanalTag from "./CanalTag.jsx";
@@ -65,6 +66,7 @@ export default function ImpactoCusto({ impacto, titulo = "Impacto da mudança" }
                   <td className="num">
                     {BRL(l.lucroNovo)} <span className="muted-cel">· {PCT(l.margemNova)}</span>
                     {l.abaixoMinimo && !l.prejuizo && <div className="sub-num">abaixo do mínimo</div>}
+                    {rotuloEstrategia(l.estrategia) && <div className="sub-num">{rotuloEstrategia(l.estrategia)}</div>}
                   </td>
                   <td className={`num ${l.diferenca >= 0 ? "pos" : "neg"}`}>
                     <b>{sinal(l.diferenca)}</b>
