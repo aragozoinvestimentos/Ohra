@@ -38,6 +38,12 @@ export const REGRAS_PADRAO = {
   acimaSemanas: 3, // semanas de vendas estáveis no alvo
   acimaMax: 0.2, // no máximo +20% acima do alvo
   acimaBloqueioDias: 30, // se o teste acima falhar, não tenta de novo por X dias
+  // Funil do anúncio (Impressões de Produto → Cliques Por Produto → Pedidos)
+  funilDiasMin: 14, // dias desde o início da rampa antes de diagnosticar
+  funilVisMin: 300, // impressões de produto em 2 semanas abaixo disso = pouca exibição
+  funilCtrMin: 0.02, // CTR mínimo (referência geral)
+  funilConvMin: 0.01, // taxa de conversão de pedidos mínima (referência geral)
+  funilVisitasMin: 50, // cliques em 2 semanas pra julgar a conversão
 };
 
 // Orçamento sugerido do teste de lançamento: meta × lucro por venda no alvo,
@@ -119,6 +125,111 @@ const menosDias = (iso, n) => {
   d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
 };
+
+// ---- Funil do anúncio ----
+// Semanas válidas = registros "semana" com impressões e cliques preenchidos,
+// só no preço atual (degrau atual). Prefere semanas sem Ads (o Ads infla as
+// impressões e distorce o CTR); se não houver 2 sem Ads, usa as que tiver e
+// marca comAds. Usa as 2 últimas; conversão por pedidos quando todas as
+// semanas usadas têm pedidos, senão pelas vendas.
+const FUNIL_SEMANAS = 2;
+
+export function metricasFunil(rampa, registros, regras, hoje) {
+  const degraus = (rampa.degraus || []).map(num);
+  const i = Math.max(0, Math.min(degraus.length - 1, rampa.degrau_atual ?? 0));
+  const preco = degraus[i] ?? null;
+  const regs = (registros || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.criado_em || "").localeCompare(String(b.criado_em || "")));
+  const temFunil = (r) => r.tipo === "semana" && r.visualizacoes != null && r.visitas != null;
+  const comDados = regs.filter(temFunil);
+  const inicio = regs.find((r) => r.tipo === "inicio")?.data || String(rampa.criado_em || hoje).slice(0, 10);
+  const diasRampa = Math.max(0, diasEntre(inicio, hoje));
+  const noPreco = comDados.filter((r) => preco != null && Math.abs(num(r.preco) - preco) < 0.005);
+  const semAds = noPreco.filter((r) => !(num(r.ads_gasto) > 0));
+  const usadas = (semAds.length >= FUNIL_SEMANAS ? semAds : noPreco).slice(-FUNIL_SEMANAS);
+  const comAds = usadas.some((r) => num(r.ads_gasto) > 0);
+  const usaPedidos = usadas.length > 0 && usadas.every((r) => r.pedidos != null);
+  const visualizacoes = usadas.reduce((t, r) => t + num(r.visualizacoes), 0);
+  const visitas = usadas.reduce((t, r) => t + num(r.visitas), 0);
+  const vendas = usadas.reduce((t, r) => t + num(usaPedidos ? r.pedidos : r.vendas), 0);
+  const ctr = visualizacoes > 0 ? visitas / visualizacoes : null;
+  const conversao = visitas > 0 ? vendas / visitas : null;
+  const faltamDias = Math.max(0, num(regras.funilDiasMin) - diasRampa);
+  const faltamSemanas = Math.max(0, FUNIL_SEMANAS - noPreco.length);
+  const status = !comDados.length ? "sem-dados" : faltamDias > 0 || faltamSemanas > 0 ? "coletando" : "pronto";
+  return { status, faltamDias, faltamSemanas, visualizacoes, visitas, vendas, usaPedidos, ctr, conversao, comAds, semanas: usadas.length };
+}
+
+// Mediana de CTR e conversão dos produtos da loja com funil calculável —
+// só vale como referência com 5 ou mais produtos.
+export function referenciaFunilLoja(lista) {
+  const prontos = (lista || []).filter((m) => m && m.status === "pronto" && m.ctr != null);
+  if (prontos.length < 5) return null;
+  const mediana = (xs) => {
+    const v = xs.filter((x) => x != null).sort((a, b) => a - b);
+    if (!v.length) return null;
+    const m = Math.floor(v.length / 2);
+    return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+  };
+  return { ctr: mediana(prontos.map((m) => m.ctr)), conversao: mediana(prontos.map((m) => m.conversao)), n: prontos.length };
+}
+
+const pctFunil = (v) => `${(v * 100).toFixed(v < 0.1 ? 1 : 0).replace(".", ",")}%`;
+
+// Diagnóstico pelo funil, na ordem: exibição → vitrine (CTR) → página (conversão).
+export function diagnosticarFunil(m, regras, refLoja) {
+  const usaLoja = !!(refLoja && refLoja.ctr != null);
+  const referencia = usaLoja ? "média da loja" : "referência geral";
+  const limCtr = usaLoja ? refLoja.ctr * 0.5 : num(regras.funilCtrMin);
+  const limConv = usaLoja && refLoja.conversao != null ? refLoja.conversao * 0.5 : num(regras.funilConvMin);
+  const base = { ...m, referencia, limiteCtr: limCtr, limiteConversao: limConv, diagnostico: null };
+  if (m.status === "sem-dados") return base;
+  if (m.status === "coletando") {
+    const partes = [];
+    if (m.faltamDias > 0) partes.push(`${m.faltamDias} dia${m.faltamDias === 1 ? "" : "s"}`);
+    if (m.faltamSemanas > 0) partes.push(`${m.faltamSemanas} semana${m.faltamSemanas === 1 ? "" : "s"} com impressões e cliques neste preço`);
+    return { ...base, texto: `coletando dados (faltam ${partes.join(" / ")})` };
+  }
+  const ref = usaLoja ? `metade da média da loja: ${pctFunil(limCtr)}` : `referência geral: ${pctFunil(limCtr)}`;
+  const refConv = usaLoja ? `metade da média da loja: ${pctFunil(limConv)}` : `referência geral: ${pctFunil(limConv)}`;
+  const tom = (v, lim) => (v < 0.5 * lim ? "bad" : "warn");
+  let d;
+  if (m.visualizacoes < num(regras.funilVisMin))
+    d = {
+      chave: "titulo",
+      tom: tom(m.visualizacoes, num(regras.funilVisMin)),
+      titulo: "Pouca gente está vendo o anúncio",
+      texto: `${m.visualizacoes} impressões em 2 semanas (mínimo ${num(regras.funilVisMin)}). Revise o título com palavras de busca, a categoria e os atributos — é o que faz o anúncio aparecer.`,
+      itens: ["titulo", "concorrente"],
+    };
+  else if (m.ctr < limCtr)
+    d = {
+      chave: "vitrine",
+      tom: tom(m.ctr, limCtr),
+      titulo: "Aparece mas pouca gente clica",
+      texto: `CTR de ${pctFunil(m.ctr)} (${ref}). Revise a foto principal e o preço/desconto que aparece na busca.`,
+      itens: ["foto", "concorrente"],
+    };
+  else if (m.visitas >= num(regras.funilVisitasMin) && m.conversao < limConv)
+    d = {
+      chave: "pagina",
+      tom: tom(m.conversao, limConv),
+      titulo: "Clicam mas não compram",
+      texto: `Taxa de conversão de ${pctFunil(m.conversao)} (${refConv}). Revise fotos de uso e medidas, vídeo, descrição, frete e avaliações.`,
+      itens: ["uso", "medidas", "video", "descricao", "avaliacao"],
+    };
+  else
+    d = {
+      chave: "ok",
+      tom: "good",
+      titulo: "Funil saudável",
+      texto:
+        m.visitas < num(regras.funilVisitasMin)
+          ? `Impressões e CTR ok. A conversão ainda tem poucos cliques pra julgar (${m.visitas} de ${num(regras.funilVisitasMin)}).`
+          : "Impressões, CTR e conversão dentro da referência.",
+      itens: [],
+    };
+  return { ...base, diagnostico: d };
+}
 
 // Estado completo de uma rampa (portões, check da subida, Ads, sugestão).
 // ctx = { canal, custo, peso, cfg } do produto (ao vivo); registros = da rampa.
@@ -358,6 +469,9 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   else if (portoesOk && !alertaNota) sugestao = { chave: "subir", tom: "good", rotulo: "Subir degrau", saltos: 1 };
   else sugestao = { chave: "segurar", tom: "warn", rotulo: "Segurar" };
 
+  // Funil do anúncio (ctx.funilLoja = mediana da loja, quando houver 5+ produtos).
+  const funil = diagnosticarFunil(metricasFunil(rampa, registros, regras, hoje), regras, ctx.funilLoja || null);
+
   const lucroSemana = ultimaSemana && ultimaSemana.data > corte7 ? num(ultimaSemana.vendas) * (lucroEm(num(ultimaSemana.preco) || preco) ?? 0) : null;
   const lucroSemanaAds = lucroSemana != null ? lucroSemana - num(ultimaSemana.ads_gasto) : null;
   const lucroSemanaAlvo = ultimaSemana && ultimaSemana.data > corte7 ? num(ultimaSemana.vendas) * (lucroEm(alvo) ?? 0) : null;
@@ -369,7 +483,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     avaliacoesTotal, nota, vendasDesde, vendasTotal, avaliacoesDesde, dias, ruins7,
     portoes, portoesOk, check, roasMin, roas, organico, organicoAntes, ads, viavelEm, ultAds,
     revisar, revisarPorAds, revisarPorLancamento, alertaNota, sugestao, ultimaSemana, diasMin, campanha, diasAteCampanha, campanhaPerto,
-    lucroSemana, lucroSemanaAds, lucroSemanaAlvo, semanas, registros: regs,
+    lucroSemana, lucroSemanaAds, lucroSemanaAlvo, semanas, registros: regs, funil,
   };
 }
 

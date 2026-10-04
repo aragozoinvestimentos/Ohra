@@ -10,7 +10,9 @@ const virgula = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits
 
 // Evolução da rampa: preço vendido (degraus, área + linha em degrau), alvo
 // tracejado, vendas da semana em barras na faixa de baixo e avaliações
-// acumuladas numa linha suave (eixo próprio à direita). Marca as subidas
+// acumuladas numa linha suave (eixo próprio à direita); com o funil
+// preenchido, também CTR e conversão por semana (eixo % na ponta direita).
+// Marca as subidas
 // e descidas de degrau. Passar o mouse/tocar mostra os números do dia.
 export default function GraficoRampa({ est }) {
   const [hover, setHover] = useState(null);
@@ -34,6 +36,12 @@ export default function GraficoRampa({ est }) {
     const ultAval = [...doDia].reverse().find((r) => r.avaliacoes != null);
     const vendas = doDia.filter((r) => r.tipo === "semana").reduce((s, r) => s + num(r.vendas), 0);
     const mudanca = doDia.find((r) => r.tipo === "subida" || r.tipo === "descida") || null;
+    // Funil da semana (schema v36): CTR = cliques ÷ impressões; conversão =
+    // pedidos (ou vendas, sem pedidos) ÷ cliques. Só semanas preenchidas.
+    const comFunil = doDia.filter((r) => r.tipo === "semana" && r.visualizacoes != null && r.visitas != null);
+    const imp = comFunil.reduce((s, r) => s + num(r.visualizacoes), 0);
+    const cli = comFunil.reduce((s, r) => s + num(r.visitas), 0);
+    const ped = comFunil.reduce((s, r) => s + num(r.pedidos != null ? r.pedidos : r.vendas), 0);
     pontos.push({
       data: d,
       preco: ultPreco ? num(ultPreco.preco) : ant.preco,
@@ -41,13 +49,16 @@ export default function GraficoRampa({ est }) {
       vendas,
       temSemana: doDia.some((r) => r.tipo === "semana"),
       mudanca,
+      ctr: comFunil.length && imp > 0 ? cli / imp : null,
+      conv: comFunil.length && cli > 0 ? ped / cli : null,
     });
   }
 
   const W = 960;
   const H = 240;
   const padL = 52;
-  const padR = 44;
+  const temFunil = pontos.some((p) => p.ctr != null || p.conv != null);
+  const padR = temFunil ? 92 : 44;
   const padT = 18;
   const padB = 26;
   const baseVendas = H - padB;
@@ -93,6 +104,18 @@ export default function GraficoRampa({ est }) {
     curva += ` C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${pt[0]},${pt[1]}`;
   });
 
+  // Eixo % (direita, depois do das avaliações) pra CTR e conversão.
+  const pcts = pontos.flatMap((p) => [p.ctr, p.conv]).filter((v) => v != null);
+  const pctMax = pcts.length ? Math.max(0.01, ...pcts) * 1.15 : 1;
+  const yPct = (v) => fundoPreco - (v / pctMax) * (fundoPreco - topoPreco);
+  const linhaPct = (campo) =>
+    pontos
+      .map((p, i) => (p[campo] != null ? [cx(i), yPct(p[campo])] : null))
+      .filter(Boolean)
+      .map((pt, k) => `${k ? "L" : "M"}${pt[0]},${pt[1]}`)
+      .join(" ");
+  const fmtPct = (v) => `${(v * 100).toFixed(v * 100 < 10 ? 1 : 0).replace(".", ",")}%`;
+
   const ticksP = [pMin, (pMin + pMax) / 2, pMax].map((v) => Math.round(v * 2) / 2);
   const h = hover != null ? pontos[hover] : null;
 
@@ -103,6 +126,8 @@ export default function GraficoRampa({ est }) {
         <span><i className="leg-vendas" />Vendas/semana</span>
         <span><i className="leg-aval" />Avaliações</span>
         <span><i className="leg-alvo" />Alvo</span>
+        {temFunil && <span><i className="leg-ctr" />CTR</span>}
+        {temFunil && <span><i className="leg-conv" />Conversão</span>}
         <span className="grafico-hover">
           {h ? (
             <>
@@ -110,6 +135,8 @@ export default function GraficoRampa({ est }) {
               {h.preco != null ? ` · ${BRL(h.preco)}` : ""}
               {h.temSemana ? ` · ${h.vendas} venda${h.vendas === 1 ? "" : "s"}` : ""}
               {h.aval != null ? ` · ${h.aval} avaliações` : ""}
+              {h.ctr != null ? ` · CTR ${fmtPct(h.ctr)}` : ""}
+              {h.conv != null ? ` · conversão ${fmtPct(h.conv)}` : ""}
               {h.mudanca ? ` · ${h.mudanca.tipo === "subida" ? "subiu" : "voltou"} de degrau` : ""}
             </>
           ) : (
@@ -136,6 +163,13 @@ export default function GraficoRampa({ est }) {
             <text x={W - padR + 6} y={yA(aMin) + 4} className="eixo eixo-aval">{aMin}</text>
           </>
         )}
+        {temFunil && (
+          <>
+            <text x={W - 6} y={yPct(pctMax) + 10} textAnchor="end" className="eixo eixo-pct">{fmtPct(pctMax)}</text>
+            <text x={W - 6} y={yPct(pctMax / 2) + 4} textAnchor="end" className="eixo eixo-pct">{fmtPct(pctMax / 2)}</text>
+            <text x={W - 6} y={yPct(0) + 4} textAnchor="end" className="eixo eixo-pct">0%</text>
+          </>
+        )}
         <line x1={padL} x2={W - padR} y1={baseVendas} y2={baseVendas} className="grade" />
         {hover != null && <rect x={padL + larg * hover} y={padT - 6} width={larg} height={H - padT - padB + 6} rx="6" className="faixa-hover" />}
         {est.alvo != null && (
@@ -155,6 +189,10 @@ export default function GraficoRampa({ est }) {
         {area && <path d={area} fill="url(#gr-preco)" />}
         {degrau && <path d={degrau} className="linha-preco" />}
         {curva && <path d={curva} className="linha-aval" />}
+        {temFunil && <path d={linhaPct("ctr")} className="linha-ctr" />}
+        {temFunil && <path d={linhaPct("conv")} className="linha-conv" />}
+        {pontos.map((p, i) => (p.ctr != null ? <circle key={`c${p.data}`} cx={cx(i)} cy={yPct(p.ctr)} r={hover === i ? 4 : 2.5} className="ponto-ctr" /> : null))}
+        {pontos.map((p, i) => (p.conv != null ? <circle key={`k${p.data}`} cx={cx(i)} cy={yPct(p.conv)} r={hover === i ? 4 : 2.5} className="ponto-conv" /> : null))}
         {pontos.map((p, i) => (p.aval != null ? <circle key={`a${p.data}`} cx={cx(i)} cy={yA(p.aval)} r={hover === i ? 4 : 2.5} className="ponto-aval" /> : null))}
         {pontos.map((p, i) =>
           p.mudanca ? (

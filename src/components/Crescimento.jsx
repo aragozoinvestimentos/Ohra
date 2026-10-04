@@ -9,7 +9,7 @@ import { hojeISO } from "../lib/fluxoCaixa.js";
 // "2026-10-03" → "03/10" (sem passar por Date, que no fuso do Brasil voltaria um dia).
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
 import { descontoDoItem, escadaDoProduto, sugestaoKit, lucroNoPreco } from "../lib/escada.js";
-import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, estadoRampa, normalizarDegraus, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
+import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, estadoRampa, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -87,6 +87,13 @@ export default function Crescimento({ onToast }) {
   const [sub, setSub] = useState(lerSub);
   const [semanaAberta, setSemanaAberta] = useState(false);
 
+  // Referência do funil: mediana de CTR e conversão dos produtos da loja
+  // (só com 5+ produtos com funil calculável; senão, referência geral).
+  const funilLoja = useMemo(
+    () => referenciaFunilLoja(rampas.map((r) => metricasFunil(r, registros.filter((g) => g.rampa_id === r.id), regras, hoje))),
+    [rampas, registros, regras, hoje]
+  );
+
   // Uma linha por rampa, com tudo calculado ao vivo.
   const linhas = useMemo(() => {
     return rampas
@@ -97,14 +104,14 @@ export default function Crescimento({ onToast }) {
         if (!produto || !canal || !item) return null;
         const cfg = cfgDoProduto(r.produto_id);
         const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === r.produto_id && p.canal_id === r.canal_id);
-        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null };
+        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja };
         const regs = registros.filter((g) => g.rampa_id === r.id);
         const est = estadoRampa(r, regs, regras, ctx, hoje);
         return { r, produto, canal, item, cfg, ctx, est };
       })
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje]);
+  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja]);
 
   // Comissão de afiliado por item × canal (ao vivo).
   const linhasAf = useMemo(
@@ -469,6 +476,9 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
                       </td>
                       <td>
                         <span className={`badge ${{ good: "good", warn: "warn", bad: "bad" }[e.sugestao.tom] || "neutro"}`}>{e.sugestao.rotulo}</span>
+                        {e.sugestao.chave === "revisar" && e.funil?.diagnostico && e.funil.diagnostico.chave !== "ok" && (
+                          <div className="sub-num" title="Diagnóstico do funil do anúncio: por onde começar">começar por: {e.funil.diagnostico.titulo.toLowerCase()}</div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -972,6 +982,8 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
         </div>
       </div>
 
+      <FunilAnuncio funil={e.funil} />
+
       <div className="secao-rampa">
         <h4 className="sub-h">Evolução <span className="muted-cel">· preço vendido, vendas por semana e avaliações</span></h4>
         <GraficoRampa est={e} />
@@ -988,18 +1000,27 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
             {e.revisarPorLancamento
               ? `${e.dias} dias no lançamento e só ${e.vendasDesde} vendas: o preço já está perto do 0 a 0, então o problema provavelmente não é preço.`
               : "ROAS abaixo do mínimo por 2 semanas: o anúncio recebe clique mas não converte."}
+            {e.funil?.diagnostico && e.funil.diagnostico.chave !== "ok" && (
+              <div style={{ marginTop: 4 }}>
+                <b>Por onde começar: {e.funil.diagnostico.titulo}</b> (funil do anúncio) — itens destacados abaixo.
+              </div>
+            )}
           </div>
         )}
         <div className="checklist-anuncio">
-          {CHECKLIST_ANUNCIO.map(([k, rotulo, dica]) => (
-            <label key={k}>
-              <input type="checkbox" checked={!!l.r.checklist?.[k]} onChange={(ev) => onChecklist(l, k, ev.target.checked)} />
-              <span>
-                {rotulo}
-                <small>{dica}</small>
-              </span>
-            </label>
-          ))}
+          {CHECKLIST_ANUNCIO.map(([k, rotulo, dica]) => {
+            const destaque = (e.funil?.diagnostico?.itens || []).includes(k);
+            return (
+              <label key={k} className={destaque ? "item-funil" : ""}>
+                <input type="checkbox" checked={!!l.r.checklist?.[k]} onChange={(ev) => onChecklist(l, k, ev.target.checked)} />
+                <span>
+                  {rotulo}
+                  {destaque && <em className="comece"> ← comece por aqui</em>}
+                  <small>{dica}</small>
+                </span>
+              </label>
+            );
+          })}
         </div>
         <p className="hint" style={{ margin: "6px 0 0" }}>As marcações ficam salvas por produto. Depois de mexer nas fotos, espere 7 dias antes de tirar conclusões.</p>
         <div className="pronto-linha">
@@ -1020,6 +1041,71 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// "1,5%" / "12%"
+const pctF = (v) => (v == null ? "—" : `${(v * 100).toFixed(v < 0.1 ? 1 : 0).replace(".", ",")}%`);
+
+// Funil do anúncio (2 semanas no preço atual): Impressões de Produto →
+// Cliques Por Produto (CTR) → Pedidos (Taxa de Conversão de Pedidos), com o
+// diagnóstico de onde o anúncio trava. Só leitura.
+function FunilAnuncio({ funil }) {
+  if (!funil) return null;
+  const d = funil.diagnostico;
+  const rotuloVendas = funil.usaPedidos ? "Pedidos" : "Vendas";
+  return (
+    <div className="secao-rampa">
+      <h4 className="sub-h">
+        Funil do anúncio <span className="muted-cel">· 2 semanas no preço atual</span>
+        <Ajuda texto="Do painel de desempenho do produto na Shopee, informado no Registrar semana (+ impressões, cliques e pedidos). CTR = Cliques ÷ Impressões; Taxa de Conversão de Pedidos = Pedidos ÷ Cliques (sem pedidos informados, usa as vendas). Usa as 2 últimas semanas no preço atual, de preferência sem Ads (o Ads infla as impressões). Diagnóstico na ordem: pouca exibição → pouca gente clica → clicam mas não compram. Com 5+ produtos com funil, a referência é a média (mediana) da loja: abaixo da metade dela é problema. Os limites ficam em Regras dos portões." />
+      </h4>
+      {funil.status === "sem-dados" ? (
+        <div className="empty">Informe visualizações e visitas no Registrar semana pra ver onde o anúncio trava (Impressões de Produto e Cliques Por Produto, do painel da Shopee).</div>
+      ) : (
+        <>
+          <div className="funil-anuncio">
+            <div className="funil-etapa">
+              <span className="funil-rot">Impressões de Produto</span>
+              <b>{funil.visualizacoes.toLocaleString("pt-BR")}</b>
+            </div>
+            <div className="funil-seta">
+              → <span>CTR {pctF(funil.ctr)}</span>
+            </div>
+            <div className="funil-etapa">
+              <span className="funil-rot">Cliques Por Produto</span>
+              <b>{funil.visitas.toLocaleString("pt-BR")}</b>
+            </div>
+            <div className="funil-seta">
+              → <span>conversão {pctF(funil.conversao)}</span>
+            </div>
+            <div className="funil-etapa">
+              <span className="funil-rot">{rotuloVendas}</span>
+              <b>{funil.vendas.toLocaleString("pt-BR")}</b>
+            </div>
+          </div>
+          {funil.status === "coletando" ? (
+            <div className="alerta alerta-neutro">
+              <b>{funil.texto}</b>O diagnóstico aparece com {funil.semanas < 2 ? "2 semanas registradas neste preço" : "o tempo mínimo de rampa"}.
+            </div>
+          ) : d ? (
+            <div className={`alerta alerta-${d.tom}`}>
+              <b>{d.titulo}</b>
+              {d.texto}
+            </div>
+          ) : null}
+          <p className="hint" style={{ margin: "6px 0 0" }}>
+            Referência: <b>{funil.referencia}</b> (CTR mínimo {pctF(funil.limiteCtr)} · conversão mínima {pctF(funil.limiteConversao)})
+            {!funil.usaPedidos && funil.semanas > 0 ? " · conversão pelas vendas (pedidos não informados)" : ""}
+          </p>
+          {funil.comAds && (
+            <p className="hint neg" style={{ margin: "4px 0 0" }}>
+              Com Ads: não há 2 semanas sem Ads neste preço, então os números incluem o tráfego pago — o Ads aumenta as impressões e distorce o CTR.
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1051,6 +1137,11 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
     ["acimaSemanas", "Acima do alvo: semanas de vendas estáveis", 1],
     ["acimaMax", "Acima do alvo: máximo acima (%)", 1, true],
     ["acimaBloqueioDias", "Acima do alvo: espera se falhar (dias)", 1],
+    ["funilDiasMin", "Funil: dias de rampa antes de diagnosticar", 1],
+    ["funilVisMin", "Funil: impressões mínimas em 2 semanas", 10],
+    ["funilCtrMin", "Funil: CTR mínimo (%, referência geral)", 0.1, true],
+    ["funilConvMin", "Funil: conversão de pedidos mínima (%, referência geral)", 0.1, true],
+    ["funilVisitasMin", "Funil: cliques mínimos pra julgar a conversão", 5],
   ];
   const [f, setF] = useState(() => Object.fromEntries(campos.map(([k, , , pct]) => [k, String(pct ? Math.round(regras[k] * 1000) / 10 : regras[k])])));
   const [salvando, setSalvando] = useState(false);
@@ -1325,6 +1416,27 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
 }
 
 const VAZIO_RAMPA = { vendas: "", avaliacoes: "", nota: "", ruins: "", gasto: "", cliques: "", adsVendas: "" };
+const VAZIO_FUNIL = { impressoes: "", cliquesProduto: "", pedidos: "" };
+
+const somaDias = (iso, n) => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+const diasEntreIso = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
+
+// Período a puxar no painel da Shopee pro registro na data `data`: um registro
+// cobre até a véspera. Em dia = os 7 dias antes ("Últimos 7 dias"); atrasou =
+// "Personalizado" começando no dia seguinte ao período anterior (sem pular
+// nem repetir dias). Lacuna muito grande (> 13 dias) volta pros últimos 7.
+function periodoFunil(registros, data) {
+  const fim = somaDias(data, -1);
+  const ant = [...(registros || [])].reverse().find((g) => g.tipo === "semana" && g.visualizacoes != null && g.data < data);
+  let inicio = ant ? ant.data : somaDias(data, -7);
+  if (diasEntreIso(inicio, fim) + 1 > 13 || inicio > fim) inicio = somaDias(data, -7);
+  const dias = diasEntreIso(inicio, fim) + 1;
+  return { inicio, fim, dias, modo: dias === 7 ? "Últimos 7 dias" : "Personalizado" };
+}
 const VAZIO_AF = { afVendas: "", afComissao: "", parceiro: "" };
 
 // Uma janela só pra semana: produtos em rampa (vendas, avaliações, nota, 1–2★,
@@ -1336,10 +1448,18 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
   const afDe = (l) => linhasAf.find((x) => x.chave === `produto|${l.r.produto_id}|${l.r.canal_id}` && x.conf.ativo) || null;
   const foraRampa = linhasAf.filter((x) => x.conf.ativo && !x.rampa);
   const [f, setF] = useState(() => ({
-    ...Object.fromEntries(linhas.map((l) => [l.r.id, { ...VAZIO_RAMPA, ...VAZIO_AF }])),
+    ...Object.fromEntries(linhas.map((l) => [l.r.id, { ...VAZIO_RAMPA, ...VAZIO_FUNIL, ...VAZIO_AF }])),
     ...Object.fromEntries(foraRampa.map((x) => [x.chave, { ...VAZIO_RAMPA, ...VAZIO_AF }])),
   }));
   const [salvando, setSalvando] = useState(false);
+  const [funilAberto, setFunilAberto] = useState(() => new Set());
+  const alternarFunil = (id) =>
+    setFunilAberto((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
   const set = (id, k) => (e) => setF((p) => ({ ...p, [id]: { ...p[id], [k]: e.target.value } }));
   const preenchido = (v, campos) => campos.some((k) => v[k] !== "");
   const intOuNull = (x) => (x === "" ? null : Math.round(num(x)));
@@ -1349,7 +1469,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
     const afSalvar = [];
     for (const l of linhas) {
       const v = f[l.r.id];
-      if (preenchido(v, Object.keys(VAZIO_RAMPA)))
+      if (preenchido(v, [...Object.keys(VAZIO_RAMPA), ...Object.keys(VAZIO_FUNIL)]))
         rampaSalvar.push({
           loja_id: lojaId || null,
           rampa_id: l.r.id,
@@ -1364,6 +1484,10 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
           ads_gasto: v.gasto === "" ? null : num(v.gasto),
           ads_vendas: intOuNull(v.adsVendas),
           ...(v.cliques !== "" ? { ads_cliques: Math.round(num(v.cliques)) } : {}),
+          // Funil (schema v36): só vai pro banco quando preenchido — em branco = null, nunca 0.
+          ...(v.impressoes !== "" ? { visualizacoes: Math.round(num(v.impressoes)) } : {}),
+          ...(v.cliquesProduto !== "" ? { visitas: Math.round(num(v.cliquesProduto)) } : {}),
+          ...(v.pedidos !== "" ? { pedidos: Math.round(num(v.pedidos)) } : {}),
         });
       const la = afDe(l);
       if (la && preenchido(v, ["afVendas", "afComissao"]))
@@ -1406,6 +1530,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
       const { error } = await supabase.from("rampa_registros").insert(rampaSalvar);
       if (error) {
         setSalvando(false);
+        if (/visualizacoes|visitas|pedidos/.test(error.message)) return onToast?.("Falta rodar o supabase/schema_v36.sql no Supabase");
         return onToast?.(/ads_cliques/.test(error.message) ? "Falta rodar o supabase/schema_v34.sql no Supabase (coluna de cliques)" : `Não foi possível salvar: ${error.message}`);
       }
     }
@@ -1482,6 +1607,30 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
               <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={f[l.r.id].cliques} onChange={set(l.r.id, "cliques")} /></div>
               <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={f[l.r.id].adsVendas} onChange={set(l.r.id, "adsVendas")} /></div>
             </div>
+            <button type="button" className={`variacoes-toggle${funilAberto.has(l.r.id) ? " aberto" : ""}`} onClick={() => alternarFunil(l.r.id)}>
+              <span className="seta">▸</span> {funilAberto.has(l.r.id) ? "impressões, cliques e pedidos" : "+ impressões, cliques e pedidos"}
+            </button>
+            {funilAberto.has(l.r.id) && (
+              <div className="bloco-funil">
+                {(() => {
+                  const per = periodoFunil(l.est.registros, data);
+                  return (
+                    <p className="hint" style={{ margin: "0 0 6px" }}>
+                      Do painel de desempenho do produto na Shopee (Dados de Negócio → Produto → Ver detalhes). Período:{" "}
+                      <b>
+                        {per.modo} — {diaMes(per.inicio)} a {diaMes(per.fim)}
+                      </b>
+                      {per.modo === "Personalizado" ? ` (${per.dias} dias, emendando no registro anterior, sem pular dias)` : ""}. Opcional — o que ficar em branco não é gravado.
+                    </p>
+                  );
+                })()}
+                <div className="grid-semana">
+                  <div className="field"><label>Impressões de Produto</label><input type="number" min="0" value={f[l.r.id].impressoes} onChange={set(l.r.id, "impressoes")} /></div>
+                  <div className="field"><label>Cliques Por Produto</label><input type="number" min="0" value={f[l.r.id].cliquesProduto} onChange={set(l.r.id, "cliquesProduto")} /></div>
+                  <div className="field"><label>Pedidos</label><input type="number" min="0" value={f[l.r.id].pedidos} onChange={set(l.r.id, "pedidos")} /></div>
+                </div>
+              </div>
+            )}
             {la && blocoAfiliado(l.r.id, la, l.est.preco)}
           </div>
         );
