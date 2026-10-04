@@ -32,6 +32,7 @@ export const REGRAS_PADRAO = {
   testeMin: 30, // orçamento mínimo (R$)
   testeMax: 100, // orçamento máximo (R$)
   testeDias: 7, // prazo do teste
+  testeMinDiario: 10, // orçamento diário mínimo do Ads na plataforma (R$) — a Shopee exige R$10/dia
   testeCliquesSemVenda: 50, // tantos cliques sem venda = problema é o anúncio
   // Acima do alvo
   acimaDias: 14, // dias no alvo antes de sugerir testar acima / duração do teste acima
@@ -47,11 +48,19 @@ export const REGRAS_PADRAO = {
 };
 
 // Orçamento sugerido do teste de lançamento: meta × lucro por venda no alvo,
-// entre o mínimo e o máximo, arredondado pra cima de 5 em 5.
-export function orcamentoTeste(lucroAlvo, regras = REGRAS_PADRAO) {
+// entre o mínimo e o máximo, arredondado pra cima de 5 em 5 — e nunca abaixo
+// do mínimo diário da plataforma × dias do teste (a Shopee não aceita menos
+// de R$10/dia). Se esse mínimo passar do máximo, vale o mínimo mesmo assim
+// (acimaMax = true, a tela avisa).
+export function detalheOrcamentoTeste(lucroAlvo, regras = REGRAS_PADRAO) {
   const bruto = num(regras.testeMeta) * Math.max(0, num(lucroAlvo));
-  const lim = Math.min(num(regras.testeMax), Math.max(num(regras.testeMin), bruto));
-  return Math.ceil(lim / 5) * 5;
+  const base = Math.ceil(Math.min(num(regras.testeMax), Math.max(num(regras.testeMin), bruto)) / 5) * 5;
+  const minimo = num(regras.testeMinDiario) * num(regras.testeDias);
+  const valor = Math.ceil(Math.max(base, minimo) / 5) * 5;
+  return { valor, base, minimo, porMinimo: minimo > base, acimaMax: valor > num(regras.testeMax) };
+}
+export function orcamentoTeste(lucroAlvo, regras = REGRAS_PADRAO) {
+  return detalheOrcamentoTeste(lucroAlvo, regras).valor;
 }
 
 const maisDias = (iso, n) => {
@@ -367,7 +376,8 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const inicioRampa = inicioReg?.data || String(rampa.criado_em || hoje).slice(0, 10);
   const diasRampa = Math.max(0, diasEntre(inicioRampa, hoje));
   const lucroNoAlvo = lucroEm(alvo);
-  const orcSugerido = orcamentoTeste(lucroNoAlvo, regras);
+  const orcInfo = detalheOrcamentoTeste(lucroNoAlvo, regras);
+  const orcSugerido = orcInfo.valor;
   let teste;
   if (rampa.teste_status === "pulado") teste = { status: "pulado" };
   else if (rampa.teste_status === "iniciado" || rampa.teste_status === "concluido") {
@@ -403,7 +413,8 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   else if (diasRampa < regras.testeObservarDias) teste = { status: "observando", dia: diasRampa + 1, de: regras.testeObservarDias };
   else teste = { status: "recomendado" };
   teste.orcSugerido = orcSugerido;
-  teste.porDia = Math.ceil((orcSugerido / regras.testeDias) * 2) / 2;
+  teste.orcInfo = orcInfo;
+  teste.porDia = cent(orcSugerido / regras.testeDias);
 
   // ---- Acima do alvo (teste controlado, até +acimaMax) ----
   let acima = null;

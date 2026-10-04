@@ -827,9 +827,26 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                       <input type="number" min="0" step="5" value={orcEdit || t.orcSugerido} onChange={(ev) => setOrcEdit(ev.target.value)} style={{ width: 110 }} />
                     </div>
                     <span className="muted-cel">
-                      sugerido {BRL(t.orcSugerido)} = {regras.testeMeta} vendas × lucro no alvo ({BRL(e.lucroAlvo)}) · ≈ {BRL((num(orcEdit) || t.orcSugerido) / regras.testeDias)}/dia por {regras.testeDias} dias
+                      Na plataforma: <b>{BRL((num(orcEdit) || t.orcSugerido) / regras.testeDias)}/dia por {regras.testeDias} dias</b>
+                      <br />
+                      sugerido {BRL(t.orcSugerido)}
+                      {t.orcInfo?.porMinimo
+                        ? ` = mínimo da plataforma (${BRL(regras.testeMinDiario)}/dia × ${regras.testeDias} dias; pela conta seria ${BRL(t.orcInfo.base)} = ${regras.testeMeta} vendas × lucro no alvo ${BRL(e.lucroAlvo)})`
+                        : ` = ${regras.testeMeta} vendas × lucro no alvo (${BRL(e.lucroAlvo)})`}
                     </span>
                   </div>
+                  {t.orcInfo?.acimaMax && (
+                    <div className="alerta alerta-warn" style={{ marginTop: 8 }}>
+                      <b>A Shopee exige no mínimo {BRL(regras.testeMinDiario)}/dia — o teste fica em {BRL(t.orcInfo.minimo)} em {regras.testeDias} dias</b>
+                      Passa do orçamento máximo das regras ({BRL(regras.testeMax)}). Se preferir gastar menos, diminua os dias do teste nas Regras dos portões.
+                    </div>
+                  )}
+                  {(num(orcEdit) || t.orcSugerido) / regras.testeDias < num(regras.testeMinDiario) - 0.004 && (
+                    <div className="alerta alerta-bad" style={{ marginTop: 8 }}>
+                      <b>Abaixo do mínimo diário da plataforma</b>
+                      {BRL((num(orcEdit) || t.orcSugerido) / regras.testeDias)}/dia é menos que {BRL(regras.testeMinDiario)}/dia — a Shopee não aceita. Use pelo menos {BRL(num(regras.testeMinDiario) * regras.testeDias)} em {regras.testeDias} dias.
+                    </div>
+                  )}
                   {checklistIncompleto.length > 0 && (
                     <div className="alerta alerta-warn" style={{ marginTop: 8 }}>
                       <b>Anúncio incompleto</b>
@@ -850,7 +867,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                     <div>
                       <small>Investido</small>
                       <b>{BRL(t.gasto)}</b>
-                      <span className="muted-cel"> de {BRL(t.orc)}</span>
+                      <span className="muted-cel"> de {BRL(t.orc)} ({BRL(t.orc / Math.max(1, t.prazo))}/dia)</span>
                       <div className="barra-progresso"><i style={{ width: `${Math.min(100, (t.gasto / Math.max(1, t.orc)) * 100)}%` }} /></div>
                     </div>
                     <div>
@@ -1132,6 +1149,7 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
     ["testeMin", "Teste: orçamento mínimo (R$)", 5],
     ["testeMax", "Teste: orçamento máximo (R$)", 5],
     ["testeDias", "Teste: prazo (dias)", 1],
+    ["testeMinDiario", "Teste: orçamento mínimo por dia na plataforma (R$)", 1],
     ["testeCliquesSemVenda", "Teste: cliques sem venda = revisar anúncio", 5],
     ["acimaDias", "Acima do alvo: dias no alvo / duração do teste", 1],
     ["acimaSemanas", "Acima do alvo: semanas de vendas estáveis", 1],
