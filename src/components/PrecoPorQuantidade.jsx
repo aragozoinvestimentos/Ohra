@@ -41,6 +41,7 @@ export default function PrecoPorQuantidade({ onToast }) {
   const { lojaId, atualizar } = useLoja();
   const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // diálogo "Manter assim" do avulso
+  const [selPQ, setSelPQ] = useState(null); // linha com o detalhe aberto ("base" ou "n<qtd>")
   const [revisar, setRevisar] = useState(null); // linha de produto_variacoes aberta na tela suspensa (revisar insumos)
   const [produtoId, setProdutoId] = useState("");
   const [canalId, setCanalId] = useState("");
@@ -466,16 +467,22 @@ export default function PrecoPorQuantidade({ onToast }) {
               </div>
             </div>
           )}
+          <div className="legenda-tabela">
+            <span className="legenda-tit">Legenda</span>
+            <span>preço salvo: <i className="leg-ponto st-good" /> = sugerido</span>
+            <span><i className="leg-ponto st-acc" /> dá pra cobrar mais</span>
+            <span><i className="leg-ponto st-neu" /> acima do sugerido</span>
+            <span><i className="leg-ponto st-bad" /> abaixo do piso / escada invertida</span>
+            <span className="legenda-dica">Clique na linha: custo, faixa, texto pro anúncio, concorrente e insumos.</span>
+          </div>
           <div className="table-wrap tabela-escada cabecalho-fixo">
             <table>
               <thead>
                 <tr>
                   <th>Kit</th>
-                  <th className="num">Custo</th>
                   <th className="num">Preço sugerido</th>
-                  <th className="num">Cliente economiza</th>
                   <th className="num">Lucro do pedido</th>
-                  <th>Texto pro anúncio</th>
+                  <th className="num">Cliente economiza</th>
                   <th className="num">Preço salvo</th>
                   <th></th>
                 </tr>
@@ -483,95 +490,92 @@ export default function PrecoPorQuantidade({ onToast }) {
               <tbody>
                 {(() => {
                   let salvoPPAnterior = dados.p1;
-                  return e.linhas.map((l) => {
+                  const pare = (fn) => (ev) => {
+                    ev.stopPropagation();
+                    fn();
+                  };
+                  const linhaDetalhe = (chave, conteudo) =>
+                    selPQ === chave && (
+                      <tr className="linha-detalhe" key={`d-${chave}`}>
+                        <td colSpan={6}>
+                          <div className="detalhe-cel">{conteudo}</div>
+                        </td>
+                      </tr>
+                    );
+                  const alternar = (chave) => () => setSelPQ((x) => (x === chave ? null : chave));
+                  return e.linhas.flatMap((l) => {
                     if (l.base) {
-                      return (
-                        <tr key="base" className="linha-cad">
+                      return [
+                        <tr key="base" className={`linha-cad linha-clicavel${selPQ === "base" ? " linha-atual" : ""}`} onClick={alternar("base")}>
                           <td>
                             <b className="kit-n">1 un.</b>
                             <span className="sub">{dados.itemPai.nome} · base</span>
                           </td>
                           <td className="num">
-                            {BRL(l.custo)}
-                            <span className="sub">alvo {BRL(e.lBase)}/peça</span>
-                            {e.baseRef && (
-                              <span className="nota">
-                                base = margem desejada (
-                                {{ atracao: "avulso em atração — escolhido", crescimento: "avulso em crescimento — escolhido", rampa: "avulso em rampa", sugerido: "sugerido: avulso parece atração" }[e.baseMotivo] || "avulso abaixo da margem desejada"})
-                              </span>
-                            )}
-                          </td>
-                          <td className="num">
                             <b>{BRL(l.sugerido)}</b>
                             <span className="sub">preço avulso</span>
-                            <span className="nota">{faixaTxt(canal, l.taxas)}</span>
                           </td>
-                          <td className="num">—</td>
                           <td className="num">
                             <b>{BRL(l.lucro)}</b> · {PCT(l.margem)}
                             <span className="sub">{BRL(l.lucro)}/peça</span>
                             <div className="barra-lpp"><i style={{ width: `${Math.max(0, (l.lucro / maxLpp) * 100)}%` }} /></div>
                           </td>
-                          <td className="quebra">
-                            <span className="anuncio">{BRL(l.sugerido)} a unidade</span>
-                          </td>
+                          <td className="num">—</td>
                           <td className="num">
                             {dados.salvo1 != null ? BRL(dados.salvo1) : "—"}
-                            <span className="sub"><span className="badge good">base</span></span>
+                            <span className="sub">
+                              <span className="badge good">base</span>
+                            </span>
                           </td>
                           <td></td>
-                        </tr>
-                      );
+                        </tr>,
+                        linhaDetalhe(
+                          "base",
+                          <>
+                            <div className="detalhe-cel-grade">
+                              <div className="kv-cel">
+                                <small>Custo</small>
+                                <b>{BRL(l.custo)}</b>
+                                <span>alvo {BRL(e.lBase)}/peça</span>
+                              </div>
+                              <div className="kv-cel">
+                                <small>Faixa do canal</small>
+                                <b>{faixaTxt(canal, l.taxas)}</b>
+                              </div>
+                            </div>
+                            {e.baseRef && (
+                              <div className="aviso-cel">
+                                <b>Base = margem desejada</b> (
+                                {{ atracao: "avulso em atração — escolhido", crescimento: "avulso em crescimento — escolhido", rampa: "avulso em rampa", sugerido: "sugerido: avulso parece atração" }[e.baseMotivo] || "avulso abaixo da margem desejada"})
+                              </div>
+                            )}
+                            <div>
+                              <div className="legenda-tit" style={{ marginBottom: 4 }}>Texto pro anúncio</div>
+                              <div className="txt-anuncio">{BRL(l.sugerido)} a unidade</div>
+                            </div>
+                          </>
+                        ),
+                      ];
                     }
                     const st = statusPrecoSalvo(l.salvo, l, salvoPPAnterior);
                     if (l.salvo != null) salvoPPAnterior = l.salvo / l.n;
                     const kConc = `${pid}|${canal.id}|${l.n}`;
-                    return (
-                      <tr key={l.n} className={l.cadastrada ? "linha-cad" : ""}>
+                    const chave = `n${l.n}`;
+                    return [
+                      <tr key={l.n} className={`${l.cadastrada ? "linha-cad " : ""}linha-clicavel${selPQ === chave ? " linha-atual" : ""}`} onClick={alternar(chave)}>
                         <td>
                           <b className="kit-n">{l.n} un.</b>
-                          <span className="sub">
-                            {l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}
-                            {l.cadastrada && (
-                              <>
-                                {" · "}
-                                <button type="button" className="link-btn" style={{ fontSize: 11 }} onClick={() => setRevisar(variacoesRaw.find((x) => x.id === l.variacaoId) || null)} title="Revisar embalagem, produção e peso desta variação">
-                                  revisar insumos
-                                </button>
-                              </>
-                            )}
-                          </span>
-                          {regra4x && !regra4x.ok && anuncioDe(l.n) > 1 && (
-                            <span className="frete-tag info-4x" title="Só se você anunciar essa quantidade na Shopee junto com o avulso — regra de 4×">
-                              Shopee: anúncio {anuncioDe(l.n)} (se anunciar)
-                            </span>
-                          )}
-                          <input
-                            className="input-conc"
-                            type="number"
-                            step="0.1"
-                            placeholder="concorrente"
-                            title="Preço do concorrente pra essa quantidade (opcional)"
-                            value={concEdit[kConc] ?? (l.concorrente ?? "")}
-                            onChange={(ev) => setConcEdit((prev) => ({ ...prev, [kConc]: ev.target.value }))}
-                            onBlur={() => l.cadastrada && salvarConcorrente(l.n, "variacao", l.variacaoId)}
-                          />
-                        </td>
-                        <td className="num">
-                          {BRL(l.custo)}
-                          <span className="sub">
-                            alvo {BRL(l.alvoLpp)}/peça · {pctTxt(l.ret)}
-                          </span>
-                          {l.estimado && <span className="nota">custo estimado — crie a variação pro custo real</span>}
+                          <span className="sub">{l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}</span>
+                          {l.concorrenteAbaixoDoPiso && <span className="chip-cel ruim">concorrente abaixo do mínimo</span>}
                         </td>
                         <td className="num">
                           <span className="sug">{BRL(l.sugerido)}</span>
                           <span className="sub">{BRL(l.porPeca)} cada</span>
-                          <span className="nota">
-                            {faixaTxt(canal, l.taxas)}
-                            {l.notas.length ? ` · ${l.notas.join(" · ")}` : ""}
-                          </span>
-                          {l.concorrenteAbaixoDoPiso && <span className="frete-tag bad">concorrente abaixo do seu mínimo — não acompanhado</span>}
+                        </td>
+                        <td className="num">
+                          <b>{BRL(l.lucro)}</b> · {PCT(l.margem)}
+                          <span className="sub">{BRL(l.lucroPorPeca)}/peça</span>
+                          <div className="barra-lpp"><i style={{ width: `${Math.max(0, (l.lucroPorPeca / maxLpp) * 100)}%` }} /></div>
                         </td>
                         <td className="num" style={{ color: "var(--good)" }}>
                           {BRL(l.economia)}
@@ -580,58 +584,106 @@ export default function PrecoPorQuantidade({ onToast }) {
                           </span>
                         </td>
                         <td className="num">
-                          <b>{BRL(l.lucro)}</b> · {PCT(l.margem)}
-                          <span className="sub">{BRL(l.lucroPorPeca)}/peça</span>
-                          <div className="barra-lpp"><i style={{ width: `${Math.max(0, (l.lucroPorPeca / maxLpp) * 100)}%` }} /></div>
-                        </td>
-                        <td className="quebra">
-                          <span className="anuncio">
-                            {l.n} un. = {BRL(l.porPeca)} cada
-                          </span>{" "}
-                          <span className="anuncio">
-                            {l.nAnterior === 1 && l.n === 2 ? `2ª unidade por ${BRL(l.sugerido - dados.p1)}` : `+${l.n - l.nAnterior} un. por só ${BRL(l.maisQueAnterior)} a mais`}
-                          </span>
-                        </td>
-                        <td className="num">
                           {l.salvo != null ? (
-                            <>
-                              {BRL(l.salvo)}
-                              <span className="sub">{BRL(l.salvo / l.n)}/peça</span>
-                            </>
-                          ) : (
-                            "—"
-                          )}
-                          {st ? (
-                            <span className="sub">
-                              <span className={`badge ${st.tom === "acc" ? "acc" : st.tom === "neu" ? "" : st.tom}`}>{st.texto}</span>
+                            <span className="cel-preco-cmp" title={st?.texto}>
+                              {st && <span className={`ponto-st ${st.tom}`} />}
+                              <b>{BRL(l.salvo)}</b>
                             </span>
                           ) : l.cadastrada ? (
-                            <span className="sub">
-                              <span className="badge">sem preço</span>
-                            </span>
-                          ) : null}
+                            <span className="chip-cel">sem preço</span>
+                          ) : (
+                            <span className="chip-cel">não existe</span>
+                          )}
+                          {st && st.tom !== "good" && <span className="sub">{st.texto.replace(/^[^\wÀ-ú]+\s*/, "")}</span>}
                         </td>
                         <td>
                           {l.naoCompensa ? (
                             <span className="badge bad">não compensa</span>
                           ) : l.cadastrada ? (
-                            st?.tom === "good" ? (
-                              <button type="button" className="link-btn" onClick={() => setConfirmar({ tipo: "aplicar", linha: l, precoEdit: l.salvo != null ? l.salvo.toFixed(2) : undefined })} title="Editar o preço salvo desta variação">
-                                ✎ editar
-                              </button>
-                            ) : (
-                              <button type="button" className="btn primary btn-sm" onClick={() => setConfirmar({ tipo: "aplicar", linha: l })}>
+                            st?.tom === "good" ? null : (
+                              <button type="button" className="btn primary btn-sm" onClick={pare(() => setConfirmar({ tipo: "aplicar", linha: l }))}>
                                 Aplicar {BRL(l.sugerido)}
                               </button>
                             )
                           ) : (
-                            <button type="button" className="btn btn-sm" onClick={() => setConfirmar({ tipo: "criar", linha: l })}>
+                            <button type="button" className="btn btn-sm" onClick={pare(() => setConfirmar({ tipo: "criar", linha: l }))}>
                               + Criar variação
                             </button>
                           )}
                         </td>
-                      </tr>
-                    );
+                      </tr>,
+                      linhaDetalhe(
+                        chave,
+                        <>
+                          <div className="detalhe-cel-grade">
+                            <div className="kv-cel">
+                              <small>Custo</small>
+                              <b>{BRL(l.custo)}</b>
+                              <span>{l.estimado ? "estimado — crie a variação pro custo real" : `alvo ${BRL(l.alvoLpp)}/peça · ${pctTxt(l.ret)}`}</span>
+                            </div>
+                            <div className="kv-cel">
+                              <small>Faixa do canal</small>
+                              <b>{faixaTxt(canal, l.taxas)}</b>
+                              {l.notas.length > 0 && <span>{l.notas.join(" · ")}</span>}
+                            </div>
+                            <div className="kv-cel">
+                              <small>Preço salvo</small>
+                              <b>{l.salvo != null ? BRL(l.salvo) : "—"}</b>
+                              <span>{l.salvo != null ? `${BRL(l.salvo / l.n)}/peça${st ? ` · ${st.texto.replace(/^[^\wÀ-ú]+\s*/, "")}` : ""}` : l.cadastrada ? "variação sem preço neste canal" : "variação ainda não criada"}</span>
+                            </div>
+                            <label className="kv-cel" onClick={(ev) => ev.stopPropagation()}>
+                              <small>Concorrente (opcional)</small>
+                              <input
+                                className="input-conc"
+                                type="number"
+                                step="0.1"
+                                placeholder="preço pra essa quantidade"
+                                value={concEdit[kConc] ?? (l.concorrente ?? "")}
+                                onChange={(ev) => setConcEdit((prev) => ({ ...prev, [kConc]: ev.target.value }))}
+                                onBlur={() => l.cadastrada && salvarConcorrente(l.n, "variacao", l.variacaoId)}
+                              />
+                              <span>{l.cadastrada ? "teto da sugestão, nunca abaixo do mínimo" : "crie a variação pra salvar"}</span>
+                            </label>
+                          </div>
+                          <div className="detalhe-cel-avisos">
+                            {l.concorrenteAbaixoDoPiso && (
+                              <div className="aviso-cel ruim">
+                                <b>Concorrente abaixo do seu mínimo</b> — não acompanhado: diferencie pelo kit, foto ou qualidade.
+                              </div>
+                            )}
+                            {regra4x && !regra4x.ok && anuncioDe(l.n) > 1 && (
+                              <div className="aviso-cel">
+                                <b>Shopee: anúncio {anuncioDe(l.n)} (se anunciar)</b> — pela regra de 4×, essa quantidade vai num anúncio separado do avulso.
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="legenda-tit" style={{ marginBottom: 4 }}>Texto pro anúncio</div>
+                            <div className="txt-anuncio">
+                              {l.n} un. = {BRL(l.porPeca)} cada ·{" "}
+                              {l.nAnterior === 1 && l.n === 2 ? `2ª unidade por ${BRL(l.sugerido - dados.p1)}` : `+${l.n - l.nAnterior} un. por só ${BRL(l.maisQueAnterior)} a mais`}
+                            </div>
+                          </div>
+                          <div className="detalhe-cel-acoes">
+                            {!l.naoCompensa && l.cadastrada && (
+                              <button type="button" className={`btn btn-mini${st?.tom === "good" ? "" : " primary"}`} onClick={() => setConfirmar({ tipo: "aplicar", linha: l, precoEdit: st?.tom === "good" && l.salvo != null ? l.salvo.toFixed(2) : undefined })}>
+                                {st?.tom === "good" ? "✎ Editar preço" : `Aplicar ${BRL(l.sugerido)} (editável)`}
+                              </button>
+                            )}
+                            {!l.naoCompensa && !l.cadastrada && (
+                              <button type="button" className="btn btn-mini primary" onClick={() => setConfirmar({ tipo: "criar", linha: l })}>
+                                + Criar variação
+                              </button>
+                            )}
+                            {l.cadastrada && (
+                              <button type="button" className="btn btn-mini" onClick={() => setRevisar(variacoesRaw.find((x) => x.id === l.variacaoId) || null)}>
+                                Revisar insumos
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      ),
+                    ];
                   });
                 })()}
               </tbody>

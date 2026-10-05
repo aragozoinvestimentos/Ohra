@@ -138,6 +138,13 @@ export function precoMinimoAceitavel(canal, custo, pesoG, cfg) {
   return Math.max(pM, pL);
 }
 
+// Mesmo piso em R$ de LUCRO num preço (o maior entre margem mínima × preço e
+// o lucro mínimo em R$) — usado quando o preço não muda mas o lucro sim
+// (comissão de afiliado). É a mesma regra do precoMinimoAceitavel.
+export function lucroMinimoAceitavel(preco, cfg) {
+  return Math.max(num(cfg?.margemMin) * num(preco), num(cfg?.lucroMinimo));
+}
+
 // Rótulo do piso nas referências: "margem mínima (15%)" ou, com lucro mínimo
 // em R$, "mínimo (15% ou R$ 4,00 de lucro)".
 export function rotuloMinimo(cfg) {

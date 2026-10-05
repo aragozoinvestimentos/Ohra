@@ -310,7 +310,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       eraNovo
         ? "Produto cadastrado"
         : mediaImpacto != null
-          ? `Produto atualizado · lucro ${mediaImpacto >= 0 ? "+" : "−"}R$ ${Math.abs(mediaImpacto).toFixed(2).replace(".", ",")}/venda em média (${impacto.itensAfetados} item(ns))`
+          ? `Produto atualizado · lucro ${mediaImpacto >= 0 ? "+" : "−"}R$ ${Math.abs(mediaImpacto).toFixed(2).replace(".", ",")}/venda em média (${impacto.itensAfetados} item(ns)) · detalhes em Produtos precificados → Custo mudou`
           : "Produto atualizado"
     );
     setProdutoCriado(eraNovo && produtoId ? { id: produtoId, nome } : null);

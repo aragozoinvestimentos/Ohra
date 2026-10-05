@@ -1231,3 +1231,64 @@ tr.linha-clicavel:hover td { background: var(--surface-3); }
   .sug-af li { grid-template-columns: 28px minmax(0, 1fr); }
   .sug-af li .btn { grid-column: 2; justify-self: start; }
 }
+
+/* ===== Linha enxuta + detalhe embaixo (out/2026) =====
+   Célula clicável com preço, lucro · margem e no máximo 1 etiqueta; o resto
+   abre numa linha de detalhe logo abaixo (Produtos precificados, Anunciar,
+   Por quantidade, Afiliados). */
+.legenda-tabela { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 8px 12px; margin: 0 0 10px; background: var(--surface-3); border: 1px solid var(--border); border-radius: 8px; font-size: 11.5px; color: var(--ink-soft); }
+.legenda-tabela > span { display: inline-flex; align-items: center; gap: 5px; }
+.legenda-tit { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700; color: var(--ink-faint); }
+.legenda-dica { color: var(--ink-faint); margin-left: auto; }
+.leg-ponto { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); }
+.leg-ponto.boa, .leg-ponto.st-good { background: var(--good); }
+.leg-ponto.atencao, .leg-ponto.st-warn { background: var(--warn); }
+.leg-ponto.ruim, .leg-ponto.st-bad { background: var(--bad); }
+.leg-ponto.st-acc { background: var(--accent); }
+.leg-ponto.st-neu { background: var(--ink-faint); }
+.cel-preco { display: inline-grid; gap: 1px; justify-items: end; min-width: 100%; padding: 4px 6px; margin: -4px -6px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: right; cursor: pointer; }
+.cel-preco:hover { border-color: var(--border-strong); background: var(--surface); }
+.cel-preco.sel { border-color: var(--accent); background: var(--accent-soft); }
+.cel-preco:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cel-preco-v { font-weight: 700; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.cel-preco-cmp { font-size: 12px; color: var(--ink-soft); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+.cel-preco-cmp b { color: var(--ink); }
+.ponto-st { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); }
+.ponto-st.good { background: var(--good); }
+.ponto-st.acc { background: var(--accent); }
+.ponto-st.warn { background: var(--warn); }
+.ponto-st.bad { background: var(--bad); }
+.cel-vazia { color: var(--ink-faint); display: inline-flex; align-items: center; gap: 4px; }
+.chip-cel { display: inline-block; margin-top: 2px; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; background: var(--surface-2); color: var(--ink-soft); }
+.chip-cel.ruim { background: var(--bad-soft); color: var(--bad); }
+.chip-cel.ruim.discreto { background: transparent; border: 1px solid var(--bad-soft); }
+.chip-cel.atencao { background: var(--warn-soft); color: var(--warn); }
+.chip-cel.rampa { background: var(--accent-soft); color: var(--accent-ink); }
+.chip-cel.ok { background: var(--good-soft); color: var(--good); }
+.chip-cel.vencida { border: 1px dashed var(--border-strong); background: transparent; }
+tr.linha-detalhe > td, tr.linha-detalhe:hover > td { background: var(--surface-3); padding: 0; border-bottom: 1px solid var(--border-strong); }
+.detalhe-cel { display: grid; gap: 10px; padding: 12px 14px 14px; white-space: normal; text-align: left; }
+.detalhe-cel-topo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.detalhe-cel-topo .del { margin-left: auto; }
+.detalhe-cel-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.kv-cel { display: grid; gap: 1px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+.kv-cel small { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 600; }
+.kv-cel b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.kv-cel > span { font-size: 11.5px; color: var(--ink-soft); }
+.detalhe-cel-avisos { display: grid; gap: 6px; }
+.detalhe-cel-avisos:empty { display: none; }
+.aviso-cel { font-size: 12.5px; color: var(--ink-soft); background: var(--surface); border: 1px solid var(--border); border-left-width: 3px; border-radius: 6px; padding: 6px 10px; }
+.aviso-cel b { color: var(--ink); }
+.aviso-cel.ruim { border-left-color: var(--bad); }
+.aviso-cel.ruim b { color: var(--bad); }
+.aviso-cel.atencao { border-left-color: var(--warn); }
+.aviso-cel.atencao b { color: var(--warn); }
+.aviso-cel.rampa { border-left-color: var(--accent); }
+.detalhe-cel-acoes { display: flex; flex-wrap: wrap; gap: 6px; }
+.dif-neutra { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.sub-num-inline { font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.kv-copiar { cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.kv-copiar:hover { border-color: var(--accent); }
+.chip-cel.ok { background: var(--good-soft); color: var(--good); }
+.txt-anuncio { background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+.kv-cel .input-conc { margin: 2px 0; max-width: 160px; }

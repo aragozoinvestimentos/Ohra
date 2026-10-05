@@ -1,5 +1,6 @@
-import { rotuloEstrategia } from "../lib/estrategia.js";
-import { useMemo, useState } from "react";
+import { alertaPreco, rotuloEstrategia } from "../lib/estrategia.js";
+import { Fragment, useMemo, useState } from "react";
+import { irParaAba } from "../lib/navegar.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL, PCT } from "../lib/format.js";
@@ -41,6 +42,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
   const [filtro, setFiltro] = useState("relevantes");
   const [busca, setBusca] = useState("");
   const [editItem, setEditItem] = useState(null); // linha de comissão
+  const [selAf, setSelAf] = useState(null); // linha com o detalhe aberto
   const [parceiroForm, setParceiroForm] = useState(null); // { parceiro } | { inicial }
   const [excluir, setExcluir] = useState(null);
   const [salvando, setSalvando] = useState(false);
@@ -221,72 +223,110 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                   <th>Item</th>
                   <th>Canal</th>
                   <th className="num">Preço</th>
-                  <th className="num">Lucro</th>
                   <th className="num">Recomendada</th>
                   <th className="centro">Comissão atual</th>
-                  <th className="num">Lucro com afiliado</th>
                   <th>Situação</th>
                 </tr>
               </thead>
               <tbody>
                 {tabela.map((l) => (
-                  <tr key={l.chave} className={l.situacao === "acima" ? "linha-ruim" : ""}>
+                  <Fragment key={l.chave}>
+                  <tr className={`linha-clicavel${selAf === l.chave ? " linha-atual" : ""}${l.situacao === "acima" ? " linha-ruim" : ""}`} onClick={() => setSelAf((x) => (x === l.chave ? null : l.chave))}>
                     <td>
                       <b>{l.item.nome}</b>
                       <div className="sub-linha">
                         {TIPO_ROTULO[l.tipo]}
                         {l.tipo === "kit" && l.item.pecas ? ` · ${l.item.pecas} peças` : ""}
-                        {l.rampa ? (l.emRampa ? ` · em rampa (vendendo ${BRL(l.preco)})` : " · no alvo") : ""}
-                        {!l.emRampa && rotuloEstrategia(l.estrategia) ? ` · ${rotuloEstrategia(l.estrategia)}` : ""}
                       </div>
                     </td>
                     <td>
                       <CanalTag canal={l.canal} />
                     </td>
                     <td className="num">{BRL(l.preco)}</td>
-                    <td className="num">{BRL(l.lucro)}</td>
                     <td className="num">
                       {l.naoUsar ? (
                         "—"
                       ) : l.recomendada != null ? (
                         <>
-                          <b>{pct(l.recomendada)}</b>
-                          <div className="sub-num" title="Afiliado ganha por venda · máxima = o que ainda deixa o lucro mínimo">
-                            {BRL(l.recomendada * l.preco)}/venda · máx. {pct(l.max)}
-                          </div>
-                        </>
-                      ) : l.max >= 0.01 ? (
-                        <>
-                          <span className="muted-cel">—</span>
-                          <div className="sub-num">máx. {pct(l.max)}</div>
+                          <b>{pct(l.recomendada)}</b> <span className="sub-num-inline">{BRL(l.recomendada * l.preco)}/venda</span>
                         </>
                       ) : (
-                        <span className="neg">sem folga</span>
+                        <span className="muted-cel">—</span>
                       )}
                     </td>
                     <td className="centro">
                       {l.conf.ativo ? (
-                        <button type="button" className="badge acc comissao-chip" onClick={() => setEditItem(l)} title="Mudar o %, dar um % próprio ou desativar">
-                          {pct(l.conf.comissao)} · {l.conf.fonte === "propria" ? "do item" : "padrão"} <span aria-hidden="true">✎</span>
-                        </button>
-                      ) : l.naoUsar ? (
-                        <span className="muted-cel" title="Em rampa abaixo do alvo: o lucro perto do 0 a 0 não deixa espaço pra comissão">
-                          —
+                        <span className="badge acc">
+                          {pct(l.conf.comissao)} · {l.conf.fonte === "propria" ? "do item" : "padrão"}
                         </span>
                       ) : (
-                        <button type="button" className="btn btn-mini" onClick={() => setEditItem(l)} title="Ativar a comissão neste item">
-                          + Ativar
-                        </button>
+                        <span className="muted-cel">—</span>
                       )}
                     </td>
-                    <td className={`num${l.lucroCom != null && l.lucroCom < l.lucroMin - 0.004 ? " neg" : ""}`}>{l.lucroCom != null ? BRL(l.lucroCom) : "—"}</td>
                     <td>
-                      <Situacao
-                        l={l}
-                        onUsar={(c) => salvarItem(l, { ativo: true, comissao: c }, `${l.item.nome}: comissão ${pct(c)} neste item`)}
-                      />
+                      <Situacao l={l} compacto />
                     </td>
                   </tr>
+                  {selAf === l.chave && (
+                    <tr className="linha-detalhe">
+                      <td colSpan={6}>
+                        <div className="detalhe-cel">
+                          <div className="detalhe-cel-topo">
+                            <b>{l.item.nome}</b> <CanalTag canal={l.canal} />
+                            <button type="button" className="del" title="Fechar" onClick={() => setSelAf(null)}>
+                              ×
+                            </button>
+                          </div>
+                          <div className="detalhe-cel-grade">
+                            <div className="kv-cel">
+                              <small>Lucro sem afiliado</small>
+                              <b>{BRL(l.lucro)}</b>
+                              <span>{l.rampa ? (l.emRampa ? `em rampa: vendendo ${BRL(l.preco)}` : "rampa no alvo") : "no preço salvo, custo e taxas de hoje"}</span>
+                            </div>
+                            <div className="kv-cel">
+                              <small>Lucro com afiliado</small>
+                              <b className={l.alertaCom?.tipo && !l.alertaCom.discreto ? "neg" : ""}>{l.lucroCom != null ? BRL(l.lucroCom) : "—"}</b>
+                              <span>{l.conf.ativo ? `com ${pct(l.conf.comissao)} de comissão` : "comissão não ativada"}</span>
+                            </div>
+                            <div className="kv-cel">
+                              <small>Recomendada</small>
+                              <b>{!l.naoUsar && l.recomendada != null ? pct(l.recomendada) : "—"}</b>
+                              <span>deixa sua margem desejada inteira</span>
+                            </div>
+                            <div className="kv-cel">
+                              <small>Máxima</small>
+                              <b>{l.max >= 0.01 ? pct(l.max) : "sem folga"}</b>
+                              <span>acima disso fica abaixo do mínimo ({BRL(l.lucroMin)})</span>
+                            </div>
+                          </div>
+                          <div className="detalhe-cel-avisos">
+                            <div className="aviso-cel">
+                              <b>Situação:</b> {textoSituacao(l)}
+                              {rotuloEstrategia(l.estrategia) && !l.emRampa ? ` Estratégia do preço: ${rotuloEstrategia(l.estrategia)}.` : ""}
+                            </div>
+                          </div>
+                          <div className="detalhe-cel-acoes">
+                            <Situacao l={l} soAcao onUsar={(c) => salvarItem(l, { ativo: true, comissao: c }, `${l.item.nome}: comissão ${pct(c)} neste item`)} />
+                            {l.conf.ativo ? (
+                              <button type="button" className="btn btn-mini" onClick={() => setEditItem(l)}>
+                                ✎ Mudar % / desativar
+                              </button>
+                            ) : (
+                              !l.naoUsar && (
+                                <button type="button" className="btn btn-mini" onClick={() => setEditItem(l)}>
+                                  + Ativar comissão
+                                </button>
+                              )
+                            )}
+                            <button type="button" className="link-btn" onClick={() => irParaAba("historico", { busca: l.item.nome })}>
+                              ver em Produtos precificados
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -530,9 +570,41 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
   );
 }
 
-function Situacao({ l, onUsar }) {
+// Explicação da situação (detalhe da linha).
+function textoSituacao(l) {
+  const alvo = l.recomendada ?? (l.situacao === "acima" && l.max >= 0.01 ? l.max : null);
+  switch (l.situacao) {
+    case "acima":
+      return `A comissão de ${pct(l.conf.comissao)} deixa o lucro abaixo do mínimo. ${alvo ? `Use ${pct(alvo)} só neste item` : "Tire da campanha"}.`;
+    case "alta":
+      return `Com ${pct(l.conf.comissao)} você ainda lucra acima do mínimo, mas abaixo da sua margem desejada. A recomendada (${pct(alvo)}) deixa sua margem inteira.`;
+    case "rampa":
+      return "Lucro baixo de propósito (crescimento, rampa ou peça em rampa): sem espaço pra comissão por enquanto.";
+    case "atracao":
+      return "Avulso marcado como atração: o lucro vem do kit. Dá pra ativar, mas o app não sugere.";
+    case "ok":
+      return "Comissão dentro da recomendada.";
+    case "pode":
+      return `Cabe comissão até ${pct(l.recomendada)} sem tirar da sua margem desejada.`;
+    case "apertado":
+      return "Há folga só até o lucro mínimo, nada acima da sua margem desejada — afiliado só se houver espaço.";
+    default:
+      return "Sem folga pra comissão neste preço.";
+  }
+}
+
+// compacto = só a etiqueta (linha da tabela); soAcao = só o botão "usar X%".
+function Situacao({ l, onUsar, compacto = false, soAcao = false }) {
   // % pra onde levar a comissão quando ela está alta demais.
   const alvo = l.recomendada ?? (l.situacao === "acima" && l.max >= 0.01 ? l.max : null);
+  if (soAcao)
+    return (l.situacao === "acima" || l.situacao === "alta") && alvo ? (
+      <button type="button" className="btn btn-mini primary" onClick={() => onUsar(alvo)}>
+        Usar {pct(alvo)} só neste item
+      </button>
+    ) : null;
+  if (compacto && (l.situacao === "acima" || l.situacao === "alta"))
+    return <span className={`badge ${l.situacao === "acima" ? "bad" : "warn"}`}>{l.situacao === "acima" ? "acima da máxima" : "come sua margem"}</span>;
   if (l.situacao === "acima" || l.situacao === "alta")
     return (
       <div className="sit-af">
@@ -635,11 +707,15 @@ function ItemComissaoDialog({ l, salvando, onCancelar, onSalvar }) {
         </div>
       )}
       {ativo && !l.conf.padrao && valor === "" && <p className="hint neg">Este canal não tem campanha aberta — informe um % próprio ou configure a campanha aberta.</p>}
-      {ativo && lucroCom != null && (
-        <p className={`hint${lucroCom < l.lucroMin - 0.004 ? " neg" : ""}`}>
-          Com {pct(c)}: lucro {BRL(lucroCom)} por venda via afiliado{lucroCom < l.lucroMin - 0.004 ? " — abaixo do mínimo da loja" : ""}.
-        </p>
-      )}
+      {ativo && lucroCom != null && (() => {
+        const al = alertaPreco({ lucro: lucroCom, preco: l.preco, lucroMinimo: l.lucroMin, estrategia: l.estrategia });
+        return (
+          <p className={`hint${al.tipo && !al.discreto ? " neg" : ""}`}>
+            Com {pct(c)}: lucro {BRL(lucroCom)} por venda via afiliado
+            {al.tipo === "prejuizo" ? " — prejuízo" : al.tipo === "abaixo-minimo" ? " — abaixo do mínimo (loja/produto)" : al.silenciado ? ` — abaixo do mínimo, mas o item está como ${rotuloEstrategia(l.estrategia) || "estratégia"}` : ""}.
+          </p>
+        );
+      })()}
     </EditarDialog>
   );
 }

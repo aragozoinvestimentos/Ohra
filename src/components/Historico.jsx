@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { resultadoNoPreco } from "../lib/calc.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -8,7 +8,7 @@ import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../hooks/useRankingData.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { statusPrecoSalvo, sugestaoKit, configEscada, pareceAtracao, precoMinimoAceitavel } from "../lib/escada.js";
-import { alertaPreco, rotuloEstrategia } from "../lib/estrategia.js";
+import { alertaPreco, rotuloEstrategia, ESTRATEGIAS } from "../lib/estrategia.js";
 import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
@@ -20,6 +20,8 @@ import { precoSalvoAoVivo } from "../lib/aoVivo.js";
 import CanalTag from "./CanalTag.jsx";
 import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
 import { useRampas } from "../hooks/useRampas.js";
+import { useLembrado } from "../hooks/useLembrado.js";
+import { pegarPedido } from "../lib/navegar.js";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
 // instantâneo do que foi salvo em Precificação por Canal, sem ligação real
@@ -47,6 +49,22 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos"); // todos | Produto | Kit
   const [soCustoMudou, setSoCustoMudou] = useState(false);
+  const [visao, setVisao] = useLembrado("ohra:precificados:visao", "salvos"); // salvos | comparar
+  const [mostrarCanais, setMostrarCanais] = useLembrado("ohra:precificados:canais", "com-preco"); // com-preco | todos
+  const [sel, setSel] = useState(null); // "itemId|canalId" com o detalhe aberto
+  const alternarSel = (k) => setSel((atual) => (atual === k ? null : k));
+  // Outras telas mandam pra cá ("ver em Produtos precificados") com o filtro Custo mudou.
+  useEffect(() => {
+    const aplicar = (pedido) => {
+      if (!pedido) return;
+      if (pedido.custoMudou) setSoCustoMudou(true);
+      if (pedido.busca != null) setBusca(pedido.busca);
+    };
+    aplicar(pegarPedido("historico"));
+    const ouvir = (e) => e.detail.aba === "historico" && aplicar(pegarPedido("historico"));
+    window.addEventListener("ohra:ir-para", ouvir);
+    return () => window.removeEventListener("ohra:ir-para", ouvir);
+  }, []);
   const [expandidos, setExpandidos] = useState(() => new Set()); // produtos com variações abertas
   const [expandirTudo, setExpandirTudo] = useState(false);
   const [clonarAlvo, setClonarAlvo] = useState(null); // item original sendo clonado
@@ -221,6 +239,185 @@ export default function Historico({ onEditarCompleto, onToast }) {
     return { dCusto, dLucro: -dCusto };
   }
   const itemCustoMudou = (item) => canais.some((c) => mudancaCusto(item, c));
+  const sinal = (v) => `${v >= 0 ? "+" : "−"}${BRL(Math.abs(v))}`;
+
+  // Mudança de TAXA do canal desde o "Salvar" (o resto da diferença de lucro
+  // que não é custo) — aparece só no detalhe, nunca como "custo mudou".
+  function mudancaTaxa(item, canalObj) {
+    const p = precoDe(item, canalObj);
+    if (!p || p.lucro_salvo == null || p.lucro == null) return null;
+    const efeitoCusto = p.custo_salvo != null ? -(Number(item.custoTotal) - Number(p.custo_salvo)) : 0;
+    const dLucro = Number(p.lucro) - Number(p.lucro_salvo) - efeitoCusto;
+    return Math.abs(dLucro) >= 0.05 ? { dLucro } : null;
+  }
+
+  // O que a célula mostra: preço, lucro · margem (cor SÓ do alertaDe) e no
+  // máximo UMA etiqueta, por prioridade: prejuízo > abaixo do mínimo > custo
+  // mudou > em rampa > estratégia. O resto fica no detalhe.
+  function infoCelula(item, canalObj) {
+    const p = precoDe(item, canalObj);
+    if (!p) return null;
+    const al = alertaDe(item, canalObj);
+    const m = mudancaCusto(item, canalObj);
+    const rampa = rampaDe(item, canalObj);
+    const rotEst = al ? rotuloEstrategia(al.estrategia) : null;
+    const tom = p.margem == null || !al ? "" : al.tipo === "prejuizo" ? "ruim" : al.tipo === "abaixo-minimo" ? "atencao" : "boa";
+    let chip = null;
+    if (al?.tipo === "prejuizo") chip = { cls: al.discreto ? "ruim discreto" : "ruim", txt: al.discreto && rotEst ? `prejuízo · ${rotEst}` : "prejuízo" };
+    else if (al?.tipo === "abaixo-minimo") chip = { cls: "atencao", txt: al.estrategia?.vencida ? rotEst : "abaixo do mínimo" };
+    else if (m) chip = { cls: "neutro", txt: `custo ${sinal(m.dCusto)}` };
+    else if (rampa != null) chip = { cls: "rampa", txt: `em rampa · ${BRL(rampa)}` };
+    else if (rotEst) chip = { cls: al.estrategia.vencida ? "neutro vencida" : "neutro", txt: rotEst };
+    return { p, al, m, rampa, tom, chip, rotEst };
+  }
+
+  const diaMesIso = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}` : "");
+
+  // Detalhe da célula selecionada (abre na linha logo abaixo).
+  function detalheCelula(item, canalObj) {
+    if (!canalObj) return null;
+    const info = infoCelula(item, canalObj);
+    const chave = `${item.id}|${canalObj.id}`;
+    const sg = item.tipo === "Variação" || item.tipo === "Kit" ? sugeridos.get(chave) : null;
+    const p = info?.p;
+    const al = info?.al;
+    const est = al?.estrategia;
+    const t = p ? mudancaTaxa(item, canalObj) : null;
+    return (
+      <div className="detalhe-cel">
+        <div className="detalhe-cel-topo">
+          <b>{item.nomeVariacao ? `${item.nome} — ${item.nomeVariacao}` : item.nome}</b> <CanalTag canal={canalObj} />
+          <button type="button" className="del" title="Fechar" onClick={() => setSel(null)}>
+            ×
+          </button>
+        </div>
+        <div className="detalhe-cel-grade">
+          <div className="kv-cel">
+            <small>Preço salvo</small>
+            <b>{p ? BRL(p.preco) : "—"}</b>
+            <span>{p ? "é o que vale" : "ainda sem preço neste canal"}</span>
+          </div>
+          {p && (
+            <div className="kv-cel">
+              <small>Lucro hoje</small>
+              <b>
+                {p.lucro != null ? BRL(p.lucro) : "—"} · {p.margem != null ? PCT(p.margem) : "—"}
+              </b>
+              <span>custo e taxas de hoje{item.pecas > 1 && p.lucro != null ? ` · ${BRL(p.lucro / item.pecas)}/peça` : ""}</span>
+            </div>
+          )}
+          <div className="kv-cel">
+            <small>Custo hoje</small>
+            <b>{BRL(item.custoTotal)}</b>
+            <span>{p?.custo_salvo != null ? `no dia do salvar: ${BRL(Number(p.custo_salvo))}` : "fabricação + embalagem + frete"}</span>
+          </div>
+          {al?.minimo != null && (
+            <div className="kv-cel">
+              <small>Mínimo aceitável</small>
+              <b>{BRL(al.minimo)}</b>
+              <span>margem mínima ou lucro mínimo da loja/produto</span>
+            </div>
+          )}
+          {sg && (
+            <div className="kv-cel">
+              <small>Sugerido (só comparação)</small>
+              <b>{BRL(sg.linha.sugerido)}</b>
+              <span>{sg.st ? sg.st.texto.replace(/^[^\wÀ-ú]+\s*/, "") : item.tipo === "Kit" ? `separado: ${BRL(sg.linha.separado)}` : "escada do Por quantidade"}</span>
+            </div>
+          )}
+        </div>
+        <div className="detalhe-cel-avisos">
+          {al && (al.tipo === "abaixo-minimo" || al.tipo === "prejuizo") && (
+            <div className={`aviso-cel ${al.tipo === "prejuizo" && !al.discreto ? "ruim" : al.tipo === "prejuizo" ? "" : "atencao"}`}>
+              <b>{al.tipo === "prejuizo" ? "Dando prejuízo" : `Abaixo do mínimo (${BRL(al.minimo)})`}</b>
+              {al.tipo === "prejuizo"
+                ? al.discreto
+                  ? ` Explicado pela estratégia (${info.rotEst}), mas o prejuízo continua aparecendo.`
+                  : " Cada venda neste preço perde dinheiro."
+                : " Se é de propósito, marque a estratégia e o aviso some."}{" "}
+              {al.tipo === "abaixo-minimo" &&
+                (sugereAtracao(item, canalObj, al) ? (
+                  <button type="button" className="link-btn" onClick={() => abrirEstrategia(item, canalObj, "atracao")} title="Margem abaixo da desejada, mas o kit 2 compensa">
+                    parece atração — marcar?
+                  </button>
+                ) : (
+                  <button type="button" className="link-btn" onClick={() => abrirEstrategia(item, canalObj)}>
+                    manter assim
+                  </button>
+                ))}
+            </div>
+          )}
+          {est?.vencida && (
+            <div className="aviso-cel atencao">
+              <b>{ESTRATEGIAS[est.anterior] || "Estratégia"} venceu</b>
+              {est.motivoVencida === "lucro"
+                ? ` O custo piorou depois da sua decisão: o lucro de hoje (${BRL(Number(p?.lucro))}) ficou abaixo do lucro do dia em que você decidiu (${BRL(Number(est.linha?.estrategia_lucro_ref))}). Agora vale como Normal (o aviso de mínimo volta a valer).`
+                : ` O prazo acabou em ${diaMesIso(est.ate)}. Agora vale como Normal (o aviso de mínimo volta a valer).`}{" "}
+              <button type="button" className="link-btn" onClick={() => abrirEstrategia(item, canalObj, est.anterior)}>
+                manter assim
+              </button>
+            </div>
+          )}
+          {est && !est.vencida && est.origem === "escolhida" && (
+            <div className="aviso-cel">
+              <b>Decisão sua: {info.rotEst}</b>
+              {est.motivo ? ` ${est.motivo}.` : ""}{" "}
+              <button type="button" className="link-btn" onClick={() => abrirEstrategia(item, canalObj)}>
+                mudar
+              </button>
+            </div>
+          )}
+          {est && (est.origem === "rampa" || est.origem === "kit-em-rampa") && (
+            <div className="aviso-cel rampa">
+              <b>{est.origem === "rampa" ? "Em rampa de preço" : "Peça em rampa"}</b>
+              {info.rampa != null ? ` Vendendo ${BRL(info.rampa)} agora (Vender → Crescimento). ` : " "}O preço salvo é o alvo e não muda; enquanto a rampa sobe, o aviso de mínimo fica de lado (prejuízo continua aparecendo).
+            </div>
+          )}
+          {info?.m && (
+            <div className="aviso-cel">
+              <b>Custo mudou desde o salvar</b> custo {sinal(info.m.dCusto)} → lucro {sinal(info.m.dLucro)}/venda (fabricação, embalagem, frete ou filamento).
+            </div>
+          )}
+          {t && (
+            <div className="aviso-cel">
+              <b>Taxa do canal mudou</b> lucro {sinal(t.dLucro)}/venda desde o salvar (tarifa oficial do canal).
+            </div>
+          )}
+          {p?.desatualizado && p.lucro_salvo != null && (
+            <div className="sub-num">
+              ↻ No dia do salvar: lucro {BRL(Number(p.lucro_salvo))}
+              {p.margem_salva != null ? ` · ${PCT(Number(p.margem_salva))}` : ""} — a célula já mostra o de hoje.
+            </div>
+          )}
+        </div>
+        <div className="detalhe-cel-acoes">
+          {p && (
+            <button type="button" className="btn btn-mini" onClick={() => iniciarEdicao(p, item, canalObj)}>
+              ✎ Editar preço
+            </button>
+          )}
+          {sg && (!p || (sg.st && sg.st.tom !== "good")) && (
+            <button type="button" className="btn btn-mini" onClick={() => setAplicarAlvo({ item, canal: canalObj, linha: sg.linha, salvo: p ? p.preco : null })}>
+              Aplicar sugerido {BRL(sg.linha.sugerido)}
+            </button>
+          )}
+          {!p && canaisComPrecoSalvo(item).length > 0 && (
+            <button type="button" className="btn btn-mini" onClick={() => abrirClonarPreco(item, canalObj)}>
+              ⇄ Clonar de outro canal
+            </button>
+          )}
+          <button type="button" className="btn btn-mini" onClick={() => setFilamentosAlvo(item.id)}>
+            ⇄ Filamentos
+          </button>
+          {p && (
+            <button type="button" className="btn btn-mini" onClick={() => setExcluirAlvo({ ...p, nomeItem: item.nome, nomeCanal: canalObj.nome })}>
+              × Excluir preço
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // Canais onde esse item já tem preço salvo — são as opções válidas de
   // "origem" pra clonar preço pra outro canal ainda vazio.
@@ -488,6 +685,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
   // Exportação e contagem usam tudo (produto + todas as variações dele).
   const itensFiltrados = topo.flatMap((item) => (item.tipo === "Produto" ? [item, ...variacoesDe(item.id.split(":")[1])] : [item]));
   const totalVariacoes = itens.filter((i) => i.tipo === "Variação").length;
+  // "Só com preço": canal sem nenhum preço salvo nos itens da lista some (na
+  // visão Comparar com sugerido todos aparecem, pra dar pra aplicar).
+  const canaisComAlgum = canais.filter((c) => itensFiltrados.some((i) => precoDe(i, c)));
+  const canaisVis = mostrarCanais === "todos" || visao === "comparar" || !canaisComAlgum.length ? canais : canaisComAlgum;
+  const canaisOcultos = canais.length - canaisVis.length;
 
   function alternarExpandido(pid) {
     setExpandidos((prev) => {
@@ -614,7 +816,58 @@ export default function Historico({ onEditarCompleto, onToast }) {
               {expandirTudo ? "Recolher variações" : "Abrir todas as variações"}
             </button>
           )}
-          <span className="toolbar-info">{topo.length} de {itens.length - totalVariacoes}</span>
+          <div className="subabas subabas-compacta" title="O preço que vale é sempre o salvo; o sugerido é só pra comparar (aplicar passa por confirmação)">
+            {[
+              ["salvos", "Preços salvos"],
+              ["comparar", "Comparar com sugerido"],
+            ].map(([k, label]) => (
+              <button key={k} className={`btn${visao === k ? " primary" : ""}`} onClick={() => setVisao(k)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {visao === "salvos" && (
+            <div className="subabas subabas-compacta" title="Só com preço: esconde o canal que não tem nenhum preço salvo na lista">
+              {[
+                ["com-preco", "Canais com preço"],
+                ["todos", "Todos os canais"],
+              ].map(([k, label]) => (
+                <button key={k} className={`btn${mostrarCanais === k ? " primary" : ""}`} onClick={() => setMostrarCanais(k)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <span className="toolbar-info">
+            {topo.length} de {itens.length - totalVariacoes}
+            {canaisOcultos > 0 ? ` · ${canaisOcultos} canal${canaisOcultos > 1 ? "is" : ""} sem preço oculto${canaisOcultos > 1 ? "s" : ""}` : ""}
+          </span>
+        </div>
+      )}
+      {itens.length > 0 && (
+        <div className="legenda-tabela">
+          <span className="legenda-tit">Legenda</span>
+          {visao === "salvos" ? (
+            <>
+              <span><b>R$ 11,90</b> preço salvo (o que vale)</span>
+              <span>lucro · margem de hoje (custo e taxas atuais)</span>
+              <span><i className="leg-ponto boa" /> ok</span>
+              <span><i className="leg-ponto atencao" /> abaixo do mínimo</span>
+              <span><i className="leg-ponto ruim" /> prejuízo</span>
+              <span><span className="chip-cel neutro">custo +R$0,40</span> custo mudou desde o salvar</span>
+              <span><span className="chip-cel rampa">em rampa</span> vendendo abaixo, rumo ao salvo</span>
+              <span className="legenda-dica">Clique numa célula pra ver detalhe e ações.</span>
+            </>
+          ) : (
+            <>
+              <span>salvo = o que vale · sug. = só comparação</span>
+              <span><i className="leg-ponto st-good" /> salvo ok</span>
+              <span><i className="leg-ponto st-acc" /> dá pra cobrar mais</span>
+              <span><i className="leg-ponto st-neu" /> acima do sugerido</span>
+              <span><i className="leg-ponto st-bad" /> abaixo do piso / escada invertida</span>
+              <span className="legenda-dica">Clique na célula pra aplicar o sugerido (com confirmação).</span>
+            </>
+          )}
         </div>
       )}
       {!supabase ? (
@@ -640,7 +893,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                   <th>Produto/Kit</th>
                   <th>SKU</th>
                   <th className="num">Custo total</th>
-                  {canais.map((c) => (
+                  {canaisVis.map((c) => (
                     <th key={c.id} className="num">
                       <CanalTag canal={c} />
                     </th>
@@ -650,7 +903,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
               </thead>
               <tbody>
                 {linhasTabela.map(({ item, variacao, nVariacoes, aberto, pid }) => (
-                  <tr key={item.id} className={variacao ? "linha-variacao" : aberto ? "linha-aberta" : ""}>
+                  <Fragment key={item.id}>
+                  <tr className={variacao ? "linha-variacao" : aberto ? "linha-aberta" : ""}>
                     <td>
                       {variacao ? (
                         <div className="item-cel item-cel-variacao">
@@ -701,129 +955,54 @@ export default function Historico({ onEditarCompleto, onToast }) {
                         </button>
                       </div>
                     </td>
-                    {canais.map((c) => {
-                      const p = precoDe(item, c);
+                    {canaisVis.map((c) => {
+                      const info = infoCelula(item, c);
+                      const chaveSel = `${item.id}|${c.id}`;
+                      const sg = (variacao || item.tipo === "Kit") ? sugeridos.get(chaveSel) : null;
+                      const ativo = sel === chaveSel;
+                      if (visao === "comparar") {
+                        return (
+                          <td key={c.id} className="num">
+                            {info || sg ? (
+                              <button type="button" className={`cel-preco${ativo ? " sel" : ""}`} onClick={() => alternarSel(chaveSel)}>
+                                <span className="cel-preco-cmp">salvo <b>{info ? BRL(info.p.preco) : "—"}</b></span>
+                                {sg ? (
+                                  <span className="cel-preco-cmp">
+                                    sug. <b>{BRL(sg.linha.sugerido)}</b>
+                                    {sg.st && <span className={`ponto-st ${sg.st.tom}`} title={sg.st.texto.replace(/^[^\wÀ-ú]+\s*/, "")} />}
+                                  </span>
+                                ) : (
+                                  <span className="sub-num">sem sugerido</span>
+                                )}
+                              </button>
+                            ) : (
+                              <span className="cel-vazia">—</span>
+                            )}
+                          </td>
+                        );
+                      }
                       return (
                         <td key={c.id} className="num">
-                          {p ? (
-                            <div className="preco-canal-cel">
-                              <div className="preco-canal-topo">
-                                <span className="preco-canal-valor">
-                                  {BRL(p.preco)}
-                                  {recemSalvoId === p.id && <span className="salvo-check">✓</span>}
-                                </span>
-                                <span className="acoes-linha">
-                                <button className="del" title="Editar preço salvo" onClick={() => iniciarEdicao(p, item, c)}>
-                                  ✎
-                                </button>
-                                <button
-                                  className="del"
-                                  title="Excluir preço salvo"
-                                  onClick={() => setExcluirAlvo({ ...p, nomeItem: item.nome, nomeCanal: c.nome })}
-                                >
-                                  ×
-                                </button>
-                                </span>
-                              </div>
-                              {(() => {
-                                const al = alertaDe(item, c);
-                                return (
-                                  <>
-                              <div
-                                className={`preco-canal-linha ${p.margem == null || !al ? "" : al.tipo === "prejuizo" ? "ruim" : al.tipo === "abaixo-minimo" ? "atencao" : "boa"}`}
-                                title={
-                                  p.desatualizado
-                                    ? `Atualizado pro custo e as taxas de hoje (o custo do item ou a tarifa do canal mudou desde que o preço foi salvo). No dia em que foi salvo: lucro ${BRL(p.lucro_salvo)}${p.margem_salva != null ? ` · ${PCT(p.margem_salva)}` : ""}.`
-                                    : undefined
-                                }
-                              >
-                                {p.desatualizado && <span className="ponto-recalc" aria-label="recalculado">↻</span>}
-                                {p.lucro != null ? BRL(p.lucro) : "—"} · {p.margem != null ? PCT(p.margem) : "—"}
-                              </div>
-                              {al && (al.tipo === "abaixo-minimo" || (al.tipo === "prejuizo" && !al.discreto)) && (
-                                <div className="alerta-cel">
-                                  <span className={al.tipo === "prejuizo" ? "neg" : "atencao-txt"} title={al.minimo != null ? `Mínimo aceitável neste canal: ${BRL(al.minimo)}` : undefined}>
-                                    {al.tipo === "prejuizo" ? "prejuízo" : `abaixo do mínimo (${BRL(al.minimo)})`}
-                                  </span>{" "}
-                                  {sugereAtracao(item, c, al) ? (
-                                    <button type="button" className="link-btn" onClick={() => abrirEstrategia(item, c, "atracao")} title="Margem abaixo da desejada, mas o kit 2 compensa">
-                                      parece atração — marcar?
-                                    </button>
-                                  ) : (
-                                    <button type="button" className="link-btn" onClick={() => abrirEstrategia(item, c)}>
-                                      manter assim
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                              {/* Produto em rampa já tem a etiqueta "em rampa · vendendo R$X" abaixo. */}
-                              {al && rotuloEstrategia(al.estrategia) && !(al.estrategia.origem === "rampa" && rampaDe(item, c) != null) && (
-                                <button
-                                  type="button"
-                                  className={`estrategia-tag${al.estrategia.vencida ? " vencida" : ""}${al.tipo === "prejuizo" ? " com-prejuizo" : ""}${al.estrategia.origem === "escolhida" || al.estrategia.vencida ? " clicavel" : ""}`}
-                                  title={
-                                    al.estrategia.origem === "escolhida" || al.estrategia.vencida
-                                      ? `${al.estrategia.vencida ? "A decisão venceu" : "Decisão sua"}${al.linha?.estrategia_motivo ? ` — ${al.linha.estrategia_motivo}` : ""}. Clique pra mudar.${al.tipo === "prejuizo" ? " Atenção: está dando prejuízo." : ""}`
-                                      : "Em rampa de preço (Vender → Crescimento): abaixo do mínimo de propósito"
-                                  }
-                                  onClick={al.estrategia.origem === "escolhida" || al.estrategia.vencida ? () => abrirEstrategia(item, c) : undefined}
-                                >
-                                  {rotuloEstrategia(al.estrategia)}
-                                  {al.tipo === "prejuizo" ? " · prejuízo" : ""}
-                                </button>
-                              )}
-                                  </>
-                                );
-                              })()}
-                              {mudancaCusto(item, c) && (() => {
-                                const m = mudancaCusto(item, c);
-                                const f = (v) => `${v >= 0 ? "+" : "−"}${BRL(Math.abs(v))}`;
-                                return (
-                                  <div className={`custo-mudou ${m.dLucro >= 0 ? "pos" : "neg"}`} title="Desde o dia em que este preço foi salvo">
-                                    custo {f(m.dCusto)} → lucro <b>{f(m.dLucro)}</b>/venda
-                                  </div>
-                                );
-                              })()}
-                              {rampaDe(item, c) != null && (
-                                <span className="rampa-tag" title="Em rampa de preço (Vender → Crescimento): o preço salvo aqui é o alvo">em rampa · vendendo {BRL(rampaDe(item, c))}</span>
-                              )}
-                              {item.pecas > 1 && p.lucro != null && (
-                                <div className="sub-num" title={`Lucro dividido pelas ${item.pecas} peças`}>{BRL(p.lucro / item.pecas)}/peça</div>
-                              )}
-                              {(variacao || item.tipo === "Kit") && sugeridos.get(`${item.id}|${c.id}`) && (() => {
-                                const sg = sugeridos.get(`${item.id}|${c.id}`);
-                                return (
-                                  <div className="sug-cel">
-                                    <span className="sug-cel-v" title={item.tipo === "Kit" ? `Sugerido comparando com as peças vendidas separadas (${BRL(sg.linha.separado)}) — Precificação por Canal → Avulso` : "Preço sugerido pela escada (Precificação por Canal → Por quantidade)"}>
-                                      sug. {BRL(sg.linha.sugerido)}
-                                    </span>
-                                    {sg.st && (
-                                      <span className={`sug-st ${sg.st.tom}`} title={sg.st.texto.replace(/^[^\wÀ-ú]+\s*/, "")}>
-                                        {{ good: "✓", acc: "↑", neu: "↓", bad: "▼", warn: "⚠" }[sg.st.tom] || "•"}
-                                      </span>
-                                    )}
-                                    {sg.st && sg.st.tom !== "good" && (
-                                      <button type="button" className="link-btn" onClick={() => setAplicarAlvo({ item, canal: c, linha: sg.linha, salvo: p.preco })}>
-                                        aplicar
-                                      </button>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          ) : (variacao || item.tipo === "Kit") && sugeridos.get(`${item.id}|${c.id}`) ? (
-                            <div className="sug-cel sug-cel-vazia">
-                              <span className="sug-cel-v" title="Ainda sem preço salvo nesse canal — sugerido">sug. {BRL(sugeridos.get(`${item.id}|${c.id}`).linha.sugerido)}</span>
-                              <button type="button" className="btn btn-mini" onClick={() => setAplicarAlvo({ item, canal: c, linha: sugeridos.get(`${item.id}|${c.id}`).linha, salvo: null })}>
-                                Aplicar
-                              </button>
-                            </div>
-                          ) : canaisComPrecoSalvo(item).length > 0 ? (
-                            <button className="del" title={`Clonar preço de outro canal pra ${c.nome}`} onClick={() => abrirClonarPreco(item, c)}>
-                              ⇄
+                          {info ? (
+                            <button type="button" className={`cel-preco${ativo ? " sel" : ""}`} onClick={() => alternarSel(chaveSel)}>
+                              <span className="cel-preco-v">
+                                {BRL(info.p.preco)}
+                                {recemSalvoId === info.p.id && <span className="salvo-check">✓</span>}
+                              </span>
+                              <span className={`preco-canal-linha ${info.tom}`}>
+                                {info.p.lucro != null ? BRL(info.p.lucro) : "—"} · {info.p.margem != null ? PCT(info.p.margem) : "—"}
+                              </span>
+                              {info.chip && <span className={`chip-cel ${info.chip.cls}`}>{info.chip.txt}</span>}
                             </button>
+                          ) : canaisComPrecoSalvo(item).length > 0 ? (
+                            <span className="cel-vazia">
+                              —
+                              <button className="del" title={`Clonar preço de outro canal pra ${c.nome}`} onClick={() => abrirClonarPreco(item, c)}>
+                                ⇄
+                              </button>
+                            </span>
                           ) : (
-                            <span style={{ color: "var(--ink-faint)" }}>—</span>
+                            <span className="cel-vazia">—</span>
                           )}
                         </td>
                       );
@@ -838,6 +1017,14 @@ export default function Historico({ onEditarCompleto, onToast }) {
                       </button>
                     </td>
                   </tr>
+                  {sel && sel.startsWith(`${item.id}|`) && canaisVis.some((c) => sel === `${item.id}|${c.id}`) && (
+                    <tr className="linha-detalhe">
+                      <td colSpan={canaisVis.length + 4}>
+                        {detalheCelula(item, canaisVis.find((c) => sel === `${item.id}|${c.id}`))}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

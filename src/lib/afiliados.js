@@ -2,9 +2,9 @@
 // (maior % que ainda deixa o lucro mínimo da loja), comissão em vigor
 // (padrão do canal ou própria do item), números da semana, vendas por origem,
 // retorno de amostra e sugestões. Nada aqui grava no banco.
-import { lucroNoPreco } from "./escada.js";
+import { lucroNoPreco, lucroMinimoAceitavel } from "./escada.js";
 import { itemTipoDoId } from "./variacoes.js";
-import { estrategiaEfetiva } from "./estrategia.js";
+import { alertaPreco, estrategiaEfetiva } from "./estrategia.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -40,10 +40,9 @@ export function semanaDe(iso) {
   return x.toISOString().slice(0, 10);
 }
 
-// Lucro mínimo aceitável em R$ num preço: o maior entre margem mínima × preço e o lucro mínimo em R$.
-export function lucroMinimoNoPreco(preco, cfg) {
-  return Math.max(num(cfg?.margemMin) * preco, num(cfg?.lucroMinimo));
-}
+// Lucro mínimo aceitável em R$ num preço — a MESMA regra da loja/produto
+// (escada.js), sem conta própria.
+export const lucroMinimoNoPreco = lucroMinimoAceitavel;
 
 // Maior comissão (fração, % inteiro pra baixo) que ainda deixa o lucro mínimo.
 export function comissaoMaxima(preco, lucro, cfg) {
@@ -159,6 +158,9 @@ export function linhasComissao({ itens, canais, precos, cfgDoProduto, config, li
         estrategia,
         naoUsar,
         lucroMin: lucroMinimoNoPreco(preco, cfg),
+        // Alerta do lucro com a comissão ativa — função única (regra geral nº 4,
+        // obedece a estratégia: atração/crescimento silenciam o mínimo).
+        alertaCom: lucroCom != null ? alertaPreco({ lucro: lucroCom, preco, lucroMinimo: lucroMinimoNoPreco(preco, cfg), estrategia }) : null,
       });
     }
   }

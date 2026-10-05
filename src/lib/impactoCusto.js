@@ -48,6 +48,7 @@ function montarLinhas(afetados, { canais, precos, cfgDoProduto, itens = [], ramp
         diferenca: lucroNovo - lucroHoje,
         margemNova: preco > 0 ? lucroNovo / preco : null,
         prejuizo: al.tipo === "prejuizo",
+        prejuizoDiscreto: al.tipo === "prejuizo" && al.discreto,
         abaixoMinimo: al.tipo === "abaixo-minimo",
         estrategia,
       });
@@ -125,6 +126,9 @@ function resumo(r) {
     relevante,
     itensAfetados: r.afetados.length,
     canaisAfetados: new Set(r.linhas.map((l) => l.canal.id)).size,
-    algumProblema: r.linhas.some((l) => l.prejuizo || l.abaixoMinimo),
+    algumProblema: r.linhas.some((l) => (l.prejuizo && !l.prejuizoDiscreto) || l.abaixoMinimo),
+    // Estratégia (crescimento/atração) que VENCE com essa mudança: o lucro cai
+    // mais de R$0,05 abaixo do lucro do dia da decisão.
+    decisaoVence: r.linhas.some((l) => l.estrategia?.vencida && l.estrategia.motivoVencida === "lucro"),
   };
 }

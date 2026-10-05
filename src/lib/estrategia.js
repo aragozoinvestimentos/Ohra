@@ -120,13 +120,18 @@ export function estrategiaEfetiva(item, canal, { precos = [], rampas = [], emRam
 
 /**
  * Alerta ÚNICO do preço salvo (todas as telas usam esta função).
- * { lucro, preco, minimo (preço mínimo aceitável no canal), estrategia }
+ * { lucro, preco, minimo (preço mínimo aceitável no canal) ou lucroMinimo, estrategia }
  * → { tipo: 'prejuizo'|'abaixo-minimo'|null, discreto, silenciado }
  */
-export function alertaPreco({ lucro, preco, minimo, estrategia }) {
+// lucroMinimo (opcional) = piso em R$ de lucro no lugar do preço mínimo —
+// pra quando o preço é o mesmo e o lucro muda (comissão de afiliado).
+export function alertaPreco({ lucro, preco, minimo, lucroMinimo = null, estrategia }) {
   const especial = estrategia && estrategia.chave !== "normal";
   if (lucro != null && num(lucro) < 0) return { tipo: "prejuizo", discreto: !!especial };
-  if (minimo != null && num(preco) > 0 && num(preco) < num(minimo) - 0.004) {
+  const abaixo =
+    (minimo != null && num(preco) > 0 && num(preco) < num(minimo) - 0.004) ||
+    (lucroMinimo != null && lucro != null && num(lucro) < num(lucroMinimo) - 0.004);
+  if (abaixo) {
     if (especial) return { tipo: null, discreto: false, silenciado: true };
     return { tipo: "abaixo-minimo", discreto: false };
   }

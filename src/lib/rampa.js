@@ -364,11 +364,6 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     }
   }
 
-  // Revisar anúncio
-  // (com Ads inviável o problema é a margem do degrau, não a conversão)
-  const revisarPorAds = abaixo2 && roasMin != null && roasMin <= regras.roasInviavel;
-  const revisarPorLancamento = i === 0 && dias >= regras.revisarDias && vendasDesde < regras.vendas / 2;
-  const revisar = revisarPorAds || revisarPorLancamento;
   const alertaNota = nota != null && nota < regras.notaAlerta;
 
   // ---- Teste de lançamento (Ads com orçamento fechado) ----
@@ -464,6 +459,31 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     }
   }
 
+  // Funil do anúncio (ctx.funilLoja = mediana da loja, quando houver 5+ produtos).
+  const funil = diagnosticarFunil(metricasFunil(rampa, registros, regras, hoje), regras, ctx.funilLoja || null);
+
+  // Revisar anúncio — UMA fonte (diagnosticoAnuncio). ROAS nunca durante o
+  // teste de lançamento, e as semanas do teste não contam pra régua depois.
+  // (com Ads inviável o problema é a margem do degrau, não a conversão)
+  const noTeste = (s) => teste.inicio && s.data >= teste.inicio && s.data <= teste.ate;
+  const adsForaTeste = semanasAds.filter((s) => !noTeste(s)).slice(-2);
+  const revisarPorAds =
+    teste.status !== "andamento" &&
+    adsForaTeste.length === 2 &&
+    roasMin != null &&
+    roasMin <= regras.roasInviavel &&
+    adsForaTeste.every((s) => (roasDe(s) ?? 0) < roasMin);
+  const revisarPorLancamento = i === 0 && dias >= regras.revisarDias && vendasDesde < regras.vendas / 2;
+  const vendasDepoisTeste = teste.ate ? semanas.filter((s) => s.data > teste.ate).reduce((t, s) => t + num(s.vendas), 0) : 0;
+  const revisarPorTeste = teste.resultado?.chave === "revisar" && vendasDepoisTeste === 0;
+  const anuncio = diagnosticoAnuncio({
+    funil,
+    teste: revisarPorTeste ? teste : null,
+    roas: revisarPorAds ? { roas: roasDe(adsForaTeste[1]), roasMin } : null,
+    lancamento: revisarPorLancamento ? { dias, vendas: vendasDesde } : null,
+  });
+  const revisar = !!anuncio;
+
   let sugestao;
   if (acimaAtivo) {
     sugestao = acima?.aprovado
@@ -480,9 +500,6 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   else if (portoesOk && !alertaNota) sugestao = { chave: "subir", tom: "good", rotulo: "Subir degrau", saltos: 1 };
   else sugestao = { chave: "segurar", tom: "warn", rotulo: "Segurar" };
 
-  // Funil do anúncio (ctx.funilLoja = mediana da loja, quando houver 5+ produtos).
-  const funil = diagnosticarFunil(metricasFunil(rampa, registros, regras, hoje), regras, ctx.funilLoja || null);
-
   const lucroSemana = ultimaSemana && ultimaSemana.data > corte7 ? num(ultimaSemana.vendas) * (lucroEm(num(ultimaSemana.preco) || preco) ?? 0) : null;
   const lucroSemanaAds = lucroSemana != null ? lucroSemana - num(ultimaSemana.ads_gasto) : null;
   const lucroSemanaAlvo = ultimaSemana && ultimaSemana.data > corte7 ? num(ultimaSemana.vendas) * (lucroEm(alvo) ?? 0) : null;
@@ -493,8 +510,57 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     zero: ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
     avaliacoesTotal, nota, vendasDesde, vendasTotal, avaliacoesDesde, dias, ruins7,
     portoes, portoesOk, check, roasMin, roas, organico, organicoAntes, ads, viavelEm, ultAds,
-    revisar, revisarPorAds, revisarPorLancamento, alertaNota, sugestao, ultimaSemana, diasMin, campanha, diasAteCampanha, campanhaPerto,
+    revisar, revisarPorAds, revisarPorLancamento, revisarPorTeste, anuncio, alertaNota, sugestao, ultimaSemana, diasMin, campanha, diasAteCampanha, campanhaPerto,
     lucroSemana, lucroSemanaAds, lucroSemanaAlvo, semanas, registros: regs, funil,
+  };
+}
+
+// Aviso ÚNICO de "Revisar anúncio" (sugestão da linha, alerta do Detalhe,
+// checklist destacado e resultado do teste leem daqui). No máximo um aviso,
+// pela prioridade: 1) funil (só diagnosticando: titulo/vitrine/pagina);
+// 2) teste de lançamento com cliques sem venda; 3) ROAS abaixo do mínimo por
+// 2 semanas (Ads viável, fora do teste); 4) poucas vendas no 1º degrau.
+// As outras fontes que concordam vão em `tambem` ("também indica: …").
+// → null ou { motivo, titulo, texto, porOnde, itens, tambem: [{ motivo, titulo }] }
+export function diagnosticoAnuncio({ funil, teste, roas, lancamento }) {
+  const fontes = [];
+  const d = funil?.status === "pronto" ? funil.diagnostico : null;
+  if (d && ["titulo", "vitrine", "pagina"].includes(d.chave))
+    fontes.push({ motivo: `funil-${d.chave}`, titulo: d.titulo, curto: "funil do anúncio", texto: d.texto, itens: d.itens });
+  if (teste?.resultado?.chave === "revisar")
+    fontes.push({
+      motivo: "teste",
+      titulo: "Cliques sem venda no teste de lançamento",
+      curto: "teste de lançamento",
+      texto: `${teste.cliques} cliques e nenhuma venda no teste: as pessoas chegam mas não compram — revise a página (fotos de uso, medidas, descrição) e o preço frente ao concorrente.`,
+      itens: ["uso", "medidas", "descricao", "concorrente"],
+    });
+  if (roas)
+    fontes.push({
+      motivo: "roas",
+      titulo: "Ads não se paga há 2 semanas",
+      curto: "ROAS do Ads",
+      texto: `ROAS ${roas.roas != null ? roas.roas.toFixed(1).replace(".", ",") : "—"} abaixo do mínimo (${roas.roasMin.toFixed(1).replace(".", ",")}) por 2 semanas: o anúncio recebe clique mas não converte.`,
+      itens: ["uso", "medidas", "descricao", "concorrente"],
+    });
+  if (lancamento)
+    fontes.push({
+      motivo: "lancamento",
+      titulo: "Poucas vendas no lançamento",
+      curto: "vendas do lançamento",
+      texto: `${lancamento.dias} dias no 1º degrau e só ${lancamento.vendas} venda${lancamento.vendas === 1 ? "" : "s"}: o preço já está perto do 0 a 0, então o problema provavelmente não é preço.`,
+      itens: ["titulo", "foto", "concorrente"],
+    });
+  if (!fontes.length) return null;
+  const [p, ...resto] = fontes;
+  const rot = (k) => CHECKLIST_ANUNCIO.find((c) => c[0] === k)?.[1] || k;
+  return {
+    motivo: p.motivo,
+    titulo: p.titulo,
+    texto: p.texto,
+    porOnde: p.itens.map(rot).join(", "),
+    itens: p.itens,
+    tambem: resto.map((f) => ({ motivo: f.motivo, titulo: f.curto })),
   };
 }
 

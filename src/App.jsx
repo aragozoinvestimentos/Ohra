@@ -247,6 +247,13 @@ export default function App() {
     setMenuAberto(false);
   }
 
+  // Pedidos de navegação vindos de dentro das telas (lib/navegar.js).
+  useEffect(() => {
+    const ouvir = (e) => irPara(e.detail.aba);
+    window.addEventListener("ohra:ir-para", ouvir);
+    return () => window.removeEventListener("ohra:ir-para", ouvir);
+  });
+
   function irParaMateriais() {
     setTab("cadastros");
   }

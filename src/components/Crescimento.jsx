@@ -450,8 +450,8 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
                       </td>
                       <td>
                         <span className={`badge ${{ good: "good", warn: "warn", bad: "bad" }[e.sugestao.tom] || "neutro"}`}>{e.sugestao.rotulo}</span>
-                        {e.sugestao.chave === "revisar" && e.funil?.diagnostico && e.funil.diagnostico.chave !== "ok" && (
-                          <div className="sub-num" title="Diagnóstico do funil do anúncio: por onde começar">começar por: {e.funil.diagnostico.titulo.toLowerCase()}</div>
+                        {e.sugestao.chave === "revisar" && e.anuncio && (
+                          <div className="sub-num" title={`${e.anuncio.titulo} — por onde começar`}>começar por: {e.anuncio.porOnde.toLowerCase()}</div>
                         )}
                       </td>
                     </tr>
@@ -824,7 +824,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                   {checklistIncompleto.length > 0 && (
                     <div className="alerta alerta-warn" style={{ marginTop: 8 }}>
                       <b>Anúncio incompleto</b>
-                      Falta marcar no checklist: {checklistIncompleto.map((k) => CHECKLIST_ANUNCIO.find((c) => c[0] === k)?.[1]).join(", ")}. Você pagaria pra mandar gente pra um anúncio que ainda não convence.
+                      Falta {checklistIncompleto.map((k) => CHECKLIST_ANUNCIO.find((c) => c[0] === k)?.[1].toLowerCase()).join(", ")} (itens do checklist em Revisar anúncio, abaixo). Você pagaria pra mandar gente pra um anúncio que ainda não convence.
                     </div>
                   )}
                   <div className="teste-botoes">
@@ -865,12 +865,18 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                       {t.diasRestantes} dia(s) restante(s) · registre gasto, cliques e vendas via Ads no “Registrar semana” (pode ser todo dia). O teste acaba sozinho ao bater {t.meta} vendas, gastar o orçamento, passar {t.prazo} dias ou chegar a {regras.testeCliquesSemVenda} cliques sem venda.
                     </p>
                   ) : (
-                    t.resultado && (
+                    t.resultado &&
+                    (t.resultado.chave === "revisar" ? (
+                      <div className="alerta alerta-bad">
+                        <b>{t.cliques} cliques e nenhuma venda</b>
+                        {e.anuncio ? `Veja o aviso em Revisar anúncio, abaixo${e.anuncio.motivo === "teste" ? "" : ` (${e.anuncio.titulo.toLowerCase()})`} — por onde começar: ${e.anuncio.porOnde.toLowerCase()}.` : "Já houve venda depois do teste — o aviso de revisar saiu."}
+                      </div>
+                    ) : (
                       <div className={`alerta alerta-${{ good: "good", warn: "warn", bad: "bad" }[t.resultado.tom]}`}>
                         <b>{t.resultado.titulo}</b>
                         {t.resultado.texto}
                       </div>
-                    )
+                    ))
                   )}
                   <div className="teste-botoes">
                     {t.status === "concluido" && !t.salvoConcluido && (
@@ -985,22 +991,19 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
           Revisar anúncio
           {e.revisar ? <span className="badge bad" style={{ marginLeft: 8 }}>recomendado</span> : <span className="muted-cel"> · checklist de conversão</span>}
         </h4>
-        {e.revisar && (
+        {e.anuncio && (
           <div className="alerta alerta-bad">
-            <b>Antes de baixar preço ou colocar Ads, melhore a conversão</b>
-            {e.revisarPorLancamento
-              ? `${e.dias} dias no lançamento e só ${e.vendasDesde} vendas: o preço já está perto do 0 a 0, então o problema provavelmente não é preço.`
-              : "ROAS abaixo do mínimo por 2 semanas: o anúncio recebe clique mas não converte."}
-            {e.funil?.diagnostico && e.funil.diagnostico.chave !== "ok" && (
-              <div style={{ marginTop: 4 }}>
-                <b>Por onde começar: {e.funil.diagnostico.titulo}</b> (funil do anúncio) — itens destacados abaixo.
-              </div>
-            )}
+            <b>{e.anuncio.titulo}</b>
+            {e.anuncio.texto}
+            <div style={{ marginTop: 4 }}>
+              <span style={{ fontWeight: 700 }}>Por onde começar:</span> {e.anuncio.porOnde.toLowerCase()} — itens destacados abaixo.
+              {e.anuncio.tambem.length > 0 && <span className="muted-cel"> Também indica: {e.anuncio.tambem.map((x) => x.titulo).join(", ")}.</span>}
+            </div>
           </div>
         )}
         <div className="checklist-anuncio">
           {CHECKLIST_ANUNCIO.map(([k, rotulo, dica]) => {
-            const destaque = (e.funil?.diagnostico?.itens || []).includes(k);
+            const destaque = (e.anuncio?.itens || []).includes(k);
             return (
               <label key={k} className={destaque ? "item-funil" : ""}>
                 <input type="checkbox" checked={!!l.r.checklist?.[k]} onChange={(ev) => onChecklist(l, k, ev.target.checked)} />

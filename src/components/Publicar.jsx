@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
@@ -26,6 +26,7 @@ export default function Publicar({ onToast }) {
   const [salvando, setSalvando] = useState(false);
   const [abertos, setAbertos] = useState(() => new Set());
   const [descEdit, setDescEdit] = useState(null); // { chave, itemId, canalId, valor }
+  const [sel, setSel] = useState(null); // "itemId|canalId" com o detalhe aberto
   // Itens em rampa (aba Crescimento) vendendo num preço diferente do salvo:
   // o que digitar vem da Rampa (riscado fixo no alvo + promo do degrau) e o
   // "↻ atualizar" compara com isso. No alvo / rampa encerrada → preço salvo.
@@ -200,6 +201,104 @@ export default function Publicar({ onToast }) {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // Detalhe de uma célula (abre na linha de baixo): o que digitar, desconto
+  // (editável), rampa, o que trocar e "feito".
+  function detalhe(l, c) {
+    if (!c) return null;
+    const x = l.porCanal[c.id];
+    const chave = `${l.item.id}|${c.id}`;
+    const copiar = (v, rot) => {
+      navigator.clipboard?.writeText(v).then(
+        () => onToast(`${rot} copiado: ${v}`),
+        () => onToast("Não foi possível copiar")
+      );
+    };
+    return (
+      <div className="detalhe-cel">
+        <div className="detalhe-cel-topo">
+          <b>{l.item.nomeVariacao ? `${l.item.nome}` : l.item.nome}</b> <CanalTag canal={c} />
+          <span className="sub-num-inline">o que digitar no anúncio</span>
+          <button type="button" className="del" title="Fechar" onClick={() => setSel(null)}>
+            ×
+          </button>
+        </div>
+        <div className="detalhe-cel-grade">
+          <button type="button" className="kv-cel kv-copiar" onClick={() => copiar(x.original.toFixed(2).replace(".", ","), "Preço original")} title="Clique pra copiar">
+            <small>Preço original</small>
+            <b>{BRL(x.original)}</b>
+            <span>riscado · clique pra copiar</span>
+          </button>
+          <button type="button" className="kv-cel kv-copiar" onClick={() => copiar(String(x.promo), "Promo")} title="Clique pra copiar">
+            <small>Promo</small>
+            <b>{x.promo}%</b>
+            <span>clique pra copiar</span>
+          </button>
+          <div className="kv-cel">
+            <small>Cliente paga</small>
+            <b>{BRL(x.clientePaga)}</b>
+            <span>{x.rampa ? "degrau atual da Rampa" : "preço salvo"}</span>
+          </div>
+          <div className="kv-cel">
+            <small>Desconto do anúncio</small>
+            {descEdit?.chave === chave ? (
+              <input
+                className="input-desc"
+                type="number"
+                step="1"
+                autoFocus
+                placeholder={pctTxt(descontoPadraoCanal(c))}
+                value={descEdit.valor}
+                onChange={(e) => setDescEdit({ ...descEdit, valor: e.target.value })}
+                onBlur={salvarDesconto}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.target.blur();
+                  if (e.key === "Escape") setDescEdit(null);
+                }}
+              />
+            ) : (
+              <b>
+                {pctTxt(x.desconto)}%{x.proprio ? "*" : ""}
+              </b>
+            )}
+            <span>
+              {x.proprio ? "próprio do item" : "padrão do canal"} ·{" "}
+              <button
+                type="button"
+                className="link-btn"
+                title={`Vazio volta pro padrão do canal${l.tipo === "variacao" ? ". Vale pro produto e todas as variações" : ""}`}
+                onClick={() => setDescEdit({ chave, itemId: l.item.id, canalId: c.id, valor: x.proprio ? pctTxt(x.desconto).replace(",", ".") : "" })}
+              >
+                ✎ mudar
+              </button>
+            </span>
+          </div>
+        </div>
+        <div className="detalhe-cel-avisos">
+          {x.rampa && (
+            <div className="aviso-cel rampa">
+              <b>{x.rampa.acima ? "Testando acima do alvo" : "Em rampa"} · use o preço da Rampa</b> Vendendo {BRL(x.rampa.real)} (Vender → Crescimento): riscado fixo no alvo, só a promo muda. Quando chegar no alvo, volta pro preço salvo.
+            </div>
+          )}
+          {x.mudou && (
+            <div className="aviso-cel atencao">
+              <b>{x.nunca ? "Ainda não marcado como feito" : "O que trocar no anúncio"}</b>{" "}
+              {x.nunca ? "Digite os números acima e marque feito." : x.oQueMudou || `era ${BRL(Number(x.salvo.preco_original))} · ${Number(x.salvo.promo)}%`}
+            </div>
+          )}
+        </div>
+        <div className="detalhe-cel-acoes">
+          {x.mudou ? (
+            <button type="button" className="btn btn-mini primary" disabled={salvando} onClick={() => marcar([{ l, canalId: c.id }])}>
+              ✓ Já digitei na {nomeCanal(c)} — marcar feito
+            </button>
+          ) : (
+            <span className="badge neutro">✓ atualizado</span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (!canais.length) {
     return (
       <div className="panel">
@@ -237,6 +336,17 @@ export default function Publicar({ onToast }) {
           </button>
         </span>
       </h3>
+      {visiveis.length > 0 && (
+        <div className="legenda-tabela">
+          <span className="legenda-tit">Legenda</span>
+          <span><b>R$ 17,00</b> preço original (riscado) a digitar</span>
+          <span><b>promo 30%</b> a digitar</span>
+          <span><span className="chip-cel ok">✓ em dia</span></span>
+          <span><span className="chip-cel atencao">↻ atualizar</span> o anúncio está diferente</span>
+          <span><span className="chip-cel rampa">rampa</span> use a promo da Rampa</span>
+          <span className="legenda-dica">Clique na célula: cliente paga, desconto, o que trocar e “feito”.</span>
+        </div>
+      )}
       {visiveis.length ? (
         <div className="table-wrap tabela-pub cabecalho-fixo">
           <table>
@@ -256,7 +366,8 @@ export default function Publicar({ onToast }) {
             </thead>
             <tbody>
               {linhasTela.map(({ l, pid, nVars, nPend, aberto }) => (
-                <tr key={l.item.id} className={l.tipo === "variacao" ? "linha-cad" : ""}>
+                <Fragment key={l.item.id}>
+                <tr className={l.tipo === "variacao" ? "linha-cad" : ""}>
                   <td>
                     {l.tipo === "variacao" ? `↳ ${l.item.nomeVariacao || l.item.nome}` : l.item.nome}
                     <span className="sub">
@@ -288,66 +399,25 @@ export default function Publicar({ onToast }) {
                     if (!x)
                       return (
                         <td className="num" key={c.id}>
-                          <span className="sub">sem preço salvo</span>
+                          <span className="cel-vazia" title="Sem preço salvo neste canal">—</span>
                         </td>
                       );
                     const chave = `${l.item.id}|${c.id}`;
                     return (
                       <td className="num" key={c.id}>
-                        <span className="base" title="Preço original (riscado) — digite no anúncio">{BRL(x.original)}</span>
-                        <span className="promo-linha">
-                          promo <b>{x.promo}%</b>
-                          {" · "}
-                          {descEdit?.chave === chave ? (
-                            <input
-                              className="input-desc"
-                              type="number"
-                              step="1"
-                              autoFocus
-                              placeholder={pctTxt(descontoPadraoCanal(c))}
-                              value={descEdit.valor}
-                              onChange={(e) => setDescEdit({ ...descEdit, valor: e.target.value })}
-                              onBlur={salvarDesconto}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.target.blur();
-                                if (e.key === "Escape") setDescEdit(null);
-                              }}
-                            />
-                          ) : (
-                            <button
-                              type="button"
-                              className={`link-btn desc-btn${x.proprio ? " proprio" : ""}`}
-                              title={`${x.proprio ? "Desconto próprio" : "Desconto padrão do canal"} — clique pra mudar (vazio volta pro padrão)${l.tipo === "variacao" ? ". Vale pro produto e todas as variações" : ""}`}
-                              onClick={() => setDescEdit({ chave, itemId: l.item.id, canalId: c.id, valor: x.proprio ? pctTxt(x.desconto).replace(",", ".") : "" })}
-                            >
-                              desconto {pctTxt(x.desconto)}%{x.proprio ? "*" : ""}
-                            </button>
-                          )}
-                        </span>
-                        <span className="sub">cliente paga {BRL(x.clientePaga)}</span>
-                        {x.rampa && (
-                          <span
-                            className="rampa-tag"
-                            title={`${x.rampa.acima ? "Testando acima do alvo" : "Em rampa de preço"} (Vender → Crescimento): vendendo ${BRL(x.rampa.real)} — use estes números (riscado fixo no alvo, só a promo muda). Quando chegar no alvo, volta pro preço salvo.`}
-                          >
-                            {x.rampa.acima ? "testando acima · use o preço da Rampa" : "em rampa · use o preço da Rampa"}
+                        <button type="button" className={`cel-preco${sel === chave ? " sel" : ""}`} onClick={() => setSel((v) => (v === chave ? null : chave))}>
+                          <span className="cel-preco-v" title="Preço original (riscado) — digite no anúncio">{BRL(x.original)}</span>
+                          <span className="preco-canal-linha">
+                            promo <b>{x.promo}%</b>
                           </span>
-                        )}
-                        {x.salvo && x.mudou && (
-                          <span className="sub o-que-mudou">{x.oQueMudou || `era ${BRL(Number(x.salvo.preco_original))} · ${Number(x.salvo.promo)}%`}</span>
-                        )}
-                        <span className="cel-status">
-                          {x.mudou ? (
-                            <>
-                              <span className="badge warn">{x.nunca ? "novo" : "↻ atualizar"}</span>
-                              <button type="button" className="link-btn" disabled={salvando} onClick={() => marcar([{ l, canalId: c.id }])} title={`Já digitei na ${nomeCanal(c)} — marcar como atualizado`}>
-                                feito
-                              </button>
-                            </>
+                          {x.rampa ? (
+                            <span className="chip-cel rampa">{x.rampa.acima ? "testando acima" : "rampa"}{x.mudou ? " · ↻" : ""}</span>
+                          ) : x.mudou ? (
+                            <span className="chip-cel atencao">{x.nunca ? "novo" : "↻ atualizar"}</span>
                           ) : (
-                            <span className="badge neutro">✓ atualizado</span>
+                            <span className="chip-cel ok">✓ em dia</span>
                           )}
-                        </span>
+                        </button>
                       </td>
                     );
                   })}
@@ -361,6 +431,12 @@ export default function Publicar({ onToast }) {
                     )}
                   </td>
                 </tr>
+                {sel && sel.startsWith(`${l.item.id}|`) && l.porCanal[sel.split("|").slice(1).join("|")] && (
+                  <tr className="linha-detalhe">
+                    <td colSpan={canais.length + 2}>{detalhe(l, canais.find((c) => sel === `${l.item.id}|${c.id}`))}</td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

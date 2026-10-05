@@ -260,7 +260,10 @@ export function EditorVariacao({ formInicial, variacao, produto, produtoEmbalage
     onToast?.(
       form.id
         ? impacto?.relevante && impacto.linhas.length
-          ? `Variação atualizada · lucro ${impacto.linhas[0].diferenca >= 0 ? "+" : "−"}${BRL(Math.abs(impacto.linhas.reduce((s, l) => s + l.diferenca, 0) / impacto.linhas.length))}/venda`
+          ? (() => {
+              const media = impacto.linhas.reduce((s, l) => s + l.diferenca, 0) / impacto.linhas.length;
+              return `Variação atualizada · lucro ${media >= 0 ? "+" : "−"}${BRL(Math.abs(media))}/venda · detalhes em Produtos precificados → Custo mudou`;
+            })()
           : "Variação atualizada"
         : "Variação criada"
     );
@@ -469,7 +472,7 @@ export function EditorVariacao({ formInicial, variacao, produto, produtoEmbalage
                   <div className="kv"><span className="k">Produto × {previa.quantidade} (embalagem 1×)</span><span className="v">{BRL(previa.referencia)}</span></div>
                   <div className="kv">
                     <span className="k">Diferença</span>
-                    <span className="v" style={{ color: previa.diferenca <= 0 ? "var(--good)" : "var(--bad)" }}>
+                    <span className="v dif-neutra">
                       {previa.diferenca > 0 ? "+ " : previa.diferenca < 0 ? "− " : ""}
                       {BRL(Math.abs(previa.diferenca))}
                     </span>
