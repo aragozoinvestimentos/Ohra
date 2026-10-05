@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import BuscaItem from "./BuscaItem.jsx";
 import { supabase } from "../lib/supabaseClient.js";
-import { gravarPrecoNovo } from "../lib/estrategia.js";
+import { gravarPrecoNovo, alertaPreco } from "../lib/estrategia.js";
+import EditarDialog from "./EditarDialog.jsx";
 import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
-import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, rotuloMinimo, escadaDoProduto, configEscada } from "../lib/escada.js";
+import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, rotuloMinimo, escadaDoProduto, configEscada, lucroNoPreco, precoMinimoAceitavel } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -140,9 +141,22 @@ export default function PrecoPorQuantidade({ onToast }) {
     ));
   }
 
+  // Preço que vai ser salvo ao Aplicar/Criar: o sugerido, ou o que você digitar.
+  const precoConfirmado = (c) => {
+    const v = Number(String(c?.precoEdit ?? "").replace(",", "."));
+    return v > 0 ? Math.round(v * 100) / 100 : c?.linha?.sugerido;
+  };
+  const resultadoNoPrecoConfirmado = (c) => {
+    const pr = precoConfirmado(c);
+    const lucro = pr > 0 ? lucroNoPreco(canal, pr, c.linha.custo, c.linha.peso, cfg) : null;
+    return { preco: pr, lucro, margem: lucro != null && pr > 0 ? lucro / pr : null };
+  };
+
   async function executar() {
-    const c = confirmar;
-    if (!c || !supabase) return;
+    const c0 = confirmar;
+    if (!c0 || !supabase) return;
+    // Aplicar/Criar com preço editado: salva o preço digitado (lucro/margem recalculados).
+    const c = c0.tipo === "aplicar" || c0.tipo === "criar" ? { ...c0, linha: { ...c0.linha, sugerido: resultadoNoPrecoConfirmado(c0).preco, lucro: resultadoNoPrecoConfirmado(c0).lucro, margem: resultadoNoPrecoConfirmado(c0).margem } } : c0;
     setSalvando(true);
     let error = null;
     if (c.tipo === "aplicar") {
@@ -362,10 +376,9 @@ export default function PrecoPorQuantidade({ onToast }) {
       </div>
 
       {regra4x && !regra4x.ok && (
-        <div className="alerta alerta-warn">
-          <b>Shopee: esse produto não cabe num anúncio só (regra de 4×)</b>
-          Num mesmo anúncio a variação mais cara (preço original, o riscado do anúncio) não pode passar de 4× a mais barata (com promoção). Aqui o limite é{" "}
-          {BRL(regra4x.limite)}, então o anúncio do avulso vai <b>até {regra4x.maxNoPrimeiro} unidades</b>. Divisão que funciona:{" "}
+        <div className="alerta alerta-neutro">
+          <b>Shopee: num anúncio só cabem até {regra4x.maxNoPrimeiro} unidades (regra de 4×)</b>
+          Só importa se você colocar mais que isso no mesmo anúncio da Shopee — anunciando até kit {regra4x.maxNoPrimeiro} (ex.: até kit 3), não precisa fazer nada. A variação mais cara (preço original, o riscado) não pode passar de 4× a mais barata (com promoção); aqui o limite é {BRL(regra4x.limite)}. Se um dia for anunciar mais:{" "}
           {regra4x.grupos.map((g, i) => `anúncio ${i + 1} (${g.join(", ")} un)`).join(" · ")}
         </div>
       )}
@@ -528,7 +541,11 @@ export default function PrecoPorQuantidade({ onToast }) {
                               </>
                             )}
                           </span>
-                          {regra4x && !regra4x.ok && anuncioDe(l.n) > 1 && <span className="frete-tag">Shopee: anúncio {anuncioDe(l.n)}</span>}
+                          {regra4x && !regra4x.ok && anuncioDe(l.n) > 1 && (
+                            <span className="frete-tag info-4x" title="Só se você anunciar essa quantidade na Shopee junto com o avulso — regra de 4×">
+                              Shopee: anúncio {anuncioDe(l.n)} (se anunciar)
+                            </span>
+                          )}
                           <input
                             className="input-conc"
                             type="number"
@@ -598,7 +615,11 @@ export default function PrecoPorQuantidade({ onToast }) {
                           {l.naoCompensa ? (
                             <span className="badge bad">não compensa</span>
                           ) : l.cadastrada ? (
-                            st?.tom === "good" ? null : (
+                            st?.tom === "good" ? (
+                              <button type="button" className="link-btn" onClick={() => setConfirmar({ tipo: "aplicar", linha: l, precoEdit: l.salvo != null ? l.salvo.toFixed(2) : undefined })} title="Editar o preço salvo desta variação">
+                                ✎ editar
+                              </button>
+                            ) : (
                               <button type="button" className="btn primary btn-sm" onClick={() => setConfirmar({ tipo: "aplicar", linha: l })}>
                                 Aplicar {BRL(l.sugerido)}
                               </button>
@@ -632,7 +653,58 @@ export default function PrecoPorQuantidade({ onToast }) {
           titulo={`Revisar insumos — ${revisar.nome || `Kit ${revisar.quantidade}`}`}
         />
       )}
-      {confirmar && (
+      {confirmar && (confirmar.tipo === "aplicar" || confirmar.tipo === "criar") && (() => {
+        const res = resultadoNoPrecoConfirmado(confirmar);
+        const minimo = precoMinimoAceitavel(canal, confirmar.linha.custo, confirmar.linha.peso, cfg);
+        const al = alertaPreco({ lucro: res.lucro, preco: res.preco, minimo, estrategia: { chave: "normal" } });
+        const editado = Math.abs(res.preco - confirmar.linha.sugerido) >= 0.005;
+        return (
+          <EditarDialog
+            titulo={confirmar.tipo === "criar" ? `Criar Kit ${confirmar.linha.n} — ${nomeCanal(canal)}` : `Salvar preço — ${confirmar.linha.nome} em ${nomeCanal(canal)}`}
+            salvando={salvando}
+            onSalvar={executar}
+            onCancelar={() => setConfirmar(null)}
+            salvarLabel={confirmar.tipo === "criar" ? `Criar e salvar ${BRL(res.preco)}` : `Salvar ${BRL(res.preco)}`}
+            classe="modal-box-md"
+          >
+            <p className="hint" style={{ marginTop: 0 }}>
+              {confirmar.tipo === "criar"
+                ? `Cria a variação "Kit ${confirmar.linha.n}" em ${dados?.itemPai.nome} (produção = custo por peça × ${confirmar.linha.n}; ajuste caixa/chapa depois em "revisar insumos") e salva o preço abaixo.`
+                : `Sugerido pela escada: ${BRL(confirmar.linha.sugerido)}${confirmar.linha.salvo != null ? ` · salvo hoje: ${BRL(confirmar.linha.salvo)}` : ""}. Pode ajustar uns centavos antes de salvar.`}
+            </p>
+            <div className="field" style={{ maxWidth: 200 }}>
+              <label>Preço (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                autoFocus
+                value={confirmar.precoEdit ?? confirmar.linha.sugerido.toFixed(2)}
+                onChange={(ev) => setConfirmar((cf) => ({ ...cf, precoEdit: ev.target.value }))}
+              />
+            </div>
+            <div className="kv">
+              <span className="k">Lucro · margem</span>
+              <span className="v">
+                {res.lucro != null ? BRL(res.lucro) : "—"} · {res.margem != null ? PCT(res.margem) : "—"}
+              </span>
+            </div>
+            <div className="kv">
+              <span className="k">Por peça ({confirmar.linha.n} un.)</span>
+              <span className="v">
+                {BRL(res.preco / confirmar.linha.n)} · lucro {res.lucro != null ? BRL(res.lucro / confirmar.linha.n) : "—"}
+              </span>
+            </div>
+            {editado && <p className="hint" style={{ margin: "4px 0 0" }}>Diferente do sugerido ({BRL(confirmar.linha.sugerido)}).</p>}
+            {al.tipo && (
+              <div className={`alerta alerta-${al.tipo === "prejuizo" ? "bad" : "warn"}`} style={{ marginTop: 8 }}>
+                <b>{al.tipo === "prejuizo" ? "Esse preço dá prejuízo" : `Abaixo do mínimo aceitável (${BRL(minimo)})`}</b>
+                {al.tipo === "prejuizo" ? "Cada venda nesse preço tira dinheiro do seu bolso." : "Dá pra salvar mesmo assim; depois, se for de propósito, use “manter assim” em Produtos precificados."}
+              </div>
+            )}
+          </EditarDialog>
+        );
+      })()}
+      {confirmar && confirmar.tipo === "avulso" && (
         <ConfirmDialog
           titulo={confirmar.tipo === "criar" ? `Criar Kit ${confirmar.linha.n}?` : confirmar.tipo === "avulso" ? "Salvar preço avulso?" : `Aplicar ${BRL(confirmar.linha.sugerido)}?`}
           mensagem={

@@ -54,7 +54,10 @@ export default function Publicar({ onToast }) {
           const an = ra ? { original: ra.original, promo: ra.promo, clientePaga: ra.clientePaga, desconto } : calcularAnuncio(Number(s.preco), desconto);
           const salvo = publicacoesCanal.find((x) => x.item_tipo === tipo && x.item_id === id && x.canal_id === c.id) || null;
           const mudou = anuncioMudou(salvo, an);
-          porCanal[c.id] = { ...an, proprio, salvo, mudou, nunca: !salvo, rampa: ra, oQueMudou: mudou && salvo ? descricaoMudanca(salvo, an) : null };
+          // Regra de 4× da Shopee: sempre pelo preço SALVO (alvo) — a promo
+          // temporária da rampa não decide quantas unidades cabem no anúncio.
+          const anSalvo = ra ? calcularAnuncio(Number(s.preco), desconto) : an;
+          porCanal[c.id] = { ...an, proprio, salvo, mudou, nunca: !salvo, rampa: ra, anSalvo, oQueMudou: mudou && salvo ? descricaoMudanca(salvo, an) : null };
         }
         if (!Object.keys(porCanal).length) return null;
         const pendentes = Object.values(porCanal).filter((x) => x.mudou).length;
@@ -75,7 +78,7 @@ export default function Publicar({ onToast }) {
       const x = l.porCanal[shopee.id];
       if (!pid || !x) continue;
       if (!porProduto.has(pid)) porProduto.set(pid, []);
-      porProduto.get(pid).push({ n: l.tipo === "produto" ? 1 : l.item.pecas || 1, promo: x.clientePaga, original: x.original, itemId: l.item.id });
+      porProduto.get(pid).push({ n: l.tipo === "produto" ? 1 : l.item.pecas || 1, promo: x.anSalvo.clientePaga, original: x.anSalvo.original, itemId: l.item.id });
     }
     for (const [pid, ls] of porProduto) {
       const r = gruposRegra4x(ls);
@@ -261,11 +264,18 @@ export default function Publicar({ onToast }) {
                       {l.item.sku ? ` · ${l.item.sku}` : ""}
                     </span>
                     {regra4xDe(l) && l.tipo === "produto" && (
-                      <span className="frete-tag" title="Regra da Shopee: num anúncio, a variação mais cara não pode passar de 4× a mais barata (contando preço original e com promoção)">
-                        Shopee 4×: até {regra4xDe(l).maxNoPrimeiro} un. neste anúncio
+                      <span
+                        className="frete-tag info-4x"
+                        title={`Regra da Shopee: num anúncio, a variação mais cara (preço original) não pode passar de 4× a mais barata (com promoção). Só importa se você anunciar mais de ${regra4xDe(l).maxNoPrimeiro} un. no mesmo anúncio — anunciando até kit 3, não precisa fazer nada.`}
+                      >
+                        Shopee: cabe até {regra4xDe(l).maxNoPrimeiro} un. por anúncio
                       </span>
                     )}
-                    {regra4xDe(l) && l.tipo === "variacao" && regra4xDe(l).anuncioDoItem[l.item.id] > 1 && <span className="frete-tag bad">Shopee: vai em outro anúncio (4×)</span>}
+                    {regra4xDe(l) && l.tipo === "variacao" && regra4xDe(l).anuncioDoItem[l.item.id] > 1 && (
+                      <span className="frete-tag info-4x" title="Só se você anunciar essa quantidade na Shopee: pela regra de 4×, ela vai num anúncio separado do avulso">
+                        Shopee: outro anúncio, se anunciar
+                      </span>
+                    )}
                     {nVars > 0 && (
                       <button type="button" className={`variacoes-toggle${aberto ? " aberto" : ""}`} onClick={() => alternar(pid)} title={aberto ? "Esconder variações" : "Ver variações"}>
                         <span className="seta">▸</span> {nVars} {nVars === 1 ? "variação" : "variações"}

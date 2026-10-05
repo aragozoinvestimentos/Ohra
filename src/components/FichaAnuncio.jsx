@@ -100,6 +100,8 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
         opcoes: combo.map((o) => o.nome),
         qtd: isKit ? null : qtdLabel(it),
         an,
+        // Regra de 4×: sempre pelo preço SALVO (a promo temporária da rampa não decide o anúncio).
+        anSalvo: s && Number(s.preco) > 0 ? calcularAnuncio(Number(s.preco), desconto) : an,
       }));
     };
 
@@ -113,7 +115,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
     else if (canal.tipo === "shopee" && temQtd) {
       const precosN = itensLista.map((it) => {
         const l = linhasDe(it)[0];
-        return { n: qtdDe(it), promo: l.an?.clientePaga ?? 0, original: l.an?.original ?? 0, it };
+        return { n: qtdDe(it), promo: l.anSalvo?.clientePaga ?? 0, original: l.anSalvo?.original ?? 0, it };
       });
       const comPreco = precosN.filter((x) => x.promo > 0);
       regra4x = comPreco.length ? gruposRegra4x(comPreco) : null;
@@ -136,7 +138,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
       else ativas.forEach((v) => tabelaVar.push({ nome: v.nome, opcoes: v.opcoes.map((o) => o.nome) }));
       if (g.length > 1) tabelaVar.push({ nome: "Quantidade", opcoes: g.map(qtdLabel) });
       const precificadas = linhas.filter((l) => l.an);
-      const razao = precificadas.length ? Math.max(...precificadas.map((l) => l.an.original)) / Math.min(...precificadas.map((l) => l.an.clientePaga)) : null;
+      const razao = precificadas.length ? Math.max(...precificadas.map((l) => (l.anSalvo || l.an).original)) / Math.min(...precificadas.map((l) => (l.anSalvo || l.an).clientePaga)) : null;
       return { titulo, linhas, tabelaVar, temQtdColuna: g.length > 1, razao };
     });
 
