@@ -1,3 +1,4 @@
+import { hojeSP } from "../lib/datas.js";
 import { useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -161,7 +162,7 @@ async function exportarBackup(onToast) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `backup-ohra-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `backup-ohra-${hojeSP()}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

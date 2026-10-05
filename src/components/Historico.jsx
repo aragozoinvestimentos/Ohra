@@ -1,3 +1,4 @@
+import { hojeSP } from "../lib/datas.js";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { resultadoNoPreco } from "../lib/calc.js";
@@ -750,7 +751,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `produtos-precificados-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `produtos-precificados-${hojeSP()}.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }

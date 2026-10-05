@@ -5,6 +5,7 @@
 import { lucroNoPreco, lucroMinimoAceitavel } from "./escada.js";
 import { itemTipoDoId } from "./variacoes.js";
 import { alertaPreco, estrategiaEfetiva } from "./estrategia.js";
+import { dataSP } from "./datas.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -375,7 +376,7 @@ export function sugestoesAfiliado({ linhas, parceiros, afRegistros, regras, iten
   // 5) comissão ativa há 30 dias com poucas vendas → subir até a recomendada
   const corte30 = somarDias(hoje, -DIAS_TESTE_COMISSAO);
   for (const l of linhas.filter((x) => x.situacao === "ok" && x.conf.row)) {
-    const desde = String(l.conf.row.atualizado_em || l.conf.row.criado_em || "").slice(0, 10);
+    const desde = dataSP(l.conf.row.atualizado_em || l.conf.row.criado_em || "") || "";
     if (!desde || desde > corte30) continue;
     if (l.recomendada == null || l.recomendada < l.conf.comissao + 0.01) continue;
     const v30 = afRegistros.filter((g) => g.item_tipo === l.tipo && g.item_id === l.id && g.canal_id === l.canal.id && g.data > corte30).reduce((s, g) => s + num(g.vendas), 0);

@@ -1,3 +1,4 @@
+import { dataSP } from "./datas.js";
 // Lógica da aba "Fluxo de Caixa" — funções puras (sem Supabase), pra ser
 // fácil de conferir. Datas sempre como string "YYYY-MM-DD" (coluna date do
 // Supabase) e meses como "YYYY-MM", comparadas como texto — evita erro de
@@ -31,8 +32,9 @@ export function rotuloCategoria(tipo, key) {
 
 const pad = (n) => String(n).padStart(2, "0");
 
+// "Hoje" (ou a data de `d`) no fuso de São Paulo — ver lib/datas.js.
 export function hojeISO(d = new Date()) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return dataSP(d);
 }
 
 export const mesDe = (iso) => (iso || "").slice(0, 7);

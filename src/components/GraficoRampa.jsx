@@ -1,3 +1,4 @@
+import { hojeSP } from "../lib/datas.js";
 import { useState } from "react";
 import { BRL } from "../lib/format.js";
 
@@ -205,7 +206,7 @@ export default function GraficoRampa({ est }) {
           ) : null
         )}
         {pontos.map((p, i) => (
-          <text key={`x${p.data}`} x={cx(i)} y={H - 8} textAnchor="middle" className="eixo">{i === pontos.length - 1 && p.data === new Date().toISOString().slice(0, 10) ? "hoje" : dataBR(p.data)}</text>
+          <text key={`x${p.data}`} x={cx(i)} y={H - 8} textAnchor="middle" className="eixo">{i === pontos.length - 1 && p.data === hojeSP() ? "hoje" : dataBR(p.data)}</text>
         ))}
         {pontos.map((p, i) => (
           <rect key={`h${p.data}`} x={padL + larg * i} y={0} width={larg} height={H} fill="transparent" onMouseEnter={() => setHover(i)} onClick={() => setHover(i)} />

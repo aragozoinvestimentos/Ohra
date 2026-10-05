@@ -1,3 +1,4 @@
+import { hojeSP } from "../lib/datas.js";
 import { Fragment, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -196,7 +197,7 @@ export default function Publicar({ onToast }) {
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `anunciar-${String(c.nome || c.tipo).toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `anunciar-${String(c.nome || c.tipo).toLowerCase().replace(/\s+/g, "-")}-${hojeSP()}.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }

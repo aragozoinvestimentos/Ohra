@@ -1,3 +1,4 @@
+import { hojeSP } from "../lib/datas.js";
 import { useEffect, useMemo, useState } from "react";
 import { BRL, PCT } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -61,8 +62,7 @@ export default function Metas({ onToast }) {
   // outra linha (ainda não criada, então os campos ficam em branco até você
   // definir a meta desse mês novo).
   const mesAtual = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return hojeSP().slice(0, 7);
   }, []);
   const [caixaMes, setCaixaMes] = useState(null); // lançamentos realizados no mês (Fluxo de Caixa) — null = indisponível
   const mesLabel = `${MESES_PT[Number(mesAtual.split("-")[1]) - 1]}/${mesAtual.split("-")[0]}`;

@@ -16,8 +16,12 @@ export const PCT = (v) => {
 export const arredondarPreco = (v) => Math.round(Number(v) * 1000) / 1000;
 
 // Data curta pt-BR; valor ausente ou inválido vira "—" (em vez de "Invalid Date").
+// Data só (YYYY-MM-DD) é mostrada como está (new Date("2026-10-05") é meia-noite
+// UTC = dia 4 às 21h no Brasil); timestamp vira data no fuso de São Paulo.
 export const DATA = (v) => {
   if (!v) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v));
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   const d = new Date(v);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR");
+  return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 };

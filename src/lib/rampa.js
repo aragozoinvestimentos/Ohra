@@ -9,6 +9,7 @@
 // da semana não caiu e se as vendas ficaram ≥ 60% — 1 semana ruim = segurar,
 // 2 seguidas = sugerir voltar um degrau.
 import { lucroNoPreco, precoParaLucro, precoParaMargem } from "./escada.js";
+import { dataSP } from "./datas.js";
 
 export const REGRAS_PADRAO = {
   avaliacoes: 10, // avaliações novas por degrau
@@ -150,7 +151,7 @@ export function metricasFunil(rampa, registros, regras, hoje) {
   const regs = (registros || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.criado_em || "").localeCompare(String(b.criado_em || "")));
   const temFunil = (r) => r.tipo === "semana" && r.visualizacoes != null && r.visitas != null;
   const comDados = regs.filter(temFunil);
-  const inicio = regs.find((r) => r.tipo === "inicio")?.data || String(rampa.criado_em || hoje).slice(0, 10);
+  const inicio = regs.find((r) => r.tipo === "inicio")?.data || (rampa.criado_em ? dataSP(rampa.criado_em) : hoje);
   const diasRampa = Math.max(0, diasEntre(inicio, hoje));
   const noPreco = comDados.filter((r) => preco != null && Math.abs(num(r.preco) - preco) < 0.005);
   const semAds = noPreco.filter((r) => !(num(r.ads_gasto) > 0));
@@ -368,7 +369,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
 
   // ---- Teste de lançamento (Ads com orçamento fechado) ----
   const inicioReg = regs.find((r) => r.tipo === "inicio");
-  const inicioRampa = inicioReg?.data || String(rampa.criado_em || hoje).slice(0, 10);
+  const inicioRampa = inicioReg?.data || (rampa.criado_em ? dataSP(rampa.criado_em) : hoje);
   const diasRampa = Math.max(0, diasEntre(inicioRampa, hoje));
   const lucroNoAlvo = lucroEm(alvo);
   const orcInfo = detalheOrcamentoTeste(lucroNoAlvo, regras);

@@ -1292,3 +1292,4 @@ tr.linha-detalhe > td, tr.linha-detalhe:hover > td { background: var(--surface-3
 .chip-cel.ok { background: var(--good-soft); color: var(--good); }
 .txt-anuncio { background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
 .kv-cel .input-conc { margin: 2px 0; max-width: 160px; }
+.aviso-intervalo { margin: 4px 0 8px; padding: 6px 10px; }

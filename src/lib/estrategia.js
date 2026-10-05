@@ -9,6 +9,8 @@
 //   4) regras gerais (mínimo aceitável, comissão máxima…).
 // As telas NÃO calculam alerta por conta própria: chamam estrategiaEfetiva +
 // alertaPreco.
+import { hojeSP } from "./datas.js";
+
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
   return isFinite(x) ? x : 0;
@@ -24,9 +26,9 @@ export const PRAZO_CRESCIMENTO_DIAS = 30;
 // vencer a estratégia (centavos de taxa/custo não contam).
 export const FOLGA_LUCRO_REF = 0.05;
 
+// "Hoje" no fuso de São Paulo (lib/datas.js).
 export function hojeLocal() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return hojeSP();
 }
 
 export function somarDiasIso(iso, dias) {

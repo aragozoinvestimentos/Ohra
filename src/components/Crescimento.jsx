@@ -1434,6 +1434,33 @@ function periodoFunil(registros, data) {
 }
 const VAZIO_AF = { afVendas: "", afComissao: "", parceiro: "" };
 
+// Cada "Registrar semana" conta como UMA semana nas contas (funil, ROAS, check
+// da subida, acima do alvo, afiliados) — registrar antes de ~7 dias distorce.
+// Devolve o aviso (ou null) pra data escolhida, a partir do último registro
+// (ou do início da rampa). Teste em andamento: Ads pode ser diário.
+const DIAS_MIN_SEMANA = 6;
+function avisoIntervalo(datasAnteriores, data, { inicio = null, teste = false } = {}) {
+  const antes = (datasAnteriores || []).filter((d) => d && d <= data).sort();
+  const ult = antes[antes.length - 1] || null;
+  const ref = ult || (inicio && inicio <= data ? inicio : null);
+  if (!ref) return null;
+  const dias = diasEntreIso(ref, data);
+  if (dias >= DIAS_MIN_SEMANA) return null;
+  const desde = ult ? `o último registro (${diaMes(ult)})` : `o início da rampa (${diaMes(ref)})`;
+  const quando = diaMes(somaDias(ref, 7));
+  if (teste)
+    return { tom: "neutro", texto: `Teste em andamento: pode registrar o Ads (gasto, cliques, vendas via Ads) todo dia. Vendas, avaliações e impressões da semana, só a partir de ${quando}.` };
+  return {
+    tom: "warn",
+    texto:
+      dias === 0
+        ? `Já existe registro neste dia (${diaMes(ref)}). Um novo registro conta como mais uma semana inteira.`
+        : `Faz só ${dias} dia${dias === 1 ? "" : "s"} desde ${desde}: este registro vai contar como uma semana inteira (funil, ROAS, check da subida). Melhor registrar a partir de ${quando}. Dá pra registrar mesmo assim.`,
+  };
+}
+const AvisoIntervalo = ({ aviso }) =>
+  aviso ? <div className={`alerta alerta-${aviso.tom === "warn" ? "warn" : "neutro"} aviso-intervalo`}>{aviso.texto}</div> : null;
+
 // Uma janela só pra semana: produtos em rampa (vendas, avaliações, nota, 1–2★,
 // Ads) + bloco Afiliado nos itens com comissão ativa — e os itens com
 // afiliado fora de rampa (kits, variações, produtos no alvo sem rampa).
@@ -1593,6 +1620,13 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
             <div className="bloco-semana-titulo">
               <b>{l.produto.nome}</b> <CanalTag canal={l.canal} /> <span className="muted-cel">em rampa · vendendo {BRL(l.est.preco)} · {l.est.avaliacoesTotal} avaliações até agora</span>
             </div>
+            <AvisoIntervalo
+              aviso={avisoIntervalo(
+                l.est.registros.filter((g) => g.tipo === "semana").map((g) => g.data),
+                data,
+                { inicio: l.est.registros.find((g) => g.tipo === "inicio")?.data || null, teste: l.est.teste.status === "andamento" }
+              )}
+            />
             <div className="grid-semana">
               <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={f[l.r.id].vendas} onChange={set(l.r.id, "vendas")} /></div>
               <div className="field"><label>Avaliações (total)</label><input type="number" min="0" value={f[l.r.id].avaliacoes} onChange={set(l.r.id, "avaliacoes")} /></div>
@@ -1615,7 +1649,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
                       <b>
                         {per.modo} — {diaMes(per.inicio)} a {diaMes(per.fim)}
                       </b>
-                      {per.modo === "Personalizado" ? ` (${per.dias} dias, emendando no registro anterior, sem pular dias)` : ""}. Opcional — o que ficar em branco não é gravado.
+                      {per.modo === "Personalizado" ? ` (${per.dias} dias, emendando no registro anterior, sem pular dias)` : ""} — termina ontem porque o dia de hoje ainda não fechou na Shopee. Opcional — o que ficar em branco não é gravado.
                     </p>
                   );
                 })()}
@@ -1635,6 +1669,12 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
           <div className="bloco-semana-titulo">
             <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">fora de rampa · vendendo {BRL(x.preco)}</span>
           </div>
+          <AvisoIntervalo
+            aviso={avisoIntervalo(
+              (af.registros || []).filter((g) => g.item_tipo === x.tipo && g.item_id === x.id && g.canal_id === x.canal.id).map((g) => g.data),
+              data
+            )}
+          />
           <div className="grid-semana">
             <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={f[x.chave].vendas} onChange={set(x.chave, "vendas")} /></div>
             <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={f[x.chave].gasto} onChange={set(x.chave, "gasto")} /></div>
