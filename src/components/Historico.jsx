@@ -11,6 +11,8 @@ import { useEscada } from "../hooks/useEscada.js";
 import { statusPrecoSalvo, sugestaoKit, configEscada, pareceAtracao, precoMinimoAceitavel } from "../lib/escada.js";
 import { alertaPreco, rotuloEstrategia, ESTRATEGIAS } from "../lib/estrategia.js";
 import EstrategiaDialog from "./EstrategiaDialog.jsx";
+import FreteAviso from "./FreteAviso.jsx";
+import { dicaKitFreteGratis, opcoesKitDoProduto } from "../lib/freteGratis.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -253,8 +255,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
   }
 
   // O que a célula mostra: preço, lucro · margem (cor SÓ do alertaDe) e no
-  // máximo UMA etiqueta, por prioridade: prejuízo > abaixo do mínimo > custo
-  // mudou > em rampa > estratégia. O resto fica no detalhe.
+  // máximo UMA etiqueta, por prioridade: prejuízo > abaixo do mínimo > frete
+  // grátis > custo mudou > em rampa > estratégia. O resto fica no detalhe.
   function infoCelula(item, canalObj) {
     const p = precoDe(item, canalObj);
     if (!p) return null;
@@ -262,14 +264,23 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const m = mudancaCusto(item, canalObj);
     const rampa = rampaDe(item, canalObj);
     const rotEst = al ? rotuloEstrategia(al.estrategia) : null;
-    const tom = p.margem == null || !al ? "" : al.tipo === "prejuizo" ? "ruim" : al.tipo === "abaixo-minimo" ? "atencao" : "boa";
+    const tom = p.margem == null || !al ? "" : al.tipo === "prejuizo" ? "ruim" : al.tipo === "abaixo-minimo" || al.tipo === "frete-gratis" ? "atencao" : "boa";
     let chip = null;
     if (al?.tipo === "prejuizo") chip = { cls: al.discreto ? "ruim discreto" : "ruim", txt: al.discreto && rotEst ? `prejuízo · ${rotEst}` : "prejuízo" };
     else if (al?.tipo === "abaixo-minimo") chip = { cls: "atencao", txt: al.estrategia?.vencida ? rotEst : "abaixo do mínimo" };
+    else if (al?.frete) chip = { cls: "atencao", txt: al.frete.curto };
     else if (m) chip = { cls: "neutro", txt: `custo ${sinal(m.dCusto)}` };
     else if (rampa != null) chip = { cls: "rampa", txt: `em rampa · ${BRL(rampa)}` };
     else if (rotEst) chip = { cls: al.estrategia.vencida ? "neutro vencida" : "neutro", txt: rotEst };
     return { p, al, m, rampa, tom, chip, rotEst };
+  }
+
+  // Avulso abaixo do frete grátis: a 1ª variação/kit com o produto que passa.
+  function dicaKit(item, canalObj) {
+    if (!item.id.startsWith("p:")) return null;
+    const p = precoDe(item, canalObj);
+    if (!p) return null;
+    return dicaKitFreteGratis(canalObj, Number(p.preco), opcoesKitDoProduto(item.id.slice(2), canalObj, itens, precos));
   }
 
   const diaMesIso = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}` : "");
@@ -328,6 +339,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
           )}
         </div>
         <div className="detalhe-cel-avisos">
+          {al?.frete && (
+            <div className="aviso-cel atencao">
+              <b>Cliente paga o frete</b> {al.frete.texto}.{dicaKit(item, canalObj) ? ` Dica: ${dicaKit(item, canalObj)}.` : ""}
+            </div>
+          )}
           {al && (al.tipo === "abaixo-minimo" || al.tipo === "prejuizo") && (
             <div className={`aviso-cel ${al.tipo === "prejuizo" && !al.discreto ? "ruim" : al.tipo === "prejuizo" ? "" : "atencao"}`}>
               <b>{al.tipo === "prejuizo" ? "Dando prejuízo" : `Abaixo do mínimo (${BRL(al.minimo)})`}</b>
@@ -853,7 +869,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
               <span><b>R$ 11,90</b> preço salvo (o que vale)</span>
               <span>lucro · margem de hoje (custo e taxas atuais)</span>
               <span><i className="leg-ponto boa" /> ok</span>
-              <span><i className="leg-ponto atencao" /> abaixo do mínimo</span>
+              <span><i className="leg-ponto atencao" /> abaixo do mínimo ou do frete grátis</span>
               <span><i className="leg-ponto ruim" /> prejuízo</span>
               <span><span className="chip-cel neutro">custo +R$0,40</span> custo mudou desde o salvar</span>
               <span><span className="chip-cel rampa">em rampa</span> vendendo abaixo, rumo ao salvo</span>
@@ -1084,11 +1100,12 @@ export default function Historico({ onEditarCompleto, onToast }) {
           {resultadoEdicao && (() => {
             // Preço novo = decisão nova (Normal) — o alerta é o da função única.
             const minimo = precoMinimoAceitavel(editAlvo.canal, Number(editAlvo.custoTotal) || 0, Number(editAlvo.peso) || 0, cfgDoProduto(editAlvo.produtoId));
-            const al = alertaPreco({ lucro: resultadoEdicao.lucro, preco: numOuNull(edicao.preco), minimo, estrategia: { chave: "normal" } });
+            const al = alertaPreco({ lucro: resultadoEdicao.lucro, preco: numOuNull(edicao.preco), minimo, estrategia: { chave: "normal" }, canal: editAlvo.canal });
             const atual = editAlvo.linha?.estrategia;
             return (
               <>
-                {al.tipo && (
+                <FreteAviso frete={al.frete} />
+                {(al.tipo === "prejuizo" || al.tipo === "abaixo-minimo") && (
                   <div className={`alerta alerta-${al.tipo === "prejuizo" ? "bad" : "warn"}`} style={{ marginTop: 8 }}>
                     <b>{al.tipo === "prejuizo" ? "Esse preço dá prejuízo" : `Abaixo do mínimo aceitável (${BRL(minimo)})`}</b>
                     {al.tipo === "abaixo-minimo" ? "Se for de propósito, salve e depois use “manter assim” na célula (crescimento ou atração)." : "Cada venda nesse preço tira dinheiro do seu bolso."}

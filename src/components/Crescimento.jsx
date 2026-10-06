@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import { alertaPreco } from "../lib/estrategia.js";
+import { menorFinalComFreteGratis } from "../lib/freteGratis.js";
+import FreteAviso from "./FreteAviso.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
@@ -7,10 +10,12 @@ import { BRL, PCT } from "../lib/format.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 
 // "2026-10-03" → "03/10" (sem passar por Date, que no fuso do Brasil voltaria um dia).
+// Frete grátis (v38) de um preço no canal — aviso único via alertaPreco.
+const freteDe = (valor, canal) => (canal && valor > 0 ? alertaPreco({ preco: valor, canal }).frete : null);
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
 import { anuncioDaRampa } from "../lib/rampaAnuncio.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
-import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, estadoRampa, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
+import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, estadoRampa, finalAcima, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -620,9 +625,13 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                 <div className="bar" style={{ height: alt(d) }} />
                 <b>{virgula(d)}</b>
                 <span className="lu">{Math.abs(d - e.alvo) < 0.005 ? "alvo · " : d > e.alvo + 0.004 ? "teste · " : ""}{BRL(e.lucroEm(d))}</span>
+                {freteDe(d, l.canal) && <span className="lu-frete" title={freteDe(d, l.canal).texto}>paga frete</span>}
               </div>
             ))}
           </div>
+          {e.degraus.some((d) => freteDe(d, l.canal)) && (
+            <FreteAviso frete={freteDe(Math.min(...e.degraus), l.canal)} dica={`degraus abaixo de ${BRL(freteDe(Math.min(...e.degraus), l.canal).min)} ficam sem frete grátis — o 1º degrau sugerido já parte de ${BRL(menorFinalComFreteGratis(l.canal, finalAcima))}`} />
+          )}
           <p className="hint" style={{ margin: "6px 0 0" }}>
             0 a 0 hoje: {BRL(e.zero)} (custo e taxas atuais). O lucro de cada degrau acompanha o custo ao vivo.
           </p>
@@ -918,6 +927,11 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                     <td className="num">
                       {virgula(a.clientePaga)}
                       {a.clientePaga - a.real >= 0.005 && <span className="muted-cel"> +{Math.round((a.clientePaga - a.real) * 100)}¢</span>}
+                      {freteDe(a.clientePaga, l.canal) && (
+                        <div>
+                          <FreteAviso frete={freteDe(a.clientePaga, l.canal)} compacto />
+                        </div>
+                      )}
                     </td>
                     <td className="num" style={{ color: a.lucro < 0 ? "var(--bad)" : undefined }}>{BRL(a.lucro)}</td>
                   </tr>
@@ -1348,16 +1362,17 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
                 const ultimo = k === listaFinal.length - 1;
                 const atual = editar ? Math.abs(d - num(editar.degraus[editar.degrau_atual])) < 0.005 : k === idxHoje;
                 return (
-                  <span key={`${d}-${k}`} className={`chip-degrau${atual ? " at" : ""}${ultimo ? " alvo" : ""}`}>
+                  <span key={`${d}-${k}`} className={`chip-degrau${atual ? " at" : ""}${ultimo ? " alvo" : ""}${freteDe(d, canal) ? " sem-frete" : ""}`}>
                     <button
                       type="button"
                       className="chip-degrau-valor"
                       disabled={!!editar || ultimo}
-                      title={editar ? undefined : ultimo ? "Alvo (preço salvo)" : "Estou vendendo neste preço hoje"}
+                      title={`${editar ? "" : ultimo ? "Alvo (preço salvo)" : "Estou vendendo neste preço hoje"}${freteDe(d, canal) ? `${editar || ultimo ? "" : " · "}${freteDe(d, canal).texto}` : ""}` || undefined}
                       onClick={() => setPrecoHoje(virgula(d))}
                     >
                       {virgula(d)}
                       {ultimo ? " alvo" : ""}
+                      {freteDe(d, canal) ? " · paga frete" : ""}
                     </button>
                     {!ultimo && !atual && (
                       <button

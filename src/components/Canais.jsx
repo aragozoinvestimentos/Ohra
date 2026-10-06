@@ -72,7 +72,7 @@ function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSal
 // (riscado) = preço real ÷ (1 − desconto) pra digitar na plataforma
 // (Precificação por Canal → Anunciar). Vazio = sem desconto exibido. Sem a
 // coluna nova, mostra o acréscimo antigo da Olist convertido.
-function CampoDesconto({ canal, onToast, onAtualizado }) {
+function CampoDesconto({ canal, onToast }) {
   const [salvo, disparar] = useSalvoFlash();
   const atual = canal.desconto_anuncio_pct != null ? canal.desconto_anuncio_pct : canal.acrescimo_olist_pct != null ? descontoPadraoCanal(canal) : null;
   const [valor, setValor] = useState(null);
@@ -91,7 +91,6 @@ function CampoDesconto({ canal, onToast, onAtualizado }) {
       onToast(/desconto_anuncio_pct|column/i.test(error.message) ? "Rode o SQL v30 no Supabase pra salvar o desconto" : "Não foi possível atualizar — tente de novo");
       return;
     }
-    onAtualizado?.(novo);
     setValor(null);
     disparar();
   }
@@ -111,6 +110,50 @@ function CampoDesconto({ canal, onToast, onAtualizado }) {
         onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
       />
       %
+      {salvo && <span className="salvo-check">✓</span>}
+    </span>
+  );
+}
+
+// Pedido mínimo pra frete grátis (schema v38) — o que conta é o que o cliente
+// paga no pedido; abaixo disso o app avisa "o cliente paga o frete". Vazio =
+// não se aplica no canal. Shopee nasce com R$ 10.
+function CampoFreteGratis({ canal, onToast }) {
+  const [salvo, disparar] = useSalvoFlash();
+  const atual = canal.frete_gratis_min;
+  const [valor, setValor] = useState(null);
+  const exibido = valor ?? (atual == null || atual === "" ? "" : String(atual).replace(".", ","));
+  async function salvar() {
+    if (valor === null) return;
+    const txt = valor.trim().replace(",", ".");
+    const novo = txt === "" ? null : Number(txt);
+    if (novo != null && (!isFinite(novo) || novo < 0)) {
+      onToast("Informe um valor em R$ (ou deixe vazio)");
+      return;
+    }
+    const { error } = await supabase.from("canais").update({ frete_gratis_min: novo || null }).eq("id", canal.id);
+    recarregarCatalogo();
+    if (error) {
+      onToast(/frete_gratis_min|column/i.test(error.message) ? "Rode o SQL v38 no Supabase pra salvar o frete grátis" : "Não foi possível atualizar — tente de novo");
+      return;
+    }
+    setValor(null);
+    disparar();
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+      R$
+      <input
+        type="text"
+        inputMode="decimal"
+        placeholder="—"
+        title="Pedido mínimo p/ frete grátis (R$): abaixo disso o cliente paga o frete. Vazio = não se aplica."
+        style={{ width: 70, textAlign: "right" }}
+        value={exibido}
+        onChange={(e) => setValor(e.target.value)}
+        onBlur={salvar}
+        onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+      />
       {salvo && <span className="salvo-check">✓</span>}
     </span>
   );
@@ -271,6 +314,7 @@ export default function Canais({ onToast }) {
                   <th className="num">Custos fixos</th>
                   <th className="num">% Ads</th>
                   <th className="num">Desconto no anúncio</th>
+                  <th className="num" title="Pedido mínimo p/ frete grátis (R$) — vazio = não se aplica">Pedido mín. frete grátis</th>
                   <th></th>
                 </tr>
               </thead>
@@ -305,7 +349,10 @@ export default function Canais({ onToast }) {
                       <CampoEditavel canal={c} campo="ads_pct" isPct sufixo="%" edicoes={edicoes} setEdicoes={setEdicoes} onSalvar={salvarCampo} />
                     </td>
                     <td className="num">
-                      <CampoDesconto canal={c} onToast={onToast} onAtualizado={(v) => setCanais((prev) => prev.map((x) => (x.id === c.id ? { ...x, desconto_anuncio_pct: v } : x)))} />
+                      <CampoDesconto canal={c} onToast={onToast} />
+                    </td>
+                    <td className="num">
+                      <CampoFreteGratis canal={c} onToast={onToast} />
                     </td>
                     <td>
                       {(c.tipo === "custom" || c.tipo === "tiktok" || c.tipo === "shein") && (

@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { alertaPreco } from "../lib/estrategia.js";
+import FreteAviso from "./FreteAviso.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { mapaAnuncioRampa } from "../lib/rampaAnuncio.js";
@@ -522,6 +524,11 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                                 <td className="num" style={{ color: "var(--ink-soft)" }}>
                                   {BRL(l.an.clientePaga)}
                                   {l.an.clientePaga - l.an.real > 0.004 && <span className="ficha-centavo"> +{Math.round((l.an.clientePaga - l.an.real) * 100)}¢</span>}
+                                  {canal && alertaPreco({ preco: l.an.clientePaga, canal }).frete && (
+                                    <div>
+                                      <FreteAviso frete={alertaPreco({ preco: l.an.clientePaga, canal }).frete} compacto />
+                                    </div>
+                                  )}
                                   {l.an.emRampa && (
                                     <div>
                                       <span className="rampa-tag" title="Em rampa de preço (Vender → Crescimento): números do degrau atual — riscado fixo no alvo, só a promo muda. No alvo volta pro preço salvo.">

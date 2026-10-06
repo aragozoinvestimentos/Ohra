@@ -41,7 +41,7 @@ export function useEscada() {
       const cfg = cfgDoProduto(item.produtoId || (tipo === "produto" ? item.id.slice(2) : null));
       const minimo = precoMinimoAceitavel(canal, Number(item.custoTotal) || 0, Number(item.peso) || 0, cfg);
       const estrategia = estrategiaEfetiva(item, canal, { precos, emRampa });
-      return { linha, minimo, estrategia, ...alertaPreco({ lucro: linha.lucro, preco: Number(linha.preco), minimo, estrategia }) };
+      return { linha, minimo, estrategia, ...alertaPreco({ lucro: linha.lucro, preco: Number(linha.preco), minimo, estrategia, canal }) };
     },
     [precos, cfgDoProduto, emRampa]
   );

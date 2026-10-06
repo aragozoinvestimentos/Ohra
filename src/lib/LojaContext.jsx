@@ -168,11 +168,14 @@ export function LojaProvider({ children }) {
     // Toda loja nova já nasce com Shopee, Mercado Livre e Shein cadastrados —
     // mesmo padrão da loja default (item ajustável depois em Canais).
     try {
-      await supabase.from("canais").insert([
-        { nome: "Shopee", tipo: "shopee", loja_id: data.id },
+      const padrao = (freteShopee) => [
+        { nome: "Shopee", tipo: "shopee", loja_id: data.id, ...freteShopee },
         { nome: "Mercado Livre", tipo: "ml", loja_id: data.id },
         { nome: "Shein", tipo: "shein", loja_id: data.id },
-      ]);
+      ];
+      // Shopee nasce com frete grátis a partir de R$ 10 (v38); sem a coluna, sem ele.
+      const { error } = await supabase.from("canais").insert(padrao({ frete_gratis_min: 10 }));
+      if (error && /frete_gratis_min/i.test(error.message)) await supabase.from("canais").insert(padrao({}));
     } catch {
       // falha de rede ao semear os canais padrão — a loja já foi criada;
       // dá pra cadastrar os canais manualmente em Configuração → Canais.

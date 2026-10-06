@@ -1293,3 +1293,7 @@ tr.linha-detalhe > td, tr.linha-detalhe:hover > td { background: var(--surface-3
 .txt-anuncio { background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
 .kv-cel .input-conc { margin: 2px 0; max-width: 160px; }
 .aviso-intervalo { margin: 4px 0 8px; padding: 6px 10px; }
+.chip-frete { display: inline-block; }
+.aviso-frete { margin: 8px 0; padding: 6px 10px; }
+.ladder .lu-frete { display: block; font-size: 9.5px; color: var(--warn); font-weight: 600; }
+.chip-degrau.sem-frete .chip-degrau-valor { color: var(--warn); }

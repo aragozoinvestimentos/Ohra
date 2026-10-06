@@ -4,7 +4,9 @@ import BuscaItem from "./BuscaItem.jsx";
 import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, reservaProducao } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
-import { gravarPrecoNovo } from "../lib/estrategia.js";
+import { gravarPrecoNovo, alertaPreco } from "../lib/estrategia.js";
+import { freteGratisMin, dicaKitFreteGratis, opcoesKitDoProduto } from "../lib/freteGratis.js";
+import FreteAviso from "./FreteAviso.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import Termometro from "./Termometro.jsx";
@@ -340,6 +342,14 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         )
       : null;
 
+  // Frete grátis (schema v38): preço calculado e preço salvo abaixo do pedido
+  // mínimo do canal → o cliente paga o frete (aviso via alertaPreco).
+  const freteMin = freteGratisMin(canalCadastrado);
+  const freteCalc = !semCusto && resultado.preco > 0 ? alertaPreco({ lucro: resultado.lucro, preco: resultado.preco, canal: canalCadastrado }).frete : null;
+  const freteSalvo = precoExistente ? alertaPreco({ lucro: precoExistente.lucro, preco: Number(precoExistente.preco), canal: canalCadastrado }).frete : null;
+  const pidFrete = baseSelecionada.startsWith("p:") ? baseSelecionada.slice(2) : null;
+  const dicaFrete = pidFrete && (freteCalc || freteSalvo) ? dicaKitFreteGratis(canalCadastrado, freteCalc ? resultado.preco : Number(precoExistente?.preco), opcoesKitDoProduto(pidFrete, canalCadastrado, baseItens, precos)) : null;
+
   // Kit de produtos diferentes: sugerido comparando com as peças vendidas
   // separadas nesse canal (mesma lógica da escada — ver sugestaoKit).
   const canalAjustado = canalCadastrado ? { ...canalCadastrado, imposto_pct: n(f.imposto) / 100, custos_fixos_pct: n(f.custosFixos) / 100 } : null;
@@ -556,6 +566,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                 {precoExistente.margem != null ? ` · ${PCT(precoExistente.margem)}` : ""}
               </>
             )}
+            {freteSalvo && <span className="atencao-txt" title={freteSalvo.texto}> · abaixo do frete grátis</span>}
           </span>
         )}
         {refs && (
@@ -567,11 +578,18 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                 · <b>concorrente {BRL(refs.concorrente)}</b>
               </>
             )}
+            {freteMin != null && (
+              <>
+                {" "}
+                · <b>frete grátis {BRL(freteMin)}</b>
+              </>
+            )}
           </span>
         )}
       </div>
     )}
     </ResumoFixo>
+    <FreteAviso frete={freteCalc || freteSalvo} dica={dicaFrete} />
     {sugKit && (
       <div className="kit-sep">
         <div className="kit-sep-linha">

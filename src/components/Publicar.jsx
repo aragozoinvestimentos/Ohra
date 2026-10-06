@@ -4,6 +4,9 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { mapaAnuncioRampa, descricaoMudanca } from "../lib/rampaAnuncio.js";
+import { alertaPreco } from "../lib/estrategia.js";
+import { dicaKitFreteGratis } from "../lib/freteGratis.js";
+import FreteAviso from "./FreteAviso.jsx";
 import { BRL } from "../lib/format.js";
 import { calcularAnuncio, anuncioMudou, descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
@@ -59,7 +62,9 @@ export default function Publicar({ onToast }) {
           // Regra de 4× da Shopee: sempre pelo preço SALVO (alvo) — a promo
           // temporária da rampa não decide quantas unidades cabem no anúncio.
           const anSalvo = ra ? calcularAnuncio(Number(s.preco), desconto) : an;
-          porCanal[c.id] = { ...an, proprio, salvo, mudou, nunca: !salvo, rampa: ra, anSalvo, oQueMudou: mudou && salvo ? descricaoMudanca(salvo, an) : null };
+          // Frete grátis (v38): pelo que o cliente PAGA (cliente_paga, depois da promo).
+          const frete = alertaPreco({ preco: an.clientePaga, canal: c }).frete;
+          porCanal[c.id] = { ...an, proprio, salvo, mudou, nunca: !salvo, rampa: ra, anSalvo, frete, oQueMudou: mudou && salvo ? descricaoMudanca(salvo, an) : null };
         }
         if (!Object.keys(porCanal).length) return null;
         const pendentes = Object.values(porCanal).filter((x) => x.mudou).length;
@@ -202,6 +207,17 @@ export default function Publicar({ onToast }) {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // Avulso abaixo do frete grátis: 1ª variação/kit do produto que passa (pelo cliente paga).
+  function dicaFretePub(l, c) {
+    if (l.tipo !== "produto") return null;
+    const pid = l.item.id.slice(2);
+    const opcoes = linhas
+      .filter((o) => (o.tipo === "variacao" && o.item.produtoId === pid) || (o.tipo === "kit" && (o.item.componentes || []).some((k) => k.produtoId === pid)))
+      .filter((o) => o.porCanal[c.id])
+      .map((o) => ({ n: o.item.pecas || 2, valor: o.porCanal[c.id].clientePaga, rotulo: o.tipo === "kit" ? o.item.nome : `${o.item.pecas} un.` }));
+    return dicaKitFreteGratis(c, l.porCanal[c.id].clientePaga, opcoes);
+  }
+
   // Detalhe de uma célula (abre na linha de baixo): o que digitar, desconto
   // (editável), rampa, o que trocar e "feito".
   function detalhe(l, c) {
@@ -275,6 +291,11 @@ export default function Publicar({ onToast }) {
           </div>
         </div>
         <div className="detalhe-cel-avisos">
+          {x.frete && (
+            <div className="aviso-cel atencao">
+              <b>Cliente paga o frete</b> {x.frete.texto}.{dicaFretePub(l, c) ? ` Dica: ${dicaFretePub(l, c)}.` : ""}
+            </div>
+          )}
           {x.rampa && (
             <div className="aviso-cel rampa">
               <b>{x.rampa.acima ? "Testando acima do alvo" : "Em rampa"} · use o preço da Rampa</b> Vendendo {BRL(x.rampa.real)} (Vender → Crescimento): riscado fixo no alvo, só a promo muda. Quando chegar no alvo, volta pro preço salvo.
@@ -415,9 +436,10 @@ export default function Publicar({ onToast }) {
                             <span className="chip-cel rampa">{x.rampa.acima ? "testando acima" : "rampa"}{x.mudou ? " · ↻" : ""}</span>
                           ) : x.mudou ? (
                             <span className="chip-cel atencao">{x.nunca ? "novo" : "↻ atualizar"}</span>
-                          ) : (
+                          ) : x.frete ? null : (
                             <span className="chip-cel ok">✓ em dia</span>
                           )}
+                          <FreteAviso frete={x.frete} compacto />
                         </button>
                       </td>
                     );

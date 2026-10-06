@@ -10,6 +10,7 @@
 // 2 seguidas = sugerir voltar um degrau.
 import { lucroNoPreco, precoParaLucro, precoParaMargem } from "./escada.js";
 import { dataSP } from "./datas.js";
+import { menorFinalComFreteGratis } from "./freteGratis.js";
 
 export const REGRAS_PADRAO = {
   avaliacoes: 10, // avaliações novas por degrau
@@ -90,13 +91,18 @@ export function zeroAZero(canal, custo, peso, cfg) {
   return p != null ? Math.ceil(p * 100 - 1e-6) / 100 : null;
 }
 
-// Degraus sugeridos: do 1º (0 a 0 + lucroEntrada, final ,49/,99) até o alvo,
+// Degraus sugeridos: do 1º (0 a 0 + lucroEntrada, final ,49/,99 — nunca abaixo
+// do frete grátis do canal) até o alvo,
 // cada um no máximo `passo` acima do anterior (arredondado pros finais).
 export function sugerirDegraus({ canal, custo, peso, cfg, alvo, regras = REGRAS_PADRAO }) {
   const a = cent(num(alvo));
   if (!(a > 0)) return [];
   const pe = precoParaLucro(canal, num(regras.lucroEntrada), custo, peso, cfg);
   let p = pe != null ? finalAcima(pe) : a;
+  // Nenhum degrau sugerido abaixo do pedido mínimo do frete grátis (v38): o 1º
+  // vira o menor final ,49/,99 que já tem frete grátis, se for maior.
+  const pFrete = menorFinalComFreteGratis(canal, finalAcima);
+  if (pFrete != null && pFrete > p) p = pFrete;
   if (p >= a) return [a];
   const out = [p];
   for (let i = 0; i < 40; i++) {

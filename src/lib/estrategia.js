@@ -10,6 +10,7 @@
 // As telas NÃO calculam alerta por conta própria: chamam estrategiaEfetiva +
 // alertaPreco.
 import { hojeSP } from "./datas.js";
+import { avisoFreteGratis } from "./freteGratis.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -123,21 +124,29 @@ export function estrategiaEfetiva(item, canal, { precos = [], rampas = [], emRam
 /**
  * Alerta ÚNICO do preço salvo (todas as telas usam esta função).
  * { lucro, preco, minimo (preço mínimo aceitável no canal) ou lucroMinimo, estrategia }
- * → { tipo: 'prejuizo'|'abaixo-minimo'|null, discreto, silenciado }
+ * → { tipo: 'prejuizo'|'abaixo-minimo'|'frete-gratis'|null, discreto, silenciado, frete }
  */
 // lucroMinimo (opcional) = piso em R$ de lucro no lugar do preço mínimo —
 // pra quando o preço é o mesmo e o lucro muda (comissão de afiliado).
-export function alertaPreco({ lucro, preco, minimo, lucroMinimo = null, estrategia }) {
+//
+// Frete grátis (schema v38): com `canal`, o valor que o cliente paga
+// (`valorCliente`, padrão = preço) abaixo do pedido mínimo do canal gera o
+// aviso `frete` ({ min, valor, texto, curto }) — nível atenção, não é
+// prejuízo e NÃO depende da estratégia. Vem SEMPRE no campo `frete`; `tipo`
+// só vira 'frete-gratis' quando não há prejuízo nem abaixo do mínimo.
+export function alertaPreco({ lucro, preco, minimo, lucroMinimo = null, estrategia, canal = null, valorCliente = null }) {
   const especial = estrategia && estrategia.chave !== "normal";
-  if (lucro != null && num(lucro) < 0) return { tipo: "prejuizo", discreto: !!especial };
+  const frete = canal ? avisoFreteGratis(canal, valorCliente ?? preco) : null;
+  const comFrete = (r) => ({ ...r, frete, ...(r.tipo == null && frete ? { tipo: "frete-gratis" } : {}) });
+  if (lucro != null && num(lucro) < 0) return comFrete({ tipo: "prejuizo", discreto: !!especial });
   const abaixo =
     (minimo != null && num(preco) > 0 && num(preco) < num(minimo) - 0.004) ||
     (lucroMinimo != null && lucro != null && num(lucro) < num(lucroMinimo) - 0.004);
   if (abaixo) {
-    if (especial) return { tipo: null, discreto: false, silenciado: true };
-    return { tipo: "abaixo-minimo", discreto: false };
+    if (especial) return comFrete({ tipo: null, discreto: false, silenciado: true });
+    return comFrete({ tipo: "abaixo-minimo", discreto: false });
   }
-  return { tipo: null, discreto: false };
+  return comFrete({ tipo: null, discreto: false });
 }
 
 const diaMes = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");

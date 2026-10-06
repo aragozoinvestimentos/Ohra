@@ -3,6 +3,8 @@ import BuscaItem from "./BuscaItem.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { gravarPrecoNovo, alertaPreco } from "../lib/estrategia.js";
 import EditarDialog from "./EditarDialog.jsx";
+import FreteAviso from "./FreteAviso.jsx";
+import { dicaKitFreteGratis } from "../lib/freteGratis.js";
 import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
@@ -98,6 +100,12 @@ export default function PrecoPorQuantidade({ onToast }) {
   const anuncioDe = (n) => (regra4x ? regra4x.grupos.findIndex((g) => g.includes(n)) + 1 : 1);
   const k2 = kits.find((l) => l.n === 2);
   const melhor = kits.reduce((a, b) => (a == null || b.lucro > a.lucro ? b : a), null);
+  // Frete grátis (schema v38): aviso por linha pelo que o cliente paga (salvo,
+  // ou o sugerido) — só avisa, a escada não muda o preço por isso.
+  const freteDe = (valor) => (canal && valor > 0 ? alertaPreco({ preco: valor, canal }).frete : null);
+  const dicaFreteAvulso = e
+    ? dicaKitFreteGratis(canal, dados.salvo1 ?? dados.p1, kits.map((l) => ({ n: l.n, valor: l.salvo ?? l.sugerido })))
+    : null;
   const maxLpp = e ? Math.max(0.01, ...e.linhas.map((l) => (l.base ? e.l1 : l.lucroPorPeca))) : 1;
 
   async function salvarConcorrente(n, itemTipo, itemId) {
@@ -510,6 +518,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                           <td>
                             <b className="kit-n">1 un.</b>
                             <span className="sub">{dados.itemPai.nome} · base</span>
+                            <FreteAviso frete={freteDe(dados.salvo1 ?? l.sugerido)} compacto />
                           </td>
                           <td className="num">
                             <b>{BRL(l.sugerido)}</b>
@@ -549,6 +558,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                                 {{ atracao: "avulso em atração — escolhido", crescimento: "avulso em crescimento — escolhido", rampa: "avulso em rampa", sugerido: "sugerido: avulso parece atração" }[e.baseMotivo] || "avulso abaixo da margem desejada"})
                               </div>
                             )}
+                            <FreteAviso frete={freteDe(dados.salvo1 ?? l.sugerido)} dica={dicaFreteAvulso} />
                             <div>
                               <div className="legenda-tit" style={{ marginBottom: 4 }}>Texto pro anúncio</div>
                               <div className="txt-anuncio">{BRL(l.sugerido)} a unidade</div>
@@ -567,6 +577,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                           <b className="kit-n">{l.n} un.</b>
                           <span className="sub">{l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}</span>
                           {l.concorrenteAbaixoDoPiso && <span className="chip-cel ruim">concorrente abaixo do mínimo</span>}
+                          <FreteAviso frete={freteDe(l.salvo ?? l.sugerido)} compacto />
                         </td>
                         <td className="num">
                           <span className="sug">{BRL(l.sugerido)}</span>
@@ -646,6 +657,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                             </label>
                           </div>
                           <div className="detalhe-cel-avisos">
+                            <FreteAviso frete={freteDe(l.salvo ?? l.sugerido)} />
                             {l.concorrenteAbaixoDoPiso && (
                               <div className="aviso-cel ruim">
                                 <b>Concorrente abaixo do seu mínimo</b> — não acompanhado: diferencie pelo kit, foto ou qualidade.
@@ -708,7 +720,7 @@ export default function PrecoPorQuantidade({ onToast }) {
       {confirmar && (confirmar.tipo === "aplicar" || confirmar.tipo === "criar") && (() => {
         const res = resultadoNoPrecoConfirmado(confirmar);
         const minimo = precoMinimoAceitavel(canal, confirmar.linha.custo, confirmar.linha.peso, cfg);
-        const al = alertaPreco({ lucro: res.lucro, preco: res.preco, minimo, estrategia: { chave: "normal" } });
+        const al = alertaPreco({ lucro: res.lucro, preco: res.preco, minimo, estrategia: { chave: "normal" }, canal });
         const editado = Math.abs(res.preco - confirmar.linha.sugerido) >= 0.005;
         return (
           <EditarDialog
@@ -747,7 +759,8 @@ export default function PrecoPorQuantidade({ onToast }) {
               </span>
             </div>
             {editado && <p className="hint" style={{ margin: "4px 0 0" }}>Diferente do sugerido ({BRL(confirmar.linha.sugerido)}).</p>}
-            {al.tipo && (
+            <FreteAviso frete={al.frete} />
+            {(al.tipo === "prejuizo" || al.tipo === "abaixo-minimo") && (
               <div className={`alerta alerta-${al.tipo === "prejuizo" ? "bad" : "warn"}`} style={{ marginTop: 8 }}>
                 <b>{al.tipo === "prejuizo" ? "Esse preço dá prejuízo" : `Abaixo do mínimo aceitável (${BRL(minimo)})`}</b>
                 {al.tipo === "prejuizo" ? "Cada venda nesse preço tira dinheiro do seu bolso." : "Dá pra salvar mesmo assim; depois, se for de propósito, use “manter assim” em Produtos precificados."}

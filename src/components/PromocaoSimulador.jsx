@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { alertaPreco } from "../lib/estrategia.js";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import BuscaItem from "./BuscaItem.jsx";
 import { ML_CATEGORY_PCT, calcCanalCustom, resolverFaixaML, resolverFaixaShein, resolverFaixaShopee, resolverFaixaTikTok, resultadoNoPreco } from "../lib/calc.js";
@@ -71,6 +72,9 @@ function AvisosPlataforma({ precoFinal, baseSelecionada, canal, itens, precos, p
   if (salvo && precoFinal < Number(salvo.preco) - 0.005) {
     avisos.push({ tom: "warn", titulo: "Campanha abaixo do preço real", texto: `O cliente paga ${BRL(precoFinal)} — ${BRL(Number(salvo.preco) - precoFinal)} abaixo do preço salvo (${BRL(Number(salvo.preco))}).` });
   }
+  // Frete grátis (v38): pelo preço final que o cliente paga na campanha.
+  const frete = alertaPreco({ preco: precoFinal, canal }).frete;
+  if (frete) avisos.push({ tom: "warn", titulo: "Cliente paga o frete", texto: `${frete.texto}.` });
   // escada
   const item = itens.find((i) => i.id === baseSelecionada);
   const produtoId = pref === "p" ? id : item?.produtoId;
