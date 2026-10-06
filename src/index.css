@@ -1297,3 +1297,7 @@ tr.linha-detalhe > td, tr.linha-detalhe:hover > td { background: var(--surface-3
 .aviso-frete { margin: 8px 0; padding: 6px 10px; }
 .ladder .lu-frete { display: block; font-size: 9.5px; color: var(--warn); font-weight: 600; }
 .chip-degrau.sem-frete .chip-degrau-valor { color: var(--warn); }
+button.ficha-anuncio-cab { width: 100%; border: 0; border-bottom: 1px solid var(--border); font: inherit; color: inherit; text-align: left; cursor: pointer; }
+button.ficha-anuncio-cab:hover { background: var(--surface-2); }
+.ficha-anuncio.recolhido button.ficha-anuncio-cab { border-bottom: 0; }
+.seta-ficha { color: var(--ink-faint); width: 12px; }

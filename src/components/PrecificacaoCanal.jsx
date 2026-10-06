@@ -4,7 +4,7 @@ import BuscaItem from "./BuscaItem.jsx";
 import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, reservaProducao } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
-import { gravarPrecoNovo, alertaPreco } from "../lib/estrategia.js";
+import { gravarPrecoNovo, alertaPreco, produtosEmRampa } from "../lib/estrategia.js";
 import { freteGratisMin, dicaKitFreteGratis, opcoesKitDoProduto } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -15,7 +15,8 @@ import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
-import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMinimo } from "../lib/escada.js";
+import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMinimo, sugestaoAncora } from "../lib/escada.js";
+import { useRampas } from "../hooks/useRampas.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
 import ResumoFixo from "./ResumoFixo.jsx";
@@ -51,7 +52,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [canalProprioId, setCanalProprioId] = useState("");
   const [confirmarKit, setConfirmarKit] = useState(false);
   const [verFilamentos, setVerFilamentos] = useState(false);
-  const { itens: baseItens, canais, produtos, precos, composicaoDoKit, materiais } = useRankingData();
+  const { itens: baseItens, canais, produtos, precos, composicaoDoKit, materiais, concorrentes } = useRankingData();
+  const { rampas } = useRampas();
   // margem de partida: a do produto escolhido (se tiver regras próprias) ou a da loja
   const produtoEscolhido = baseSelecionada.startsWith("p:") ? produtos.find((p) => p.id === baseSelecionada.slice(2)) : null;
   const margemLoja = useMargemDesejada(produtoEscolhido?.escada_config || null);
@@ -350,6 +352,16 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const pidFrete = baseSelecionada.startsWith("p:") ? baseSelecionada.slice(2) : null;
   const dicaFrete = pidFrete && (freteCalc || freteSalvo) ? dicaKitFreteGratis(canalCadastrado, freteCalc ? resultado.preco : Number(precoExistente?.preco), opcoesKitDoProduto(pidFrete, canalCadastrado, baseItens, precos)) : null;
 
+  // Âncora pro kit 2 (só sugestão): avulso que deixa o kit 2 (na margem
+  // desejada) com ~25% de economia vs 2 avulsos. Não aparece em rampa.
+  const canalAjustadoBase = canalCadastrado ? { ...canalCadastrado, imposto_pct: n(f.imposto) / 100, custos_fixos_pct: n(f.custosFixos) / 100 } : null;
+  const emRampaAqui = pidFrete && canalCadastrado ? produtosEmRampa(rampas, precos).has(`${pidFrete}|${canalCadastrado.id}`) : false;
+  const ancora =
+    pidFrete && canalAjustadoBase && !emRampaAqui && custoTotalAtual > 0
+      ? sugestaoAncora({ produtoId: pidFrete, canal: canalAjustadoBase, itens: baseItens, precos, concorrentes, cfg: cfgEscada })
+      : null;
+  const ancoraAcimaConc = ancora && (n(f.concorrente) > 0 ? ancora.preco > n(f.concorrente) : ancora.acimaConcorrente);
+
   // Kit de produtos diferentes: sugerido comparando com as peças vendidas
   // separadas nesse canal (mesma lógica da escada — ver sugestaoKit).
   const canalAjustado = canalCadastrado ? { ...canalCadastrado, imposto_pct: n(f.imposto) / 100, custos_fixos_pct: n(f.custosFixos) / 100 } : null;
@@ -582,6 +594,15 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               <>
                 {" "}
                 · <b>frete grátis {BRL(freteMin)}</b>
+              </>
+            )}
+            {ancora && (
+              <>
+                {" "}
+                · <b className={ancoraAcimaConc ? "atencao-txt" : undefined}>âncora p/ kit 2 {BRL(ancora.preco)}</b>{" "}
+                <Ajuda
+                  texto={`Preço de 1 un. que puxa pro kit 2: com o avulso a ${BRL(ancora.preco)}, o kit 2 a ${BRL(ancora.kit2)} (pela margem desejada${ancora.kit2Estimado ? ", custo estimado" : ""}) sai ${Math.round(ancora.economia * 100)}% mais barato que 2 avulsos — no preço da margem desejada (${BRL(ancora.precoMargem)}) seriam só ${Math.round(ancora.economiaNaMargem * 100)}%. Lucro no avulso: ${BRL(ancora.lucro)} (na margem desejada ${BRL(ancora.lucroMargem)}). Melhor pra produto já com avaliações, fora da rampa: o avulso é o preço que aparece na busca.${ancoraAcimaConc ? " Atenção: fica acima do concorrente." : ""} É só sugestão: se salvar o avulso nesse preço, confira o kit 2 no 2º Por quantidade — a escada calcula o kit a partir do avulso, então aplique o kit 2 em ${BRL(ancora.kit2)} (o preço é editável).`}
+                />
               </>
             )}
           </span>

@@ -52,6 +52,9 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
   const [sel, setSel] = useState("");
   const [canalId, setCanalId] = useState("");
   const [novaOpcao, setNovaOpcao] = useState({}); // { [idxVariacao]: { nome, sufixo } }
+  // Anúncios abertos/recolhidos: o 1º abre, os seguintes (2, 3… — muitas vezes
+  // só simulação, não cadastrados) começam recolhidos. Chave item|canal|nº.
+  const [abertos, setAbertos] = useState({});
   const [salvando, setSalvando] = useState(false);
   const [modoTres, setModoTres] = useState("juntar"); // "juntar" | "separar" — quando dá 3 variações
   const [skuEdit, setSkuEdit] = useState(null); // { itemId, valor }
@@ -393,16 +396,22 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
             {ficha.semSku.length > 0 && <span className="chk warn">⚠ Sem SKU: {ficha.semSku.map(rotuloItem).join(", ")} — clique no ✎ da tabela</span>}
           </div>
 
-          {ficha.anuncios.map((a, idx) => (
-            <div className="ficha-anuncio" key={idx}>
-              <div className="ficha-anuncio-cab">
+          {ficha.anuncios.map((a, idx) => {
+            const chaveAb = `${sel}|${canal?.id}|${idx}`;
+            const aberto = abertos[chaveAb] ?? (idx === 0 || ficha.anuncios.length === 1);
+            const qtds = [...new Set(a.linhas.map((l) => l.qtd).filter(Boolean))];
+            return (
+            <div className={`ficha-anuncio${aberto ? "" : " recolhido"}`} key={idx}>
+              <button type="button" className="ficha-anuncio-cab" aria-expanded={aberto} onClick={() => setAbertos((prev) => ({ ...prev, [chaveAb]: !aberto }))} title={aberto ? "Recolher este anúncio" : "Abrir este anúncio"}>
+                <span className="seta-ficha">{aberto ? "▾" : "▸"}</span>
                 <span className="ficha-n">ANÚNCIO {idx + 1}</span>
                 <b>{a.titulo}</b>
                 <span className="ficha-sp" />
                 <span className="ficha-meta">
-                  desconto {pctTxt(descontoPadraoCanal(canal))}% · {a.linhas.length} {a.linhas.length === 1 ? "opção" : "opções"}
+                  {!aberto && qtds.length > 0 ? `${qtds.join(", ")} · ` : ""}desconto {pctTxt(descontoPadraoCanal(canal))}% · {a.linhas.length} {a.linhas.length === 1 ? "opção" : "opções"}
                 </span>
-              </div>
+              </button>
+              {aberto && (
               <div className="ficha-blocos">
                 <div className="ficha-bloco">
                   <h4>
@@ -550,8 +559,10 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                   </div>
                 </div>
               </div>
+              )}
             </div>
-          ))}
+            );
+          })}
 
           <div className="ficha-rodape">
             <button type="button" className="btn btn-sm" onClick={exportarCsv}>

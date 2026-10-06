@@ -631,3 +631,39 @@ export function fatorOriginal(desconto) {
   const d = Math.max(0, Math.min(0.9, num(desconto)));
   return 1 / (1 - d);
 }
+
+// Âncora pro kit 2 (out/2026, SÓ sugestão — não muda escada nem estratégia):
+// preço de 1 un. que faz o kit 2, calculado pela MARGEM DESEJADA, aparecer com
+// `economia` (padrão 25%, cfg.economiaAncora) frente a 2 avulsos. null quando
+// não há kit 2 ou quando o preço da margem desejada já dá essa economia.
+export const ECONOMIA_ANCORA = 0.25;
+export function sugestaoAncora({ produtoId, canal, itens, precos, concorrentes = [], cfg }) {
+  const itemPai = (itens || []).find((i) => i.id === `p:${produtoId}`);
+  if (!itemPai || !canal || !cfg) return null;
+  const custo1 = num(itemPai.custoTotal);
+  const peso1 = num(itemPai.peso);
+  const pRef = precoParaMargem(canal, cfg.margemDesejada, custo1, peso1, cfg);
+  if (!(pRef > 0)) return null;
+  const p1Ref = r90up(pRef);
+  const d = escadaDoProduto({ produtoId, canal, itens, precos, concorrentes, cfg, p1Override: p1Ref, quantidadesExtras: [2] });
+  const k2 = d?.escada?.linhas.find((l) => l.n === 2);
+  if (!k2 || !(k2.sugerido > 0)) return null;
+  const economia = num(cfg.economiaAncora) > 0 ? num(cfg.economiaAncora) : ECONOMIA_ANCORA;
+  const economiaNaMargem = 1 - k2.sugerido / (2 * p1Ref);
+  const preco = Math.max(p1Ref, r90up(k2.sugerido / (2 * (1 - economia))));
+  if (preco <= p1Ref + 0.005) return null;
+  const conc = (concorrentes || []).find((c) => c.item_tipo === "produto" && c.item_id === produtoId && c.canal_id === canal.id);
+  return {
+    preco,
+    kit2: k2.sugerido,
+    kit2Cadastrado: !!k2.cadastrada,
+    kit2Estimado: !!k2.estimado,
+    economia: 1 - k2.sugerido / (2 * preco),
+    economiaNaMargem,
+    precoMargem: p1Ref,
+    lucro: lucroNoPreco(canal, preco, custo1, peso1, cfg),
+    lucroMargem: lucroNoPreco(canal, p1Ref, custo1, peso1, cfg),
+    concorrente: conc ? num(conc.preco) : null,
+    acimaConcorrente: !!conc && num(conc.preco) > 0 && preco > num(conc.preco),
+  };
+}
