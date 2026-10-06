@@ -9,7 +9,7 @@ import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
-import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, rotuloMinimo, escadaDoProduto, configEscada, lucroNoPreco, precoMinimoAceitavel } from "../lib/escada.js";
+import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, calcularAnuncio, rotuloMinimo, escadaDoProduto, configEscada, lucroNoPreco, precoMinimoAceitavel } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -87,7 +87,28 @@ export default function PrecoPorQuantidade({ onToast }) {
   const kits = e ? e.linhas.filter((l) => !l.base) : [];
   // Regra da Shopee (4×): preço usado = salvo (ou o sugerido, se não tem salvo);
   // preço original = com o desconto exibido no anúncio (canal ou do produto).
-  const fatorOrig = pid && canal ? fatorOriginal(descontoDoItem(`p:${pid}`, canal, { itens, produtos, kits: kitsCat }).desconto) : 1;
+  const descAnuncio = pid && canal ? descontoDoItem(`p:${pid}`, canal, { itens, produtos, kits: kitsCat }).desconto : 0;
+  const fatorOrig = pid && canal ? fatorOriginal(descAnuncio) : 1;
+  // "Preço de cadastro": o preço original (riscado) a cadastrar na plataforma
+  // pra que, com a promo do desconto do canal/produto, o cliente pague o
+  // preço real (mesma conta da 4º Anunciar — calcularAnuncio).
+  const celCadastro = (real, salvo) => {
+    const an = real > 0 ? calcularAnuncio(real, descAnuncio) : null;
+    const anSalvo = salvo != null && Math.abs(salvo - real) >= 0.005 ? calcularAnuncio(salvo, descAnuncio) : null;
+    return (
+      <td className="num">
+        {an ? (
+          <>
+            <b>{BRL(an.original)}</b>
+            <span className="sub">{an.promo ? `promo ${an.promo}% → paga ${BRL(an.clientePaga)}` : "sem desconto no canal"}</span>
+            {anSalvo && <span className="sub" title="Preço de cadastro do preço salvo (o que vale hoje)">salvo: {BRL(anSalvo.original)}</span>}
+          </>
+        ) : (
+          "—"
+        )}
+      </td>
+    );
+  };
   const regra4x =
     e && canal?.tipo === "shopee"
       ? gruposRegra4x(
@@ -497,6 +518,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                   <th>Kit</th>
                   <th className="num">Preço sugerido</th>
                   <th className="num">Lucro do pedido</th>
+                  <th className="num" title="Preço original (riscado) pra cadastrar na plataforma: com a promo do desconto do canal/produto, o cliente paga o preço sugerido">Preço de cadastro</th>
                   <th className="num">Cliente economiza</th>
                   <th className="num">Preço salvo</th>
                   <th></th>
@@ -512,7 +534,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                   const linhaDetalhe = (chave, conteudo) =>
                     selPQ === chave && (
                       <tr className="linha-detalhe" key={`d-${chave}`}>
-                        <td colSpan={6}>
+                        <td colSpan={7}>
                           <div className="detalhe-cel">{conteudo}</div>
                         </td>
                       </tr>
@@ -536,6 +558,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                             <span className="sub">{BRL(l.lucro)}/peça</span>
                             <div className="barra-lpp"><i style={{ width: `${Math.max(0, (l.lucro / maxLpp) * 100)}%` }} /></div>
                           </td>
+                          {celCadastro(l.sugerido, dados.salvo1)}
                           <td className="num">—</td>
                           <td className="num">
                             {dados.salvo1 != null ? BRL(dados.salvo1) : "—"}
@@ -595,6 +618,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                           <span className="sub">{BRL(l.lucroPorPeca)}/peça</span>
                           <div className="barra-lpp"><i style={{ width: `${Math.max(0, (l.lucroPorPeca / maxLpp) * 100)}%` }} /></div>
                         </td>
+                        {celCadastro(l.sugerido, l.salvo)}
                         <td className="num" style={{ color: "var(--good)" }}>
                           {BRL(l.economia)}
                           <span className="sub">

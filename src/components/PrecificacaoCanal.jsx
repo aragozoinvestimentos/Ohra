@@ -15,7 +15,7 @@ import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
-import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMinimo, sugestaoAncora } from "../lib/escada.js";
+import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMinimo, sugestaoAncora, calcularAnuncio, descontoDoItem, descontoPadraoCanal } from "../lib/escada.js";
 import { useRampas } from "../hooks/useRampas.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -52,7 +52,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [canalProprioId, setCanalProprioId] = useState("");
   const [confirmarKit, setConfirmarKit] = useState(false);
   const [verFilamentos, setVerFilamentos] = useState(false);
-  const { itens: baseItens, canais, produtos, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje } = useEscada();
+  const { itens: baseItens, canais, produtos, kits: kitsCat, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje } = useEscada();
   const { rampas } = useRampas();
   // margem de partida: a do produto escolhido (se tiver regras próprias) ou a da loja
   const produtoEscolhido = baseSelecionada.startsWith("p:") ? produtos.find((p) => p.id === baseSelecionada.slice(2)) : null;
@@ -353,6 +353,13 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const pidFrete = baseSelecionada.startsWith("p:") ? baseSelecionada.slice(2) : null;
   const dicaFrete = pidFrete && (freteCalc || freteSalvo) ? dicaKitFreteGratis(canalCadastrado, freteCalc ? resultado.preco : freteSalvo.valor, opcoesKitDoProduto(pidFrete, canalCadastrado, baseItens, clientePagaHoje)) : null;
 
+  // Preço de cadastro (preço original/riscado na plataforma) pro preço
+  // calculado: com a promo do desconto do canal/produto, o cliente paga ele.
+  const cadastro =
+    !semCusto && resultado.preco > 0 && canalCadastrado
+      ? calcularAnuncio(resultado.preco, itemSel ? descontoDoItem(itemSel.id, canalCadastrado, { itens: baseItens, produtos, kits: kitsCat }).desconto : descontoPadraoCanal(canalCadastrado))
+      : null;
+
   // Âncora pro kit 2 (só sugestão): avulso que deixa o kit 2 (na margem
   // desejada) com ~25% de economia vs 2 avulsos. Não aparece em rampa.
   const canalAjustadoBase = canalCadastrado ? { ...canalCadastrado, imposto_pct: n(f.imposto) / 100, custos_fixos_pct: n(f.custosFixos) / 100 } : null;
@@ -546,6 +553,15 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                   ? `${canalLabel} · confere com a faixa`
                   : `${canalLabel} · fora da faixa escolhida`
                 : canalLabel,
+        },
+        {
+          label: "Preço de cadastro",
+          valor: semCusto || !cadastro ? "—" : BRL(cadastro.original),
+          sub: semCusto || !cadastro
+            ? "preço original pra cadastrar na plataforma"
+            : cadastro.promo
+              ? `promo ${cadastro.promo}% → cliente paga ${BRL(cadastro.clientePaga)}`
+              : "canal sem desconto no anúncio",
         },
         {
           label: qtdSel > 1 ? "Lucro líquido / venda" : "Lucro líquido / un.",
