@@ -12,8 +12,12 @@ import { hojeISO } from "../lib/fluxoCaixa.js";
 // "2026-10-03" → "03/10" (sem passar por Date, que no fuso do Brasil voltaria um dia).
 // Frete grátis (v38) de um preço no canal — aviso único via alertaPreco.
 const freteDe = (valor, canal) => (canal && valor > 0 ? alertaPreco({ preco: valor, canal }).frete : null);
+// O que o cliente PAGA num degrau: riscado fixo no alvo + promo do degrau
+// (mesma conta do "O que digitar", lib/rampaAnuncio.js) — nunca o riscado.
+const pagaNoDegrau = (d, alvo, desconto) => anuncioFixo(d, alvo, desconto)?.clientePaga ?? d;
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
-import { anuncioDaRampa } from "../lib/rampaAnuncio.js";
+import { anuncioDaRampa, anuncioFixo } from "../lib/rampaAnuncio.js";
+import { descontoDoItem } from "../lib/escada.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
 import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, estadoRampa, finalAcima, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
 import Kpis from "./Kpis.jsx";
@@ -625,12 +629,20 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                 <div className="bar" style={{ height: alt(d) }} />
                 <b>{virgula(d)}</b>
                 <span className="lu">{Math.abs(d - e.alvo) < 0.005 ? "alvo · " : d > e.alvo + 0.004 ? "teste · " : ""}{BRL(e.lucroEm(d))}</span>
-                {freteDe(d, l.canal) && <span className="lu-frete" title={freteDe(d, l.canal).texto}>paga frete</span>}
+                {freteDe(pagaNoDegrau(d, e.alvo, anuncio?.desconto), l.canal) && (
+                  <span className="lu-frete" title={freteDe(pagaNoDegrau(d, e.alvo, anuncio?.desconto), l.canal).texto}>
+                    paga frete
+                  </span>
+                )}
               </div>
             ))}
           </div>
-          {e.degraus.some((d) => freteDe(d, l.canal)) && (
-            <FreteAviso frete={freteDe(Math.min(...e.degraus), l.canal)} dica={`degraus abaixo de ${BRL(freteDe(Math.min(...e.degraus), l.canal).min)} ficam sem frete grátis — o 1º degrau sugerido já parte de ${BRL(menorFinalComFreteGratis(l.canal, finalAcima))}`} />
+          {/* Aviso só quando o degrau ATUAL (o que o cliente paga hoje) está abaixo. */}
+          {freteDe(pagaNoDegrau(e.preco, e.alvo, anuncio?.desconto), l.canal) && (
+            <FreteAviso
+              frete={freteDe(pagaNoDegrau(e.preco, e.alvo, anuncio?.desconto), l.canal)}
+              dica={`a partir de ${BRL(menorFinalComFreteGratis(l.canal, finalAcima))} o cliente já tem frete grátis`}
+            />
           )}
           <p className="hint" style={{ margin: "6px 0 0" }}>
             0 a 0 hoje: {BRL(e.zero)} (custo e taxas atuais). O lucro de cada degrau acompanha o custo ao vivo.
@@ -920,7 +932,17 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                   <tr key={a.id}>
                     <td>
                       {a.nome}
-                      {a.naoCompensa && <div className="sub-num" style={{ color: "var(--warn)" }}>abaixo do mínimo aceitável</div>}
+                      {a.separado != null && a.economia != null && (
+                        <div className="sub-num" title={`${a.kit ? "Peças separadas" : `${a.n} avulsos`} no preço de agora: ${BRL(a.separado)}. Regra: o maior preço que ainda dá ≥${Math.round((l.cfg.vantagemMin || 0.05) * 100)}% de economia, sem passar do alvo do kit.`}>
+                          economia {pctF(a.economia)} vs {a.kit ? "separado" : `${a.n} avulsos`} ({BRL(a.separado)})
+                          {a.limitado ? " · abaixo do alvo do kit" : ""}
+                        </div>
+                      )}
+                      {a.naoCompensa && (
+                        <div className="sub-num" style={{ color: "var(--warn)" }}>
+                          kit não compensa neste degrau (economia {pctF(Math.max(0, a.economia ?? 0))}) — segurado no mínimo aceitável
+                        </div>
+                      )}
                     </td>
                     <td className="num"><Copiavel valor={virgula(a.original)} texto={virgula(a.original)} /></td>
                     <td className="num">{a.promo ? <Copiavel valor={`${a.promo}%`} texto={String(a.promo)} /> : "—"}</td>
@@ -933,14 +955,17 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                         </div>
                       )}
                     </td>
-                    <td className="num" style={{ color: a.lucro < 0 ? "var(--bad)" : undefined }}>{BRL(a.lucro)}</td>
+                    <td className="num" style={{ color: a.lucro < 0 ? "var(--bad)" : undefined }}>
+                      {BRL(a.lucro)}
+                      {a.lucroSeparado != null && <div className="sub-num">{a.kit ? "separado" : `${a.n} avulsos`}: {BRL(a.lucroSeparado)}</div>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <p className="hint" style={{ margin: "6px 0 0" }}>
-            Variações e kits recalculados pelo avulso deste degrau (cliente economiza ≥{Math.round((l.cfg.vantagemMin || 0.05) * 100)}% vs separado). Clique no valor pra copiar.
+            Variações e kits: o maior preço que ainda dá ≥{Math.round((l.cfg.vantagemMin || 0.05) * 100)}% de economia vs as peças separadas no preço de agora, sem passar do alvo de cada kit (o preço salvo dele não muda). Clique no valor pra copiar.
           </p>
 
           <h4 className="sub-h">Ads {e.ultAds ? <span className="muted-cel">· semana de {dataBR(e.ultAds.data)}</span> : null}</h4>
@@ -1188,7 +1213,7 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
 
 function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose }) {
   const { lojaId } = useLoja();
-  const { itens, produtos, canais, precos, cfgDoProduto } = dados;
+  const { itens, produtos, kits, canais, precos, cfgDoProduto } = dados;
   const hoje = hojeISO();
   const salvoDe = (pid, cid) => precos.find((p) => p.item_tipo === "produto" && p.item_id === pid && p.canal_id === cid) || null;
   const [produtoId, setProdutoId] = useState(editar?.produto_id || "");
@@ -1198,6 +1223,8 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
   const item = itens.find((i) => i.id === `p:${produtoId}`);
   const cfg = produtoId ? cfgDoProduto(produtoId) : null;
   const alvo = produtoId && canal ? num(salvoDe(produtoId, canal.id)?.preco) : 0;
+  const descAnuncio = produtoId && canal ? descontoDoItem(`p:${produtoId}`, canal, { itens, produtos, kits }).desconto : 0;
+  const freteChip = (d) => freteDe(pagaNoDegrau(d, alvo, descAnuncio), canal);
   const zero = item && canal ? zeroAZero(canal, num(item.custoTotal), num(item.peso), cfg) : null;
   const sugestao = useMemo(
     () => (item && canal && alvo > 0 ? sugerirDegraus({ canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo, regras }) : []),
@@ -1362,17 +1389,17 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
                 const ultimo = k === listaFinal.length - 1;
                 const atual = editar ? Math.abs(d - num(editar.degraus[editar.degrau_atual])) < 0.005 : k === idxHoje;
                 return (
-                  <span key={`${d}-${k}`} className={`chip-degrau${atual ? " at" : ""}${ultimo ? " alvo" : ""}${freteDe(d, canal) ? " sem-frete" : ""}`}>
+                  <span key={`${d}-${k}`} className={`chip-degrau${atual ? " at" : ""}${ultimo ? " alvo" : ""}${freteChip(d) ? " sem-frete" : ""}`}>
                     <button
                       type="button"
                       className="chip-degrau-valor"
                       disabled={!!editar || ultimo}
-                      title={`${editar ? "" : ultimo ? "Alvo (preço salvo)" : "Estou vendendo neste preço hoje"}${freteDe(d, canal) ? `${editar || ultimo ? "" : " · "}${freteDe(d, canal).texto}` : ""}` || undefined}
+                      title={`${editar ? "" : ultimo ? "Alvo (preço salvo)" : "Estou vendendo neste preço hoje"}${freteChip(d) ? `${editar || ultimo ? "" : " · "}${freteChip(d).texto}` : ""}` || undefined}
                       onClick={() => setPrecoHoje(virgula(d))}
                     >
                       {virgula(d)}
                       {ultimo ? " alvo" : ""}
-                      {freteDe(d, canal) ? " · paga frete" : ""}
+                      {freteChip(d) ? " · paga frete" : ""}
                     </button>
                     {!ultimo && !atual && (
                       <button

@@ -4,6 +4,7 @@ import { useRankingData } from "./useRankingData.js";
 import { useRampas } from "./useRampas.js";
 import { configEscada, escadaDoProduto, precoMinimoAceitavel } from "../lib/escada.js";
 import { alertaPreco, estrategiaEfetiva, produtosEmRampa } from "../lib/estrategia.js";
+import { mapaAnuncioRampa, valorClientePagaHoje } from "../lib/rampaAnuncio.js";
 
 // Tudo que as telas de preço por quantidade/Anunciar/Produtos precificados
 // precisam, em cima do catálogo AO VIVO (mudou custo, preço salvo, taxa,
@@ -29,6 +30,17 @@ export function useEscada() {
     [itens, precos, concorrentes, cfgDoProduto, emRampa]
   );
 
+  // "O que digitar" da Rampa (riscado fixo + promo do degrau) pros itens em
+  // rampa e os que dependem deles — e o que o cliente PAGA HOJE (frete grátis).
+  const mapaRampa = useMemo(
+    () => mapaAnuncioRampa({ rampas, canais: dados.canais, itens, produtos: dados.produtos, kits: dados.kits, precos, concorrentes, cfgDoProduto }),
+    [rampas, dados.canais, itens, dados.produtos, dados.kits, precos, concorrentes, cfgDoProduto]
+  );
+  const clientePagaHoje = useCallback(
+    (item, canal) => valorClientePagaHoje(item?.id, canal, { mapaRampa, precos, itens, produtos: dados.produtos, kits: dados.kits })?.valor ?? null,
+    [mapaRampa, precos, itens, dados.produtos, dados.kits]
+  );
+
   const estrategiaDe = useCallback((item, canal, opcoes = {}) => estrategiaEfetiva(item, canal, { precos, emRampa, ...opcoes }), [precos, emRampa]);
 
   // Alerta do preço SALVO do item no canal (com custo, taxas e estratégia de hoje).
@@ -41,10 +53,10 @@ export function useEscada() {
       const cfg = cfgDoProduto(item.produtoId || (tipo === "produto" ? item.id.slice(2) : null));
       const minimo = precoMinimoAceitavel(canal, Number(item.custoTotal) || 0, Number(item.peso) || 0, cfg);
       const estrategia = estrategiaEfetiva(item, canal, { precos, emRampa });
-      return { linha, minimo, estrategia, ...alertaPreco({ lucro: linha.lucro, preco: Number(linha.preco), minimo, estrategia, canal }) };
+      return { linha, minimo, estrategia, ...alertaPreco({ lucro: linha.lucro, preco: Number(linha.preco), minimo, estrategia, canal, valorCliente: clientePagaHoje(item, canal) }) };
     },
-    [precos, cfgDoProduto, emRampa]
+    [precos, cfgDoProduto, emRampa, clientePagaHoje]
   );
 
-  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe };
+  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, mapaRampa, clientePagaHoje };
 }

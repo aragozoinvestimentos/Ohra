@@ -3,7 +3,6 @@ import { alertaPreco } from "../lib/estrategia.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { useEscada } from "../hooks/useEscada.js";
-import { mapaAnuncioRampa } from "../lib/rampaAnuncio.js";
 import { BRL } from "../lib/format.js";
 import { calcularAnuncio, descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
 import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
@@ -42,13 +41,10 @@ function combinacoes(variacoes) {
 // em anúncios; ML/Shein = um anúncio por quantidade, com as variações. SKU do
 // item editável direto na tabela (✎).
 export default function FichaAnuncio({ onToast, onIrPara }) {
-  const { itens, canais, precos, produtos, kits, rampas, concorrentes, cfgDoProduto } = useEscada();
+  const { itens, canais, precos, produtos, kits, mapaRampa, clientePagaHoje } = useEscada();
   // Itens em rampa (Crescimento) vendendo num preço diferente do salvo: a
   // ficha usa os números da Rampa (riscado fixo no alvo + promo do degrau).
-  const rampaMapa = useMemo(
-    () => mapaAnuncioRampa({ rampas, canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto }),
-    [rampas, canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto]
-  );
+  const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
   const [sel, setSel] = useState("");
   const [canalId, setCanalId] = useState("");
   const [novaOpcao, setNovaOpcao] = useState({}); // { [idxVariacao]: { nome, sufixo } }
@@ -533,9 +529,9 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                                 <td className="num" style={{ color: "var(--ink-soft)" }}>
                                   {BRL(l.an.clientePaga)}
                                   {l.an.clientePaga - l.an.real > 0.004 && <span className="ficha-centavo"> +{Math.round((l.an.clientePaga - l.an.real) * 100)}¢</span>}
-                                  {canal && alertaPreco({ preco: l.an.clientePaga, canal }).frete && (
+                                  {canal && alertaPreco({ preco: l.an.real, canal, valorCliente: clientePagaHoje(l.item, canal) ?? l.an.clientePaga }).frete && (
                                     <div>
-                                      <FreteAviso frete={alertaPreco({ preco: l.an.clientePaga, canal }).frete} compacto />
+                                      <FreteAviso frete={alertaPreco({ preco: l.an.real, canal, valorCliente: clientePagaHoje(l.item, canal) ?? l.an.clientePaga }).frete} compacto />
                                     </div>
                                   )}
                                   {l.an.emRampa && (

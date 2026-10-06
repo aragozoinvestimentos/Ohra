@@ -37,7 +37,7 @@ import { pegarPedido } from "../lib/navegar.js";
 // foram simplificadas pra só o formulário.
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe } = useEscada();
+  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, clientePagaHoje } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // { alvo, inicial } — diálogo "Manter assim"
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
   const [filamentosAlvo, setFilamentosAlvo] = useState(null);
@@ -280,7 +280,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     if (!item.id.startsWith("p:")) return null;
     const p = precoDe(item, canalObj);
     if (!p) return null;
-    return dicaKitFreteGratis(canalObj, Number(p.preco), opcoesKitDoProduto(item.id.slice(2), canalObj, itens, precos));
+    return dicaKitFreteGratis(canalObj, clientePagaHoje(item, canalObj) ?? Number(p.preco), opcoesKitDoProduto(item.id.slice(2), canalObj, itens, clientePagaHoje));
   }
 
   const diaMesIso = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}` : "");

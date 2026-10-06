@@ -8,7 +8,7 @@ import { gravarPrecoNovo, alertaPreco, produtosEmRampa } from "../lib/estrategia
 import { freteGratisMin, dicaKitFreteGratis, opcoesKitDoProduto } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
-import { useRankingData } from "../hooks/useRankingData.js";
+import { useEscada } from "../hooks/useEscada.js";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
@@ -52,7 +52,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [canalProprioId, setCanalProprioId] = useState("");
   const [confirmarKit, setConfirmarKit] = useState(false);
   const [verFilamentos, setVerFilamentos] = useState(false);
-  const { itens: baseItens, canais, produtos, precos, composicaoDoKit, materiais, concorrentes } = useRankingData();
+  const { itens: baseItens, canais, produtos, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje } = useEscada();
   const { rampas } = useRampas();
   // margem de partida: a do produto escolhido (se tiver regras próprias) ou a da loja
   const produtoEscolhido = baseSelecionada.startsWith("p:") ? produtos.find((p) => p.id === baseSelecionada.slice(2)) : null;
@@ -348,9 +348,10 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   // mínimo do canal → o cliente paga o frete (aviso via alertaPreco).
   const freteMin = freteGratisMin(canalCadastrado);
   const freteCalc = !semCusto && resultado.preco > 0 ? alertaPreco({ lucro: resultado.lucro, preco: resultado.preco, canal: canalCadastrado }).frete : null;
-  const freteSalvo = precoExistente ? alertaPreco({ lucro: precoExistente.lucro, preco: Number(precoExistente.preco), canal: canalCadastrado }).frete : null;
+  // Salvo: o que o cliente PAGA HOJE (degrau da rampa, ou cliente_paga do anúncio).
+  const freteSalvo = precoExistente && itemSel ? alertaPreco({ lucro: precoExistente.lucro, preco: Number(precoExistente.preco), canal: canalCadastrado, valorCliente: clientePagaHoje(itemSel, canalCadastrado) }).frete : null;
   const pidFrete = baseSelecionada.startsWith("p:") ? baseSelecionada.slice(2) : null;
-  const dicaFrete = pidFrete && (freteCalc || freteSalvo) ? dicaKitFreteGratis(canalCadastrado, freteCalc ? resultado.preco : Number(precoExistente?.preco), opcoesKitDoProduto(pidFrete, canalCadastrado, baseItens, precos)) : null;
+  const dicaFrete = pidFrete && (freteCalc || freteSalvo) ? dicaKitFreteGratis(canalCadastrado, freteCalc ? resultado.preco : freteSalvo.valor, opcoesKitDoProduto(pidFrete, canalCadastrado, baseItens, clientePagaHoje)) : null;
 
   // Âncora pro kit 2 (só sugestão): avulso que deixa o kit 2 (na margem
   // desejada) com ~25% de economia vs 2 avulsos. Não aparece em rampa.

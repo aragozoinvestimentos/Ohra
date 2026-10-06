@@ -55,14 +55,10 @@ export function dicaKitFreteGratis(canal, valorAvulso, opcoes) {
   return `com ${ok.rotulo || `${ok.n} un.`} passa do frete grátis — destaque o kit no anúncio`;
 }
 
-// Variações e kits que levam o produto, com o preço salvo no canal — pra dica
-// "com 2 un. passa do frete grátis". precos = linhas de precos_canal.
-export function opcoesKitDoProduto(produtoId, canal, itens, precos) {
-  const tipo = (id) => ({ v: "variacao", k: "kit" })[id[0]];
+// Variações e kits que levam o produto, com o que o cliente PAGA HOJE em cada
+// um (valorDe(item) = useEscada().clientePagaHoje) — pra dica "com 2 un.".
+export function opcoesKitDoProduto(produtoId, canal, itens, valorDe) {
   return (itens || [])
     .filter((i) => (i.id.startsWith("v:") && i.produtoId === produtoId) || (i.id.startsWith("k:") && (i.componentes || []).some((c) => c.produtoId === produtoId)))
-    .map((i) => {
-      const s = (precos || []).find((p) => p.item_tipo === tipo(i.id) && p.item_id === i.id.slice(2) && p.canal_id === canal?.id);
-      return { n: i.pecas || i.quantidade || 2, valor: s ? num(s.preco) : 0, rotulo: i.id.startsWith("k:") ? i.nome : `${i.quantidade || i.pecas} un.` };
-    });
+    .map((i) => ({ n: i.pecas || i.quantidade || 2, valor: num(valorDe(i, canal)), rotulo: i.id.startsWith("k:") ? i.nome : `${i.quantidade || i.pecas} un.` }));
 }

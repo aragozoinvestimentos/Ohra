@@ -41,7 +41,7 @@ const CAMPOS_MARGEM = [
 
 export default function PrecoPorQuantidade({ onToast }) {
   const { lojaId, atualizar } = useLoja();
-  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe } = useEscada();
+  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe, clientePagaHoje } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // diálogo "Manter assim" do avulso
   const [selPQ, setSelPQ] = useState(null); // linha com o detalhe aberto ("base" ou "n<qtd>")
   const [revisar, setRevisar] = useState(null); // linha de produto_variacoes aberta na tela suspensa (revisar insumos)
@@ -103,9 +103,16 @@ export default function PrecoPorQuantidade({ onToast }) {
   // Frete grátis (schema v38): aviso por linha pelo que o cliente paga (salvo,
   // ou o sugerido) — só avisa, a escada não muda o preço por isso.
   const freteDe = (valor) => (canal && valor > 0 ? alertaPreco({ preco: valor, canal }).frete : null);
-  const dicaFreteAvulso = e
-    ? dicaKitFreteGratis(canal, dados.salvo1 ?? dados.p1, kits.map((l) => ({ n: l.n, valor: l.salvo ?? l.sugerido })))
-    : null;
+  // Valor que conta pro frete: com preço salvo, o que o cliente PAGA HOJE
+  // (degrau da rampa / cliente_paga do anúncio); sem salvo ou com o avulso
+  // digitado aqui, o preço simulado da escada.
+  const valorBase = !e ? null : p1Edit[chave] != null || !itemPai ? dados.p1 : clientePagaHoje(itemPai, canal) ?? dados.p1;
+  const valorLinha = (l) => {
+    if (l.salvo == null || !l.itemId) return l.sugerido;
+    const it = itens.find((i) => i.id === l.itemId);
+    return (it && clientePagaHoje(it, canal)) ?? l.salvo;
+  };
+  const dicaFreteAvulso = e ? dicaKitFreteGratis(canal, valorBase, kits.map((l) => ({ n: l.n, valor: valorLinha(l) }))) : null;
   const maxLpp = e ? Math.max(0.01, ...e.linhas.map((l) => (l.base ? e.l1 : l.lucroPorPeca))) : 1;
 
   async function salvarConcorrente(n, itemTipo, itemId) {
@@ -518,7 +525,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                           <td>
                             <b className="kit-n">1 un.</b>
                             <span className="sub">{dados.itemPai.nome} · base</span>
-                            <FreteAviso frete={freteDe(dados.salvo1 ?? l.sugerido)} compacto />
+                            <FreteAviso frete={freteDe(valorBase)} compacto />
                           </td>
                           <td className="num">
                             <b>{BRL(l.sugerido)}</b>
@@ -558,7 +565,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                                 {{ atracao: "avulso em atração — escolhido", crescimento: "avulso em crescimento — escolhido", rampa: "avulso em rampa", sugerido: "sugerido: avulso parece atração" }[e.baseMotivo] || "avulso abaixo da margem desejada"})
                               </div>
                             )}
-                            <FreteAviso frete={freteDe(dados.salvo1 ?? l.sugerido)} dica={dicaFreteAvulso} />
+                            <FreteAviso frete={freteDe(valorBase)} dica={dicaFreteAvulso} />
                             <div>
                               <div className="legenda-tit" style={{ marginBottom: 4 }}>Texto pro anúncio</div>
                               <div className="txt-anuncio">{BRL(l.sugerido)} a unidade</div>
@@ -577,7 +584,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                           <b className="kit-n">{l.n} un.</b>
                           <span className="sub">{l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}</span>
                           {l.concorrenteAbaixoDoPiso && <span className="chip-cel ruim">concorrente abaixo do mínimo</span>}
-                          <FreteAviso frete={freteDe(l.salvo ?? l.sugerido)} compacto />
+                          <FreteAviso frete={freteDe(valorLinha(l))} compacto />
                         </td>
                         <td className="num">
                           <span className="sug">{BRL(l.sugerido)}</span>
@@ -657,7 +664,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                             </label>
                           </div>
                           <div className="detalhe-cel-avisos">
-                            <FreteAviso frete={freteDe(l.salvo ?? l.sugerido)} />
+                            <FreteAviso frete={freteDe(valorLinha(l))} />
                             {l.concorrenteAbaixoDoPiso && (
                               <div className="aviso-cel ruim">
                                 <b>Concorrente abaixo do seu mínimo</b> — não acompanhado: diferencie pelo kit, foto ou qualidade.

@@ -3,7 +3,7 @@ import { Fragment, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
-import { mapaAnuncioRampa, descricaoMudanca } from "../lib/rampaAnuncio.js";
+import { descricaoMudanca } from "../lib/rampaAnuncio.js";
 import { alertaPreco } from "../lib/estrategia.js";
 import { dicaKitFreteGratis } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
@@ -25,7 +25,7 @@ const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
 // plataforma e só aquele canal fica pendente quando o preço muda.
 export default function Publicar({ onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, precos, produtos, kits, publicacoesCanal, rampas, concorrentes, cfgDoProduto } = useEscada();
+  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje } = useEscada();
   const [verTodos, setVerTodos] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [abertos, setAbertos] = useState(() => new Set());
@@ -34,10 +34,7 @@ export default function Publicar({ onToast }) {
   // Itens em rampa (aba Crescimento) vendendo num preço diferente do salvo:
   // o que digitar vem da Rampa (riscado fixo no alvo + promo do degrau) e o
   // "↻ atualizar" compara com isso. No alvo / rampa encerrada → preço salvo.
-  const rampaMapa = useMemo(
-    () => mapaAnuncioRampa({ rampas, canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto }),
-    [rampas, canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto]
-  );
+  const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
 
   const linhas = useMemo(() => {
     const ordem = [];
@@ -63,7 +60,7 @@ export default function Publicar({ onToast }) {
           // temporária da rampa não decide quantas unidades cabem no anúncio.
           const anSalvo = ra ? calcularAnuncio(Number(s.preco), desconto) : an;
           // Frete grátis (v38): pelo que o cliente PAGA (cliente_paga, depois da promo).
-          const frete = alertaPreco({ preco: an.clientePaga, canal: c }).frete;
+          const frete = alertaPreco({ preco: an.real, canal: c, valorCliente: clientePagaHoje(item, c) ?? an.clientePaga }).frete;
           porCanal[c.id] = { ...an, proprio, salvo, mudou, nunca: !salvo, rampa: ra, anSalvo, frete, oQueMudou: mudou && salvo ? descricaoMudanca(salvo, an) : null };
         }
         if (!Object.keys(porCanal).length) return null;
@@ -71,7 +68,7 @@ export default function Publicar({ onToast }) {
         return { item, tipo, id, porCanal, pendentes };
       })
       .filter(Boolean);
-  }, [itens, canais, precos, produtos, kits, publicacoesCanal, rampaMapa]);
+  }, [itens, canais, precos, produtos, kits, publicacoesCanal, rampaMapa, clientePagaHoje]);
 
   // Regra da Shopee (4×) por produto: variações do mesmo produto num anúncio;
   // preço original = riscado, promo = o que o cliente paga.
