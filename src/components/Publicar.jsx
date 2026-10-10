@@ -3,12 +3,14 @@ import { Fragment, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
-import { descricaoMudanca } from "../lib/rampaAnuncio.js";
+import { descricaoMudanca, anuncioDoItem } from "../lib/rampaAnuncio.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 import { alertaPreco } from "../lib/estrategia.js";
 import { dicaKitFreteGratis } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { BRL } from "../lib/format.js";
-import { calcularAnuncio, anuncioMudou, descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
+import { anuncioMudou, descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
 import { nomeCanal } from "../lib/canais.js";
 import Ajuda from "./Ajuda.jsx";
@@ -31,6 +33,7 @@ export default function Publicar({ onToast }) {
   const [abertos, setAbertos] = useState(() => new Set());
   const [descEdit, setDescEdit] = useState(null); // { chave, itemId, canalId, valor }
   const [sel, setSel] = useState(null); // "itemId|canalId" com o detalhe aberto
+  const [recalcular, setRecalcular] = useState(null); // { l, c } — recalcular o riscado (ação explícita)
   // Itens em rampa (aba Crescimento) vendendo num preço diferente do salvo:
   // o que digitar vem da Rampa (riscado fixo no alvo + promo do degrau) e o
   // "↻ atualizar" compara com isso. No alvo / rampa encerrada → preço salvo.
@@ -53,12 +56,13 @@ export default function Publicar({ onToast }) {
           if (!s || !(Number(s.preco) > 0)) continue;
           const { desconto, proprio } = descontoDoItem(item.id, c, { itens, produtos, kits });
           const ra = rampaMapa.get(`${item.id}|${c.id}`) || null;
-          const an = ra ? { original: ra.original, promo: ra.promo, clientePaga: ra.clientePaga, desconto } : calcularAnuncio(Number(s.preco), desconto);
+          // Já anunciado = riscado FIXO (só a promo muda) — anuncioDoItem, conta única.
+          const an = ra ? { original: ra.original, promo: ra.promo, clientePaga: ra.clientePaga, real: ra.real, riscadoFixo: ra.riscadoFixo, acimaDoRiscado: ra.acimaDoRiscado, riscadoSugerido: ra.riscadoSugerido, desconto } : anuncioDoItem({ itemId: item.id, canal: c, real: Number(s.preco), desconto, publicacoes: publicacoesCanal });
           const salvo = publicacoesCanal.find((x) => x.item_tipo === tipo && x.item_id === id && x.canal_id === c.id) || null;
           const mudou = anuncioMudou(salvo, an);
           // Regra de 4× da Shopee: sempre pelo preço SALVO (alvo) — a promo
           // temporária da rampa não decide quantas unidades cabem no anúncio.
-          const anSalvo = ra ? calcularAnuncio(Number(s.preco), desconto) : an;
+          const anSalvo = ra ? anuncioDoItem({ itemId: item.id, canal: c, real: Number(s.preco), desconto, publicacoes: publicacoesCanal }) : an;
           // Frete grátis (v38): pelo que o cliente PAGA (cliente_paga, depois da promo).
           const frete = alertaPreco({ preco: an.real, canal: c, valorCliente: clientePagaHoje(item, c) ?? an.clientePaga }).frete;
           porCanal[c.id] = { ...an, proprio, salvo, mudou, nunca: !salvo, rampa: ra, anSalvo, frete, oQueMudou: mudou && salvo ? descricaoMudanca(salvo, an) : null };
@@ -149,7 +153,20 @@ export default function Publicar({ onToast }) {
       onToast(/relation|does not exist|schema cache/i.test(error.message) ? "Rode o SQL v30 no Supabase pra marcar como atualizado" : `Não foi possível salvar: ${error.message}`);
       return;
     }
+    recarregarCatalogo();
     onToast(pares.length === 1 ? `Marcado como atualizado na ${nomeCanal(canais.find((c) => c.id === pares[0].canalId))}` : `${pares.length} preços marcados como atualizados`);
+  }
+  // Recalcular o riscado SÓ por ação explícita: apaga a marcação "feito" deste
+  // item × canal; o anúncio volta pra sugestão (real ÷ (1 − desconto)) e o
+  // próximo "feito" grava o novo riscado fixo.
+  async function confirmarRecalcular() {
+    const r = recalcular;
+    setRecalcular(null);
+    if (!r || !supabase) return;
+    const { error } = await supabase.from("publicacoes_canal").delete().eq("item_tipo", r.l.tipo).eq("item_id", r.l.id).eq("canal_id", r.c.id);
+    if (error) return onToast(`Não foi possível recalcular: ${error.message}`);
+    recarregarCatalogo();
+    onToast(`Preço original de ${r.l.item.nome} na ${nomeCanal(r.c)} será recalculado — digite o novo e marque "feito"`);
   }
   const pendentesDe = (lista) => lista.flatMap((l) => Object.entries(l.porCanal).filter(([, x]) => x.mudou).map(([canalId]) => ({ l, canalId })));
 
@@ -288,6 +305,16 @@ export default function Publicar({ onToast }) {
           </div>
         </div>
         <div className="detalhe-cel-avisos">
+          {x.riscadoFixo && !x.acimaDoRiscado && (
+            <div className="aviso-cel">
+              <b>Preço original fixo</b> {BRL(x.original)} é o que já está anunciado — mudança de preço é só pela promo (mexer no preço cheio pode ser visto como manipulação).
+            </div>
+          )}
+          {x.acimaDoRiscado && (
+            <div className="aviso-cel ruim">
+              <b>Precisaria subir o preço original</b> O preço desejado ({BRL(x.real)}) passou do preço original anunciado ({BRL(x.original)}): com promo 0% o cliente paga {BRL(x.original)}. Subir o preço cheio pode ser visto como manipulação — considere manter. Nada foi trocado.
+            </div>
+          )}
           {x.frete && (
             <div className="aviso-cel atencao">
               <b>Cliente paga o frete</b> {x.frete.texto}.{dicaFretePub(l, c) ? ` Dica: ${dicaFretePub(l, c)}.` : ""}
@@ -295,7 +322,7 @@ export default function Publicar({ onToast }) {
           )}
           {x.rampa && (
             <div className="aviso-cel rampa">
-              <b>{x.rampa.acima ? "Testando acima do alvo" : "Em rampa"} · use o preço da Rampa</b> Vendendo {BRL(x.rampa.real)} (Vender → Crescimento): riscado fixo no alvo, só a promo muda. Quando chegar no alvo, volta pro preço salvo.
+              <b>{x.rampa.acima ? "Testando acima do alvo" : "Em rampa"} · use o preço da Rampa</b> Vendendo {BRL(x.rampa.real)} (Vender → Crescimento): {x.riscadoFixo ? "preço original já anunciado" : "riscado fixo no alvo"}, só a promo muda. Quando chegar no alvo, volta pro preço salvo.
             </div>
           )}
           {x.mudou && (
@@ -313,6 +340,11 @@ export default function Publicar({ onToast }) {
           ) : (
             <span className="badge neutro">✓ atualizado</span>
           )}
+          {x.riscadoFixo && (
+            <button type="button" className="btn btn-mini" onClick={() => setRecalcular({ l, c })} title="Ação explícita: o preço original volta pra sugestão">
+              Recalcular preço original
+            </button>
+          )}
         </div>
       </div>
     );
@@ -329,6 +361,15 @@ export default function Publicar({ onToast }) {
 
   return (
     <>
+    {recalcular && (
+      <ConfirmDialog
+        titulo="Recalcular o preço original?"
+        mensagem={`${recalcular.l.item.nome} na ${nomeCanal(recalcular.c)}: o preço original anunciado (${BRL(recalcular.l.porCanal[recalcular.c.id].original)}) deixa de ser fixo e volta pra sugestão (${BRL(recalcular.l.porCanal[recalcular.c.id].riscadoSugerido)}). Atenção: mudar o preço cheio no marketplace pode ser visto como manipulação de preço e levar a punição. Prefira mudar só a promo. Depois de digitar o novo, marque "feito".`}
+        confirmarLabel="Recalcular mesmo assim"
+        onConfirm={confirmarRecalcular}
+        onCancel={() => setRecalcular(null)}
+      />
+    )}
     <div className="aviso-fluxo">
       Os preços vêm de <b>Precificação</b> (1º Avulso / 2º Por quantidade). Aqui você só confere o que digitar em cada plataforma — o <b>preço original</b> (“de”) e a <b>promo</b> — e marca “feito” depois de atualizar.
     </div>
@@ -429,7 +470,9 @@ export default function Publicar({ onToast }) {
                           <span className="preco-canal-linha">
                             promo <b>{x.promo}%</b>
                           </span>
-                          {x.rampa ? (
+                          {x.acimaDoRiscado ? (
+                            <span className="chip-cel ruim" title="O preço desejado passou do preço original já anunciado">acima do riscado</span>
+                          ) : x.rampa ? (
                             <span className="chip-cel rampa">{x.rampa.acima ? "testando acima" : "rampa"}{x.mudou ? " · ↻" : ""}</span>
                           ) : x.mudou ? (
                             <span className="chip-cel atencao">{x.nunca ? "novo" : "↻ atualizar"}</span>

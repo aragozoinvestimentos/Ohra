@@ -14,9 +14,10 @@ import { hojeISO } from "../lib/fluxoCaixa.js";
 const freteDe = (valor, canal) => (canal && valor > 0 ? alertaPreco({ preco: valor, canal }).frete : null);
 // O que o cliente PAGA num degrau: riscado fixo no alvo + promo do degrau
 // (mesma conta do "O que digitar", lib/rampaAnuncio.js) — nunca o riscado.
-const pagaNoDegrau = (d, alvo, desconto) => anuncioFixo(d, alvo, desconto)?.clientePaga ?? d;
+// Com riscado fixo (já anunciado), só a promo muda — mesma conta (anuncioNoRiscado).
+const pagaNoDegrau = (d, alvo, desconto, riscadoFixo = null) => (riscadoFixo ? anuncioNoRiscado(d, riscadoFixo) : anuncioFixo(d, alvo, desconto))?.clientePaga ?? d;
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
-import { anuncioDaRampa, anuncioFixo } from "../lib/rampaAnuncio.js";
+import { anuncioDaRampa, anuncioFixo, anuncioNoRiscado, riscadoFixoDe } from "../lib/rampaAnuncio.js";
 import { descontoDoItem } from "../lib/escada.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
 import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, estadoRampa, finalAcima, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
@@ -180,7 +181,7 @@ export default function Crescimento({ onToast }) {
 
 function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, podeRegistrar, onRegistrar, onToast }) {
   const { lojas, lojaId, atualizar } = useLoja();
-  const { itens, produtos, kits, precos, concorrentes, cfgDoProduto } = dados;
+  const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal } = dados;
   const { rampas, disponivel, carregando } = rampasH;
   const [selId, setSelId] = useState(null);
   const [iniciar, setIniciar] = useState(null); // {} novo | { rampa } editar degraus
@@ -204,10 +205,10 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
   const anuncio = useMemo(() => {
     if (!sel) return null;
     const { canal, est, cfg, r } = sel;
-    const res = anuncioDaRampa({ produtoId: r.produto_id, canal, preco: est.preco, alvo: est.alvo, cfg, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto });
+    const res = anuncioDaRampa({ produtoId: r.produto_id, canal, preco: est.preco, alvo: est.alvo, cfg, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoes: publicacoesCanal });
     // Lucro do avulso = o da rampa (mesmo custo/taxas ao vivo).
     return { ...res, linhas: res.linhas.map((l) => (l.id === "avulso" ? { ...l, lucro: est.lucroAtual } : l)) };
-  }, [sel, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto]);
+  }, [sel, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoesCanal]);
 
   // --- KPIs ---
   const prontos = linhas.filter((l) => l.est.sugestao.chave === "subir");
@@ -629,8 +630,8 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                 <div className="bar" style={{ height: alt(d) }} />
                 <b>{virgula(d)}</b>
                 <span className="lu">{Math.abs(d - e.alvo) < 0.005 ? "alvo · " : d > e.alvo + 0.004 ? "teste · " : ""}{BRL(e.lucroEm(d))}</span>
-                {freteDe(pagaNoDegrau(d, e.alvo, anuncio?.desconto), l.canal) && (
-                  <span className="lu-frete" title={freteDe(pagaNoDegrau(d, e.alvo, anuncio?.desconto), l.canal).texto}>
+                {freteDe(pagaNoDegrau(d, e.alvo, anuncio?.desconto, anuncio?.riscadoFixo), l.canal) && (
+                  <span className="lu-frete" title={freteDe(pagaNoDegrau(d, e.alvo, anuncio?.desconto, anuncio?.riscadoFixo), l.canal).texto}>
                     paga frete
                   </span>
                 )}
@@ -638,9 +639,9 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
             ))}
           </div>
           {/* Aviso só quando o degrau ATUAL (o que o cliente paga hoje) está abaixo. */}
-          {freteDe(pagaNoDegrau(e.preco, e.alvo, anuncio?.desconto), l.canal) && (
+          {freteDe(pagaNoDegrau(e.preco, e.alvo, anuncio?.desconto, anuncio?.riscadoFixo), l.canal) && (
             <FreteAviso
-              frete={freteDe(pagaNoDegrau(e.preco, e.alvo, anuncio?.desconto), l.canal)}
+              frete={freteDe(pagaNoDegrau(e.preco, e.alvo, anuncio?.desconto, anuncio?.riscadoFixo), l.canal)}
               dica={`a partir de ${BRL(menorFinalComFreteGratis(l.canal, finalAcima))} o cliente já tem frete grátis`}
             />
           )}
@@ -914,7 +915,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
           )}
 
           <h4 className="sub-h">
-            O que digitar em {l.canal.nome} <span className="muted-cel">({anuncio?.desconto > 0.005 ? `riscado fixo do alvo, desconto ${Math.round(anuncio.desconto * 100)}% — só a promo muda` : "canal sem desconto configurado"})</span>
+            O que digitar em {l.canal.nome} <span className="muted-cel">({anuncio?.riscadoFixo ? `preço original já anunciado (${BRL(anuncio.riscadoFixo)}) fica fixo — só a promo muda` : anuncio?.desconto > 0.005 ? `riscado fixo do alvo, desconto ${Math.round(anuncio.desconto * 100)}% — só a promo muda` : "canal sem desconto configurado"})</span>
           </h4>
           <div className="table-wrap">
             <table>
@@ -936,6 +937,11 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                         <div className="sub-num" title={`${a.kit ? "Peças separadas" : `${a.n} avulsos`} no preço de agora: ${BRL(a.separado)}. Regra: o maior preço que ainda dá ≥${Math.round((l.cfg.vantagemMin || 0.05) * 100)}% de economia, sem passar do alvo do kit.`}>
                           economia {pctF(a.economia)} vs {a.kit ? "separado" : `${a.n} avulsos`} ({BRL(a.separado)})
                           {a.limitado ? " · abaixo do alvo do kit" : ""}
+                        </div>
+                      )}
+                      {a.acimaDoRiscado && (
+                        <div className="sub-num" style={{ color: "var(--bad)" }} title="Subir o preço cheio no marketplace pode ser visto como manipulação — considere manter. Recalcular só na Anunciar (ação explícita).">
+                          precisaria subir o preço original ({BRL(a.original)}) — considere manter
                         </div>
                       )}
                       {a.naoCompensa && (
@@ -1213,7 +1219,7 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
 
 function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose }) {
   const { lojaId } = useLoja();
-  const { itens, produtos, kits, canais, precos, cfgDoProduto } = dados;
+  const { itens, produtos, kits, canais, precos, cfgDoProduto, publicacoesCanal } = dados;
   const hoje = hojeISO();
   const salvoDe = (pid, cid) => precos.find((p) => p.item_tipo === "produto" && p.item_id === pid && p.canal_id === cid) || null;
   const [produtoId, setProdutoId] = useState(editar?.produto_id || "");
@@ -1224,7 +1230,8 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
   const cfg = produtoId ? cfgDoProduto(produtoId) : null;
   const alvo = produtoId && canal ? num(salvoDe(produtoId, canal.id)?.preco) : 0;
   const descAnuncio = produtoId && canal ? descontoDoItem(`p:${produtoId}`, canal, { itens, produtos, kits }).desconto : 0;
-  const freteChip = (d) => freteDe(pagaNoDegrau(d, alvo, descAnuncio), canal);
+  const riscadoAnunciado = produtoId && canal ? riscadoFixoDe(`p:${produtoId}`, canal.id, publicacoesCanal) : null;
+  const freteChip = (d) => freteDe(pagaNoDegrau(d, alvo, descAnuncio, riscadoAnunciado), canal);
   const zero = item && canal ? zeroAZero(canal, num(item.custoTotal), num(item.peso), cfg) : null;
   const sugestao = useMemo(
     () => (item && canal && alvo > 0 ? sugerirDegraus({ canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo, regras }) : []),

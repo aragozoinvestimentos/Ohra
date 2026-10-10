@@ -4,7 +4,8 @@ import FreteAviso from "./FreteAviso.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL } from "../lib/format.js";
-import { calcularAnuncio, descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
+import { descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
+import { anuncioDoItem } from "../lib/rampaAnuncio.js";
 import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
 import { nomeCanal } from "../lib/canais.js";
 import BuscaItem from "./BuscaItem.jsx";
@@ -41,7 +42,7 @@ function combinacoes(variacoes) {
 // em anúncios; ML/Shein = um anúncio por quantidade, com as variações. SKU do
 // item editável direto na tabela (✎).
 export default function FichaAnuncio({ onToast, onIrPara }) {
-  const { itens, canais, precos, produtos, kits, mapaRampa, clientePagaHoje } = useEscada();
+  const { itens, canais, precos, produtos, kits, mapaRampa, clientePagaHoje, publicacoesCanal } = useEscada();
   // Itens em rampa (Crescimento) vendendo num preço diferente do salvo: a
   // ficha usa os números da Rampa (riscado fixo no alvo + promo do degrau).
   const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
@@ -88,10 +89,11 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
       const s = precos.find((p) => p.item_tipo === tipo && p.item_id === it.id.slice(2) && p.canal_id === canal.id);
       const { desconto } = descontoDoItem(it.id, canal, { itens, produtos, kits });
       const ra = rampaMapa.get(`${it.id}|${canal.id}`) || null;
+      // Já anunciado = riscado FIXO, só a promo muda (anuncioDoItem, conta única).
       const an = ra
-        ? { original: ra.original, promo: ra.promo, clientePaga: ra.clientePaga, real: ra.real, emRampa: true, acima: ra.acima }
+        ? { original: ra.original, promo: ra.promo, clientePaga: ra.clientePaga, real: ra.real, emRampa: true, acima: ra.acima, riscadoFixo: ra.riscadoFixo, acimaDoRiscado: ra.acimaDoRiscado }
         : s && Number(s.preco) > 0
-          ? calcularAnuncio(Number(s.preco), desconto)
+          ? anuncioDoItem({ itemId: it.id, canal, real: Number(s.preco), desconto, publicacoes: publicacoesCanal })
           : null;
       return combos.map((combo) => ({
         item: it,
@@ -102,7 +104,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
         qtd: isKit ? null : qtdLabel(it),
         an,
         // Regra de 4×: sempre pelo preço SALVO (a promo temporária da rampa não decide o anúncio).
-        anSalvo: s && Number(s.preco) > 0 ? calcularAnuncio(Number(s.preco), desconto) : an,
+        anSalvo: s && Number(s.preco) > 0 ? anuncioDoItem({ itemId: it.id, canal, real: Number(s.preco), desconto, publicacoes: publicacoesCanal }) : an,
       }));
     };
 
@@ -150,7 +152,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
     const semSku = [...new Set(todasLinhas.filter((l) => l.semSku).map((l) => l.item.id))].map((id) => itensLista.find((i) => i.id === id));
     const attrsForaML = mlShein ? ativas.filter((v) => !ATRIBUTOS_ML.includes(v.nome.trim().toLowerCase())).map((v) => v.nome) : [];
     return { anuncios, colunasAttr, valoresAttr, nomesLongos, semPreco, semSku, quantidadeSeparada, regra4x, temQtd, tresVariacoes, attrsForaML };
-  }, [canal, itensLista, precos, itens, produtos, kits, variacoes, isKit, itemBase, modoTres, rampaMapa]);
+  }, [canal, itensLista, precos, itens, produtos, kits, variacoes, isKit, itemBase, modoTres, rampaMapa, publicacoesCanal]);
 
   const kitsComProduto = !isKit && donoId ? itens.filter((i) => i.id.startsWith("k:") && (i.componentes || []).some((c) => c.produtoId === donoId)) : [];
 
@@ -532,6 +534,13 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                                   {canal && alertaPreco({ preco: l.an.real, canal, valorCliente: clientePagaHoje(l.item, canal) ?? l.an.clientePaga }).frete && (
                                     <div>
                                       <FreteAviso frete={alertaPreco({ preco: l.an.real, canal, valorCliente: clientePagaHoje(l.item, canal) ?? l.an.clientePaga }).frete} compacto />
+                                    </div>
+                                  )}
+                                  {l.an.acimaDoRiscado && (
+                                    <div>
+                                      <span className="chip-cel ruim" title="O preço desejado passou do preço original já anunciado — subir o preço cheio pode ser visto como manipulação; considere manter (Anunciar → detalhe)">
+                                        acima do riscado
+                                      </span>
                                     </div>
                                   )}
                                   {l.an.emRampa && (

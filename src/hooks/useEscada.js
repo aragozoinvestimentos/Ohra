@@ -33,12 +33,12 @@ export function useEscada() {
   // "O que digitar" da Rampa (riscado fixo + promo do degrau) pros itens em
   // rampa e os que dependem deles — e o que o cliente PAGA HOJE (frete grátis).
   const mapaRampa = useMemo(
-    () => mapaAnuncioRampa({ rampas, canais: dados.canais, itens, produtos: dados.produtos, kits: dados.kits, precos, concorrentes, cfgDoProduto }),
-    [rampas, dados.canais, itens, dados.produtos, dados.kits, precos, concorrentes, cfgDoProduto]
+    () => mapaAnuncioRampa({ rampas, canais: dados.canais, itens, produtos: dados.produtos, kits: dados.kits, precos, concorrentes, cfgDoProduto, publicacoes: dados.publicacoesCanal }),
+    [rampas, dados.canais, itens, dados.produtos, dados.kits, precos, concorrentes, cfgDoProduto, dados.publicacoesCanal]
   );
   const clientePagaHoje = useCallback(
-    (item, canal) => valorClientePagaHoje(item?.id, canal, { mapaRampa, precos, itens, produtos: dados.produtos, kits: dados.kits })?.valor ?? null,
-    [mapaRampa, precos, itens, dados.produtos, dados.kits]
+    (item, canal) => valorClientePagaHoje(item?.id, canal, { mapaRampa, precos, itens, produtos: dados.produtos, kits: dados.kits, publicacoes: dados.publicacoesCanal })?.valor ?? null,
+    [mapaRampa, precos, itens, dados.produtos, dados.kits, dados.publicacoesCanal]
   );
 
   const estrategiaDe = useCallback((item, canal, opcoes = {}) => estrategiaEfetiva(item, canal, { precos, emRampa, ...opcoes }), [precos, emRampa]);

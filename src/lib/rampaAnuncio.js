@@ -28,6 +28,49 @@ export function anuncioFixo(real, alvo, desconto) {
   return { original, promo, clientePaga: cent(original * (1 - promo / 100)), real };
 }
 
+// ---- Riscado (preço original) FIXO depois de anunciado (out/2026) ----
+// Nunca mexer no preço cheio do marketplace (pode ser visto como manipulação):
+// depois que o item é marcado "feito" na Anunciar num canal, o preco_original
+// gravado em publicacoes_canal é o riscado daquele item × canal — com ou sem
+// rampa. Preço novo = só promo nova. Recalcular só por ação explícita.
+export function riscadoFixoDe(itemId, canalId, publicacoes) {
+  if (!itemId || !canalId) return null;
+  const tipo = itemTipoDoId(itemId);
+  const pub = (publicacoes || []).find((x) => x.item_tipo === tipo && x.item_id === itemId.slice(2) && x.canal_id === canalId);
+  return pub && num(pub.preco_original) > 0 ? num(pub.preco_original) : null;
+}
+
+// Preço real sobre um riscado já anunciado: só a promo muda (% inteiro pra
+// baixo; cliente paga o real ou centavos a mais). Real acima do riscado →
+// promo 0, cliente paga o riscado e `acimaDoRiscado` (NÃO troca sozinho).
+export function anuncioNoRiscado(real, riscado) {
+  const r = num(real);
+  const o = num(riscado);
+  if (!(r > 0) || !(o > 0)) return null;
+  if (r > o + 0.004) return { original: o, promo: 0, clientePaga: o, real: r, riscadoFixo: true, acimaDoRiscado: true };
+  const promo = Math.max(0, Math.floor((1 - r / o) * 100 + 1e-9));
+  return { original: o, promo, clientePaga: cent(o * (1 - promo / 100)), real: r, riscadoFixo: true };
+}
+
+/**
+ * Conta ÚNICA do anúncio de um item num canal (Anunciar, Ficha, Rampa,
+ * Promoções, "Preço de cadastro", cliente paga hoje):
+ * - já anunciado (publicacoes_canal) → riscado fixo, só a promo muda;
+ * - não anunciado em rampa (alvo) → riscado do alvo (anuncioFixo);
+ * - não anunciado → sugestão normal (real ÷ (1 − desconto)).
+ * `riscadoSugerido` = o que seria o riscado recalculado (pro aviso/botão).
+ */
+export function anuncioDoItem({ itemId, canal, real, alvo = null, desconto, publicacoes }) {
+  if (!(num(real) > 0)) return null;
+  const fixo = riscadoFixoDe(itemId, canal?.id, publicacoes);
+  const sugerido = num(alvo) > 0 ? anuncioFixo(real, alvo, desconto) : calcularAnuncio(real, desconto);
+  if (fixo) {
+    const a = anuncioNoRiscado(real, fixo);
+    return a ? { ...a, desconto, riscadoSugerido: sugerido?.original ?? null } : sugerido;
+  }
+  return sugerido ? { ...sugerido, riscadoFixo: false, riscadoSugerido: sugerido.original } : null;
+}
+
 // Preços salvos com os produtos em rampa trocados pelo degrau atual (pros
 // kits de produtos diferentes usarem o "vendendo agora" de cada peça).
 export function precosComRampa(precos, rampas) {
@@ -63,11 +106,11 @@ export function precoKitNaRampa({ alvo, separado, vantagemMin, piso }) {
  * → { linhas: [{ id ("avulso" | "v:…" | "k:…"), itemId, nome, original, promo, clientePaga, real, lucro,
  *      kit?, n?, separado?, economia?, lucroSeparado?, naoCompensa?, limitado? }], desconto }
  */
-export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto }) {
+export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoes = [] }) {
   const desc = descontoDoItem(`p:${produtoId}`, canal, { itens, produtos, kits }).desconto;
   const out = [];
   const itemPai = itens.find((i) => i.id === `p:${produtoId}`);
-  const av = anuncioFixo(preco, alvo, desc);
+  const av = anuncioDoItem({ itemId: `p:${produtoId}`, canal, real: preco, alvo, desconto: desc, publicacoes });
   if (av) out.push({ id: "avulso", itemId: `p:${produtoId}`, nome: "Avulso (1 un.)", ...av, lucro: itemPai ? lucroNoPreco(canal, preco, num(itemPai.custoTotal), num(itemPai.peso), cfg) : null });
   // Variações de quantidade e kits de produtos diferentes: o MAIOR preço que
   // ainda dá a economia mínima (vantagemMin da escada) vs comprar as peças
@@ -79,7 +122,7 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
     if (l.base || !l.cadastrada) continue;
     const alvoV = l.salvo ?? l.sugerido;
     const k = precoKitNaRampa({ alvo: alvoV, separado: l.n * preco, vantagemMin: cfg.vantagemMin, piso: precoMinimoAceitavel(canal, l.custo, l.peso, cfg) });
-    const a = anuncioFixo(k.preco, alvoV, desc);
+    const a = anuncioDoItem({ itemId: l.itemId, canal, real: k.preco, alvo: alvoV, desconto: desc, publicacoes });
     if (a)
       out.push({
         id: l.itemId,
@@ -103,7 +146,7 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
     const alvoK = salvoK ? num(salvoK.preco) : sugestaoKit({ canal, kitItem: kt, itens, precos, cfg: cfgKit })?.sugerido ?? sg.sugerido;
     const k = precoKitNaRampa({ alvo: alvoK, separado: sg.separado, vantagemMin: cfgKit.vantagemMin, piso: precoMinimoAceitavel(canal, sg.custo, sg.peso, cfgKit) });
     const dk = descontoDoItem(kt.id, canal, { itens, produtos, kits }).desconto;
-    const a = anuncioFixo(k.preco, alvoK, dk);
+    const a = anuncioDoItem({ itemId: kt.id, canal, real: k.preco, alvo: alvoK, desconto: dk, publicacoes });
     if (a)
       out.push({
         id: kt.id,
@@ -120,7 +163,7 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
         limitado: k.limitado,
       });
   }
-  return { linhas: out, desconto: desc };
+  return { linhas: out, desconto: desc, riscadoFixo: riscadoFixoDe(`p:${produtoId}`, canal.id, publicacoes) };
 }
 
 /**
@@ -129,7 +172,7 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
  * acima) — e as variações/kits que dependem deles. No alvo (ou rampa
  * encerrada) o item volta a seguir o preço salvo normalmente.
  */
-export function mapaAnuncioRampa({ rampas, canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto }) {
+export function mapaAnuncioRampa({ rampas, canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoes = [] }) {
   const out = new Map();
   if (!rampas?.length) return out;
   const precosRampa = precosComRampa(precos, rampas);
@@ -140,7 +183,7 @@ export function mapaAnuncioRampa({ rampas, canais, itens, produtos, kits, precos
     const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === r.produto_id && p.canal_id === r.canal_id);
     const alvo = salvo ? num(salvo.preco) : num((r.degraus || [])[(r.degraus || []).length - 1]);
     if (!(preco > 0) || !(alvo > 0) || Math.abs(preco - alvo) < 0.005) continue;
-    const res = anuncioDaRampa({ produtoId: r.produto_id, canal, preco, alvo, cfg: cfgDoProduto(r.produto_id), itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto });
+    const res = anuncioDaRampa({ produtoId: r.produto_id, canal, preco, alvo, cfg: cfgDoProduto(r.produto_id), itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoes });
     for (const l of res.linhas) {
       const chave = `${l.itemId}|${canal.id}`;
       if (!out.has(chave)) out.set(chave, { ...l, acima: preco > alvo, degrau: preco, alvo });
@@ -168,7 +211,7 @@ export function descricaoMudanca(salvo, novo) {
  * (calcularAnuncio com o desconto do item). Nunca o alvo/riscado.
  * → { valor, origem: 'rampa' | 'salvo' } ou null (sem preço salvo).
  */
-export function valorClientePagaHoje(itemId, canal, { mapaRampa, precos, itens, produtos, kits }) {
+export function valorClientePagaHoje(itemId, canal, { mapaRampa, precos, itens, produtos, kits, publicacoes = [] }) {
   if (!itemId || !canal) return null;
   const ra = mapaRampa?.get(`${itemId}|${canal.id}`);
   if (ra) return { valor: ra.clientePaga, origem: "rampa" };
@@ -176,6 +219,6 @@ export function valorClientePagaHoje(itemId, canal, { mapaRampa, precos, itens, 
   const s = (precos || []).find((p) => p.item_tipo === tipo && p.item_id === itemId.slice(2) && p.canal_id === canal.id);
   if (!s || !(num(s.preco) > 0)) return null;
   const { desconto } = descontoDoItem(itemId, canal, { itens, produtos, kits });
-  const an = calcularAnuncio(num(s.preco), desconto);
+  const an = anuncioDoItem({ itemId, canal, real: num(s.preco), desconto, publicacoes });
   return { valor: an ? an.clientePaga : num(s.preco), origem: "salvo" };
 }

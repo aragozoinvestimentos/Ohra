@@ -17,6 +17,7 @@ import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
 import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMinimo, sugestaoAncora, calcularAnuncio, descontoDoItem, descontoPadraoCanal } from "../lib/escada.js";
 import { useRampas } from "../hooks/useRampas.js";
+import { anuncioDoItem } from "../lib/rampaAnuncio.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
 import ResumoFixo from "./ResumoFixo.jsx";
@@ -52,7 +53,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [canalProprioId, setCanalProprioId] = useState("");
   const [confirmarKit, setConfirmarKit] = useState(false);
   const [verFilamentos, setVerFilamentos] = useState(false);
-  const { itens: baseItens, canais, produtos, kits: kitsCat, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje } = useEscada();
+  const { itens: baseItens, canais, produtos, kits: kitsCat, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje, publicacoesCanal } = useEscada();
   const { rampas } = useRampas();
   // margem de partida: a do produto escolhido (se tiver regras próprias) ou a da loja
   const produtoEscolhido = baseSelecionada.startsWith("p:") ? produtos.find((p) => p.id === baseSelecionada.slice(2)) : null;
@@ -357,7 +358,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   // calculado: com a promo do desconto do canal/produto, o cliente paga ele.
   const cadastro =
     !semCusto && resultado.preco > 0 && canalCadastrado
-      ? calcularAnuncio(resultado.preco, itemSel ? descontoDoItem(itemSel.id, canalCadastrado, { itens: baseItens, produtos, kits: kitsCat }).desconto : descontoPadraoCanal(canalCadastrado))
+      ? itemSel
+        ? anuncioDoItem({ itemId: itemSel.id, canal: canalCadastrado, real: resultado.preco, desconto: descontoDoItem(itemSel.id, canalCadastrado, { itens: baseItens, produtos, kits: kitsCat }).desconto, publicacoes: publicacoesCanal })
+        : calcularAnuncio(resultado.preco, descontoPadraoCanal(canalCadastrado))
       : null;
 
   // Âncora pro kit 2 (só sugestão): avulso que deixa o kit 2 (na margem
@@ -559,7 +562,11 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           valor: semCusto || !cadastro ? "—" : BRL(cadastro.original),
           sub: semCusto || !cadastro
             ? "preço original pra cadastrar na plataforma"
-            : cadastro.promo
+            : cadastro.acimaDoRiscado
+              ? "já anunciado: precisaria subir o original — considere manter"
+              : cadastro.riscadoFixo
+                ? `já anunciado (fixo) · promo ${cadastro.promo}% → paga ${BRL(cadastro.clientePaga)}`
+                : cadastro.promo
               ? `promo ${cadastro.promo}% → cliente paga ${BRL(cadastro.clientePaga)}`
               : "canal sem desconto no anúncio",
         },

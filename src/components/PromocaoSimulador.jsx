@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { anuncioDoItem } from "../lib/rampaAnuncio.js";
 import { alertaPreco } from "../lib/estrategia.js";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import BuscaItem from "./BuscaItem.jsx";
@@ -14,7 +15,7 @@ import { normalizarTexto, nomesParecidos } from "../lib/texto.js";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, gruposDoSeletor } from "../lib/variacoes.js";
-import { promoParaPreco, calcularAnuncio, descontoDoItem, configEscada } from "../lib/escada.js";
+import { promoParaPreco, descontoDoItem, configEscada } from "../lib/escada.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -49,7 +50,7 @@ function LucroPorPeca({ lucro, pecas }) {
 // - campanha abaixo do preço real salvo;
 // - escada invertida: o item em promoção fica mais barato por peça que um
 //   kit MAIOR do mesmo produto (o cliente perde o motivo de levar mais).
-function AvisosPlataforma({ precoFinal, baseSelecionada, canal, itens, precos, produtos, kits }) {
+function AvisosPlataforma({ precoFinal, baseSelecionada, canal, itens, precos, produtos, kits, publicacoes }) {
   if (!baseSelecionada || !canal || !(precoFinal > 0)) return null;
   const [pref, id] = baseSelecionada.split(":");
   const tipo = itemTipoDoId(baseSelecionada);
@@ -58,7 +59,8 @@ function AvisosPlataforma({ precoFinal, baseSelecionada, canal, itens, precos, p
   const salvoCanal = salvoDe(tipo, id, canal.id);
   if (salvoCanal && Number(salvoCanal.preco) > 0) {
     const { desconto } = descontoDoItem(baseSelecionada, canal, { itens, produtos, kits });
-    const an = calcularAnuncio(Number(salvoCanal.preco), desconto);
+    // Riscado já anunciado fica fixo (anuncioDoItem, conta única da Anunciar).
+    const an = anuncioDoItem({ itemId: baseSelecionada, canal, real: Number(salvoCanal.preco), desconto, publicacoes });
     if (an && an.promo > 0) {
       const pct = promoParaPreco(an.original, precoFinal);
       avisos.push({
@@ -149,7 +151,7 @@ export default function PromocaoSimulador({ onToast }) {
   // Produtos (custo e embalagem AO VIVO), kits, variações e preços salvos
   // (com lucro recalculado) vêm do catálogo compartilhado, que já tem
   // realtime em todas as tabelas envolvidas.
-  const { itens: itensCatalogo, produtos, kits: kitsCatalogo, precos, canais } = useRankingData();
+  const { itens: itensCatalogo, produtos, kits: kitsCatalogo, precos, canais, publicacoesCanal } = useRankingData();
   const [nomesPromocoesSalvas, setNomesPromocoesSalvas] = useState([]); // pro autocomplete/sugestão ao salvar
   const [carregando, setCarregando] = useState(true);
 
@@ -1166,6 +1168,7 @@ export default function PromocaoSimulador({ onToast }) {
                   precos={precos}
                   produtos={produtos}
                   kits={kitsCatalogo}
+                  publicacoes={publicacoesCanal}
                 />
               )}
             </div>
