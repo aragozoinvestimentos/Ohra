@@ -52,6 +52,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos"); // todos | Produto | Kit
   const [soCustoMudou, setSoCustoMudou] = useState(false);
+  const [soSugeridoDifere, setSoSugeridoDifere] = useState(false); // kits/variações onde a curva sugere outro preço
   const [visao, setVisao] = useLembrado("ohra:precificados:visao", "salvos"); // salvos | comparar
   const [mostrarCanais, setMostrarCanais] = useLembrado("ohra:precificados:canais", "com-preco"); // com-preco | todos
   const [sel, setSel] = useState(null); // "itemId|canalId" com o detalhe aberto
@@ -413,7 +414,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
               ✎ Editar preço
             </button>
           )}
-          {sg && (!p || (sg.st && sg.st.tom !== "good")) && (
+          {sg && !sg.linha.naoVale && (!p || Math.abs(Number(p.preco) - sg.linha.sugerido) >= 0.005) && (
             <button type="button" className="btn btn-mini" onClick={() => setAplicarAlvo({ item, canal: canalObj, linha: sg.linha, salvo: p ? p.preco : null })}>
               Aplicar sugerido {BRL(sg.linha.sugerido)}
             </button>
@@ -685,18 +686,26 @@ export default function Historico({ onEditarCompleto, onToast }) {
   // na seta) — a lista principal só tem produtos e kits. Uma busca que acha
   // uma variação mostra o produto dela já aberto.
   const bate = (item) => !alvoBusca || item.nome.toLowerCase().includes(alvoBusca) || (item.sku || "").toLowerCase().includes(alvoBusca);
+  // Curva da escada sugere outro preço que o salvo (kits e variações, algum canal).
+  const itemSugeridoDifere = (item) =>
+    canais.some((c) => {
+      const sg = sugeridos.get(`${item.id}|${c.id}`);
+      const p = sg ? precoDe(item, c) : null;
+      return !!(sg && p && !sg.linha.naoVale && Math.abs(Number(p.preco) - sg.linha.sugerido) >= 0.005);
+    });
   const variacoesDe = (produtoId) =>
     itens.filter((i) => i.tipo === "Variação" && i.produtoId === produtoId).sort((a, b) => a.quantidade - b.quantidade);
   const topo = itens
     .filter((item) => item.tipo !== "Variação")
     .filter((item) => filtroTipo === "todos" || item.tipo === filtroTipo)
     .filter((item) => !soCustoMudou || itemCustoMudou(item) || (item.tipo === "Produto" && variacoesDe(item.id.split(":")[1]).some(itemCustoMudou)))
+    .filter((item) => !soSugeridoDifere || itemSugeridoDifere(item) || (item.tipo === "Produto" && variacoesDe(item.id.split(":")[1]).some(itemSugeridoDifere)))
     .filter((item) => bate(item) || (item.tipo === "Produto" && variacoesDe(item.id.split(":")[1]).some(bate)));
   const linhasTabela = topo.flatMap((item) => {
     if (item.tipo !== "Produto") return [{ item }];
     const pid = item.id.split(":")[1];
     const vars = variacoesDe(pid);
-    const aberto = expandirTudo || expandidos.has(pid) || (alvoBusca && vars.some(bate) && !bate(item));
+    const aberto = expandirTudo || expandidos.has(pid) || (alvoBusca && vars.some(bate) && !bate(item)) || (soSugeridoDifere && vars.some(itemSugeridoDifere));
     return [{ item, nVariacoes: vars.length, aberto, pid }, ...(aberto ? vars.map((v) => ({ item: v, variacao: true })) : [])];
   });
   // Exportação e contagem usam tudo (produto + todas as variações dele).
@@ -827,6 +836,17 @@ export default function Historico({ onEditarCompleto, onToast }) {
             onClick={() => setSoCustoMudou((v) => !v)}
           >
             Custo mudou
+          </button>
+          <button
+            type="button"
+            className={`btn btn-mini${soSugeridoDifere ? " primary" : ""}`}
+            title="Kits e variações em que a curva de desconto sugere outro preço que o salvo — clique na célula e use Aplicar (com confirmação)"
+            onClick={() => {
+              setSoSugeridoDifere((v) => !v);
+              if (!soSugeridoDifere) setVisao("comparar");
+            }}
+          >
+            Sugerido ≠ salvo
           </button>
           {totalVariacoes > 0 && (
             <button type="button" className="btn btn-mini" onClick={() => { setExpandirTudo((v) => !v); setExpandidos(new Set()); }}>

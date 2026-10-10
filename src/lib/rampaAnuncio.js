@@ -3,7 +3,7 @@
 // anúncio: riscado FIXO no alvo e só a promo muda conforme o degrau;
 // variações pela escada no degrau; kits de produtos diferentes pelo
 // sugestaoKit com as peças em rampa no preço do degrau.
-import { descontoDoItem, escadaDoProduto, sugestaoKit, lucroNoPreco, precoMinimoAceitavel, calcularAnuncio, r90, r90up } from "./escada.js";
+import { descontoDoItem, escadaDoProduto, sugestaoKit, lucroNoPreco, calcularAnuncio } from "./escada.js";
 import { itemTipoDoId } from "./variacoes.js";
 
 const num = (v) => {
@@ -79,25 +79,28 @@ export function precosComRampa(precos, rampas) {
 }
 
 /**
- * Preço de um kit/variação enquanto peça(s) dele estão em rampa:
- *   teto  = r90(separado agora × (1 − vantagemMin))  — a economia mínima vs
- *           comprar as peças separadas no preço de hoje;
- *   preço = min(alvo do kit, teto); abaixo do piso (mínimo aceitável do kit)
- *           → piso (,90 pra cima) e `naoCompensa` (economia fica menor).
- * → { preco, teto, economia, naoCompensa, limitado (teto < alvo) }
+ * Preço de um kit/variação enquanto peça(s) dele estão em rampa (out/2026):
+ * a MESMA curva de desconto da escada (precoNaCurva em escada.js) aplicada
+ * sobre o preço de agora (N × degrau, ou Σ peças no degrau), limitada ao alvo
+ * do kit: preço = min(alvo do kit, preço da curva). A curva já traz as travas
+ * (mínimo aceitável, lucro subindo, queda por peça, faixa); se o mínimo passar
+ * do separado → `naoCompensa` ("kit não compensa neste degrau").
+ * → { preco, economia, naoCompensa, limitado (curva < alvo), motivo }
  */
-export function precoKitNaRampa({ alvo, separado, vantagemMin, piso }) {
+export function precoKitNaRampa({ alvo, separado, curva }) {
   const a = num(alvo);
   const sep = num(separado);
-  const teto = sep > 0 ? cent(r90(sep * (1 - num(vantagemMin)))) : a;
-  let preco = a > 0 ? Math.min(a, teto) : teto;
-  let naoCompensa = false;
-  if (num(piso) > 0 && preco < num(piso) - 0.004) {
-    preco = cent(r90up(num(piso)));
-    naoCompensa = true;
-  }
+  const pc = num(curva?.sugerido);
+  let preco = a > 0 && pc > 0 ? Math.min(a, pc) : pc > 0 ? pc : a;
   preco = cent(preco);
-  return { preco, teto, economia: sep > 0 ? 1 - preco / sep : null, naoCompensa, limitado: a > 0 && teto < a - 0.004 };
+  return {
+    preco,
+    economia: sep > 0 ? 1 - preco / sep : null,
+    // piso (mínimo aceitável) passou da curva neste degrau → kit não compensa
+    naoCompensa: !!curva?.naoCompensa || curva?.limitadoPor === "minimo" || (sep > 0 && preco >= sep - 0.004),
+    limitado: a > 0 && pc > 0 && pc < a - 0.004,
+    motivo: curva?.motivo || null,
+  };
 }
 
 /**
@@ -112,16 +115,17 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
   const itemPai = itens.find((i) => i.id === `p:${produtoId}`);
   const av = anuncioDoItem({ itemId: `p:${produtoId}`, canal, real: preco, alvo, desconto: desc, publicacoes });
   if (av) out.push({ id: "avulso", itemId: `p:${produtoId}`, nome: "Avulso (1 un.)", ...av, lucro: itemPai ? lucroNoPreco(canal, preco, num(itemPai.custoTotal), num(itemPai.peso), cfg) : null });
-  // Variações de quantidade e kits de produtos diferentes: o MAIOR preço que
-  // ainda dá a economia mínima (vantagemMin da escada) vs comprar as peças
-  // separadas no preço de AGORA, sem passar do alvo do kit; piso = mínimo
-  // aceitável do kit (precoKitNaRampa). O preço salvo do kit não muda.
+  // Variações de quantidade e kits de produtos diferentes: a curva de desconto
+  // da escada sobre o preço de AGORA (degrau), sem passar do alvo do kit.
+  // O preço salvo do kit não muda.
   const noAlvo = escadaDoProduto({ produtoId, canal, itens, precos, concorrentes, cfg, p1Override: alvo });
+  const noDegrau = escadaDoProduto({ produtoId, canal, itens, precos: precosRampa, concorrentes, cfg, p1Override: preco, emRampa: true });
   const lucroAvulsoAgora = itemPai ? lucroNoPreco(canal, preco, num(itemPai.custoTotal), num(itemPai.peso), cfg) : null;
   for (const l of noAlvo?.escada?.linhas || []) {
     if (l.base || !l.cadastrada) continue;
     const alvoV = l.salvo ?? l.sugerido;
-    const k = precoKitNaRampa({ alvo: alvoV, separado: l.n * preco, vantagemMin: cfg.vantagemMin, piso: precoMinimoAceitavel(canal, l.custo, l.peso, cfg) });
+    const ld = noDegrau?.escada?.linhas.find((x) => x.n === l.n) || null;
+    const k = precoKitNaRampa({ alvo: alvoV, separado: l.n * preco, curva: ld });
     const a = anuncioDoItem({ itemId: l.itemId, canal, real: k.preco, alvo: alvoV, desconto: desc, publicacoes });
     if (a)
       out.push({
@@ -136,6 +140,7 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
         lucroSeparado: lucroAvulsoAgora != null ? l.n * lucroAvulsoAgora : null,
         naoCompensa: k.naoCompensa,
         limitado: k.limitado,
+        motivo: k.motivo,
       });
   }
   const cfgKit = cfgDoProduto(null);
@@ -144,7 +149,7 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
     if (!sg) continue;
     const salvoK = precos.find((p) => p.item_tipo === "kit" && p.item_id === kt.id.slice(2) && p.canal_id === canal.id);
     const alvoK = salvoK ? num(salvoK.preco) : sugestaoKit({ canal, kitItem: kt, itens, precos, cfg: cfgKit })?.sugerido ?? sg.sugerido;
-    const k = precoKitNaRampa({ alvo: alvoK, separado: sg.separado, vantagemMin: cfgKit.vantagemMin, piso: precoMinimoAceitavel(canal, sg.custo, sg.peso, cfgKit) });
+    const k = precoKitNaRampa({ alvo: alvoK, separado: sg.separado, curva: sg });
     const dk = descontoDoItem(kt.id, canal, { itens, produtos, kits }).desconto;
     const a = anuncioDoItem({ itemId: kt.id, canal, real: k.preco, alvo: alvoK, desconto: dk, publicacoes });
     if (a)
@@ -161,6 +166,7 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
         lucroSeparado: sg.lucroSeparado ?? null,
         naoCompensa: k.naoCompensa,
         limitado: k.limitado,
+        motivo: k.motivo,
       });
   }
   return { linhas: out, desconto: desc, riscadoFixo: riscadoFixoDe(`p:${produtoId}`, canal.id, publicacoes) };

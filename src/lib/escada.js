@@ -27,6 +27,7 @@ import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "./constantesCanal.j
 import { estrategiaGravada } from "./estrategia.js";
 
 export const ESCADA_PADRAO = {
+  descontoMax: 0.3, // curva de desconto dos kits (out/2026): d(N) = descontoMax × (1 − 1/N)
   r2: 1, // kit 2 mantém 100% do lucro/peça
   r10: 0.8, // kit 10 mantém 80%
   piso: 0.7, // nenhuma quantidade abaixo de 70%
@@ -47,7 +48,7 @@ export function configEscada(configLoja, configProduto) {
   const base = { ...ESCADA_PADRAO, ...(configLoja || {}) };
   if (configProduto) {
     // escada própria do produto + margens próprias (desejada, mínima, lucro mínimo em R$)
-    for (const k of ["r2", "r10", "piso", "vantagemMin", "margemDesejada", "margemMin", "lucroMinimo"]) if (configProduto[k] != null && configProduto[k] !== "") base[k] = configProduto[k];
+    for (const k of ["descontoMax", "r2", "r10", "piso", "vantagemMin", "margemDesejada", "margemMin", "lucroMinimo"]) if (configProduto[k] != null && configProduto[k] !== "") base[k] = configProduto[k];
   }
   return base;
 }
@@ -56,6 +57,12 @@ export function configEscada(configLoja, configProduto) {
 export const r90 = (x) => Math.floor(x + 0.1 + 1e-9) - 0.1;
 export const r90up = (x) => Math.ceil(x + 0.1 - 1e-9) - 0.1;
 const centavos = (v) => Math.round(v * 100) / 100;
+// ,90 MAIS PRÓXIMO (empate → pra baixo)
+export const r90perto = (x) => {
+  const a = r90(x);
+  const b = r90up(x);
+  return x - a <= b - x ? a : b;
+};
 
 // Pontos onde a taxa do canal muda (pra resolver preço por faixa). Inclui os
 // "degraus" das regras de item barato: Shopee abaixo de R$9 e ML abaixo de
@@ -173,6 +180,90 @@ export function referenciasAvulso(canal, custo1, peso1, cfg, concorrente) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// CURVA DE DESCONTO DOS KITS (out/2026 — regra do Gustavo, venda real Shopee:
+// a taxa fixa é paga uma vez só no kit, então dá pra dar desconto grande do 1
+// pro 2, perceptível do 2 pro 3 e suave depois, com o lucro sempre subindo).
+//   d(N) = descontoMax × (1 − 1/N); preço = N × base × (1 − d(N)), ,90 mais próximo
+// Travas, nesta ordem: (a) mínimo aceitável do kit; (b) lucro > o do anterior
+// (reduz o desconto até subir); (c) preço por peça cai ≥ R$0,30 vs o anterior
+// (senão "não vale oferecer"); (d) troca de faixa de taxa (desce se der mais lucro).
+// `base` = preço do avulso (variação de quantidade) ou soma das peças separadas
+// (kit de produtos diferentes). r2/r10/piso/vantagemMin não definem mais preço.
+export const QUEDA_MIN_POR_PECA = 0.3;
+export function descontoDaCurva(n, descontoMax) {
+  return n > 1 ? num(descontoMax) * (1 - 1 / n) : 0;
+}
+export function precoNaCurva({ canal, n, base, custo, peso, cfg, lucroAnterior, porPecaAnterior, concorrente = null }) {
+  const teto = num(base);
+  const dMax = cfg?.descontoMax != null && cfg.descontoMax !== "" ? num(cfg.descontoMax) : ESCADA_PADRAO.descontoMax;
+  const descontoAlvo = descontoDaCurva(n, dMax);
+  const notas = [];
+  let p = r90perto(teto * (1 - descontoAlvo));
+  let limitadoPor = null;
+  // concorrente: teto, mas nunca abaixo das travas (a) e (b)
+  const pMin = precoMinimoAceitavel(canal, custo, peso, cfg);
+  let concorrenteAbaixoDoPiso = false;
+  if (num(concorrente) > 0) {
+    const cap = r90(num(concorrente) * 0.98);
+    if (pMin != null && cap < pMin) concorrenteAbaixoDoPiso = true;
+    else if (cap < p) {
+      p = cap;
+      notas.push("limitado pelo concorrente");
+    }
+  }
+  // (a) mínimo aceitável
+  if (pMin != null && p < pMin - 0.004) {
+    p = r90up(pMin);
+    limitadoPor = "minimo";
+  }
+  // (b) lucro sobe vs o anterior
+  if (lucroAnterior != null) {
+    const pl = precoParaLucro(canal, num(lucroAnterior) + 0.01, custo, peso, cfg);
+    if (pl != null && p < pl - 0.004) {
+      p = r90up(pl);
+      limitadoPor = "lucro";
+    }
+  }
+  // (c) preço por peça cai pelo menos R$0,30
+  let naoVale = false;
+  if (porPecaAnterior != null && p / n > num(porPecaAnterior) - QUEDA_MIN_POR_PECA + 0.004) naoVale = true;
+  // (d) troca de faixa do canal: desce pra antes dela se der mais lucro (sem quebrar a, b, c)
+  for (const [, hi] of limitesDoCanal(canal, peso)) {
+    if (!isFinite(hi) || hi <= 0) continue;
+    const b = hi - 0.01;
+    if (b < p && b >= p * 0.85) {
+      const cand = r90(b + 0.001);
+      const lc = lucroNoPreco(canal, cand, custo, peso, cfg);
+      const lp = lucroNoPreco(canal, p, custo, peso, cfg);
+      if (cand < p && lc > lp + 0.5 && (pMin == null || cand >= pMin - 0.004) && (lucroAnterior == null || lc > num(lucroAnterior))) {
+        notas.push("evita a troca de faixa do canal");
+        p = cand;
+      }
+    }
+  }
+  p = centavos(p);
+  const naoCompensa = teto > 0 && p >= teto - 0.004;
+  const desconto = teto > 0 ? 1 - p / teto : 0;
+  const pctTxtLoc = (v) => `${Math.round(Math.max(0, v) * 100)}%`;
+  let motivo = null;
+  if (limitadoPor === "lucro") motivo = `desconto limitado a ${pctTxtLoc(desconto)} pelo lucro (tem que lucrar mais que ${n === 2 || porPecaAnterior == null ? "o anterior" : "o kit anterior"})`;
+  else if (limitadoPor === "minimo") motivo = `desconto limitado a ${pctTxtLoc(desconto)} pelo mínimo aceitável`;
+  if (naoVale) motivo = `não vale oferecer kit ${n}: preço por peça não cai R$${QUEDA_MIN_POR_PECA.toFixed(2).replace(".", ",")}`;
+  if (motivo) notas.push(motivo);
+  return { preco: p, teto, descontoAlvo, desconto, limitadoPor, motivo, naoVale, naoCompensa, pMin, notas, concorrenteAbaixoDoPiso };
+}
+
+// Maior descontoMax que ainda passa nas travas (a) e (b) de um kit N.
+function descontoMaxPossivelKit({ canal, n, base, custo, peso, cfg, lucroAnterior }) {
+  const pMin = precoMinimoAceitavel(canal, custo, peso, cfg);
+  const pl = lucroAnterior != null ? precoParaLucro(canal, num(lucroAnterior) + 0.01, custo, peso, cfg) : null;
+  const lim = Math.max(pMin ?? 0, pl ?? 0);
+  if (!(base > 0) || !(lim > 0)) return null;
+  const dLim = 1 - lim / base;
+  return Math.max(0, dLim / (1 - 1 / n));
+}
+
 /**
  * Monta a escada de preços sugerida.
  * @param canal     canal cadastrado (tipo, imposto_pct, custos_fixos_pct, comissao_pct, taxa_fixa)
@@ -186,12 +277,12 @@ export function calcularEscada({ canal, p1, base1, kits, cfg, estrategia = null,
   const peso1 = num(base1?.peso);
   const preco1 = num(p1);
   const l1 = lucroNoPreco(canal, preco1, custo1, peso1, cfg) ?? 0;
-  const pRef = precoParaMargem(canal, cfg.margemDesejada, custo1, peso1, cfg);
-  const lRef = pRef != null ? lucroNoPreco(canal, pRef, custo1, peso1, cfg) : l1;
-  const lBase = estrategia === "normal" && !emRampa ? l1 : Math.max(l1, lRef ?? l1);
-  const baseRef = lBase > l1 + 0.005;
-  // Por que a base é a margem desejada (pra tela explicar).
-  const baseMotivo = !baseRef ? null : emRampa ? "rampa" : estrategia === "atracao" ? "atracao" : estrategia === "crescimento" ? "crescimento" : "sugerido";
+  // Curva de desconto (out/2026): a base é o PREÇO do avulso, não o lucro.
+  // lBase/baseRef/baseMotivo ficam só por compatibilidade (estratégia não muda preço de kit).
+  const lBase = l1;
+  const baseRef = false;
+  const baseMotivo = null;
+  void emRampa;
 
   const linhas = [
     {
@@ -210,59 +301,18 @@ export function calcularEscada({ canal, p1, base1, kits, cfg, estrategia = null,
   let prevPP = preco1;
   let prevSug = preco1;
   let prevN = 1;
+  let prevLucro = l1;
+  let maxPossivel = null;
   const ordenados = [...(kits || [])].filter((k) => k.n > 1).sort((a, b) => a.n - b.n);
   for (const k of ordenados) {
     const n = k.n;
     const custo = num(k.custo);
     const peso = num(k.peso);
     const teto = n * preco1;
-    const notas = [];
-    const ret = retencao(n, cfg);
-    const alvoLpp = ret * lBase;
-    let p = precoParaLucro(canal, alvoLpp * n, custo, peso, cfg);
-    p = p != null ? r90up(p) : r90(teto);
-    const maxVant = r90(teto * (1 - cfg.vantagemMin));
-    if (p > maxVant) {
-      p = maxVant;
-      notas.push(`desceu pra dar ≥${Math.round(cfg.vantagemMin * 100)}% de vantagem`);
-    }
-    const pMin = precoMinimoAceitavel(canal, custo, peso, cfg);
-    let concorrenteAbaixoDoPiso = false;
-    if (num(k.concorrente) > 0) {
-      const cap = r90(num(k.concorrente) * 0.98);
-      if (pMin != null && cap < pMin) concorrenteAbaixoDoPiso = true;
-      else if (cap < p) {
-        p = cap;
-        notas.push("limitado pelo concorrente");
-      }
-    }
-    if (p / n >= prevPP - 0.005) {
-      p = r90(prevPP * n - 0.2);
-      notas.push("ajustado pela escada");
-    }
-    const descontoCurva = teto > 0 ? (teto - p) / teto : 0;
-    for (const [, hi] of limitesDoCanal(canal, peso)) {
-      if (!isFinite(hi) || hi <= 0) continue;
-      const b = hi - 0.01;
-      if (b < p && b >= p * 0.85) {
-        const cand = r90(b + 0.001);
-        const lc = lucroNoPreco(canal, cand, custo, peso, cfg);
-        const lp = lucroNoPreco(canal, p, custo, peso, cfg);
-        if (cand < p && lc > lp + 0.5 && (teto - cand) / teto <= descontoCurva + 0.1) {
-          notas.push("evita a troca de faixa do canal");
-          p = cand;
-        }
-      }
-    }
-    let naoCompensa = false;
-    if (pMin != null && p < pMin) {
-      const np = r90up(pMin);
-      if (np < teto) {
-        p = np;
-        notas.push("segurado pelo mínimo aceitável");
-      } else naoCompensa = true;
-    }
-    p = centavos(p);
+    const c = precoNaCurva({ canal, n, base: teto, custo, peso, cfg, lucroAnterior: prevLucro, porPecaAnterior: prevPP, concorrente: k.concorrente });
+    const mp = descontoMaxPossivelKit({ canal, n, base: teto, custo, peso, cfg, lucroAnterior: prevLucro });
+    if (mp != null) maxPossivel = maxPossivel == null ? mp : Math.min(maxPossivel, mp);
+    const p = c.preco;
     const lucro = lucroNoPreco(canal, p, custo, peso, cfg);
     const taxas = taxasNoPreco(canal, p, peso, cfg);
     linhas.push({
@@ -275,24 +325,30 @@ export function calcularEscada({ canal, p1, base1, kits, cfg, estrategia = null,
       porPeca: p / n,
       economia: teto - p,
       economiaPct: teto > 0 ? (teto - p) / teto : 0,
+      descontoAlvo: c.descontoAlvo,
+      desconto: c.desconto,
+      limitadoPor: c.limitadoPor,
+      motivo: c.motivo,
+      naoVale: c.naoVale,
       lucro,
       lucroPorPeca: lucro / n,
       margem: p > 0 ? lucro / p : null,
-      alvoLpp,
-      ret,
-      notas,
+      notas: c.notas,
       taxas,
-      naoCompensa,
-      concorrenteAbaixoDoPiso,
-      pisoMargem: pMin,
+      naoCompensa: c.naoCompensa,
+      concorrenteAbaixoDoPiso: c.concorrenteAbaixoDoPiso,
+      pisoMargem: c.pMin,
       maisQueAnterior: p - prevSug,
+      porUnidadeExtra: (p - prevSug) / (n - prevN),
       nAnterior: prevN,
     });
     prevPP = p / n;
     prevSug = p;
     prevN = n;
+    prevLucro = lucro;
   }
-  return { linhas, l1, lBase, baseRef, baseMotivo, estrategia };
+  const descontoMaxPossivel = maxPossivel;
+  return { linhas, l1, lBase, baseRef, baseMotivo, estrategia, descontoMax: cfg.descontoMax ?? ESCADA_PADRAO.descontoMax, descontoMaxPossivel };
 }
 
 // O avulso "parece atração": margem abaixo da desejada mas o kit 2 compensa.
@@ -525,38 +581,16 @@ export function sugestaoKit({ canal, kitItem, itens, precos, cfg }) {
   }
   if (!componentes.length || !(separado > 0)) return null;
   const pecas = componentes.reduce((s, c) => s + c.quantidade, 0);
-  const alvo = retencao(pecas, cfg) * lucroBase;
-  const notas = [];
-  let p = precoParaLucro(canal, alvo, custo, peso, cfg);
-  p = p != null ? r90up(p) : r90(separado);
-  const maxVant = r90(separado * (1 - cfg.vantagemMin));
-  if (p > maxVant) {
-    p = maxVant;
-    notas.push(`desceu pra dar ≥${Math.round(cfg.vantagemMin * 100)}% de economia`);
-  }
-  const descontoCurva = (separado - p) / separado;
-  for (const [, hi] of limitesDoCanal(canal, peso)) {
-    if (!isFinite(hi) || hi <= 0) continue;
-    const b = hi - 0.01;
-    if (b < p && b >= p * 0.85) {
-      const cand = r90(b + 0.001);
-      const lc = lucroNoPreco(canal, cand, custo, peso, cfg);
-      const lp = lucroNoPreco(canal, p, custo, peso, cfg);
-      if (cand < p && lc > lp + 0.5 && (separado - cand) / separado <= descontoCurva + 0.1) {
-        notas.push("evita a troca de faixa do canal");
-        p = cand;
-      }
-    }
-  }
-  const pMin = precoMinimoAceitavel(canal, custo, peso, cfg);
-  let naoCompensa = false;
-  if (pMin != null && p < pMin) {
-    const np = r90up(pMin);
-    if (np < separado) {
-      p = np;
-      notas.push("segurado pelo mínimo aceitável");
-    } else naoCompensa = true;
-  }
+  // Mesma curva da escada sobre o preço separado (Σ qtd × preço salvo de cada
+  // peça), N = nº de peças; travas: mínimo, lucro > peças separadas, preço por
+  // peça cai ≥ R$0,30 vs a média separada, troca de faixa.
+  const c = precoNaCurva({ canal, n: pecas, base: separado, custo, peso, cfg, lucroAnterior: lucroSeparado, porPecaAnterior: separado / pecas });
+  const notas = c.notas;
+  const alvo = c.descontoAlvo;
+  const naoCompensa = c.naoCompensa || c.naoVale;
+  const pMin = c.pMin;
+  let p = c.preco;
+  void lucroBase;
   p = centavos(p);
   const lucro = lucroNoPreco(canal, p, custo, peso, cfg);
   return {
@@ -576,6 +610,11 @@ export function sugestaoKit({ canal, kitItem, itens, precos, cfg }) {
     pisoMargem: pMin,
     notas,
     naoCompensa,
+    naoVale: c.naoVale,
+    motivo: c.motivo,
+    desconto: c.desconto,
+    descontoAlvo: c.descontoAlvo,
+    limitadoPor: c.limitadoPor,
     kit: true,
   };
 }

@@ -18,7 +18,6 @@ import { EditorVariacao } from "./VariacoesProduto.jsx";
 
 const NOME_CANAL = { shopee: "Shopee", ml: "Mercado Livre", tiktok: "TikTok Shop", shein: "Shein" };
 const nomeCanal = (c) => c?.nome || NOME_CANAL[c?.tipo] || "Canal";
-const pctTxt = (v) => `${Math.round((Number(v) || 0) * 100)}%`;
 
 function faixaTxt(canal, taxas) {
   if (!taxas) return "";
@@ -26,11 +25,10 @@ function faixaTxt(canal, taxas) {
 }
 
 // Campos da escada editáveis (em %).
+// Curva de desconto (out/2026): r2/r10/piso/vantagemMin não definem mais preço
+// (ficam no banco, não são apagados).
 const CAMPOS_ESCADA = [
-  { k: "r2", label: "Kit 2 mantém (% do lucro/peça)", ajuda: "100% = toda a economia de taxa/embalagem vai pro cliente, sem você perder nada por peça." },
-  { k: "r10", label: "Kit 10 mantém (%)", ajuda: "Quanto mais baixo, mais agressivo o desconto nos kits grandes." },
-  { k: "piso", label: "Piso do lucro/peça (%)", ajuda: "Nenhuma quantidade fica abaixo disso." },
-  { k: "vantagemMin", label: "Vantagem mínima pro cliente (%)", ajuda: "Kit sempre sai pelo menos isso mais barato que N avulsos." },
+  { k: "descontoMax", label: "Desconto máximo dos kits (%)", ajuda: "Kit N = N × avulso × (1 − d), d = este % × (1 − 1/N): com 30%, kit 2 = 15%, kit 3 = 20%, kit 4 = 22,5%… sempre com o lucro subindo." },
 ];
 // Margens próprias do produto (só com "regras próprias"; vazio = usa a da loja,
 // que fica em Configuração → Lojas → Metas de preço).
@@ -271,9 +269,11 @@ export default function PrecoPorQuantidade({ onToast }) {
   function configsDaEdicao(ed) {
     const v = ed.valores;
     const frac = (k) => Math.max(0, Math.min(1, (Number(v[k]) || 0) / 100));
-    const escadaCampos = { r2: frac("r2"), r10: frac("r10"), piso: frac("piso"), vantagemMin: frac("vantagemMin") };
+    const escadaCampos = { descontoMax: frac("descontoMax") };
     if (!ed.propria) return { loja: { ...(cfgLoja || {}), ...escadaCampos }, produto: null };
-    const doProduto = { ...escadaCampos };
+    // Mantém o que já estava gravado no produto (r2 etc. antigos) e troca só o editado.
+    const doProduto = { ...(escadaPropria || {}), ...escadaCampos };
+    for (const c of CAMPOS_MARGEM) delete doProduto[c.k];
     for (const c of CAMPOS_MARGEM) {
       const t = String(v[c.k] ?? "").trim().replace(",", ".");
       if (t === "" || !isFinite(Number(t))) continue;
@@ -309,7 +309,7 @@ export default function PrecoPorQuantidade({ onToast }) {
     const d = escadaDoProduto({ produtoId: pid, canal, itens, precos: precosEsc, concorrentes: concorrentesEsc, cfg: cfgPrev, p1Override: p1Edit[chave], quantidadesExtras: qtdsExtras, concorrenteOverrides: concOverrides });
     const ks = d?.escada?.linhas.filter((l) => !l.base) || [];
     if (!ks.length) return null;
-    return ks.map((l) => `${l.n} un. = ${BRL(l.sugerido)} (${Math.round(l.economiaPct * 100)}% off · mantém ${Math.round((l.lucroPorPeca / (d.escada.lBase || 1)) * 100)}% do lucro/peça)`).join(" · ");
+    return ks.map((l) => `${l.n} un. = ${BRL(l.sugerido)} (${Math.round(l.desconto * 100)}% off · lucro ${BRL(l.lucro)}${l.naoVale ? " · não vale" : l.limitadoPor ? " · limitado" : ""})`).join(" · ");
   })();
 
   if (!produtosLista.length) {
@@ -451,7 +451,14 @@ export default function PrecoPorQuantidade({ onToast }) {
             { label: "Avulso", valor: BRL(dados.p1), sub: `lucro ${BRL(e.l1)} · ${PCT(dados.p1 > 0 ? e.l1 / dados.p1 : 0)}` },
             k2 ? { label: "Salto do kit 2", valor: `${PCT(k2.economiaPct)} off`, tom: "destaque", sub: `${BRL(k2.sugerido)} · ${BRL(k2.porPeca)} cada · lucro ${BRL(k2.lucro)}` } : null,
             melhor ? { label: "Maior lucro por pedido", valor: BRL(melhor.lucro), tom: "good", sub: `${melhor.n} un. a ${BRL(melhor.sugerido)} · ${BRL(melhor.porPeca)}/peça` } : null,
-            kits.length ? { label: "Maior vantagem pro cliente", valor: PCT(Math.max(...kits.map((k) => k.economiaPct))), sub: "vs. comprar avulso" } : null,
+            kits.length
+              ? {
+                  label: "Desconto máximo possível",
+                  valor: e.descontoMaxPossivel != null ? `${Math.round(e.descontoMaxPossivel * 100)}%` : "—",
+                  tom: e.descontoMaxPossivel != null && e.descontoMaxPossivel < (e.descontoMax ?? 0.3) - 0.004 ? "warn" : undefined,
+                  sub: `neste produto (mínimo e lucro subindo) · regra: ${Math.round((e.descontoMax ?? 0.3) * 100)}%`,
+                }
+              : null,
           ]}
         />
       )}
@@ -461,7 +468,7 @@ export default function PrecoPorQuantidade({ onToast }) {
           <h3 className="section-title h3-split">
             <span>
               Escada de preços sugerida
-              <Ajuda texto="Preço sugerido = o menor preço (terminado em ,90) que entrega o lucro por peça alvo, com a comissão e a taxa fixa da faixa real do canal pro preço do kit (o kit é um anúncio só). Travas: o cliente sempre economiza pelo menos a vantagem mínima; preço por peça sempre cai; nunca abaixo da margem mínima; concorrente vira teto mas nunca abaixo da margem mínima; se ficar logo acima de uma troca de faixa do canal e descer der mais lucro, desce. Linha laranja = variação já cadastrada." />
+              <Ajuda texto="Curva de desconto (base = preço do avulso salvo): kit N = N × avulso × (1 − d), com d = desconto máximo × (1 − 1/N), no ,90 mais próximo — desconto grande do 1 pro 2, perceptível do 2 pro 3 e suave depois (a taxa fixa do kit é paga uma vez só). Travas, nesta ordem: mínimo aceitável do kit; lucro do kit N maior que o do anterior (reduz o desconto até subir); preço por peça cai pelo menos R$0,30 (senão 'não vale oferecer'); troca de faixa do canal. Concorrente vira teto, nunca abaixo dessas travas. Linha laranja = variação já cadastrada." />
             </span>
             <button type="button" className="btn btn-sm" onClick={() => (mostrarRegras ? setMostrarRegras(false) : abrirRegras())}>
               ⚙ Regras da escada{escadaPropria ? " (própria)" : ""}
@@ -586,19 +593,13 @@ export default function PrecoPorQuantidade({ onToast }) {
                               <div className="kv-cel">
                                 <small>Custo</small>
                                 <b>{BRL(l.custo)}</b>
-                                <span>alvo {BRL(e.lBase)}/peça</span>
+                                <span>lucro {BRL(e.l1)} no avulso (base da curva = preço do avulso)</span>
                               </div>
                               <div className="kv-cel">
                                 <small>Faixa do canal</small>
                                 <b>{faixaTxt(canal, l.taxas)}</b>
                               </div>
                             </div>
-                            {e.baseRef && (
-                              <div className="aviso-cel">
-                                <b>Base = margem desejada</b> (
-                                {{ atracao: "avulso em atração — escolhido", crescimento: "avulso em crescimento — escolhido", rampa: "avulso em rampa", sugerido: "sugerido: avulso parece atração" }[e.baseMotivo] || "avulso abaixo da margem desejada"})
-                              </div>
-                            )}
                             <FreteAviso frete={freteDe(valorBase)} dica={dicaFreteAvulso} />
                             <div>
                               <div className="legenda-tit" style={{ marginBottom: 4 }}>Texto pro anúncio</div>
@@ -622,7 +623,11 @@ export default function PrecoPorQuantidade({ onToast }) {
                         </td>
                         <td className="num">
                           <span className="sug">{BRL(l.sugerido)}</span>
-                          <span className="sub">{BRL(l.porPeca)} cada</span>
+                          <span className="sub">
+                            {BRL(l.porPeca)} cada · {Math.round(l.desconto * 100)}% off
+                          </span>
+                          <span className="sub">+{BRL(l.porUnidadeExtra)} por unidade extra</span>
+                          {l.motivo && <span className="nota">{l.motivo}</span>}
                         </td>
                         <td className="num">
                           <b>{BRL(l.lucro)}</b> · {PCT(l.margem)}
@@ -650,7 +655,9 @@ export default function PrecoPorQuantidade({ onToast }) {
                           {st && st.tom !== "good" && <span className="sub">{st.texto.replace(/^[^\wÀ-ú]+\s*/, "")}</span>}
                         </td>
                         <td>
-                          {l.naoCompensa ? (
+                          {l.naoVale ? (
+                            <span className="badge neutro" title={l.motivo}>não vale oferecer</span>
+                          ) : l.naoCompensa ? (
                             <span className="badge bad">não compensa</span>
                           ) : l.cadastrada ? (
                             st?.tom === "good" ? null : (
@@ -672,7 +679,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                             <div className="kv-cel">
                               <small>Custo</small>
                               <b>{BRL(l.custo)}</b>
-                              <span>{l.estimado ? "estimado — crie a variação pro custo real" : `alvo ${BRL(l.alvoLpp)}/peça · ${pctTxt(l.ret)}`}</span>
+                              <span>{l.estimado ? "estimado — crie a variação pro custo real" : `curva: ${Math.round(l.descontoAlvo * 100)}% → ${Math.round(l.desconto * 100)}% aplicado`}</span>
                             </div>
                             <div className="kv-cel">
                               <small>Faixa do canal</small>
@@ -719,12 +726,12 @@ export default function PrecoPorQuantidade({ onToast }) {
                             </div>
                           </div>
                           <div className="detalhe-cel-acoes">
-                            {!l.naoCompensa && l.cadastrada && (
+                            {!l.naoCompensa && !l.naoVale && l.cadastrada && (
                               <button type="button" className={`btn btn-mini${st?.tom === "good" ? "" : " primary"}`} onClick={() => setConfirmar({ tipo: "aplicar", linha: l, precoEdit: st?.tom === "good" && l.salvo != null ? l.salvo.toFixed(2) : undefined })}>
                                 {st?.tom === "good" ? "✎ Editar preço" : `Aplicar ${BRL(l.sugerido)} (editável)`}
                               </button>
                             )}
-                            {!l.naoCompensa && !l.cadastrada && (
+                            {!l.naoCompensa && !l.naoVale && !l.cadastrada && (
                               <button type="button" className="btn btn-mini primary" onClick={() => setConfirmar({ tipo: "criar", linha: l })}>
                                 + Criar variação
                               </button>

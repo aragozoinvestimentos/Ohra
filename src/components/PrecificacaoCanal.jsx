@@ -659,7 +659,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           <button type="button" className="btn btn-sm primary" onClick={() => setConfirmarKit(true)} disabled={!canalIdAtual}>
             Salvar sugerido
           </button>
-          <Ajuda texto="O preço separado é a soma dos preços salvos das peças nesse canal (* = peça sem preço salvo; usa o da margem desejada). O kit paga uma taxa fixa só e uma embalagem, então dá pra cobrar menos que o separado mantendo o mesmo lucro — essa economia vai pro cliente. Mesmas travas da escada: cliente economiza pelo menos 5%, margem mínima e troca de faixa do canal." />
+          <Ajuda texto="O preço separado é a soma dos preços salvos das peças nesse canal (* = peça sem preço salvo; usa o da margem desejada). O kit paga uma taxa fixa só e uma embalagem, então dá pra cobrar menos que o separado mantendo o mesmo lucro — essa economia vai pro cliente. Mesma curva de desconto da escada (desconto máximo × (1 − 1/peças), ,90 mais próximo) com as mesmas travas: mínimo aceitável, lucro maior que vender as peças separadas, preço por peça cai pelo menos R$0,30 e troca de faixa do canal." />
         </div>
         {sugKit.notas.length > 0 && <div className="kit-sep-notas">{sugKit.notas.join(" · ")}</div>}
         {sugKit.naoCompensa && <div className="kit-sep-notas" style={{ color: "var(--bad)" }}>Nesse canal o kit não consegue ficar abaixo do separado com a margem mínima — revise o custo do kit ou os preços das peças.</div>}

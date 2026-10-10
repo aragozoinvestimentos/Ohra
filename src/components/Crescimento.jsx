@@ -934,7 +934,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                     <td>
                       {a.nome}
                       {a.separado != null && a.economia != null && (
-                        <div className="sub-num" title={`${a.kit ? "Peças separadas" : `${a.n} avulsos`} no preço de agora: ${BRL(a.separado)}. Regra: o maior preço que ainda dá ≥${Math.round((l.cfg.vantagemMin || 0.05) * 100)}% de economia, sem passar do alvo do kit.`}>
+                        <div className="sub-num" title={`${a.kit ? "Peças separadas" : `${a.n} avulsos`} no preço de agora: ${BRL(a.separado)}. Regra: a curva de desconto da escada sobre o preço de agora, sem passar do alvo do kit.${a.motivo ? ` ${a.motivo}.` : ""}`}>
                           economia {pctF(a.economia)} vs {a.kit ? "separado" : `${a.n} avulsos`} ({BRL(a.separado)})
                           {a.limitado ? " · abaixo do alvo do kit" : ""}
                         </div>
@@ -971,7 +971,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
             </table>
           </div>
           <p className="hint" style={{ margin: "6px 0 0" }}>
-            Variações e kits: o maior preço que ainda dá ≥{Math.round((l.cfg.vantagemMin || 0.05) * 100)}% de economia vs as peças separadas no preço de agora, sem passar do alvo de cada kit (o preço salvo dele não muda). Clique no valor pra copiar.
+            Variações e kits: a mesma curva de desconto do 2º Por quantidade (até {Math.round((l.cfg.descontoMax ?? 0.3) * 100)}%, lucro sempre subindo) sobre o preço de agora, sem passar do alvo de cada kit (o preço salvo dele não muda). Clique no valor pra copiar.
           </p>
 
           <h4 className="sub-h">Ads {e.ultAds ? <span className="muted-cel">· semana de {dataBR(e.ultAds.data)}</span> : null}</h4>
