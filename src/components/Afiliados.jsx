@@ -850,7 +850,7 @@ function ParceiroDialog({ parceiro, inicial, itens, canais, mapaAf, hoje, lojaId
   );
 }
 
-const COR = { organico: "var(--af-org)", ads: "var(--af-ads)", afiliado: "var(--af-af)" };
+const COR = { organico: "var(--af-org)", ads: "var(--af-ads)", afiliado: "var(--af-af)", conhecidos: "var(--af-con)" };
 
 function GraficoOrigem({ semanas }) {
   const max = Math.max(4, ...semanas.map((w) => w.total));
@@ -873,6 +873,7 @@ function GraficoOrigem({ semanas }) {
         <span><i style={{ background: COR.organico }} />Orgânico</span>
         <span><i style={{ background: COR.ads }} />Ads</span>
         <span><i style={{ background: COR.afiliado }} />Afiliado</span>
+        <span title="Vendas de amigos/família: contam no caixa, não no orgânico"><i style={{ background: COR.conhecidos }} />Conhecidos</span>
       </div>
       {vazio ? (
         <div className="empty">Sem semanas registradas ainda — use “Registrar semana”.</div>
@@ -890,11 +891,12 @@ function GraficoOrigem({ semanas }) {
               ["afiliado", w.afiliado],
               ["ads", w.ads],
               ["organico", w.organico],
+              ["conhecidos", w.conhecidos],
             ];
             let base = 0;
             return (
               <g key={w.semana}>
-                <title>{`Semana de ${dataBR(w.semana)}: ${w.total} vendas — orgânico ${w.organico}, Ads ${w.ads}, afiliado ${w.afiliado}`}</title>
+                <title>{`Semana de ${dataBR(w.semana)}: ${w.total} vendas — orgânico ${w.organico}, Ads ${w.ads}, afiliado ${w.afiliado}${w.conhecidos ? `, conhecidos ${w.conhecidos}` : ""}`}</title>
                 {partes.map(([k2, v]) => {
                   if (!v) return null;
                   const yTop = y(base + v);

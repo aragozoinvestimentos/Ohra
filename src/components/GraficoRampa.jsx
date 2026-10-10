@@ -1,6 +1,7 @@
 import { hojeSP } from "../lib/datas.js";
 import { useState } from "react";
 import { BRL } from "../lib/format.js";
+import { conhecidosDe, pedidosParaDecisao, vendasParaDecisao } from "../lib/rampa.js";
 
 const num = (v) => {
   const x = Number(v);
@@ -11,7 +12,7 @@ const virgula = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits
 
 // Evolução da rampa: preço vendido (degraus, área + linha em degrau), alvo
 // tracejado, vendas da semana em barras na faixa de baixo e avaliações
-// acumuladas numa linha suave (eixo próprio à direita); com o funil
+// acumuladas numa linha suave (a parte de conhecidos fica no topo da barra, neutra) (eixo próprio à direita); com o funil
 // preenchido, também CTR e conversão por semana (eixo % na ponta direita).
 // Marca as subidas
 // e descidas de degrau. Passar o mouse/tocar mostra os números do dia.
@@ -36,18 +37,21 @@ export default function GraficoRampa({ est }) {
     const ultPreco = [...doDia].reverse().find((r) => r.preco != null);
     const ultAval = [...doDia].reverse().find((r) => r.avaliacoes != null);
     const vendas = doDia.filter((r) => r.tipo === "semana").reduce((s, r) => s + num(r.vendas), 0);
+    // Conhecidos (v39): parte da barra de vendas, em cor neutra; fora da conversão.
+    const conhecidos = doDia.filter((r) => r.tipo === "semana").reduce((s, r) => s + conhecidosDe(r), 0);
     const mudanca = doDia.find((r) => r.tipo === "subida" || r.tipo === "descida") || null;
     // Funil da semana (schema v36): CTR = cliques ÷ impressões; conversão =
     // pedidos (ou vendas, sem pedidos) ÷ cliques. Só semanas preenchidas.
     const comFunil = doDia.filter((r) => r.tipo === "semana" && r.visualizacoes != null && r.visitas != null);
     const imp = comFunil.reduce((s, r) => s + num(r.visualizacoes), 0);
     const cli = comFunil.reduce((s, r) => s + num(r.visitas), 0);
-    const ped = comFunil.reduce((s, r) => s + num(r.pedidos != null ? r.pedidos : r.vendas), 0);
+    const ped = comFunil.reduce((s, r) => s + (r.pedidos != null ? pedidosParaDecisao(r) : vendasParaDecisao(r)), 0);
     pontos.push({
       data: d,
       preco: ultPreco ? num(ultPreco.preco) : ant.preco,
       aval: ultAval ? num(ultAval.avaliacoes) : ant.aval,
       vendas,
+      conhecidos: Math.min(conhecidos, vendas),
       temSemana: doDia.some((r) => r.tipo === "semana"),
       mudanca,
       ctr: comFunil.length && imp > 0 ? cli / imp : null,
@@ -125,6 +129,7 @@ export default function GraficoRampa({ est }) {
       <div className="grafico-legenda">
         <span><i className="leg-preco" />Preço vendido</span>
         <span><i className="leg-vendas" />Vendas/semana</span>
+        {pontos.some((p) => p.conhecidos > 0) && <span><i className="leg-conhecidos" />Conhecidos</span>}
         <span><i className="leg-aval" />Avaliações</span>
         <span><i className="leg-alvo" />Alvo</span>
         {temFunil && <span><i className="leg-ctr" />CTR</span>}
@@ -135,6 +140,7 @@ export default function GraficoRampa({ est }) {
               <strong>{dataBR(h.data)}</strong>
               {h.preco != null ? ` · ${BRL(h.preco)}` : ""}
               {h.temSemana ? ` · ${h.vendas} venda${h.vendas === 1 ? "" : "s"}` : ""}
+              {h.conhecidos > 0 ? ` (${h.conhecidos} de conhecidos)` : ""}
               {h.aval != null ? ` · ${h.aval} avaliações` : ""}
               {h.ctr != null ? ` · CTR ${fmtPct(h.ctr)}` : ""}
               {h.conv != null ? ` · conversão ${fmtPct(h.conv)}` : ""}
@@ -183,6 +189,11 @@ export default function GraficoRampa({ est }) {
           p.vendas > 0 ? (
             <g key={`v${p.data}`}>
               <rect x={cx(i) - Math.min(14, larg * 0.22)} y={baseVendas - hV(p.vendas)} width={Math.min(28, larg * 0.44)} height={hV(p.vendas)} rx="4" className="barra-vendas" />
+              {p.conhecidos > 0 && (
+                <rect x={cx(i) - Math.min(14, larg * 0.22)} y={baseVendas - hV(p.vendas)} width={Math.min(28, larg * 0.44)} height={hV(p.conhecidos)} rx="4" className="barra-conhecidos">
+                  <title>{`${p.conhecidos} de conhecidos (amigos/família) — fora do orgânico`}</title>
+                </rect>
+              )}
               <text x={cx(i)} y={baseVendas - hV(p.vendas) - 4} textAnchor="middle" className="eixo rotulo-vendas">{p.vendas}</text>
             </g>
           ) : null

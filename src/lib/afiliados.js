@@ -6,6 +6,7 @@ import { lucroNoPreco, lucroMinimoAceitavel } from "./escada.js";
 import { itemTipoDoId } from "./variacoes.js";
 import { alertaPreco, estrategiaEfetiva } from "./estrategia.js";
 import { dataSP } from "./datas.js";
+import { conhecidosDe, vendasParaDecisao } from "./rampa.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -251,17 +252,18 @@ export function resumoSemana({ afRegistros, rampaRegistros, rampas, mapaLinhas, 
   return { vendasAf, comissao, receitaAf, lucroAf, total, adsGasto, adsVendas, adsReceita, comissaoRampa, temRegistro: af.length > 0 };
 }
 
-// Vendas por origem (orgânico / Ads / afiliado) por semana (segunda-feira), últimas `n` semanas.
+// Vendas por origem (orgânico / Ads / afiliado / conhecidos) por semana (segunda-feira), últimas `n` semanas.
 export function vendasPorOrigem({ afRegistros, rampaRegistros, rampas, hoje, n = 6 }) {
   const fim = semanaDe(hoje);
   const semanas = Array.from({ length: n }, (_, k) => somarDias(fim, -7 * (n - 1 - k)));
-  const mapa = new Map(semanas.map((s) => [s, { semana: s, total: 0, ads: 0, afiliado: 0, comissao: 0, adsGasto: 0 }]));
+  const mapa = new Map(semanas.map((s) => [s, { semana: s, total: 0, ads: 0, afiliado: 0, conhecidos: 0, comissao: 0, adsGasto: 0 }]));
   for (const g of rampaRegistros) {
     if (g.tipo !== "semana" || !rampas.some((r) => r.id === g.rampa_id)) continue;
     const m = mapa.get(semanaDe(g.data));
     if (!m) continue;
     m.total += num(g.vendas);
     m.ads += num(g.ads_vendas);
+    m.conhecidos += conhecidosDe(g);
     m.adsGasto += num(g.ads_gasto);
   }
   for (const g of afRegistros) {
@@ -272,13 +274,15 @@ export function vendasPorOrigem({ afRegistros, rampaRegistros, rampas, hoje, n =
     if (g.vendas_total != null) {
       m.total += num(g.vendas_total);
       m.ads += num(g.ads_vendas);
+      m.conhecidos += conhecidosDe(g);
       m.adsGasto += num(g.ads_gasto);
     }
   }
   return semanas.map((s) => {
     const m = mapa.get(s);
-    const total = Math.max(m.total, m.ads + m.afiliado);
-    return { ...m, total, organico: Math.max(0, total - m.ads - m.afiliado) };
+    // Orgânico = total − Ads − afiliado − conhecidos (v39).
+    const total = Math.max(m.total, m.ads + m.afiliado + m.conhecidos);
+    return { ...m, total, organico: Math.max(0, total - m.ads - m.afiliado - m.conhecidos) };
   });
 }
 
@@ -429,13 +433,14 @@ function semanasDoItem(l, afRegistros) {
     if (g.item_tipo !== l.tipo || g.item_id !== l.id || g.canal_id !== l.canal.id) continue;
     const w = pegar(g.data);
     w.af += num(g.vendas);
-    if (!l.rampa && g.vendas_total != null) w.total = (w.total ?? 0) + num(g.vendas_total);
+    // Decisão (afiliado tomando venda do orgânico): total sem conhecidos.
+    if (!l.rampa && g.vendas_total != null) w.total = (w.total ?? 0) + Math.max(0, num(g.vendas_total) - conhecidosDe(g));
   }
   if (l.rampa)
     for (const r of l.rampa.est.registros || []) {
       if (r.tipo !== "semana" || r.vendas == null) continue;
       const w = pegar(r.data);
-      w.total = (w.total ?? 0) + num(r.vendas);
+      w.total = (w.total ?? 0) + vendasParaDecisao(r);
     }
   return [...m.values()].filter((w) => w.total != null).sort((a, b) => (a.semana < b.semana ? -1 : 1));
 }

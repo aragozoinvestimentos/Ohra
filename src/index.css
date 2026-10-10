@@ -1136,6 +1136,8 @@ tr.linha-clicavel:hover td { background: var(--surface-3); }
 .grafico-rampa .linha-aval { fill: none; stroke: var(--accent2, #b0503f); stroke-width: 1.8; stroke-dasharray: 1 4; stroke-linecap: round; }
 .grafico-rampa .ponto-aval { fill: var(--surface); stroke: var(--accent2, #b0503f); stroke-width: 1.5; }
 .grafico-rampa .barra-vendas { fill: var(--good); opacity: .35; }
+.grafico-rampa .barra-conhecidos { fill: var(--ink-soft); opacity: .45; }
+.grafico-legenda .leg-conhecidos { background: var(--ink-soft); opacity: .5; }
 .grafico-rampa .rotulo-vendas { fill: var(--good); font-weight: 600; }
 .grafico-rampa .faixa-hover { fill: var(--surface-2); opacity: .7; }
 .grafico-rampa .ponto-subida { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
@@ -1197,8 +1199,8 @@ tr.linha-clicavel:hover td { background: var(--surface-3); }
 .custo-mudou { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px; white-space: normal; line-height: 1.3; max-width: 150px; margin-left: auto; }
 
 /* Crescimento → Afiliados (schema v35) */
-:root { --af-org: #9fcfb2; --af-ads: #e7b48f; --af-af: #8fa9d9; }
-:root[data-theme="dark"] { --af-org: #4f8f6a; --af-ads: #b5784b; --af-af: #5873a8; }
+:root { --af-org: #9fcfb2; --af-ads: #e7b48f; --af-af: #8fa9d9; --af-con: #c9c6bf; }
+:root[data-theme="dark"] { --af-org: #4f8f6a; --af-ads: #b5784b; --af-af: #5873a8; --af-con: #6b6862; }
 .af-pagina .neg, .modal-box .hint.neg, .modal-box .neg { color: var(--bad); }
 .af-pagina .pos { color: var(--good); }
 .af-pagina tr.linha-ruim td { background: var(--bad-soft); }

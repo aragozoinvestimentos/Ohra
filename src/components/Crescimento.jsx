@@ -20,7 +20,7 @@ const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slic
 import { anuncioDaRampa, anuncioFixo, anuncioNoRiscado, riscadoFixoDe } from "../lib/rampaAnuncio.js";
 import { descontoDoItem } from "../lib/escada.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
-import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, ajustarDegrausAoAlvo, estadoRampa, finalAcima, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
+import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, ajustarDegrausAoAlvo, conhecidosDe, estadoRampa, finalAcima, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -660,7 +660,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
         <span>
           {l.produto.nome} <CanalTag canal={l.canal} />
           <span className="h3-contagem">
-            degrau {e.i + 1} de {e.degraus.length} desde {dataBR(l.r.desde)} ({e.dias} dia{e.dias === 1 ? "" : "s"}) · {e.vendasTotal} vendas no total
+            degrau {e.i + 1} de {e.degraus.length} desde {dataBR(l.r.desde)} ({e.dias} dia{e.dias === 1 ? "" : "s"}) · {e.vendasTotal} vendas no total{e.conhecidosTotal > 0 ? ` (${e.conhecidosTotal} de conhecidos)` : ""}
           </span>
         </span>
         <span className="acoes-detalhe">
@@ -858,7 +858,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
                       <span className="val">{BRL(e.check.lucroDepois)} vs {BRL(e.check.lucroAntes)}</span>
                     </li>
                     <li className={e.check.vendasOk ? "ok" : "no"}>
-                      <span className="ic">{e.check.vendasOk ? "✓" : "✗"}</span>Vendas ≥ {Math.round(regras.pisoVendas * 100)}% da semana antes
+                      <span className="ic">{e.check.vendasOk ? "✓" : "✗"}</span>Vendas ≥ {Math.round(regras.pisoVendas * 100)}% da semana antes{e.conhecidosTotal > 0 ? " (sem conhecidos)" : ""}
                       <span className="val">
                         {e.check.vendasDepois} vs {e.check.vendasAntes}
                         {e.check.vendasAntes ? ` (${Math.round((e.check.vendasDepois / e.check.vendasAntes) * 100)}%)` : ""}
@@ -1103,7 +1103,14 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
       <FunilAnuncio funil={e.funil} />
 
       <div className="secao-rampa">
-        <h4 className="sub-h">Evolução <span className="muted-cel">· preço vendido, vendas por semana e avaliações</span></h4>
+        <h4 className="sub-h">
+          Evolução <span className="muted-cel">· preço vendido, vendas por semana e avaliações</span>
+          {e.ultimaSemana && conhecidosDe(e.ultimaSemana) > 0 && (
+            <span className="muted-cel" title="Vendas de amigos/família: contam no caixa e no lucro da semana, não nos portões nem no funil">
+              {" "}· última semana: {num(e.ultimaSemana.vendas)} vendas, {conhecidosDe(e.ultimaSemana)} de conhecidos
+            </span>
+          )}
+        </h4>
         <GraficoRampa est={e} />
       </div>
 
@@ -1535,7 +1542,8 @@ function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose })
   );
 }
 
-const VAZIO_RAMPA = { vendas: "", avaliacoes: "", nota: "", ruins: "", gasto: "", cliques: "", adsVendas: "" };
+const VAZIO_RAMPA = { vendas: "", avaliacoes: "", nota: "", ruins: "", gasto: "", cliques: "", adsVendas: "", conhecidos: "" };
+const DICA_CONHECIDOS = "Vendas de pessoas próximas (amigos/família) — contam no caixa, não no orgânico. Entram nas vendas totais, no lucro da semana e nas avaliações, mas não nos portões, no funil nem no teste de lançamento. Em branco = nenhuma.";
 const VAZIO_FUNIL = { impressoes: "", cliquesProduto: "", pedidos: "" };
 
 const somaDias = (iso, n) => {
@@ -1631,6 +1639,8 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
           ads_gasto: v.gasto === "" ? null : num(v.gasto),
           ads_vendas: intOuNull(v.adsVendas),
           ...(v.cliques !== "" ? { ads_cliques: Math.round(num(v.cliques)) } : {}),
+          // Conhecidos (schema v39): em branco = não vai (null).
+          ...(v.conhecidos !== "" ? { conhecidos: Math.round(num(v.conhecidos)) } : {}),
           // Funil (schema v36): só vai pro banco quando preenchido — em branco = null, nunca 0.
           ...(v.impressoes !== "" ? { visualizacoes: Math.round(num(v.impressoes)) } : {}),
           ...(v.cliquesProduto !== "" ? { visitas: Math.round(num(v.cliquesProduto)) } : {}),
@@ -1652,7 +1662,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
     }
     for (const x of foraRampa) {
       const v = f[x.chave];
-      if (!preenchido(v, ["vendas", "gasto", "cliques", "adsVendas", "afVendas", "afComissao"])) continue;
+      if (!preenchido(v, ["vendas", "gasto", "cliques", "adsVendas", "conhecidos", "afVendas", "afComissao"])) continue;
       afSalvar.push({
         loja_id: lojaId || null,
         item_tipo: x.tipo,
@@ -1666,15 +1676,45 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
         ads_gasto: v.gasto === "" ? null : num(v.gasto),
         ads_cliques: intOuNull(v.cliques),
         ads_vendas: intOuNull(v.adsVendas),
+        ...(v.conhecidos !== "" ? { conhecidos: Math.round(num(v.conhecidos)) } : {}),
         parceiro_id: v.parceiro || null,
       });
     }
     if (!rampaSalvar.length && !afSalvar.length) return onToast?.("Preencha pelo menos um item");
     const semAf = afSalvar.find((g) => g.vendas_total != null && g.vendas > g.vendas_total);
     if (semAf) return onToast?.("Vendas via afiliado não podem passar das vendas da semana");
+    // Ads + afiliado + conhecidos ≤ vendas totais da semana.
+    const somaPassa = (total, partes) => total != null && partes.reduce((t, x) => t + num(x), 0) > total;
+    for (const r of rampaSalvar) {
+      const l = linhas.find((x) => x.r.id === r.rampa_id);
+      const afV = afSalvar.find((g) => g.item_tipo === "produto" && g.item_id === l.r.produto_id && g.canal_id === l.r.canal_id && g.vendas_total == null);
+      if (somaPassa(r.vendas, [r.ads_vendas, afV?.vendas, r.conhecidos]))
+        return onToast?.(`${l.produto.nome}: Ads + afiliado + conhecidos passam das ${r.vendas} vendas da semana`);
+    }
+    for (const g of afSalvar.filter((x) => x.vendas_total != null))
+      if (somaPassa(g.vendas_total, [g.ads_vendas, g.vendas, g.conhecidos])) {
+        const x = foraRampa.find((y) => y.tipo === g.item_tipo && y.id === g.item_id && y.canal.id === g.canal_id);
+        return onToast?.(`${x?.item.nome || "Item"}: Ads + afiliado + conhecidos passam das ${g.vendas_total} vendas da semana`);
+      }
     setSalvando(true);
+    // Sem o v39 (coluna conhecidos): grava sem o campo e avisa.
+    let semConhecidos = false;
+    const tirarConhecidos = (lista) =>
+      lista.map((x) => {
+        const y = { ...x };
+        delete y.conhecidos;
+        return y;
+      });
+    const inserir = async (tabela, lista) => {
+      let res = await supabase.from(tabela).insert(lista);
+      if (res.error && /conhecidos/.test(res.error.message) && lista.some((x) => x.conhecidos !== undefined)) {
+        semConhecidos = true;
+        res = await supabase.from(tabela).insert(tirarConhecidos(lista));
+      }
+      return res;
+    };
     if (rampaSalvar.length) {
-      const { error } = await supabase.from("rampa_registros").insert(rampaSalvar);
+      const { error } = await inserir("rampa_registros", rampaSalvar);
       if (error) {
         setSalvando(false);
         if (/visualizacoes|visitas|pedidos/.test(error.message)) return onToast?.("Falta rodar o supabase/schema_v36.sql no Supabase");
@@ -1682,7 +1722,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
       }
     }
     if (afSalvar.length) {
-      const { error } = await supabase.from("afiliado_registros").insert(afSalvar);
+      const { error } = await inserir("afiliado_registros", afSalvar);
       if (error) {
         setSalvando(false);
         return onToast?.(/afiliado_registros|schema cache|does not exist/.test(error.message) ? "Falta rodar o supabase/schema_v35.sql no Supabase (afiliados)" : `Não foi possível salvar o afiliado: ${error.message}`);
@@ -1696,7 +1736,11 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
       }),
       ...afSalvar.map((g) => `${g.item_tipo}|${g.item_id}|${g.canal_id}`),
     ]).size;
-    onToast?.(`Semana registrada (${n} item${n > 1 ? "s" : ""})`);
+    onToast?.(
+      semConhecidos
+        ? `Semana registrada (${n} item${n > 1 ? "s" : ""}) sem o campo Conhecidos — falta rodar o supabase/schema_v39.sql no Supabase`
+        : `Semana registrada (${n} item${n > 1 ? "s" : ""})`
+    );
     onClose();
   }
 
@@ -1731,7 +1775,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
     <EditarDialog titulo="Registrar semana" salvando={salvando} onSalvar={salvar} onCancelar={onClose} salvarLabel="Registrar" classe="modal-box-md">
       <p className="hint" style={{ marginTop: 0 }}>
         Do painel do canal: vendas da semana (unidades vendidas do anúncio), o total de avaliações que aparece no anúncio, a nota, quantas avaliações de 1–2★
-        chegaram na semana e, se usou Ads, o gasto e as vendas via Ads. Itens com afiliado ganham o bloco Afiliado (vendas e comissão do painel de afiliados;
+        chegaram na semana e, se usou Ads, o gasto e as vendas via Ads. Vendas de amigos/família vão em “Conhecidos” (contam no caixa, não no orgânico). Itens com afiliado ganham o bloco Afiliado (vendas e comissão do painel de afiliados;
         comissão em branco = estimada pelo %). Deixe em branco o que não quiser registrar.
       </p>
       <div className="field" style={{ maxWidth: 200 }}>
@@ -1760,6 +1804,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
               <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={f[l.r.id].gasto} onChange={set(l.r.id, "gasto")} /></div>
               <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={f[l.r.id].cliques} onChange={set(l.r.id, "cliques")} /></div>
               <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={f[l.r.id].adsVendas} onChange={set(l.r.id, "adsVendas")} /></div>
+              <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={f[l.r.id].conhecidos} onChange={set(l.r.id, "conhecidos")} placeholder="amigos/família" title="vendas de pessoas próximas — contam no caixa, não no orgânico" /></div>
             </div>
             <button type="button" className={`variacoes-toggle${funilAberto.has(l.r.id) ? " aberto" : ""}`} onClick={() => alternarFunil(l.r.id)}>
               <span className="seta">▸</span> {funilAberto.has(l.r.id) ? "impressões, cliques e pedidos" : "+ impressões, cliques e pedidos"}
@@ -1805,6 +1850,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
             <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={f[x.chave].gasto} onChange={set(x.chave, "gasto")} /></div>
             <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={f[x.chave].cliques} onChange={set(x.chave, "cliques")} /></div>
             <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={f[x.chave].adsVendas} onChange={set(x.chave, "adsVendas")} /></div>
+            <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={f[x.chave].conhecidos} onChange={set(x.chave, "conhecidos")} placeholder="amigos/família" title="vendas de pessoas próximas — contam no caixa, não no orgânico" /></div>
           </div>
           {blocoAfiliado(x.chave, x, x.preco)}
         </div>

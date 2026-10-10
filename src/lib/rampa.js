@@ -170,6 +170,16 @@ const menosDias = (iso, n) => {
   return d.toISOString().slice(0, 10);
 };
 
+// ---- Conhecidos (schema v39) ----
+// Vendas de amigos/família: passam pelo marketplace (taxa, caixa, avaliação),
+// mas não vieram de busca nem de Ads. Contam nas vendas totais e no lucro da
+// semana; NÃO contam em nenhuma decisão (portão de vendas, check da subida,
+// acima do alvo, conversão do funil, vendas baixas no lançamento, teste de
+// lançamento). null = 0. Toda regra de decisão usa estas funções.
+export const conhecidosDe = (r) => Math.max(0, Math.round(num(r?.conhecidos)));
+export const vendasParaDecisao = (r) => Math.max(0, num(r?.vendas) - conhecidosDe(r));
+export const pedidosParaDecisao = (r) => Math.max(0, num(r?.pedidos) - conhecidosDe(r));
+
 // ---- Funil do anúncio ----
 // Semanas válidas = registros "semana" com impressões e cliques preenchidos,
 // só no preço atual (degrau atual). Prefere semanas sem Ads (o Ads infla as
@@ -194,7 +204,7 @@ export function metricasFunil(rampa, registros, regras, hoje) {
   const usaPedidos = usadas.length > 0 && usadas.every((r) => r.pedidos != null);
   const visualizacoes = usadas.reduce((t, r) => t + num(r.visualizacoes), 0);
   const visitas = usadas.reduce((t, r) => t + num(r.visitas), 0);
-  const vendas = usadas.reduce((t, r) => t + num(usaPedidos ? r.pedidos : r.vendas), 0);
+  const vendas = usadas.reduce((t, r) => t + (usaPedidos ? pedidosParaDecisao(r) : vendasParaDecisao(r)), 0);
   const ctr = visualizacoes > 0 ? visitas / visualizacoes : null;
   const conversao = visitas > 0 ? vendas / visitas : null;
   const faltamDias = Math.max(0, num(regras.funilDiasMin) - diasRampa);
@@ -294,8 +304,11 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const comNota = [...regs].reverse().find((r) => r.nota != null && r.nota !== "");
   const nota = comNota ? num(comNota.nota) : null;
   const desde = rampa.desde || hoje;
-  const vendasDesde = semanas.filter((s) => s.data >= desde).reduce((s, r) => s + num(r.vendas), 0);
+  const vendasDesde = semanas.filter((s) => s.data >= desde).reduce((s, r) => s + vendasParaDecisao(r), 0);
+  const conhecidosDesde = semanas.filter((s) => s.data >= desde).reduce((s, r) => s + conhecidosDe(r), 0);
   const vendasTotal = num(rampa.vendas_iniciais) + semanas.reduce((s, r) => s + num(r.vendas), 0);
+  const vendasTotalDecisao = num(rampa.vendas_iniciais) + semanas.reduce((s, r) => s + vendasParaDecisao(r), 0);
+  const conhecidosTotal = semanas.reduce((s, r) => s + conhecidosDe(r), 0);
   const avaliacoesDesde = Math.max(0, avaliacoesTotal - num(rampa.base_avaliacoes));
   const dias = Math.max(0, diasEntre(desde, hoje));
   const corte7 = menosDias(hoje, 7);
@@ -324,7 +337,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
 
   const portoes = [
     { chave: "avaliacoes", rotulo: "Avaliações desde o último degrau", ok: avaliacoesDesde >= regras.avaliacoes, valor: `+${avaliacoesDesde} de +${regras.avaliacoes}`, falta: Math.max(0, regras.avaliacoes - avaliacoesDesde), curto: "avaliações" },
-    { chave: "vendas", rotulo: "Vendas desde o último degrau", ok: vendasDesde >= regras.vendas, valor: `+${vendasDesde} de +${regras.vendas}`, falta: Math.max(0, regras.vendas - vendasDesde), curto: "vendas" },
+    { chave: "vendas", rotulo: "Vendas desde o último degrau", ok: vendasDesde >= regras.vendas, valor: `+${vendasDesde} de +${regras.vendas}${conhecidosDesde ? ` (fora ${conhecidosDesde} de conhecidos)` : ""}`, falta: Math.max(0, regras.vendas - vendasDesde), curto: "vendas" },
     { chave: "nota", rotulo: `Nota ≥ ${String(regras.nota).replace(".", ",")}`, ok: nota != null && nota >= regras.nota, valor: nota != null ? String(nota).replace(".", ",") : "—", curto: "nota" },
     { chave: "dias", rotulo: `Tempo no degrau ≥ ${diasMin} dias${diasMin > regras.dias ? (ultMud?.tipo === "descida" ? " (voltou de degrau)" : " (depois de salto duplo)") : ""}`, ok: dias >= diasMin, valor: `${dias} dia${dias === 1 ? "" : "s"}`, falta: Math.max(0, diasMin - dias), curto: "dias" },
     { chave: "ruins", rotulo: "Nenhuma avaliação 1–2★ nos últimos 7 dias", ok: ruins7 === 0, valor: String(ruins7), curto: "sem 1–2★" },
@@ -340,11 +353,12 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     const antes = [...semanas].reverse().find((s) => s.data < ultimaSubida.data || (s.data === ultimaSubida.data && String(s.criado_em || "") < String(ultimaSubida.criado_em || "")));
     const depois = semanas.filter((s) => s.data > ultimaSubida.data || (s.data === ultimaSubida.data && String(s.criado_em || "") > String(ultimaSubida.criado_em || "")));
     if (antes && depois.length) {
-      const lucroSem = (s) => num(s.vendas) * (lucroEm(num(s.preco) || preco) ?? 0);
+      // Sem conhecidos (vendasParaDecisao): a decisão olha só busca + Ads.
+      const lucroSem = (s) => vendasParaDecisao(s) * (lucroEm(num(s.preco) || preco) ?? 0);
       const lAntes = lucroSem(antes);
       const avaliar = depois.map((s) => {
         const lucroOk = lucroSem(s) >= lAntes - 0.005;
-        const vendasOk = num(s.vendas) >= regras.pisoVendas * num(antes.vendas);
+        const vendasOk = vendasParaDecisao(s) >= regras.pisoVendas * vendasParaDecisao(antes);
         return { s, lucro: lucroSem(s), lucroOk, vendasOk, ok: lucroOk && vendasOk };
       });
       let falhasSeguidas = 0;
@@ -355,8 +369,8 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
         para: num(ultimaSubida.preco),
         lucroAntes: lAntes,
         lucroDepois: ult.lucro,
-        vendasAntes: num(antes.vendas),
-        vendasDepois: num(ult.s.vendas),
+        vendasAntes: vendasParaDecisao(antes),
+        vendasDepois: vendasParaDecisao(ult.s),
         lucroOk: ult.lucroOk,
         vendasOk: ult.vendasOk,
         falhasSeguidas,
@@ -369,7 +383,8 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const roasMin = lucroAtual > 0 ? preco / lucroAtual : null;
   const semanasAds = semanas.filter((s) => num(s.ads_gasto) > 0);
   const roasDe = (s) => (num(s.ads_gasto) > 0 ? (num(s.ads_vendas) * (num(s.preco) || preco)) / num(s.ads_gasto) : null);
-  const organicoDe = (s) => (num(s.vendas) > 0 ? Math.max(0, num(s.vendas) - num(s.ads_vendas)) / num(s.vendas) : null);
+  // % orgânico = (total − Ads − conhecidos) ÷ (total − conhecidos).
+  const organicoDe = (s) => (vendasParaDecisao(s) > 0 ? Math.max(0, vendasParaDecisao(s) - num(s.ads_vendas)) / vendasParaDecisao(s) : null);
   const ultAds = semanasAds[semanasAds.length - 1] || null;
   const roas = ultAds ? roasDe(ultAds) : null;
   const organico = ultimaSemana ? organicoDe(ultimaSemana) : null;
@@ -439,7 +454,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
       diasRestantes: Math.max(0, prazo - diasPassados), resultado,
     };
   } else if (num(rampa.vendas_iniciais) >= regras.testeMeta) teste = { status: "nao-aplica" };
-  else if (vendasTotal >= regras.testeDispensaVendas) teste = { status: "nao-precisa" };
+  else if (vendasTotalDecisao >= regras.testeDispensaVendas) teste = { status: "nao-precisa" };
   else if (diasRampa < regras.testeObservarDias) teste = { status: "observando", dia: diasRampa + 1, de: regras.testeObservarDias };
   else teste = { status: "recomendado" };
   teste.orcSugerido = orcSugerido;
@@ -453,11 +468,11 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     const tetoAcima = finalAbaixo(alvo * (1 + num(regras.acimaMax)));
     const semNoPreco = semanas.filter((s) => s.data >= desde);
     const ult3 = semNoPreco.slice(-regras.acimaSemanas);
-    const estaveis = ult3.length >= regras.acimaSemanas && num(ult3[ult3.length - 1].vendas) >= 0.9 * num(ult3[0].vendas) && num(ult3[0].vendas) > 0;
+    const estaveis = ult3.length >= regras.acimaSemanas && vendasParaDecisao(ult3[ult3.length - 1]) >= 0.9 * vendasParaDecisao(ult3[0]) && vendasParaDecisao(ult3[0]) > 0;
     if (acimaAtivo) {
       // Testando acima: compara o lucro médio por semana neste preço com as semanas no preço anterior.
       const antesSem = semanas.filter((s) => s.data < desde).slice(-regras.acimaSemanas);
-      const lucroSem = (s) => num(s.vendas) * (lucroEm(num(s.preco) || preco) ?? 0);
+      const lucroSem = (s) => vendasParaDecisao(s) * (lucroEm(num(s.preco) || preco) ?? 0);
       const media = (arr) => (arr.length ? arr.reduce((t, s) => t + lucroSem(s), 0) / arr.length : null);
       const lAntes = media(antesSem);
       const lDepois = media(semNoPreco);
@@ -485,7 +500,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
       const bloqueado = bloqueadoAte && bloqueadoAte > hoje;
       const criterios = [
         { rotulo: `${regras.acimaDias} dias no alvo`, ok: dias >= regras.acimaDias, valor: `${dias} dia${dias === 1 ? "" : "s"}` },
-        { rotulo: `${regras.acimaSemanas} semanas de vendas estáveis`, ok: estaveis, valor: ult3.length ? ult3.map((s) => num(s.vendas)).join(" → ") : "sem registro" },
+        { rotulo: `${regras.acimaSemanas} semanas de vendas estáveis`, ok: estaveis, valor: ult3.length ? ult3.map((s) => vendasParaDecisao(s)).join(" → ") : "sem registro" },
         { rotulo: `Nota ≥ ${String(regras.nota).replace(".", ",")} e nenhuma 1–2★ recente`, ok: nota != null && nota >= regras.nota && ruins7 === 0, valor: nota != null ? String(nota).replace(".", ",") : "—" },
       ];
       if (campanha) criterios.push({ rotulo: "Sem campanha perto", ok: !campanhaPerto, valor: campanhaPerto ? `em ${diasAteCampanha} dias` : "ok" });
@@ -509,7 +524,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     roasMin <= regras.roasInviavel &&
     adsForaTeste.every((s) => (roasDe(s) ?? 0) < roasMin);
   const revisarPorLancamento = i === 0 && dias >= regras.revisarDias && vendasDesde < regras.vendas / 2;
-  const vendasDepoisTeste = teste.ate ? semanas.filter((s) => s.data > teste.ate).reduce((t, s) => t + num(s.vendas), 0) : 0;
+  const vendasDepoisTeste = teste.ate ? semanas.filter((s) => s.data > teste.ate).reduce((t, s) => t + vendasParaDecisao(s), 0) : 0;
   const revisarPorTeste = teste.resultado?.chave === "revisar" && vendasDepoisTeste === 0;
   const anuncio = diagnosticoAnuncio({
     funil,
@@ -546,7 +561,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     degraus, i, preco, alvo, proximo, fase, acimaAtivo, noAlvo, teste, acima, diasRampa,
     lucroAtual, lucroAlvo: lucroEm(alvo), lucroProximo: lucroEm(proximo), lucroEm,
     zero: ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
-    avaliacoesTotal, nota, vendasDesde, vendasTotal, avaliacoesDesde, dias, ruins7,
+    avaliacoesTotal, nota, vendasDesde, vendasTotal, vendasTotalDecisao, conhecidosTotal, avaliacoesDesde, dias, ruins7,
     portoes, portoesOk, check, roasMin, roas, organico, organicoAntes, ads, viavelEm, ultAds,
     revisar, revisarPorAds, revisarPorLancamento, revisarPorTeste, anuncio, alertaNota, sugestao, ultimaSemana, diasMin, campanha, diasAteCampanha, campanhaPerto,
     lucroSemana, lucroSemanaAds, lucroSemanaAlvo, semanas, registros: regs, funil,
