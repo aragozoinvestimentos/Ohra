@@ -15,6 +15,7 @@ import { itemTipoDoId } from "../lib/variacoes.js";
 import { nomeCanal } from "../lib/canais.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
+import OndeSeDecide from "./OndeSeDecide.jsx";
 
 const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
 
@@ -25,6 +26,9 @@ const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
 // exibido = padrão do canal (Configuração → Canais) ou o próprio do produto/
 // kit (clique no % da célula). ↻ por canal: você marca "feito" em cada
 // plataforma e só aquele canal fica pendente quando o preço muda.
+// Item em rampa: o cliente paga agora (Rampa) é o mesmo do alvo (salvo)?
+const agoraIgualAlvo = (x) => Math.abs(Number(x.clientePaga) - Number(x.anSalvo?.clientePaga)) < 0.005;
+
 export default function Publicar({ onToast }) {
   const { lojaId } = useLoja();
   const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje } = useEscada();
@@ -266,8 +270,18 @@ export default function Publicar({ onToast }) {
           </button>
           <div className="kv-cel">
             <small>Cliente paga</small>
-            <b>{BRL(x.clientePaga)}</b>
-            <span>{x.rampa ? "degrau atual da Rampa" : "preço salvo"}</span>
+            {x.rampa ? (
+              <>
+                <b>agora {BRL(x.clientePaga)}</b>
+                <span>{agoraIgualAlvo(x) ? "= alvo" : `alvo ${BRL(x.anSalvo.clientePaga)} (preço salvo)`}</span>
+                <span>agora = preço da Rampa (Crescimento)</span>
+              </>
+            ) : (
+              <>
+                <b>{BRL(x.clientePaga)}</b>
+                <span>preço salvo</span>
+              </>
+            )}
           </div>
           <div className="kv-cel">
             <small>Desconto do anúncio</small>
@@ -370,6 +384,7 @@ export default function Publicar({ onToast }) {
         onCancel={() => setRecalcular(null)}
       />
     )}
+    <OndeSeDecide />
     <div className="aviso-fluxo">
       Os preços vêm de <b>Precificação</b> (1º Avulso / 2º Por quantidade). Aqui você só confere o que digitar em cada plataforma — o <b>preço original</b> (“de”) e a <b>promo</b> — e marca “feito” depois de atualizar.
     </div>
@@ -403,7 +418,7 @@ export default function Publicar({ onToast }) {
           <span><b>promo 30%</b> a digitar</span>
           <span><span className="chip-cel ok">✓ em dia</span></span>
           <span><span className="chip-cel atencao">↻ atualizar</span> o anúncio está diferente</span>
-          <span><span className="chip-cel rampa">rampa</span> use a promo da Rampa</span>
+          <span><span className="chip-cel rampa">rampa</span> use a promo da Rampa · <b>agora</b> × <b>alvo</b> = cliente paga hoje × no preço salvo</span>
           <span className="legenda-dica">Clique na célula: cliente paga, desconto, o que trocar e “feito”.</span>
         </div>
       )}
@@ -470,6 +485,13 @@ export default function Publicar({ onToast }) {
                           <span className="preco-canal-linha">
                             promo <b>{x.promo}%</b>
                           </span>
+                          {x.rampa && (
+                            <span className="preco-canal-linha agora-alvo" title="Cliente paga agora (preço da Rampa) × no alvo (preço salvo)">
+                              agora <b>{BRL(x.clientePaga)}</b>
+                              <br />
+                              {agoraIgualAlvo(x) ? "= alvo" : <>alvo {BRL(x.anSalvo.clientePaga)}</>}
+                            </span>
+                          )}
                           {x.acimaDoRiscado ? (
                             <span className="chip-cel ruim" title="O preço desejado passou do preço original já anunciado">acima do riscado</span>
                           ) : x.rampa ? (

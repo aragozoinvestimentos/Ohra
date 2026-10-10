@@ -135,6 +135,34 @@ export function normalizarDegraus(lista) {
   return vals;
 }
 
+// Alvo mudou: o preço salvo (alvo) do produto no canal não está mais nos degraus
+// (alguém mexeu no preço salvo depois de montar a rampa). Testar acima do alvo
+// não conta — o alvo continua nos degraus. "Manter como está" grava o alvo em
+// checklist.alvoMantido e o aviso some até o alvo mudar de novo.
+export function alvoMudouDaRampa(degraus, alvo, checklist) {
+  const lista = (degraus || []).map(num).filter((d) => d > 0);
+  const a = cent(num(alvo));
+  if (!(a > 0) || !lista.length) return null;
+  if (lista.some((d) => Math.abs(d - a) < 0.005)) return null;
+  const mantido = num(checklist?.alvoMantido);
+  if (mantido > 0 && Math.abs(mantido - a) < 0.005) return null;
+  const de = lista[lista.length - 1];
+  return { de, para: a, subiu: a > de };
+}
+
+// "Ajustar degraus até o novo alvo": tira os degraus acima do novo alvo,
+// acrescenta o novo alvo no fim e mantém o degrau atual se ainda estiver abaixo;
+// se o atual ficar acima (ou igual), o atual passa a ser o novo alvo.
+export function ajustarDegrausAoAlvo(degraus, i, alvo) {
+  const lista = (degraus || []).map(num).filter((d) => d > 0);
+  const a = cent(num(alvo));
+  const atual = lista[Math.max(0, Math.min(lista.length - 1, i ?? 0))] ?? null;
+  const novos = normalizarDegraus([...lista.filter((d) => d < a - 0.004), a]);
+  const manter = atual != null && atual < a - 0.004;
+  const idx = manter ? novos.findIndex((d) => Math.abs(d - atual) < 0.005) : novos.length - 1;
+  return { degraus: novos, i: idx, precoAntes: atual, precoDepois: novos[idx], mudouPreco: atual == null || Math.abs(atual - novos[idx]) >= 0.005 };
+}
+
 const diasEntre = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
 const menosDias = (iso, n) => {
   const d = new Date(`${iso}T12:00:00`);
@@ -511,7 +539,10 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const lucroSemanaAds = lucroSemana != null ? lucroSemana - num(ultimaSemana.ads_gasto) : null;
   const lucroSemanaAlvo = ultimaSemana && ultimaSemana.data > corte7 ? num(ultimaSemana.vendas) * (lucroEm(alvo) ?? 0) : null;
 
+  const alvoMudou = num(ctx.alvo) > 0 ? alvoMudouDaRampa(degraus, alvo, rampa.checklist) : null;
+
   return {
+    alvoMudou,
     degraus, i, preco, alvo, proximo, fase, acimaAtivo, noAlvo, teste, acima, diasRampa,
     lucroAtual, lucroAlvo: lucroEm(alvo), lucroProximo: lucroEm(proximo), lucroEm,
     zero: ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,

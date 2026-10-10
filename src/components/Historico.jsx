@@ -25,6 +25,7 @@ import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
 import { useRampas } from "../hooks/useRampas.js";
 import { useLembrado } from "../hooks/useLembrado.js";
 import { pegarPedido } from "../lib/navegar.js";
+import OndeSeDecide from "./OndeSeDecide.jsx";
 
 // Antes esta aba lia uma tabela solta ("produtos") que só guardava um
 // instantâneo do que foi salvo em Precificação por Canal, sem ligação real
@@ -800,6 +801,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
         + Novo produto
       </button>
     </TopbarAcoes>
+    <OndeSeDecide />
     {supabase && !carregando && itens.length > 0 && (
       <Kpis
         itens={[

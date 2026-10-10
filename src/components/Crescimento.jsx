@@ -20,7 +20,7 @@ const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slic
 import { anuncioDaRampa, anuncioFixo, anuncioNoRiscado, riscadoFixoDe } from "../lib/rampaAnuncio.js";
 import { descontoDoItem } from "../lib/escada.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
-import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, estadoRampa, finalAcima, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
+import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, ajustarDegrausAoAlvo, estadoRampa, finalAcima, metricasFunil, normalizarDegraus, referenciaFunilLoja, regrasDaLoja, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -32,6 +32,7 @@ import GraficoRampa from "./GraficoRampa.jsx";
 import Afiliados from "./Afiliados.jsx";
 import { useAfiliados } from "../hooks/useAfiliados.js";
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
+import OndeSeDecide from "./OndeSeDecide.jsx";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -138,6 +139,7 @@ export default function Crescimento({ onToast }) {
 
   return (
     <>
+      <OndeSeDecide />
       <div className="subabas">
         {SUBABAS_CRESC.map((s) => (
           <button key={s.key} type="button" data-sub={s.key} className={`btn${sub === s.key ? " primary" : ""}`} onClick={() => trocarSub(s.key)}>
@@ -188,7 +190,8 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
   const [mudar, setMudar] = useState(null); // { linha, dir: 1 | -1 }
   const [encerrar, setEncerrar] = useState(null);
   const [verRegras, setVerRegras] = useState(false);
-  const [acimaConfirma, setAcimaConfirma] = useState(null); // { tipo: "testar"|"voltar"|"aprovar", linha, preco }
+  const [acimaConfirma, setAcimaConfirma] = useState(null);
+  const [alvoAjuste, setAlvoAjuste] = useState(null); // linha com "alvo mudou" esperando confirmação // { tipo: "testar"|"voltar"|"aprovar", linha, preco }
   const [salvando, setSalvando] = useState(false);
 
   const sel = linhas.find((l) => l.r.id === selId) || linhas[0] || null;
@@ -314,6 +317,35 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
     onToast?.(`Preço salvo de ${l.produto.nome} em ${l.canal.nome} atualizado para ${BRL(preco)} — é o novo alvo`);
   }
 
+  // Alvo mudou → "Ajustar degraus até o novo alvo". Não mexe no preço salvo nem no riscado.
+  async function ajustarAoAlvo(l) {
+    const aj = ajustarDegrausAoAlvo(l.est.degraus, l.est.i, l.est.alvo);
+    setSalvando(true);
+    const ok = await atualizarRampa(l, {
+      degraus: aj.degraus,
+      degrau_atual: aj.i,
+      ...(aj.mudouPreco ? { desde: hoje, base_avaliacoes: l.est.avaliacoesTotal } : {}),
+    });
+    if (ok && aj.mudouPreco)
+      await supabase.from("rampa_registros").insert({
+        loja_id: lojaId || null,
+        rampa_id: l.r.id,
+        tipo: aj.precoDepois < aj.precoAntes ? "descida" : "subida",
+        data: hoje,
+        degrau: aj.i,
+        preco: aj.precoDepois,
+        observacao: "alvo mudou",
+      });
+    setSalvando(false);
+    setAlvoAjuste(null);
+    if (ok)
+      onToast?.(
+        aj.mudouPreco
+          ? `Degraus ajustados: agora vendendo no novo alvo ${BRL(aj.precoDepois)} — atualize a promo no anúncio`
+          : `Degraus ajustados até o novo alvo ${BRL(l.est.alvo)} — continua vendendo a ${BRL(aj.precoDepois)}`
+      );
+  }
+
   async function marcarChecklist(l, chave, valor) {
     const novo = { ...(l.r.checklist || {}), [chave]: valor };
     const { error } = await supabase.from("rampas_preco").update({ checklist: novo }).eq("id", l.r.id);
@@ -425,6 +457,11 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
                           </span>
                         )}
                         <TagTeste teste={e.teste} />
+                        {e.alvoMudou && (
+                          <span className="badge warn tag-pronto" title={`O preço salvo mudou de ${BRL(e.alvoMudou.de)} para ${BRL(e.alvoMudou.para)} — abra o produto pra ajustar os degraus`}>
+                            alvo mudou
+                          </span>
+                        )}
                       </td>
                       <td>
                         {e.fase.rotulo}
@@ -484,8 +521,28 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
           onChecklist={marcarChecklist}
           acoesTeste={acoesTeste}
           onAcima={(tipo, preco) => setAcimaConfirma({ tipo, linha: sel, preco })}
+          onAjustarAlvo={() => setAlvoAjuste(sel)}
         />
       )}
+      {alvoAjuste && (() => {
+        const aj = ajustarDegrausAoAlvo(alvoAjuste.est.degraus, alvoAjuste.est.i, alvoAjuste.est.alvo);
+        return (
+          <ConfirmDialog
+            titulo="Ajustar degraus até o novo alvo"
+            confirmarLabel={salvando ? "Salvando…" : "Ajustar degraus"}
+            onConfirm={() => ajustarAoAlvo(alvoAjuste)}
+            onCancel={() => setAlvoAjuste(null)}
+          >
+            <p className="modal-msg">
+              {alvoAjuste.produto.nome} na {alvoAjuste.canal.nome}: degraus {alvoAjuste.est.degraus.map((d) => virgula(d)).join(" · ")} → {aj.degraus.map((d) => virgula(d)).join(" · ")}.{" "}
+              {aj.mudouPreco
+                ? `O degrau atual (${BRL(aj.precoAntes)}) ficou acima do novo alvo: passa a vender no novo alvo, ${BRL(aj.precoDepois)} — atualize a promo no anúncio.`
+                : `Continua vendendo a ${BRL(aj.precoDepois)} (degrau ${aj.i + 1} de ${aj.degraus.length}).`}{" "}
+              O preço salvo e o preço original do anúncio não mudam.
+            </p>
+          </ConfirmDialog>
+        );
+      })()}
       {acimaConfirma && (
         <ConfirmDialog
           titulo={{ testar: "Testar acima do alvo", voltar: "Voltar ao alvo", aprovar: "Atualizar o preço salvo" }[acimaConfirma.tipo]}
@@ -584,7 +641,7 @@ function TagTeste({ teste }) {
   return <span className={`tag-teste tag-${c[0]}`}>{c[1](teste)}</span>;
 }
 
-function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklist, acoesTeste, onAcima }) {
+function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo }) {
   const e = l.est;
   const noAlvo = e.noAlvo;
   const [orcEdit, setOrcEdit] = useState("");
@@ -620,6 +677,25 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
           <button type="button" className="del" title="Encerrar rampa" onClick={onEncerrar}>×</button>
         </span>
       </h3>
+
+      {e.alvoMudou && (
+        <div className="alerta alerta-warn alvo-mudou">
+          <div>
+            <b>Alvo mudou: {BRL(e.alvoMudou.de)} → {BRL(e.alvoMudou.para)}</b>O preço salvo em Produtos precificados mudou depois que a rampa foi montada.{" "}
+            {e.alvoMudou.para < e.preco - 0.004
+              ? `O degrau atual (${BRL(e.preco)}) está acima do novo alvo: ao ajustar, passa a vender no novo alvo.`
+              : e.alvoMudou.subiu
+                ? "Ao ajustar, o novo alvo entra no fim da escada e o degrau atual continua."
+                : "Ao ajustar, saem os degraus acima do novo alvo e o degrau atual continua."}
+          </div>
+          <div className="acoes-alerta" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <button type="button" className="btn btn-mini primary" onClick={onAjustarAlvo}>Ajustar degraus até o novo alvo</button>
+            <button type="button" className="btn btn-mini" onClick={() => onChecklist(l, "alvoMantido", e.alvo)} title="Esconde este aviso até o preço salvo mudar de novo">
+              Manter como está
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid-rampa">
         <div>

@@ -243,6 +243,10 @@ export default function App() {
       setCanalSub("comparar");
       key = "canal";
     }
+    if (key === "publicar") {
+      setCanalSub("publicar");
+      key = "canal";
+    }
     setTab(key);
     setMenuAberto(false);
   }
