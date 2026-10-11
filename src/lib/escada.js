@@ -244,6 +244,10 @@ export function precoNaCurva({ canal, n, base, custo, peso, cfg, lucroAnterior, 
   // canal próprio em markup (cfgDoCanal): finais ,50/,90; senão ,90
   const [rDown, rUp, rPerto] = cfg?.final5090 ? [r5090, r5090up, r5090perto] : [r90, r90up, r90perto];
   let p = rPerto(teto * (1 - descontoAlvo));
+  // sem curva: preço por peça do kit nunca acima do avulso → o ,50/,90 de baixo
+  if (cfg?.semCurva && num(cfg.precoAvulso) > 0) {
+    for (let i = 0; i < 20 && p / n > num(cfg.precoAvulso) + 1e-9; i++) p = rDown(p - 0.001);
+  }
   let limitadoPor = null;
   // concorrente: teto, mas nunca abaixo das travas (a) e (b)
   const pMin = precoMinimoAceitavel(canal, custo, peso, cfg);
@@ -353,7 +357,8 @@ export function calcularEscada({ canal, p1, base1, kits, cfg, estrategia = null,
     const n = k.n;
     const custo = num(k.custo);
     const peso = num(k.peso);
-    const teto = n * preco1;
+    // canal próprio em markup: base = N × custo × markup (bruto), arredonda uma vez só
+    const teto = cfg?.semCurva && num(cfg.precoUnitBruto) > 0 ? n * num(cfg.precoUnitBruto) : n * preco1;
     const c = precoNaCurva({ canal, n, base: teto, custo, peso, cfg, lucroAnterior: prevLucro, porPecaAnterior: prevPP, concorrente: k.concorrente });
     const mp = descontoMaxPossivelKit({ canal, n, base: teto, custo, peso, cfg, lucroAnterior: prevLucro });
     if (mp != null) maxPossivel = maxPossivel == null ? mp : Math.min(maxPossivel, mp);
@@ -535,11 +540,16 @@ export function escadaDoProduto({ produtoId, canal, itens, precos, concorrentes,
   let p1 = num(p1Override) > 0 ? num(p1Override) : salvo1 ? num(salvo1.preco) : null;
   let p1Origem = num(p1Override) > 0 ? "manual" : salvo1 ? "salvo" : "margem";
   // Canal próprio em markup: a base é o avulso pelo custo × markup (não o salvo).
+  let cfgKits = cfg;
   if (canalEmMarkup(canal) && !(num(p1Override) > 0)) {
-    const pmk = precoPorMarkup(custo1, markupDoCanal(canal, cfg));
+    const mk = markupDoCanal(canal, cfg);
+    const pmk = precoPorMarkup(custo1, mk);
     if (pmk > 0) {
       p1 = pmk;
       p1Origem = "markup";
+      // kits sem curva: N × custo × markup (sem arredondar o avulso antes) e
+      // por peça nunca acima do avulso (precoNaCurva)
+      cfgKits = { ...cfg, precoUnitBruto: custo1 * mk, precoAvulso: pmk };
     }
   }
   if (!(p1 > 0)) {
@@ -589,7 +599,7 @@ export function escadaDoProduto({ produtoId, canal, itens, precos, concorrentes,
   // Estratégia escolhida pro avulso nesse canal (vencida = como se não houvesse).
   const g = salvo1 ? estrategiaGravada(salvo1, lucroNoPreco(canal, num(salvo1.preco), custo1, peso1, cfg)) : null;
   const estrategia = g && !g.vencida ? g.chave : null;
-  const escada = calcularEscada({ canal, p1, base1: { custo: custo1, peso: peso1 }, kits, cfg, estrategia, emRampa });
+  const escada = calcularEscada({ canal, p1, base1: { custo: custo1, peso: peso1 }, kits, cfg: cfgKits, estrategia, emRampa });
   return { escada, p1, p1Origem, salvo1: salvo1 ? num(salvo1.preco) : null, concorrente1: conc1, itemPai, custo1, peso1 };
 }
 
