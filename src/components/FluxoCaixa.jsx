@@ -15,6 +15,7 @@ import {
   lancamentosReais,
   saldoRealizado,
   mediaMensal,
+  mesesDaMedia,
   projetar,
   statusLancamento,
   loadEstimativas,
@@ -141,9 +142,12 @@ export default function FluxoCaixa({ onToast }) {
   const custosEst = estimativas.custos === "" ? mediaCustos : Number(estimativas.custos) || 0;
 
   const projecao = useMemo(
-    () => projetar(lancamentos, { mesAtual, meses: horizonte, vendasEstimadas: vendasEst, custosEstimados: custosEst }),
+    () => projetar(lancamentos, { mesAtual, meses: horizonte, mesesPassados: MESES_PASSADOS, vendasEstimadas: vendasEst, custosEstimados: custosEst }),
     [lancamentos, mesAtual, horizonte, vendasEst, custosEst]
   );
+  // Gráfico e tabela: os meses passados (só realizado) + a projeção.
+  const linhasProjecao = [...projecao.passado, ...projecao.linhas];
+  const iMesAtual = projecao.passado.length;
   const mesCorrente = projecao.linhas[0];
   const ultimo = projecao.linhas[projecao.linhas.length - 1];
   const menor = projecao.linhas.reduce((m, l) => (!m || l.saldoFinal < m.saldoFinal ? l : m), null);
@@ -227,6 +231,8 @@ export default function FluxoCaixa({ onToast }) {
 
   const temSaldoInicial = lancamentos.some((l) => l.categoria === "saldo_inicial");
   const usandoMediaCustos = estimativas.custos === "" && mediaCustos > 0;
+  const nMesesMedia = mesesDaMedia(lancamentos, mesAtual).size;
+  const textoMeses = nMesesMedia === 1 ? "do último mês fechado" : `dos ${nMesesMedia} últimos meses fechados`;
   const usandoMediaVendas = estimativas.vendas === "" && mediaVendas > 0;
 
   // --- Ações ---
@@ -472,7 +478,7 @@ export default function FluxoCaixa({ onToast }) {
       <div className="panel">
         <h3 className="section-title">
           Projeção de caixa
-          <Ajuda texto="Saldo mês a mês a partir do saldo atual: soma o que já caiu/saiu, os lançamentos previstos (atrasados entram no mês atual), as recorrências mensais e, nos meses futuros, a estimativa de vendas e custos variáveis por mês. Deixe a estimativa em branco pra usar a média dos últimos 3 meses fechados (sem recorrentes, saldo inicial e aportes)." />
+          <Ajuda texto="Os 3 meses antes do atual mostram só o que de fato caiu/saiu (realizado), pra ver como foi o passado. Do mês atual em diante, o saldo mês a mês soma o que já caiu/saiu, os lançamentos previstos (atrasados entram no mês atual), as recorrências mensais e, nos meses futuros, a estimativa de vendas e custos variáveis por mês. Deixe a estimativa em branco pra usar a média dos últimos 3 meses fechados (só os meses desde o 1º lançamento; sem recorrentes, saldo inicial e aportes)." />
         </h3>
         <div className="grid-auto">
           <div className="field">
@@ -495,7 +501,7 @@ export default function FluxoCaixa({ onToast }) {
             />
             {usandoMediaVendas && (
               <span className="campo-nota">
-                usando a média dos 3 últimos meses ·{" "}
+                usando a média {textoMeses} ·{" "}
                 <button type="button" className="link-btn" onClick={() => setEstimativas((p) => ({ ...p, vendas: "0" }))}>usar 0</button>
               </span>
             )}
@@ -512,14 +518,14 @@ export default function FluxoCaixa({ onToast }) {
             />
             {usandoMediaCustos && (
               <span className="campo-nota aviso">
-                somando {BRL(mediaCustos)}/mês de estimativa (média) ·{" "}
+                somando {BRL(mediaCustos)}/mês de estimativa (média {textoMeses}) ·{" "}
                 <button type="button" className="link-btn" onClick={() => setEstimativas((p) => ({ ...p, custos: "0" }))}>usar 0</button>
               </span>
             )}
           </div>
         </div>
 
-        <GraficoProjecao linhas={projecao.linhas} />
+        <GraficoProjecao linhas={linhasProjecao} iAtual={iMesAtual} />
 
         <div className="tabela-toggle">
           <button type="button" className={`variacoes-toggle${verTabela ? " aberto" : ""}`} onClick={alternarTabela}>
@@ -539,17 +545,18 @@ export default function FluxoCaixa({ onToast }) {
               </tr>
             </thead>
             <tbody>
-              {projecao.linhas.map((l, i) => (
-                <tr key={l.mes} className={i === 0 ? "linha-atual" : ""}>
+              {linhasProjecao.map((l, i) => (
+                <tr key={l.mes} className={i === iMesAtual ? "linha-atual" : l.passado ? "linha-passado" : ""}>
                   <td>
                     {rotuloMes(l.mes)}
-                    {i === 0 && <span className="h3-contagem">mês atual</span>}
+                    {i === iMesAtual && <span className="h3-contagem">mês atual</span>}
+                    {l.passado && <span className="h3-contagem">realizado</span>}
                   </td>
-                  <td className="num" title={`Recebido ${BRL(l.entradasRealizadas)} · previsto ${BRL(l.entradasPrevistas)} · estimado ${BRL(l.entradasEstimadas)}`}>
+                  <td className="num" title={l.passado ? `Recebido ${BRL(l.entradasRealizadas)}` : `Recebido ${BRL(l.entradasRealizadas)} · previsto ${BRL(l.entradasPrevistas)} · estimado ${BRL(l.entradasEstimadas)}`}>
                     {BRL(l.entradas)}
                     {l.entradasEstimadas > 0 && <div className="sub-num">{BRL(l.entradasEstimadas)} estimado</div>}
                   </td>
-                  <td className="num" title={`Pago ${BRL(l.saidasRealizadas)} · previsto ${BRL(l.saidasPrevistas)} · estimado ${BRL(l.saidasEstimadas)}`}>
+                  <td className="num" title={l.passado ? `Pago ${BRL(l.saidasRealizadas)}` : `Pago ${BRL(l.saidasRealizadas)} · previsto ${BRL(l.saidasPrevistas)} · estimado ${BRL(l.saidasEstimadas)}`}>
                     {BRL(l.saidas)}
                     {l.saidasEstimadas > 0 && <div className="sub-num">{BRL(l.saidasEstimadas)} estimado</div>}
                   </td>
@@ -1039,13 +1046,15 @@ export default function FluxoCaixa({ onToast }) {
 // tracejada — assim dá pra ver o que é conta de verdade (realizado/previsto/
 // parcelas) e o que é chute. A linha é o saldo no fim de cada mês. Eixo com
 // números "redondos". Passar o mouse/tocar num mês mostra os valores.
+const MESES_PASSADOS = 3;
+
 function passoBonito(bruto) {
   const p = Math.pow(10, Math.floor(Math.log10(bruto || 1)));
   const f = bruto / p;
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
 }
 
-function GraficoProjecao({ linhas }) {
+function GraficoProjecao({ linhas, iAtual = 0 }) {
   const [hover, setHover] = useState(null);
   if (!linhas.length) return null;
   const W = 960;
@@ -1091,7 +1100,7 @@ function GraficoProjecao({ linhas }) {
         <span className="grafico-hover">
           {h ? (
             <>
-              <strong>{rotuloMes(h.mes)}</strong> · entradas {BRL(h.entradas)} · saídas {BRL(h.saidas)}
+              <strong>{rotuloMes(h.mes)}</strong>{h.passado ? " (realizado)" : ""} · entradas {BRL(h.entradas)} · saídas {BRL(h.saidas)}
               {h.saidasEstimadas || h.entradasEstimadas ? " (com estimativa)" : ""} · saldo <b style={{ color: h.saldoFinal < 0 ? "var(--bad)" : undefined }}>{BRL(h.saldoFinal)}</b>
             </>
           ) : (
@@ -1110,16 +1119,24 @@ function GraficoProjecao({ linhas }) {
           const x = cx(i) - barra / 2;
           return (
             <g key={l.mes}>
+              {i < iAtual && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-passado" />}
               {hover === i && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-hover" />}
               {ret(x, 0, reaisE(l), "barra-entrada")}
               {ret(x, reaisE(l), l.entradas, "barra-entrada estimada")}
               {ret(x, 0, -reaisS(l), "barra-saida")}
               {ret(x, -reaisS(l), -l.saidas, "barra-saida estimada")}
-              <text x={cx(i)} y={H - 8} textAnchor="middle" className={`eixo${i === 0 ? " eixo-atual" : ""}`}>{rotuloMes(l.mes, i === 0 || l.mes.endsWith("-01"))}</text>
+              <text x={cx(i)} y={H - 8} textAnchor="middle" className={`eixo${i === iAtual ? " eixo-atual" : ""}`}>{rotuloMes(l.mes, i === 0 || i === iAtual || l.mes.endsWith("-01"))}</text>
             </g>
           );
         })}
         <line x1={padL} x2={W - padR} y1={y0} y2={y0} className="zero" />
+        {iAtual > 0 && (
+          <g>
+            <line x1={padL + larguraMes * iAtual} x2={padL + larguraMes * iAtual} y1={padT} y2={H - padB} className="divisa-passado" />
+            <text x={padL + larguraMes * iAtual - 6} y={padT + 11} textAnchor="end" className="eixo">realizado</text>
+            <text x={padL + larguraMes * iAtual + 6} y={padT + 11} textAnchor="start" className="eixo">projeção</text>
+          </g>
+        )}
         <defs>
           <clipPath id="fc-acima"><rect x="0" y="0" width={W} height={y0} /></clipPath>
           <clipPath id="fc-abaixo"><rect x="0" y={y0} width={W} height={H - y0} /></clipPath>

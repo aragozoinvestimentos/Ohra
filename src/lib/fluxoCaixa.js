@@ -106,15 +106,31 @@ export function saldoRealizado(lancamentos, ateData = null) {
 // fechados (não conta o mês atual, que ainda está em andamento). Recorrentes
 // ficam de fora pra não contar duas vezes na projeção (eles já são projetados
 // sozinhos).
-export function mediaMensal(lancamentos, tipo, mesAtual, n = 3) {
-  let soma = 0;
+// Divide só pelos meses que a loja já tinha caixa (a partir do mês do 1º
+// lançamento) — quem começou no mês passado não fica com a média dividida
+// por 3 meses vazios.
+export function mesesDaMedia(lancamentos, mesAtual, n = 3) {
+  const primeiroMes = lancamentosReais(lancamentos).reduce((m, l) => {
+    const mes = mesDe(l.data_realizada || l.data_prevista);
+    return mes && (!m || mes < m) ? mes : m;
+  }, null);
   const meses = new Set();
-  for (let i = 1; i <= n; i++) meses.add(somarMeses(mesAtual, -i));
+  for (let i = 1; i <= n; i++) {
+    const mes = somarMeses(mesAtual, -i);
+    if (primeiroMes && mes >= primeiroMes) meses.add(mes);
+  }
+  return meses;
+}
+
+export function mediaMensal(lancamentos, tipo, mesAtual, n = 3) {
+  const meses = mesesDaMedia(lancamentos, mesAtual, n);
+  if (!meses.size) return 0;
+  let soma = 0;
   for (const l of lancamentosReais(lancamentos)) {
     if (l.tipo !== tipo || !l.data_realizada || l.recorrencia_origem_id || l.categoria === "saldo_inicial" || l.categoria === "aporte") continue;
     if (meses.has(mesDe(l.data_realizada))) soma += Number(l.valor) || 0;
   }
-  return soma / n;
+  return soma / meses.size;
 }
 
 // Projeção mês a mês: mês atual + os próximos (total `meses`). Pra cada mês:
@@ -125,7 +141,10 @@ export function mediaMensal(lancamentos, tipo, mesAtual, n = 3) {
 //  - estimado: nos meses FUTUROS (não no atual), a estimativa mensal de
 //    vendas/custos variáveis informada na tela.
 // O saldo acumulado começa no saldo realizado até o fim do mês anterior.
-export function projetar(lancamentos, { mesAtual, meses = 12, vendasEstimadas = 0, custosEstimados = 0 }) {
+// `mesesPassados` > 0 devolve também `passado`: os N meses antes do atual só
+// com o que de fato caiu/saiu (realizado), com o saldo no fim de cada um —
+// pra ver como foi o passado ao lado da projeção. Não mexe em `linhas`.
+export function projetar(lancamentos, { mesAtual, meses = 12, mesesPassados = 0, vendasEstimadas = 0, custosEstimados = 0 }) {
   const mesFim = somarMeses(mesAtual, meses - 1);
   const reais = lancamentosReais(lancamentos);
   const virtuais = ocorrenciasRecorrentes(lancamentos, mesAtual, mesFim);
@@ -134,6 +153,27 @@ export function projetar(lancamentos, { mesAtual, meses = 12, vendasEstimadas = 
     .filter((l) => l.data_realizada && l.data_realizada < inicioMesAtual)
     .reduce((s, l) => s + valorAssinado(l), 0);
   const saldoInicial = saldo;
+
+  const passado = [];
+  if (mesesPassados > 0) {
+    const mesIni = somarMeses(mesAtual, -mesesPassados);
+    let sp = reais.filter((l) => l.data_realizada && l.data_realizada < `${mesIni}-01`).reduce((s, l) => s + valorAssinado(l), 0);
+    for (let i = 0; i < mesesPassados; i++) {
+      const mes = somarMeses(mesIni, i);
+      const linha = { mes, passado: true, entradasRealizadas: 0, saidasRealizadas: 0, entradasPrevistas: 0, saidasPrevistas: 0, entradasEstimadas: 0, saidasEstimadas: 0 };
+      for (const l of reais) {
+        if (!l.data_realizada || mesDe(l.data_realizada) !== mes) continue;
+        if (l.tipo === "entrada") linha.entradasRealizadas += Number(l.valor) || 0;
+        else linha.saidasRealizadas += Number(l.valor) || 0;
+      }
+      linha.entradas = linha.entradasRealizadas;
+      linha.saidas = linha.saidasRealizadas;
+      linha.resultado = linha.entradas - linha.saidas;
+      sp += linha.resultado;
+      linha.saldoFinal = sp;
+      passado.push(linha);
+    }
+  }
 
   const linhas = [];
   for (let i = 0; i < meses; i++) {
@@ -170,7 +210,7 @@ export function projetar(lancamentos, { mesAtual, meses = 12, vendasEstimadas = 
     linha.saldoFinal = saldo;
     linhas.push(linha);
   }
-  return { saldoInicial, linhas };
+  return { saldoInicial, linhas, passado };
 }
 
 // Status de exibição de um lançamento (não-modelo).
