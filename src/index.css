@@ -1382,15 +1382,22 @@ button.ficha-anuncio-cab:hover { background: var(--surface-2); }
 
 /* 4º Lançamento, preço de cadastro editável e subtítulo de coluna */
 .th-sub { display: block; font-size: 10px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink-faint); margin-top: 1px; }
-.lanc-topo { align-items: end; margin-bottom: 8px; }
+.lanc-topo { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; margin-bottom: 8px; }
+.lanc-topo > .field { margin-bottom: 0; }
+.lanc-topo > .field:first-child { flex: 1 1 300px; max-width: 460px; }
+.lanc-topo > .field:nth-child(2) { flex: 2 1 420px; }
+.lanc-topo > .kv-cel { flex: 0 0 auto; min-width: 170px; }
+.lanc-corpo { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.lanc-corpo .lanc-anuncio { margin-top: 0; }
+@media (max-width: 900px) { .lanc-corpo { grid-template-columns: minmax(0, 1fr); } }
 .lanc-pergunta { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-3); margin-top: 8px; }
 .lanc-anuncio, .lanc-rampa { margin-top: 12px; }
 .lanc-degraus { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .lanc-degrau { padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-strong); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
 .lanc-degrau.at { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 .lanc-degrau.alvo { border-style: dashed; color: var(--ink); }
-.editar-cadastro { margin-bottom: 10px; }
-.editar-cadastro .kv-cel { display: flex; flex-direction: column; gap: 3px; max-width: 420px; }
+.editar-cadastro label { display: flex; flex-direction: column; gap: 3px; cursor: default; }
+.editar-cadastro-dica { font-size: 11px; color: var(--ink-faint); }
 .editar-cadastro-linha { display: flex; gap: 6px; align-items: center; }
 .editar-cadastro-linha .input-conc { width: 110px; }
 .lancado-ok { margin-bottom: 12px; }

@@ -64,8 +64,8 @@ function EditarCadastro({ canal, itemTipo, itemId, real, atual, lojaId, onToast 
     onToast(`Preço de cadastro na ${canal.nome}: ${BRL(riscado)} · promo ${previa.promo}% → cliente paga ${BRL(previa.clientePaga)}`);
   }
   return (
-    <div className="editar-cadastro" onClick={(ev) => ev.stopPropagation()}>
-      <label className="kv-cel">
+    <div className="editar-cadastro kv-cel" onClick={(ev) => ev.stopPropagation()}>
+      <label>
         <small>Preço de cadastro na {canal.nome}</small>
         <span className="editar-cadastro-linha">
           <input className="input-conc" type="text" inputMode="decimal" value={valor} onChange={(ev) => setValor(ev.target.value)} />
@@ -77,7 +77,7 @@ function EditarCadastro({ canal, itemTipo, itemId, real, atual, lojaId, onToast 
           {previa ? `promo ${previa.promo}% → cliente paga ${BRL(previa.clientePaga)}` : "—"}
           {previa?.acimaDoRiscado ? " · abaixo do preço de agora: não dá promo" : ""}
         </span>
-        <span className="hint" style={{ margin: 0 }}>pra deixar igual à plataforma — evite mudar o preço cheio no marketplace</span>
+        <span className="editar-cadastro-dica" title="Pra deixar igual à plataforma — evite mudar o preço cheio no marketplace">igual à plataforma · evite mudar o cheio</span>
       </label>
     </div>
   );
@@ -756,8 +756,8 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                         linhaDetalhe(
                           "base",
                           <>
-                            {anunciada && campoCadastro(l.sugerido, dados.salvo1, `p:${pid}`)}
                             <div className="detalhe-cel-grade">
+                              {anunciada && campoCadastro(l.sugerido, dados.salvo1, `p:${pid}`)}
                               <div className="kv-cel">
                                 <small>Custo</small>
                                 <b>{BRL(l.custo)}</b>
@@ -847,8 +847,8 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                       linhaDetalhe(
                         chave,
                         <>
-                          {anunciada && l.cadastrada && campoCadastro(l.sugerido, l.salvo, l.itemId)}
                           <div className="detalhe-cel-grade">
+                            {anunciada && l.cadastrada && campoCadastro(l.sugerido, l.salvo, l.itemId)}
                             <div className="kv-cel">
                               <small>Custo</small>
                               <b>{BRL(l.custo)}</b>

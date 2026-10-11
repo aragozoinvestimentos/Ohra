@@ -106,7 +106,7 @@ export default function Lancamento({ onToast, onSub }) {
             <Ajuda texto="Vai entrar em rampa? Sim = abre o mesmo “Iniciar rampa” do Crescimento, já com o produto e o canal. Não = anuncia direto no alvo (o preço salvo); dá pra iniciar a rampa depois pelo Crescimento. Variações e kits seguem a rampa do avulso (a curva de desconto sobre o degrau). Nada aqui muda o preço salvo nem o preço original já anunciado." />
           </span>
         </h3>
-        <div className="grid-auto lanc-topo">
+        <div className="lanc-topo">
           <div className="field">
             <label>Produto, variação ou kit</label>
             <BuscaItem grupos={gruposDoSeletor(itens)} value={itemId} onChange={setSel} vazio="— escolha (ou use o da Ficha) —" />
@@ -163,7 +163,8 @@ export default function Lancamento({ onToast, onSub }) {
         {estado === "alvo" && quadroAnuncio({ titulo: "Anunciar no alvo", a: anAlvo, nota: "Pode iniciar a rampa depois pelo Crescimento." })}
 
         {estado === "rampa" && (
-          <>
+          <div className="lanc-corpo">
+            <div>
             {est ? (
               <div className="lanc-rampa">
                 <div className="legenda-tit">
@@ -195,6 +196,8 @@ export default function Lancamento({ onToast, onSub }) {
               </div>
             )}
             {tipo !== "produto" && est && <div className="hint">Variação: segue a rampa do avulso (a curva de desconto sobre o degrau).</div>}
+            </div>
+            <div>
             {quadroAnuncio({ titulo: "O que digitar agora", a: an, nota: ra ? null : "No alvo: o preço de agora é o salvo." })}
             <button
               type="button"
@@ -204,7 +207,8 @@ export default function Lancamento({ onToast, onSub }) {
             >
               Ver no Crescimento →
             </button>
-          </>
+            </div>
+          </div>
         )}
       </div>
 
