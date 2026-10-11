@@ -1,6 +1,6 @@
 import ProximoPasso from "./ProximoPasso.jsx";
 import { publicarSelecao, useSelecaoPasso } from "../lib/passosPreco.js";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import BuscaItem from "./BuscaItem.jsx";
 import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, reservaDoItem } from "../lib/calc.js";
@@ -82,7 +82,12 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const canaisProprios = canais.filter((c) => c.tipo === "custom");
 
   // Troca de loja invalida a seleção anterior de produto/kit cadastrado.
+  // Só quando a loja MUDA — na primeira montagem não limpa (senão apagava o
+  // item pedido pelo "Próximo →" ou por uma tarefa do Início ao abrir a aba).
+  const lojaAnterior = useRef(lojaId);
   useEffect(() => {
+    if (lojaAnterior.current === lojaId) return;
+    lojaAnterior.current = lojaId;
     setBaseSelecionada("");
     setCanalProprioId("");
   }, [lojaId]);

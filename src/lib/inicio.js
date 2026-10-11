@@ -3,13 +3,18 @@
 // semanaPendente, linhasAnunciar, sugestoesAfiliado, pareceAtracaoDe,
 // resumoCaixa) e só é agrupada/ordenada aqui. O botão leva pra aba que decide.
 
+import { pendenciasDeTarefas } from "./tarefas.js";
+
 const brl = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 
 export const GRUPOS_PENDENCIA = [
+  // Grupos seguem a regra única de cores: Resolver = só vermelho (prejuízo,
+  // conta vencida, teste com cliques sem venda, tarefa vencida); Atenção e
+  // rotina = âmbar + neutros; Oportunidades = verde.
   { chave: "resolver", titulo: "Resolver" },
-  { chave: "rotina", titulo: "Rotina" },
+  { chave: "rotina", titulo: "Atenção e rotina" },
   { chave: "oportunidade", titulo: "Oportunidades" },
 ];
 
@@ -22,6 +27,8 @@ export function montarPendencias({
   anunciosAtualizar = [], // [{ item, canal, x }] linhasAnunciar: mudou e já marcado feito antes
   afSugestoes = [], // sugestoesAfiliado: "pode|…" e "amostra|…"
   atracao = [], // [{ item, canal }] pareceAtracaoDe
+  tarefas = [], // tarefas manuais (schema v42)
+  hoje = "",
 }) {
   const out = [];
   const add = (p) => out.push(p);
@@ -41,8 +48,8 @@ export function montarPendencias({
   for (const { item, canal } of precosAlerta.filter((a) => a.al?.tipo === "abaixo-minimo"))
     add({
       id: `minimo|${item.id}|${canal.id}`,
-      grupo: "resolver",
-      ordem: 2,
+      grupo: "rotina",
+      ordem: 0,
       tom: "warn",
       titulo: `${item.nome}: abaixo do mínimo`,
       texto: `${canal.nome} · se é de propósito, marque a estratégia lá e o aviso some`,
@@ -54,7 +61,7 @@ export function montarPendencias({
     const receber = caixa.atrasados.filter((l) => l.tipo === "entrada").reduce((s, l) => s + Number(l.valor || 0), 0);
     add({
       id: "caixa|atrasados",
-      grupo: "resolver",
+      grupo: pagar > 0 ? "resolver" : "rotina",
       ordem: 3,
       tom: pagar > 0 ? "bad" : "warn",
       titulo: `${plural(caixa.atrasados.length, "conta atrasada", "contas atrasadas")}`,
@@ -69,8 +76,8 @@ export function montarPendencias({
     const teste = a.motivo === "teste";
     add({
       id: `anuncio|${l.r.id}`,
-      grupo: "resolver",
-      ordem: teste ? 4 : 5,
+      grupo: teste ? "resolver" : "rotina",
+      ordem: teste ? 4 : 0,
       tom: teste ? "bad" : "warn",
       titulo: `${l.produto.nome}: ${teste ? "teste com cliques sem venda" : "revisar anúncio"}`,
       texto: `${l.canal.nome} · ${a.titulo} — começar por: ${String(a.porOnde || "").toLowerCase()}`,
@@ -191,8 +198,12 @@ export function montarPendencias({
       rotulo: "Ver em Produtos precificados",
     });
 
+  // Tarefas manuais (schema v42) entram nos mesmos grupos, ordenadas por data.
+  for (const p of pendenciasDeTarefas(tarefas, hoje)) add(p);
+
   const g = Object.fromEntries(GRUPOS_PENDENCIA.map((x, i) => [x.chave, i]));
-  return out.sort((a, b) => g[a.grupo] - g[b.grupo] || a.ordem - b.ordem || a.titulo.localeCompare(b.titulo));
+  const porData = (a, b) => (a.data || "9999").localeCompare(b.data || "9999");
+  return out.sort((a, b) => g[a.grupo] - g[b.grupo] || a.ordem - b.ordem || (a.tarefa && b.tarefa ? porData(a, b) : 0) || a.titulo.localeCompare(b.titulo));
 }
 
 // Faixa de status — só resume o que as pendências/números já dizem.

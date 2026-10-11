@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { dataSP } from "../lib/datas.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useCrescimento } from "../hooks/useCrescimento.js";
@@ -16,6 +17,11 @@ import CanalTag from "./CanalTag.jsx";
 import GraficoOrigem from "./GraficoOrigem.jsx";
 import Estado from "./Estado.jsx";
 import { estadoDoTom } from "../lib/estados.js";
+import ConfirmDialog from "./ConfirmDialog.jsx";
+import { LinhaTarefa, TarefaDialog } from "./Tarefas.jsx";
+import { useTarefas } from "../hooks/useTarefas.js";
+import { concluidasRecentes, estadoTarefa, tarefasAbertas } from "../lib/tarefas.js";
+import { abrirTarefa, concluirTarefa, desfazerConclusao, excluirTarefa, rotuloLink } from "../lib/tarefasAcoes.js";
 
 const VISIVEIS = 5;
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
@@ -67,7 +73,7 @@ function useDadosGestao() {
 // pendência do grupo Oportunidades é verde (dá pra agir e ganhar).
 const Bolinha = ({ tipo }) => (tipo ? <i className={`bolinha-status st-${tipo}`} aria-hidden="true" /> : null);
 const estadoStatus = (tom) => estadoDoTom(tom);
-const estadoPendencia = (p) => (p.grupo === "oportunidade" ? (p.tom === "neu" ? "info" : "oportunidade") : estadoDoTom(p.tom) || "info");
+const estadoPendencia = (p) => (p.semCor ? null : p.grupo === "oportunidade" ? (p.tom === "neu" ? "info" : "oportunidade") : estadoDoTom(p.tom) || "info");
 const ESTADO_GRUPO = { resolver: ["resolver", "!"], rotina: ["atencao", "↻"], oportunidade: ["oportunidade", "↑"] };
 
 // Área numerada recolhível, com o resumo na linha do título.
@@ -89,7 +95,8 @@ function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
 
 // Início — SÓ LÊ: status no topo → "Pra fazer" por prioridade → áreas
 // numeradas. Cada pendência vem da aba que decide e o botão leva pra lá.
-export default function Inicio({ onIrPara }) {
+// Única coisa gravada aqui: as tarefas manuais (schema v42, tabela tarefas).
+export default function Inicio({ onIrPara, onToast }) {
   const { lojaId } = useLoja();
   const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf } = useCrescimento();
   const { itens, canais, precos, produtos, kits, materiais, publicacoesCanal, mapaRampa, clientePagaHoje, alertaDe, pareceAtracaoDe, anunciadoNoCanal } = dados;
@@ -97,6 +104,27 @@ export default function Inicio({ onIrPara }) {
   const gestao = useDadosGestao();
   const [verTodos, setVerTodos] = useState(false);
   const [abertas, setAbertas] = useState({}); // área → aberta (sobrepõe o padrão)
+  const tarefasH = useTarefas();
+  const [dialogTarefa, setDialogTarefa] = useState(null); // { tarefa? }
+  const [excluir, setExcluir] = useState(null);
+  const [desfazer, setDesfazer] = useState(null); // { tarefa, proximaId, prox }
+  const [verConcluidas, setVerConcluidas] = useState(false);
+  const timerDesfazer = useRef(null);
+  useEffect(() => () => clearTimeout(timerDesfazer.current), []);
+
+  async function concluir(t) {
+    const r = await concluirTarefa(t, hoje);
+    if (r.error) return onToast?.(`Não deu pra concluir: ${r.error.message}`);
+    clearTimeout(timerDesfazer.current);
+    setDesfazer({ tarefa: t, proximaId: r.proximaId, prox: r.prox });
+    timerDesfazer.current = setTimeout(() => setDesfazer(null), 5000);
+  }
+  async function voltarConclusao() {
+    const d = desfazer;
+    clearTimeout(timerDesfazer.current);
+    setDesfazer(null);
+    if (d) await desfazerConclusao(d);
+  }
 
   // --- Dinheiro (mesmas contas do Fluxo de Caixa e de Metas) ---
   const caixa = useMemo(
@@ -178,8 +206,8 @@ export default function Inicio({ onIrPara }) {
 
   // --- Pra fazer + status ---
   const pendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao }),
-    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, hoje }),
+    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, hoje]
   );
   const status = statusInicio({
     caixa,
@@ -204,6 +232,10 @@ export default function Inicio({ onIrPara }) {
     setAbertas((a) => ({ ...a, [k]: true }));
     setTimeout(() => document.getElementById(`inicio-area-${k}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
   };
+
+  const abertasT = tarefasAbertas(tarefasH.tarefas);
+  const vencidas = abertasT.filter((t) => estadoTarefa(t, hoje).vencida).length;
+  const concluidas = concluidasRecentes(tarefasH.tarefas, hoje);
 
   const carregando = gestao.carregando || rampasH.carregando || dados.carregando;
   const visiveis = verTodos ? pendencias : pendencias.slice(0, VISIVEIS);
@@ -231,9 +263,30 @@ export default function Inicio({ onIrPara }) {
 
       <div className="panel inicio-fazer">
         <h3 className="section-title">
-          <span>Pra fazer</span>
-          <span className="h3-contagem">{pendencias.length ? `${pendencias.length} ${pendencias.length === 1 ? "item" : "itens"}` : ""}</span>
+          <span>
+            Pra fazer <span className="h3-contagem">{pendencias.length ? `${pendencias.length} ${pendencias.length === 1 ? "item" : "itens"}` : ""}</span>
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => (tarefasH.disponivel ? setDialogTarefa({}) : onToast?.("Rode o supabase/schema_v42.sql no Supabase pra usar as tarefas"))}
+          >
+            + Tarefa
+          </button>
         </h3>
+        {vencidas > 0 && (
+          <div className="aviso-cel ruim tarefas-vencidas">
+            <b>! {vencidas === 1 ? "1 tarefa vencida" : `${vencidas} tarefas vencidas`}</b> — estão em Resolver.
+          </div>
+        )}
+        {desfazer && (
+          <div className="tarefa-desfazer" role="status">
+            ✓ “{desfazer.tarefa.descricao}” concluída{desfazer.prox ? ` · próxima em ${diaMes(desfazer.prox)}` : ""}
+            <button type="button" className="link-btn" onClick={voltarConclusao}>
+              desfazer
+            </button>
+          </div>
+        )}
         {carregando && !pendencias.length ? (
           <div className="empty">Carregando…</div>
         ) : !pendencias.length ? (
@@ -253,8 +306,19 @@ export default function Inicio({ onIrPara }) {
                   </div>
                   <ul className="inicio-lista">
                     {doGrupo.map((p) => (
-                      <li key={p.id} className={`inicio-item st-${estadoPendencia(p)}`}>
+                      <li key={p.id} className={`inicio-item${estadoPendencia(p) ? ` st-${estadoPendencia(p)}` : ""}${p.tarefa ? " inicio-tarefa" : ""}`}>
                         <Bolinha tipo={estadoPendencia(p)} />
+                        {p.tarefa ? (
+                          <LinhaTarefa
+                            p={p}
+                            itens={itens}
+                            onEditar={(t) => setDialogTarefa({ tarefa: t })}
+                            onConcluir={concluir}
+                            onExcluir={setExcluir}
+                            onAbrir={(t) => abrirTarefa(t, itens, onIrPara)}
+                          />
+                        ) : (
+                        <>
                         <div className="inicio-item-txt">
                           <b>{p.titulo}</b>
                           <span>{p.texto}</span>
@@ -272,6 +336,8 @@ export default function Inicio({ onIrPara }) {
                         <button type="button" className={`btn btn-mini${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => ir(p.ir)}>
                           {p.rotulo}
                         </button>
+                        </>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -285,7 +351,44 @@ export default function Inicio({ onIrPara }) {
             )}
           </>
         )}
+        {concluidas.length > 0 && (
+          <div className="tarefas-concluidas">
+            <button type="button" className={`variacoes-toggle${verConcluidas ? " aberto" : ""}`} onClick={() => setVerConcluidas((v) => !v)} aria-expanded={verConcluidas}>
+              <span className="seta">▸</span> Concluídas recentemente ({concluidas.length})
+            </button>
+            {verConcluidas && (
+              <ul className="inicio-mini">
+                {concluidas.map((t) => (
+                  <li key={t.id}>
+                    <span>
+                      <s>{t.descricao}</s>
+                      {rotuloLink(t, itens) && <span className="sub-num-inline"> · {rotuloLink(t, itens)}</span>}
+                    </span>
+                    <span className="sub-num-inline">✓ {diaMes(dataSP(t.concluida_em))}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
+
+      {dialogTarefa && <TarefaDialog tarefa={dialogTarefa.tarefa || null} itens={itens} lojaId={lojaId} onToast={onToast} onClose={() => setDialogTarefa(null)} />}
+      {excluir && (
+        <ConfirmDialog
+          titulo="Excluir tarefa"
+          mensagem={`Excluir “${excluir.descricao}”?${excluir.repetir ? " Ela repete — as próximas não serão criadas." : ""}`}
+          confirmarLabel="Excluir"
+          perigo
+          onCancel={() => setExcluir(null)}
+          onConfirm={async () => {
+            const t = excluir;
+            setExcluir(null);
+            const err = await excluirTarefa(t);
+            onToast?.(err ? `Não deu pra excluir: ${err.message}` : "Tarefa excluída");
+          }}
+        />
+      )}
 
       <Area k="dinheiro" tom={status.dinheiro.tom} aberta={aberta("dinheiro")} onAlternar={() => alternar("dinheiro")} n={1} titulo="Dinheiro" resumo={status.dinheiro.frase}>
         {!caixa ? (

@@ -1475,3 +1475,36 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 }
 .cel-preco .st { margin-top: 2px; justify-self: end; }
 .cel-preco-cmp .st { padding: 0 5px; }
+
+/* ===== Tarefas manuais no "Pra fazer" (Início, schema v42) ===== */
+.inicio-fazer > h3.section-title { justify-content: space-between; }
+.inicio-fazer > h3.section-title > span { display: inline-flex; align-items: baseline; }
+.tarefa-check { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--border-strong); background: var(--surface); color: var(--border-strong); font-size: 12px; font-weight: 800; display: inline-grid; place-items: center; padding: 0; cursor: pointer; transition: color .12s, border-color .12s, background .12s; }
+.tarefa-check:hover, .tarefa-check:focus-visible { color: var(--st-oportunidade); border-color: var(--st-oportunidade); background: var(--st-oportunidade-soft); }
+.tarefa-texto { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); text-align: left; cursor: text; }
+.tarefa-texto:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+.tarefa-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--ink-soft); }
+.tarefa-acoes { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.inicio-item.inicio-tarefa:not([class*="st-"]) { padding-left: 28px; }
+.inicio-item.inicio-tarefa:not([class*="st-"]) .tarefa-check { margin-left: -18px; }
+.tarefa-desfazer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; padding: 7px 12px; border-radius: 8px; background: var(--surface-2); font-size: 12.5px; }
+.tarefa-desfazer .link-btn { margin: 0; font-weight: 600; }
+.tarefas-vencidas { margin: 0 0 10px; }
+.tarefas-concluidas { margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.tarefas-concluidas s { color: var(--ink-soft); }
+@media (max-width: 760px) {
+  .inicio-item.inicio-tarefa { flex-wrap: nowrap; align-items: flex-start; }
+  .inicio-item.inicio-tarefa .inicio-item-txt { flex-basis: auto; }
+  .tarefa-acoes { flex-direction: column; align-items: flex-end; }
+}
+
+/* ===== Produtos precificados: "Abrir" em ícone e nome fixo à esquerda ===== */
+.btn.btn-icone { min-width: 28px; padding: 3px 6px; font-size: 13px; line-height: 1; }
+.tabela-precificados td.td-abrir { padding-left: 4px; padding-right: 10px; width: 1%; }
+.tabela-precificados thead th:first-child, .tabela-precificados tbody td:first-child:not([colspan]) { position: sticky; left: 0; z-index: 3; background: var(--surface); box-shadow: inset -1px 0 var(--border); }
+.tabela-precificados thead th:first-child { background: var(--surface-2); z-index: 7; }
+.tabela-precificados tbody tr:hover td:first-child:not([colspan]) { background: var(--surface-3); }
+.tabela-precificados tr.linha-variacao td:first-child { background: var(--surface-3); }
+.tabela-precificados .cel-preco .st { display: inline-block; white-space: normal; max-width: 150px; text-align: right; }
+.tabela-precificados .cel-preco .st .st-ic { margin-right: 4px; }
+@media (min-width: 1280px) { .table-wrap.cabecalho-fixo.tabela-precificados.rola { overflow-x: auto; } }

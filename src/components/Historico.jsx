@@ -1,5 +1,5 @@
 import { hojeSP } from "../lib/datas.js";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { resultadoNoPreco } from "../lib/calc.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -59,6 +59,24 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [visao, setVisao] = useLembrado("ohra:precificados:visao", "salvos"); // salvos | comparar
   const [mostrarCanais, setMostrarCanais] = useLembrado("ohra:precificados:canais", "com-preco"); // com-preco | todos
   const [sel, setSel] = useState(null); // "itemId|canalId" com o detalhe aberto
+  // Tabela larga demais pro cartão (muitos canais / tela estreita): rola de lado
+  // com o nome fixo à esquerda. Cabendo, fica sem rolagem (cabeçalho gruda no topo).
+  const wrapRef = useRef(null);
+  const [rola, setRola] = useState(false);
+  useEffect(() => {
+    const w = wrapRef.current;
+    if (!w || typeof ResizeObserver === "undefined") return;
+    const medir = () => {
+      const t = w.querySelector("table");
+      if (t) setRola(t.scrollWidth > w.clientWidth + 1);
+    };
+    const ro = new ResizeObserver(medir);
+    ro.observe(w);
+    const t = w.querySelector("table");
+    if (t) ro.observe(t);
+    medir();
+    return () => ro.disconnect();
+  });
   const alternarSel = (k) => setSel((atual) => (atual === k ? null : k));
   // Outras telas mandam pra cá ("ver em Produtos precificados") com o filtro Custo mudou.
   useEffect(() => {
@@ -935,7 +953,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
               excluir os produtos/kits abaixo.
             </div>
           )}
-          <div className="table-wrap cabecalho-fixo">
+          <div ref={wrapRef} className={`table-wrap cabecalho-fixo tabela-precificados${rola ? " rola" : ""}`}>
             <table>
               <thead>
                 <tr>
@@ -1064,13 +1082,14 @@ export default function Historico({ onEditarCompleto, onToast }) {
                         </td>
                       );
                     })}
-                    <td className="num">
+                    <td className="num td-abrir">
                       <button
-                        className="btn btn-mini"
+                        className="btn btn-mini btn-icone"
                         onClick={() => (variacao ? onEditarCompleto?.("produto", item.produtoId) : abrirCadastro(item))}
-                        title={variacao ? "Abre o produto pra editar essa variação" : undefined}
+                        title={variacao ? "Abrir o produto pra editar essa variação" : "Abrir o cadastro"}
+                        aria-label={variacao ? "Abrir o produto pra editar essa variação" : `Abrir o cadastro de ${item.nome}`}
                       >
-                        Abrir
+                        ↗
                       </button>
                     </td>
                   </tr>
