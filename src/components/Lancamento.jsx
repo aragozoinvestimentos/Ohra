@@ -21,7 +21,7 @@ const virgula = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits
 // subir degrau e registrar semana continuam no Crescimento.
 export default function Lancamento({ onToast, onSub }) {
   const { dados, rampasH, regras, linhas } = useCrescimento();
-  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, anunciadoNoCanal } = dados;
+  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, cobraNoCanal } = dados;
   const { porPasso, pedido } = useSelecaoPasso();
   const [sel, setSel] = useState(null); // null = segue o da Ficha
   const [canalSel, setCanalSel] = useState(null);
@@ -52,7 +52,7 @@ export default function Lancamento({ onToast, onSub }) {
   const pecasEmRampa =
     tipo === "kit" && canal ? (item.componentes || []).map((c) => linhas.find((l) => l.r.produto_id === c.produtoId && l.r.canal_id === canal.id)).filter(Boolean) : [];
   const publicado = item && canal ? publicacoesCanal.find((x) => x.item_tipo === tipo && x.item_id === item.id.slice(2) && x.canal_id === canal.id) || null : null;
-  const anunciada = item && canal ? anunciadoNoCanal(item, canal) : true;
+  const anunciada = item && canal ? cobraNoCanal(item, canal) : true;
   const chave = item && canal ? `${item.id}|${canal.id}` : "";
 
   // O que digitar: em rampa (ou derivado dela) = mapaRampa; senão o anúncio no alvo.
@@ -129,7 +129,7 @@ export default function Lancamento({ onToast, onSub }) {
             </div>
           )}
         </div>
-        {!anunciada && <div className="aviso-cel">Quantidade não anunciada em {canal?.nome} (2º Por quantidade → Anunciado em).</div>}
+        {!anunciada && <div className="aviso-cel">Fora de {canal?.nome}: o produto não tem preço salvo neste canal ou a quantidade não é anunciada aqui (2º Por quantidade → Anunciado em).</div>}
 
         {estado === "vazio" && <div className="empty">Escolha o produto e o canal (ou na 3º Ficha).</div>}
         {estado === "sem-preco" && (

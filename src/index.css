@@ -1525,3 +1525,12 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .tirar-opcao small { display: block; color: var(--ink-soft); font-size: 11.5px; margin-top: 2px; }
 .tirar-canal .check-linha input { width: auto; }
 .detalhe-cel-acoes .btn .canal-tag { margin-left: 2px; }
+/* sugerido em canal onde o item não está (Produtos precificados, Comparar): só consulta */
+.cel-preco.cel-consulta { opacity: .5; }
+.cel-preco.cel-consulta .st { display: none; }
+/* "×" nos chips de quantidade (2º Por quantidade) */
+.chip-qtd-wrap { position: relative; display: inline-flex; }
+.chip-qtd-x { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink-faint); font-size: 11px; line-height: 1; padding: 0; display: grid; place-items: center; opacity: 0; transition: opacity .12s; cursor: pointer; }
+.chip-qtd-wrap:hover .chip-qtd-x, .chip-qtd-x:focus-visible { opacity: 1; }
+.chip-qtd-x:hover { color: var(--st-resolver); border-color: var(--st-resolver); }
+@media (hover: none) { .chip-qtd-x { opacity: .85; width: 14px; height: 14px; font-size: 10px; } }

@@ -1,4 +1,5 @@
 import ProximoPasso from "./ProximoPasso.jsx";
+import TirarQuantidadeDialog from "./TirarQuantidadeDialog.jsx";
 import { publicarSelecao, useSelecaoPasso } from "../lib/passosPreco.js";
 import { useEffect, useMemo, useState } from "react";
 import BuscaItem from "./BuscaItem.jsx";
@@ -265,6 +266,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
     if (error) return onToast(/quantidades_anuncio|column/i.test(error.message) ? "Rode o supabase/schema_v41.sql no Supabase" : `Não foi possível salvar: ${error.message}`);
     recarregarCatalogo();
   }
+  const [tirarQtd, setTirarQtd] = useState(null); // linha da escada — "×" no chip
   async function voltarPadraoQtds() {
     if (!supabase || !produto || !canal || !temV41) return;
     const novo = { ...(produto.quantidades_anuncio || {}) };
@@ -679,17 +681,23 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
               Anunciado em <CanalTag canal={canal} />:
             </span>
             {e.linhas.map((l) => (
-              <button
-                key={l.n}
-                type="button"
-                className={`chip-qtd${anunciadaPQ(l.n) ? " on" : ""}`}
-                onClick={() => alternarAnunciada(l.n)}
-                disabled={!temV41}
-                aria-pressed={anunciadaPQ(l.n)}
-                title={anunciadaPQ(l.n) ? "Anunciada neste canal — clique pra tirar" : "Não anunciada neste canal — clique pra marcar"}
-              >
-                {l.n}
-              </button>
+              <span key={l.n} className="chip-qtd-wrap">
+                <button
+                  type="button"
+                  className={`chip-qtd${anunciadaPQ(l.n) ? " on" : ""}`}
+                  onClick={() => alternarAnunciada(l.n)}
+                  disabled={!temV41}
+                  aria-pressed={anunciadaPQ(l.n)}
+                  title={anunciadaPQ(l.n) ? "Anunciada neste canal — clique pra tirar" : "Não anunciada neste canal — clique pra marcar"}
+                >
+                  {l.n}
+                </button>
+                {!l.base && l.n > 1 && (
+                  <button type="button" className="chip-qtd-x" title={`Tirar ${l.n} un. deste canal ou excluir a variação`} aria-label={`Tirar ${l.n} unidades`} onClick={() => setTirarQtd(l)}>
+                    ×
+                  </button>
+                )}
+              </span>
             ))}
             <span className="muted-cel">
               {!temV41 ? (
@@ -1076,6 +1084,21 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
           confirmarLabel={salvando ? "Salvando…" : "Confirmar"}
           onConfirm={executar}
           onCancel={() => setConfirmar(null)}
+        />
+      )}
+      {tirarQtd && (
+        <TirarQuantidadeDialog
+          linha={tirarQtd}
+          item={tirarQtd.itemId ? itens.find((it) => it.id === tirarQtd.itemId) || null : null}
+          produto={produto}
+          canal={canal}
+          canais={canais}
+          precos={precosEsc}
+          publicacoes={publicacoesCanal}
+          listaSemN={e.linhas.map((x) => x.n).filter((n) => n !== tirarQtd.n && anunciadaPQ(n))}
+          temV41={temV41}
+          onToast={onToast}
+          onClose={() => setTirarQtd(null)}
         />
       )}
       <ProximoPasso atual="quantidade" itemId={pid ? `p:${pid}` : null} canalId={canal?.id} onSub={onSub} />

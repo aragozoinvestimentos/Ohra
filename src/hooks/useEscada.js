@@ -104,5 +104,23 @@ export function useEscada() {
     [produtosPorId, linhas4x]
   );
 
-  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, pareceAtracaoDe, mapaRampa, clientePagaHoje, anunciadoNoCanal };
+  // Conta ÚNICA (out/2026): o item "está" nesse canal? Só então o app mostra
+  // sugerido e cobra ação (Produtos precificados, "Sugerido ≠ salvo", Anunciar,
+  // Ficha, Lançamento, Início). Variação: preço próprio salvo, ou o pai (avulso)
+  // com preço salvo E a quantidade anunciada no canal. Kit de produtos
+  // diferentes: preço próprio ou alguma peça com preço salvo. Produto: sempre.
+  const noCanal = useCallback(
+    (item, canal) => {
+      if (!item || !canal) return false;
+      const tem = (tipo, id) => dados.precos.some((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === canal.id && Number(p.preco) > 0);
+      if (item.id.startsWith("v:")) return tem("variacao", item.id.slice(2)) || (tem("produto", item.produtoId) && anunciadoNoCanal(item, canal));
+      if (item.id.startsWith("k:")) return tem("kit", item.id.slice(2)) || (item.componentes || []).some((c) => tem("produto", c.produtoId));
+      return true;
+    },
+    [dados.precos, anunciadoNoCanal]
+  );
+  // Pra Anunciar/Início/Ficha: anunciado E no canal.
+  const cobraNoCanal = useCallback((item, canal) => anunciadoNoCanal(item, canal) && noCanal(item, canal), [anunciadoNoCanal, noCanal]);
+
+  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, pareceAtracaoDe, mapaRampa, clientePagaHoje, anunciadoNoCanal, noCanal, cobraNoCanal };
 }

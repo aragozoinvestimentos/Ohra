@@ -42,6 +42,12 @@ Grupos do menu **pela jornada** (out/2026; chaves das abas iguais, então links,
 - **"Removi o anúncio, mas vou relançar"**: apaga só `publicacoes_canal` (riscado fixo); preço salvo, afiliado e rampa ficam — ao relançar, a Anunciar volta a sugerir o preço de cadastro.
 - **"Tirar tudo deste canal"**: apaga `precos_canal`, `publicacoes_canal`, `afiliado_config` do item × canal e a chave do canal em `produtos_cadastro.quantidades_anuncio`. Rampa nesse canal: aviso "a rampa e N semanas registradas serão apagadas" com checkbox OBRIGATÓRIO (`rampas_preco` → registros em cascata); sem marcar, a rampa fica e o resto é apagado.
 - Depois: `recarregarCatalogo()` + evento focus (rampas/afiliados) → o item some daquele canal em Produtos precificados, Anunciar, Ficha, Lançamento, avisos e Início.
+- **"×" nos chips de quantidade** (2º Por quantidade → "Anunciado em", menos o 1 un.; hover no PC, sempre visível pequeno no celular) → `TirarQuantidadeDialog.jsx`: (a) **Tirar deste canal** (padrão) — tira a quantidade de `quantidades_anuncio` do canal e apaga precos_canal/publicacoes_canal/afiliado_config da variação SÓ nesse canal (mesmo `tirarDoCanal`); religar em "Anunciado em"; (b) **Excluir a variação de todos os canais** — lista onde tem preço/anúncio, pede 2ª confirmação e chama `excluirVariacaoTodos` (tirarDoCanal.js: produto_variacoes + precos_canal, precos_concorrente, publicacoes_canal, afiliado_config da variação e a quantidade sai de `quantidades_anuncio` em todos os canais) — o "× excluir variação" de Produtos precificados usa a mesma função.
+
+## Item "no canal" — `useEscada().noCanal` / `cobraNoCanal` (out/2026)
+
+- Conta ÚNICA de "o item está nesse canal?": **variação** = preço próprio salvo, ou o produto pai (avulso) com preço salvo no canal E a quantidade anunciada (`anunciadoNoCanal`); **kit de produtos diferentes** = preço próprio ou alguma peça com preço salvo no canal; **produto** = sempre. `cobraNoCanal` = anunciado E no canal.
+- Produtos precificados (visão Comparar): fora do canal = "—" (sem sugerido); toggle "mostrar sugestões em canais não cadastrados" (`ohra:precificados:sug-fora-canal`, desligado) mostra o sugerido em cinza, só consulta (Aplicar só no detalhe, com confirmação). Filtro "Sugerido ≠ salvo" ignora o que está fora do canal. Anunciar, Início (via `linhasAnunciar(…, anunciadoNoCanal: cobraNoCanal)`), Ficha (variações) e Lançamento usam `cobraNoCanal` — nada cobra ação em canal onde o produto não está.
 
 ## Registro de Impressões (schema v24)
 

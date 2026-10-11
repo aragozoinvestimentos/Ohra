@@ -79,3 +79,24 @@ export async function tirarDoCanal({ modo, linhas, canal, apagarRampa = false, p
   window.dispatchEvent(new Event("focus")); // rampas/afiliados recarregam
   return erros;
 }
+
+// Exclui a variação de TODOS os canais (produto_variacoes + preços, anúncios,
+// concorrente e afiliado dela; a quantidade sai das quantidades anunciadas do
+// produto em todos os canais). Sempre com dupla confirmação na tela.
+export async function excluirVariacaoTodos({ variacaoId, n = null, produto = null }) {
+  const erros = [];
+  const { error } = await supabase.from("produto_variacoes").delete().eq("id", variacaoId);
+  if (error) return [`produto_variacoes: ${error.message}`];
+  for (const t of ["precos_canal", "precos_concorrente", "publicacoes_canal", "afiliado_config"]) {
+    const r = await supabase.from(t).delete().eq("item_tipo", "variacao").eq("item_id", variacaoId);
+    if (r.error && !/relation|does not exist|schema cache/i.test(r.error.message)) erros.push(`${t}: ${r.error.message}`);
+  }
+  const q = produto?.quantidades_anuncio;
+  if (n != null && q && Object.values(q).some((lista) => Array.isArray(lista) && lista.includes(n))) {
+    const novo = Object.fromEntries(Object.entries(q).map(([k, lista]) => [k, Array.isArray(lista) ? lista.filter((x) => x !== n) : lista]));
+    const r = await supabase.from("produtos_cadastro").update({ quantidades_anuncio: novo }).eq("id", produto.id);
+    if (r.error) erros.push(`quantidades_anuncio: ${r.error.message}`);
+  }
+  recarregarCatalogo();
+  return erros;
+}

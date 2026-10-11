@@ -34,7 +34,7 @@ const agoraIgualAlvo = (x) => Math.abs(Number(x.clientePaga) - Number(x.anSalvo?
 
 export default function Publicar({ onToast, onSub }) {
   const { lojaId } = useLoja();
-  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, anunciadoNoCanal } = useEscada();
+  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, cobraNoCanal } = useEscada();
   const [verTodos, setVerTodos] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [abertos, setAbertos] = useState(() => new Set());
@@ -50,8 +50,8 @@ export default function Publicar({ onToast, onSub }) {
   const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
 
   const linhas = useMemo(
-    () => linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa: rampaMapa, clientePagaHoje, anunciadoNoCanal }),
-    [itens, canais, precos, produtos, kits, publicacoesCanal, rampaMapa, clientePagaHoje, anunciadoNoCanal]
+    () => linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa: rampaMapa, clientePagaHoje, anunciadoNoCanal: cobraNoCanal }),
+    [itens, canais, precos, produtos, kits, publicacoesCanal, rampaMapa, clientePagaHoje, cobraNoCanal]
   );
 
   // Regra da Shopee (4×) por produto: variações do mesmo produto num anúncio;

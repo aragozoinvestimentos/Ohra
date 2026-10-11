@@ -27,6 +27,8 @@ import { useLembrado } from "../hooks/useLembrado.js";
 import { pegarPedido } from "../lib/navegar.js";
 import OndeSeDecide from "./OndeSeDecide.jsx";
 import TirarDoCanalDialog from "./TirarDoCanalDialog.jsx";
+import { excluirVariacaoTodos } from "../lib/tirarDoCanal.js";
+import { useCatalogo } from "../hooks/useCatalogo.js";
 import Estado, { PontoSaude } from "./Estado.jsx";
 import { estadoDoAlerta, estadoDoStatusSalvo, piorEstado } from "../lib/estados.js";
 
@@ -41,7 +43,7 @@ import { estadoDoAlerta, estadoDoStatusSalvo, piorEstado } from "../lib/estados.
 // foram simplificadas pra só o formulário.
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, pareceAtracaoDe, clientePagaHoje, anunciadoNoCanal } = useEscada();
+  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, pareceAtracaoDe, clientePagaHoje, anunciadoNoCanal, noCanal } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // { alvo, inicial } — diálogo "Manter assim"
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
   const [filamentosAlvo, setFilamentosAlvo] = useState(null);
@@ -49,7 +51,10 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [excluirVariacao, setExcluirVariacao] = useState(null); // item "v:<id>" // { item, canal, sugerido, linha }
   const [salvandoAplicar, setSalvandoAplicar] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
-  const [tirarAlvo, setTirarAlvo] = useState(null); // { item, canal } — "Tirar do <canal>"
+  const [tirarAlvo, setTirarAlvo] = useState(null); // { item, canal } — "Tirar deste canal"
+  // produto cru (quantidades_anuncio) pra excluir variação
+  const catCru = useCatalogo();
+  const precosProdutoRaw = (pid) => catCru.produtos.find((p) => p.id === pid) || null;
   const [editAlvo, setEditAlvo] = useState(null); // { id, nomeItem, nomeCanal, custoTotal, canal }
   const [edicao, setEdicao] = useState({ preco: "" });
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
@@ -59,6 +64,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [soCustoMudou, setSoCustoMudou] = useState(false);
   const [soSugeridoDifere, setSoSugeridoDifere] = useState(false); // kits/variações onde a curva sugere outro preço
   const [visao, setVisao] = useLembrado("ohra:precificados:visao", "salvos"); // salvos | comparar
+  // Sugeridos em canal onde o item não está (noCanal): desligado = "—"; ligado = cinza, só consulta.
+  const [sugForaCanal, setSugForaCanal] = useLembrado("ohra:precificados:sug-fora-canal", "nao"); // nao | sim
   const [mostrarCanais, setMostrarCanais] = useLembrado("ohra:precificados:canais", "com-preco"); // com-preco | todos
   const [sel, setSel] = useState(null); // "itemId|canalId" com o detalhe aberto
   // Tabela larga demais pro cartão (muitos canais / tela estreita): rola de lado
@@ -187,16 +194,12 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const item = excluirVariacao;
     setExcluirVariacao(null);
     if (!item || !supabase) return;
-    const vid = item.id.slice(2);
-    const { error } = await supabase.from("produto_variacoes").delete().eq("id", vid);
-    if (error) {
-      onToast(`Não foi possível excluir: ${error.message}`);
+    // mesma conta do "×" nos chips do Por quantidade (lib/tirarDoCanal.js)
+    const erros = await excluirVariacaoTodos({ variacaoId: item.id.slice(2), n: Number(item.quantidade) || null, produto: precosProdutoRaw(item.produtoId) });
+    if (erros.length && /produto_variacoes/.test(erros[0])) {
+      onToast(`Não foi possível excluir: ${erros[0]}`);
       return;
     }
-    await supabase.from("precos_canal").delete().eq("item_tipo", "variacao").eq("item_id", vid);
-    await supabase.from("precos_concorrente").delete().eq("item_tipo", "variacao").eq("item_id", vid);
-    await supabase.from("publicacoes_canal").delete().eq("item_tipo", "variacao").eq("item_id", vid);
-    recarregarCatalogo();
     onToast(`${item.nomeVariacao || item.nome} excluída`);
   }
 
@@ -724,7 +727,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
       const sg = sugeridos.get(`${item.id}|${c.id}`);
       const p = sg ? precoDe(item, c) : null;
       // Quantidade não anunciada no canal (v41) fica fora do filtro.
-      return !!(sg && p && !sg.linha.naoVale && anunciadoNoCanal(item, c) && Math.abs(Number(p.preco) - sg.linha.sugerido) >= 0.005);
+      return !!(sg && p && !sg.linha.naoVale && anunciadoNoCanal(item, c) && noCanal(item, c) && Math.abs(Number(p.preco) - sg.linha.sugerido) >= 0.005);
     });
   const variacoesDe = (produtoId) =>
     itens.filter((i) => i.tipo === "Variação" && i.produtoId === produtoId).sort((a, b) => a.quantidade - b.quantidade);
@@ -899,6 +902,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
               </button>
             ))}
           </div>
+          {visao === "comparar" && (
+            <label className="check-inline" title="Sugerido em canal onde o produto não tem preço salvo (ou a quantidade não é anunciada): só consulta, em cinza">
+              <input type="checkbox" checked={sugForaCanal === "sim"} onChange={(ev) => setSugForaCanal(ev.target.checked ? "sim" : "nao")} /> mostrar sugestões em canais não cadastrados
+            </label>
+          )}
           {visao === "salvos" && (
             <div className="subabas subabas-compacta" title="Só com preço: esconde o canal que não tem nenhum preço salvo na lista">
               {[
@@ -1032,13 +1040,16 @@ export default function Historico({ onEditarCompleto, onToast }) {
                     {canaisVis.map((c) => {
                       const info = infoCelula(item, c);
                       const chaveSel = `${item.id}|${c.id}`;
-                      const sg = (variacao || item.tipo === "Kit") ? sugeridos.get(chaveSel) : null;
+                      const sgTodo = (variacao || item.tipo === "Kit") ? sugeridos.get(chaveSel) : null;
+                      // Fora do canal (noCanal): sem sugerido, ou cinza só consulta com a opção ligada.
+                      const foraCanal = !!sgTodo && !noCanal(item, c);
+                      const sg = foraCanal && sugForaCanal !== "sim" ? null : sgTodo;
                       const ativo = sel === chaveSel;
                       if (visao === "comparar") {
                         return (
                           <td key={c.id} className="num">
                             {info || sg ? (
-                              <button type="button" className={`cel-preco${ativo ? " sel" : ""}`} onClick={() => alternarSel(chaveSel)}>
+                              <button type="button" className={`cel-preco${ativo ? " sel" : ""}${foraCanal && !info ? " cel-consulta" : ""}`} onClick={() => alternarSel(chaveSel)} title={foraCanal && !info ? "Produto não cadastrado neste canal — só consulta" : undefined}>
                                 <span className="cel-preco-cmp">salvo <b>{info ? BRL(info.p.preco) : "—"}</b></span>
                                 {sg ? (
                                   <span className="cel-preco-cmp">
