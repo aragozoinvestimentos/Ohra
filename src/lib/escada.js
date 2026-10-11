@@ -56,8 +56,9 @@ export function configEscada(configLoja, configProduto) {
 // ===== Venda direta: canal próprio em "modo markup" (schema v43) =====
 // Conta ÚNICA. No canal próprio (tipo custom) com canais.modo_preco = 'markup'
 // o preço parte do CUSTO, não da margem/taxas de marketplace: avulso = custo
-// total × markup (final ,50/,90 mais próximo); kits SEM curva = N × avulso
-// (,50/,90) — sem "não vale oferecer"; continuam as travas de mínimo
+// total × markup (final ,50/,90 mais próximo); kits SEM curva = N × avulso já
+// arredondado (por peça = avulso) — sem "não vale oferecer" nem "escada
+// invertida"; continuam as travas de mínimo
 // aceitável. Desconto por volume só no atacado. Markup: o do produto
 // (escada_config.markup, "Regras próprias") › o do canal › MARKUP_PADRAO.
 export const MARKUP_PADRAO = 2.5;
@@ -243,11 +244,8 @@ export function precoNaCurva({ canal, n, base, custo, peso, cfg, lucroAnterior, 
   const notas = [];
   // canal próprio em markup (cfgDoCanal): finais ,50/,90; senão ,90
   const [rDown, rUp, rPerto] = cfg?.final5090 ? [r5090, r5090up, r5090perto] : [r90, r90up, r90perto];
-  let p = rPerto(teto * (1 - descontoAlvo));
-  // sem curva: preço por peça do kit nunca acima do avulso → o ,50/,90 de baixo
-  if (cfg?.semCurva && num(cfg.precoAvulso) > 0) {
-    for (let i = 0; i < 20 && p / n > num(cfg.precoAvulso) + 1e-9; i++) p = rDown(p - 0.001);
-  }
+  // sem curva (canal próprio em markup): kit = N × avulso, sem arredondar de novo
+  let p = cfg?.semCurva ? centavos(teto) : rPerto(teto * (1 - descontoAlvo));
   let limitadoPor = null;
   // concorrente: teto, mas nunca abaixo das travas (a) e (b)
   const pMin = precoMinimoAceitavel(canal, custo, peso, cfg);
@@ -547,9 +545,9 @@ export function escadaDoProduto({ produtoId, canal, itens, precos, concorrentes,
     if (pmk > 0) {
       p1 = pmk;
       p1Origem = "markup";
-      // kits sem curva: N × custo × markup (sem arredondar o avulso antes) e
-      // por peça nunca acima do avulso (precoNaCurva)
-      cfgKits = { ...cfg, precoUnitBruto: custo1 * mk, precoAvulso: pmk };
+      // kits sem curva: N × avulso JÁ ARREDONDADO, sem novo arredondamento
+      // (por peça = avulso; decisão do Gustavo, out/2026)
+      cfgKits = { ...cfg, precoUnitBruto: pmk, precoAvulso: pmk };
     }
   }
   if (!(p1 > 0)) {

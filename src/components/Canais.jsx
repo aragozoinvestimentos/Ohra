@@ -404,6 +404,7 @@ export default function Canais({ onToast }) {
                     </td>
                     <td className="num">
                       <CampoDesconto canal={c} onToast={onToast} />
+                      {c.tipo === "custom" && Number(c.desconto_anuncio_pct) > 0 && <div className="sub-num" style={{ whiteSpace: "normal", maxWidth: 160, marginLeft: "auto" }}>venda direta normalmente sem desconto de anúncio</div>}
                     </td>
                     <td className="num">
                       <CampoFreteGratis canal={c} onToast={onToast} />

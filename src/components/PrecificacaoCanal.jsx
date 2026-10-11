@@ -414,6 +414,10 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         : calcularAnuncio(resultado.preco, descontoPadraoCanal(canalCadastrado))
       : null;
 
+  // Sem riscado: canal em markup, ou sem desconto de anúncio e nada anunciado com promo.
+  const descontoAqui = canalCadastrado ? (itemSel ? descontoDoItem(itemSel.id, canalCadastrado, { itens: baseItens, produtos, kits: kitsCat }).desconto : descontoPadraoCanal(canalCadastrado)) : 0;
+  const semRiscado = emMarkup || (canalCadastrado && !(descontoAqui > 0) && !(cadastro?.riscadoFixo && cadastro.promo > 0));
+
   // Âncora pro kit 2 (só sugestão): avulso que deixa o kit 2 (na margem
   // desejada) com ~25% de economia vs 2 avulsos. Não aparece em rampa.
   const canalAjustadoBase = canalCadastrado ? { ...canalCadastrado, imposto_pct: n(f.imposto) / 100, custos_fixos_pct: n(f.custosFixos) / 100 } : null;
@@ -591,7 +595,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                   : `${canalLabel} · fora da faixa escolhida`
                 : canalLabel,
         },
-        {
+        // venda direta (markup) ou canal sem desconto de anúncio: não há riscado
+        semRiscado ? null : {
           label: "Preço de cadastro",
           valor: semCusto || !cadastro ? "—" : BRL(cadastro.original),
           sub: semCusto || !cadastro

@@ -8,7 +8,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../hooks/useRankingData.js";
 import { useEscada } from "../hooks/useEscada.js";
-import { statusPrecoSalvo, sugestaoKit, configEscada, precoMinimoAceitavel } from "../lib/escada.js";
+import { statusPrecoSalvo, sugestaoKit, configEscada, precoMinimoAceitavel, canalEmMarkup } from "../lib/escada.js";
 import { alertaPreco, rotuloEstrategia, ESTRATEGIAS } from "../lib/estrategia.js";
 import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import FreteAviso from "./FreteAviso.jsx";
@@ -149,7 +149,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
         for (const l of d.escada.linhas) {
           if (l.base || !l.itemId) continue;
           const itV = itens.find((i) => i.id === l.itemId);
-          const st = statusPrecoSalvo(l.salvo, l, salvoPPAnterior, { silenciarPiso: !!itV && estrategiaDe(itV, c).chave !== "normal" });
+          // canal próprio em markup: sem curva → sem "escada invertida"
+          const st = statusPrecoSalvo(l.salvo, l, canalEmMarkup(c) ? null : salvoPPAnterior, { silenciarPiso: !!itV && estrategiaDe(itV, c).chave !== "normal" });
           if (l.salvo != null) salvoPPAnterior = l.salvo / l.n;
           mapa.set(`${l.itemId}|${c.id}`, { linha: l, st, p1Origem: d.p1Origem });
         }

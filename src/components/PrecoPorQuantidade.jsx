@@ -163,6 +163,16 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
   // Regra da Shopee (4×): preço usado = salvo (ou o sugerido, se não tem salvo);
   // preço original = com o desconto exibido no anúncio (canal ou do produto).
   const descAnuncio = pid && canal ? descontoDoItem(`p:${pid}`, canal, { itens, produtos, kits: kitsCat }).desconto : 0;
+  // Venda direta (canal em markup) ou canal sem desconto de anúncio: não há
+  // riscado → sem "Preço de cadastro" (coluna e card). Exceção: algo deste
+  // produto já anunciado nesse canal com promo.
+  const temPromoAnunciada =
+    !!pid && !!canal &&
+    publicacoesCanal.some(
+      (x) => x.canal_id === canal.id && Number(x.promo) > 0 && ((x.item_tipo === "produto" && x.item_id === pid) || (x.item_tipo === "variacao" && itens.find((i) => i.id === `v:${x.item_id}`)?.produtoId === pid))
+    );
+  const mostrarCadastro = !!canal && !canalEmMarkup(canal) && (descAnuncio > 0 || temPromoAnunciada);
+  const nCols = mostrarCadastro ? 7 : 6;
   const fatorOrig = pid && canal ? fatorOriginal(descAnuncio) : 1;
   // "Preço de cadastro": o preço original (riscado) a cadastrar na plataforma
   // pra que, com a promo do desconto do canal/produto, o cliente pague o
@@ -198,6 +208,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
     return real > 0 ? anuncioDoItem({ itemId, canal, real, desconto: descAnuncio, publicacoes: publicacoesCanal }) : null;
   };
   const campoCadastro = (sugerido, salvo, itemId) => {
+    if (!mostrarCadastro) return null;
     if (!itemId || !canal || !temItemNoCanal(itemId)) return null;
     const a = anDe(sugerido, salvo, itemId);
     if (!a) return null;
@@ -205,6 +216,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
     return <EditarCadastro key={`${itemId}|${canal.id}|${a.original}`} canal={canal} itemTipo={t} itemId={itemId.slice(2)} real={precoAgora(sugerido, salvo, itemId)} atual={a.original} lojaId={lojaId} onToast={onToast} />;
   };
   const celCadastro = (sugerido, salvo, itemId) => {
+    if (!mostrarCadastro) return null;
     const real = precoAgora(sugerido, salvo, itemId);
     // Já anunciado no canal: o preço original é o FIXO (só a promo muda).
     const an = real > 0 ? anuncioDoItem({ itemId, canal, real, desconto: descAnuncio, publicacoes: publicacoesCanal }) : null;
@@ -719,9 +731,11 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
               <thead>
                 <tr>
                   <th>Kit</th>
-                  <th className="num" title="Preço original (riscado) na plataforma — fixo depois de anunciado; a promo leva ao preço de agora (salvo ou Rampa)">
-                    Preço de cadastro<span className="th-sub">riscado · promo → cliente paga</span>
-                  </th>
+                  {mostrarCadastro && (
+                    <th className="num" title="Preço original (riscado) na plataforma — fixo depois de anunciado; a promo leva ao preço de agora (salvo ou Rampa)">
+                      Preço de cadastro<span className="th-sub">riscado · promo → cliente paga</span>
+                    </th>
+                  )}
                   <th className="num">
                     Preço sugerido<span className="th-sub">pelo app (curva)</span>
                   </th>
@@ -745,7 +759,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                   const linhaDetalhe = (chave, conteudo) =>
                     selPQ === chave && (
                       <tr className="linha-detalhe" key={`d-${chave}`}>
-                        <td colSpan={7}>
+                        <td colSpan={nCols}>
                           <div className="detalhe-cel">{conteudo}</div>
                         </td>
                       </tr>
@@ -807,7 +821,10 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                         ),
                       ];
                     }
-                    const st = statusPrecoSalvo(l.salvo, l, salvoPPAnterior);
+                    // canal próprio em markup: sem curva → sem "escada invertida"
+                    const st = statusPrecoSalvo(l.salvo, l, canalEmMarkup(canal) ? null : salvoPPAnterior);
+                    // "Aplicar" só quando o salvo é diferente do sugerido (em todos os canais)
+                    const igual = l.salvo != null && Math.abs(l.salvo - l.sugerido) < 0.005;
                     if (l.salvo != null) salvoPPAnterior = l.salvo / l.n;
                     const kConc = `${pid}|${canal.id}|${l.n}`;
                     const chave = `n${l.n}`;
@@ -869,7 +886,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                           ) : l.naoCompensa ? (
                             <Estado tipo="atencao">não compensa</Estado>
                           ) : l.cadastrada ? (
-                            st?.tom === "good" ? null : (
+                            igual ? null : (
                               <button type="button" className="btn primary btn-sm" onClick={pare(() => setConfirmar({ tipo: "aplicar", linha: l }))}>
                                 Aplicar {BRL(l.sugerido)}
                               </button>
@@ -937,8 +954,8 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                           </div>
                           <div className="detalhe-cel-acoes">
                             {anunciada && !l.naoCompensa && !l.naoVale && l.cadastrada && (
-                              <button type="button" className={`btn btn-mini${st?.tom === "good" ? "" : " primary"}`} onClick={() => setConfirmar({ tipo: "aplicar", linha: l, precoEdit: st?.tom === "good" && l.salvo != null ? l.salvo.toFixed(2) : undefined })}>
-                                {st?.tom === "good" ? "✎ Editar preço" : `Aplicar ${BRL(l.sugerido)} (editável)`}
+                              <button type="button" className={`btn btn-mini${igual ? "" : " primary"}`} onClick={() => setConfirmar({ tipo: "aplicar", linha: l, precoEdit: igual ? l.salvo.toFixed(2) : undefined })}>
+                                {igual ? "✎ Editar preço" : `Aplicar ${BRL(l.sugerido)} (editável)`}
                               </button>
                             )}
                             {anunciada && !l.naoCompensa && !l.naoVale && !l.cadastrada && (
@@ -964,7 +981,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                     ...(outras.length
                       ? [
                           <tr key="outras" className="linha-outras">
-                            <td colSpan={7}>
+                            <td colSpan={nCols}>
                               <button type="button" className={`variacoes-toggle${verOutras ? " aberto" : ""}`} onClick={() => setVerOutras((v) => !v)}>
                                 <span className="seta">▸</span> outras quantidades ({outras.length}) · não anunciadas em {canal.nome}
                               </button>
