@@ -17,6 +17,8 @@ import Kpis from "./Kpis.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
+import { canalEmMarkup, markupDoCanal, precoPorMarkup } from "../lib/escada.js";
+import { configAtacado, personalizacaoDoPedido } from "../lib/vendaDireta.js";
 import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMinimo, sugestaoAncora, calcularAnuncio, descontoDoItem, descontoPadraoCanal } from "../lib/escada.js";
 import { useRampas } from "../hooks/useRampas.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
@@ -58,6 +60,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
 
   const [confirmarKit, setConfirmarKit] = useState(false);
   const [verFilamentos, setVerFilamentos] = useState(false);
+  // Personalização (venda direta no canal próprio): só simulação do pedido.
+  const [pers, setPers] = useState({ ativa: false, qtd: 1, porPeca: null, arte: null });
   const { itens: baseItens, canais, produtos, kits: kitsCat, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje, publicacoesCanal } = useEscada();
   // Passos (1º→5º): aplica a seleção vinda do "Próximo →".
   if (pedidoPasso && pedidoPasso.para === "avulso" && pedidoPasso.seq !== pedidoVisto) {
@@ -214,8 +218,15 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     return { pct: n(f.outroComissao) / 100, fixo: n(f.outroFixo), temFaixa: false };
   }, [f.canal, f.outroComissao, f.outroFixo, faixasML, faixaResolvida]);
 
+  // Canal próprio em "modo markup" (escada.js): o preço parte do custo × markup
+  // (markup do produto em Regras próprias › do canal › 2,5), não da margem.
+  const canalMk = f.canal === "outro" ? canais.find((x) => x.id === canalProprioId) || null : null;
+  const emMarkup = canalEmMarkup(canalMk);
+  const cfgLojaAtual = lojas.find((l) => l.id === lojaId)?.config_escada;
+  const markupAtual = emMarkup ? markupDoCanal(canalMk, configEscada(cfgLojaAtual, produtoEscolhido?.escada_config)) : null;
+
   const resultado = useMemo(() => {
-    return calcCanal({
+    const r = calcCanal({
       imposto: n(f.imposto) / 100,
       comissaoPct: comissaoFixo.pct,
       taxaFixa: comissaoFixo.fixo,
@@ -227,7 +238,12 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       min: comissaoFixo.temFaixa ? comissaoFixo.min : null,
       max: comissaoFixo.temFaixa ? comissaoFixo.max : null,
     });
-  }, [f, comissaoFixo, lucratividadeEf]);
+    if (!emMarkup) return r;
+    const preco = precoPorMarkup(r.custoTotal, markupAtual);
+    if (!(preco > 0)) return r;
+    const lucro = r.lucroEm(preco);
+    return { ...r, preco, lucro, margem: lucro / preco, markup: markupAtual, faixaOk: null };
+  }, [f, comissaoFixo, lucratividadeEf, emMarkup, markupAtual]);
 
   const lucratividadeFrac = n(lucratividadeEf) / 100;
   // Sem custo nenhum (nem produto escolhido), o "preço" calculado seria só a
@@ -280,7 +296,14 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         else if (canal.tipo === "ml") r = resolverFaixaML(f.mlCategoria, b, f.mlTipoAnuncio, pesoSel).resultado;
         else if (canal.tipo === "tiktok") r = resolverFaixaTikTok(b).resultado;
         else if (canal.tipo === "shein") r = resolverFaixaShein(b).resultado;
-        else r = calcCanalCustom(canal, b);
+        else {
+          r = calcCanalCustom(canal, b);
+          // canal próprio em markup: custo × markup, não a margem desejada
+          if (canalEmMarkup(canal)) {
+            const pmk = precoPorMarkup(r.custoTotal, markupDoCanal(canal, configEscada(cfgLojaAtual, produtoEscolhido?.escada_config)));
+            if (pmk > 0) r = { ...r, preco: pmk, lucro: r.lucroEm(pmk), margem: r.lucroEm(pmk) / pmk, faixaOk: null };
+          }
+        }
         let salvo = null;
         if (baseSelecionada) {
           const id = baseSelecionada.split(":")[1];
@@ -292,7 +315,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       })
       .sort((a, b) => (b.confiavel && b.r.lucro != null ? b.r.lucro : -Infinity) - (a.confiavel && a.r.lucro != null ? a.r.lucro : -Infinity));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, lucratividadeEf, f.mlCategoria, f.mlTipoAnuncio, pesoSel]);
+  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, lucratividadeEf, f.mlCategoria, f.mlTipoAnuncio, pesoSel, cfgLojaAtual, produtoEscolhido]);
 
   const canalLabel =
     f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : "Outro canal";
@@ -396,7 +419,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const canalAjustadoBase = canalCadastrado ? { ...canalCadastrado, imposto_pct: n(f.imposto) / 100, custos_fixos_pct: n(f.custosFixos) / 100 } : null;
   const emRampaAqui = pidFrete && canalCadastrado ? produtosEmRampa(rampas, precos).has(`${pidFrete}|${canalCadastrado.id}`) : false;
   const ancora =
-    pidFrete && canalAjustadoBase && !emRampaAqui && custoTotalAtual > 0
+    pidFrete && canalAjustadoBase && !emRampaAqui && !emMarkup && custoTotalAtual > 0
       ? sugestaoAncora({ produtoId: pidFrete, canal: canalAjustadoBase, itens: baseItens, precos, concorrentes, cfg: cfgEscada })
       : null;
   const ancoraAcimaConc = ancora && (n(f.concorrente) > 0 ? ancora.preco > n(f.concorrente) : ancora.acimaConcorrente);
@@ -555,7 +578,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           ) : null,
         },
         {
-          label: `Preço pela margem de ${n(lucratividadeEf)}%`,
+          label: emMarkup ? `Preço pelo markup ${String(markupAtual).replace(".", ",")}×` : `Preço pela margem de ${n(lucratividadeEf)}%`,
           valor: semCusto ? "—" : BRL(resultado.preco),
           tom: "destaque",
           sub: semCusto
@@ -902,6 +925,50 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
             </div>
           )}
         </div>
+
+        {f.canal === "outro" && !semCusto && resultado.preco > 0 && (() => {
+          const cfgA = configAtacado(cfgLojaAtual);
+          const pecasPed = Math.max(1, Math.round(n(pers.qtd))) * qtdSel;
+          const unid = Math.max(1, Math.round(n(pers.qtd)));
+          const pp = personalizacaoDoPedido(pecasPed, { ativa: pers.ativa, porPeca: pers.porPeca ?? cfgA.porPeca, arte: pers.arte ?? cfgA.arte, isentarArte: cfgA.isentarArte, isentarArteMin: cfgA.isentarArteMin });
+          const valorPecas = resultado.preco * unid;
+          const total = valorPecas + pp.adicional + pp.arte;
+          const lucroPed = resultado.lucro * unid + (pp.adicional + pp.arte) * (1 - (resultado.totalPct || 0));
+          return (
+            <div className="panel">
+              <h3 className="section-title">
+                <span>
+                  Personalização (venda direta)
+                  <Ajuda texto="Pra pedido personalizado no canal próprio: arte/preparação é um valor por pedido e o adicional é por peça (0 quando a personalização não aumenta o tempo). Os padrões vêm da loja (Orçamento → Encomenda em volume → Regras). Só simula o pedido — o preço salvo do item não muda." />
+                </span>
+              </h3>
+              <label className="check-inline">
+                <input type="checkbox" checked={pers.ativa} onChange={(e) => setPers((x) => ({ ...x, ativa: e.target.checked }))} /> Pedido personalizado
+              </label>
+              {pers.ativa && (
+                <div className="row3" style={{ marginTop: 8 }}>
+                  <div className="field">
+                    <label>Quantidade</label>
+                    <input type="number" min="1" step="1" value={pers.qtd} onChange={(e) => setPers((x) => ({ ...x, qtd: e.target.value }))} />
+                  </div>
+                  <div className="field">
+                    <label>Adicional por peça (R$)</label>
+                    <input type="number" min="0" step="0.05" value={pers.porPeca ?? cfgA.porPeca} onChange={(e) => setPers((x) => ({ ...x, porPeca: e.target.value }))} />
+                  </div>
+                  <div className="field">
+                    <label>Arte / preparação (R$)</label>
+                    <input type="number" min="0" step="1" value={pers.arte ?? cfgA.arte} onChange={(e) => setPers((x) => ({ ...x, arte: e.target.value }))} />
+                  </div>
+                </div>
+              )}
+              <div className="kv"><span className="k">Peças ({unid} × {BRL(resultado.preco)})</span><span className="v">{BRL(valorPecas)}</span></div>
+              {pers.ativa && <div className="kv"><span className="k">Personalização ({pecasPed} × {BRL(n(pers.porPeca ?? cfgA.porPeca))})</span><span className="v">{BRL(pp.adicional)}</span></div>}
+              {pers.ativa && <div className="kv"><span className="k">Arte / preparação{pp.arteIsenta ? " (isenta)" : ""}</span><span className="v">{BRL(pp.arte)}</span></div>}
+              <div className="kv total"><span className="k">Total do pedido</span><span className="v">{BRL(total)}</span></div>
+              <div className="kv"><span className="k">Lucro do pedido</span><span className="v">{BRL(lucroPed)}</span></div>
+            </div>
+          );
+        })()}
 
         <div className="panel">
           <h3 className="section-title">Comparar com outro preço</h3>

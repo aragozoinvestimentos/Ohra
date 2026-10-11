@@ -16,6 +16,7 @@ import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
+import { markupDoCanal } from "../lib/escada.js";
 import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, rotuloMinimo, escadaDoProduto, configEscada, lucroNoPreco, precoMinimoAceitavel } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -94,6 +95,8 @@ const CAMPOS_MARGEM = [
   { k: "margemDesejada", label: "Margem desejada (%)", pct: true },
   { k: "margemMin", label: "Margem mínima (%)", pct: true },
   { k: "lucroMinimo", label: "Lucro mínimo por venda (R$)", pct: false },
+  // canal próprio em "modo markup" (schema v43): vazio = o markup do canal
+  { k: "markup", label: "Markup no canal próprio (×)", pct: false, semLoja: "do canal" },
 ];
 
 export default function PrecoPorQuantidade({ onToast, onSub }) {
@@ -448,7 +451,9 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
 
   const p1Valor = p1Edit[chave] ?? (dados ? String(Math.round(dados.p1 * 100) / 100) : "");
   const p1Hint =
-    dados?.p1Origem === "salvo"
+    dados?.p1Origem === "markup"
+      ? `Canal próprio por markup: custo ${BRL(dados.custo1)} × ${String(markupDoCanal(canal, cfgDoProduto(pid))).replace(".", ",")}${dados.salvo1 != null ? ` — salvo: ${BRL(dados.salvo1)}` : ""}`
+      : dados?.p1Origem === "salvo"
       ? "Preço salvo em Produtos precificados"
       : dados?.p1Origem === "manual"
         ? dados.salvo1 != null
@@ -627,7 +632,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                       <input
                         type="number"
                         step={c.pct ? "1" : "0.5"}
-                        placeholder={`loja: ${c.pct ? Math.round((regrasLoja[c.k] ?? 0) * 100) + "%" : BRL(regrasLoja[c.k] ?? 0)}`}
+                        placeholder={c.semLoja || `loja: ${c.pct ? Math.round((regrasLoja[c.k] ?? 0) * 100) + "%" : BRL(regrasLoja[c.k] ?? 0)}`}
                         value={regrasEdit.valores[c.k]}
                         onChange={(ev) => setRegrasEdit((prev) => ({ ...prev, valores: { ...prev.valores, [c.k]: ev.target.value } }))}
                       />

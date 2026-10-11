@@ -125,6 +125,11 @@ export default function Orcamentos({ onToast }) {
                     {o.quantidade > 1 && (
                       <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>{BRL(o.preco / o.quantidade)}/un.</div>
                     )}
+                    {(Number(o.personalizacao) > 0 || Number(o.arte) > 0) && (
+                      <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>
+                        peças {BRL(o.valor_pecas ?? o.preco - (Number(o.personalizacao) || 0) - (Number(o.arte) || 0) - (Number(o.frete) || 0))} · pers. {BRL(o.personalizacao || 0)} · arte {BRL(o.arte || 0)}
+                      </div>
+                    )}
                   </td>
                   <td className="num">{BRL(o.lucro)}</td>
                   <td className="num">{PCT(o.margem)}</td>

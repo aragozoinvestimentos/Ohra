@@ -7,7 +7,7 @@ import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
-import { descontoPadraoCanal } from "../lib/escada.js";
+import { MARKUP_PADRAO, descontoPadraoCanal } from "../lib/escada.js";
 import { ordenarCanais } from "../lib/canais.js";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
@@ -154,6 +154,59 @@ function CampoFreteGratis({ canal, onToast }) {
         onBlur={salvar}
         onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
       />
+      {salvo && <span className="salvo-check">✓</span>}
+    </span>
+  );
+}
+
+// Canal próprio (tipo custom) em "modo markup" (schema v43): o preço sugerido
+// parte do custo × markup em vez da margem desejada (conta em escada.js —
+// canalEmMarkup/precoPorMarkup). Markup do produto em Regras próprias vence.
+function CampoModoPreco({ canal, onToast }) {
+  const [salvo, disparar] = useSalvoFlash();
+  const ligado = canal.modo_preco === "markup";
+  const [valor, setValor] = useState(null);
+  const exibido = valor ?? String(canal.markup ?? MARKUP_PADRAO).replace(".", ",");
+  async function gravar(campos) {
+    const { error } = await supabase.from("canais").update(campos).eq("id", canal.id);
+    recarregarCatalogo();
+    if (error) {
+      onToast(/modo_preco|markup|column/i.test(error.message) ? "Rode o SQL v43 no Supabase pra usar o modo markup" : "Não foi possível atualizar — tente de novo");
+      return false;
+    }
+    disparar();
+    return true;
+  }
+  async function salvarMarkup() {
+    if (valor === null) return;
+    const novo = Number(valor.trim().replace(",", "."));
+    if (!isFinite(novo) || novo < 1) {
+      onToast("Markup precisa ser 1 ou mais (ex.: 2,5)");
+      return;
+    }
+    if (await gravar({ markup: novo })) setValor(null);
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+      <label className="check-inline" title="Precificar por markup sobre o custo (venda direta, sem taxa de marketplace)">
+        <input type="checkbox" checked={ligado} onChange={(e) => gravar({ modo_preco: e.target.checked ? "markup" : "padrao", ...(e.target.checked && canal.markup == null ? { markup: MARKUP_PADRAO } : {}) })} />
+        por markup
+      </label>
+      {ligado && (
+        <>
+          <input
+            type="text"
+            inputMode="decimal"
+            title="Markup sobre o custo total (ex.: 2,5 = custo × 2,5)"
+            style={{ width: 52, textAlign: "right" }}
+            value={exibido}
+            onChange={(e) => setValor(e.target.value)}
+            onBlur={salvarMarkup}
+            onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+          />
+          ×
+        </>
+      )}
       {salvo && <span className="salvo-check">✓</span>}
     </span>
   );
@@ -315,6 +368,7 @@ export default function Canais({ onToast }) {
                   <th className="num">% Ads</th>
                   <th className="num">Desconto no anúncio</th>
                   <th className="num" title="Pedido mínimo p/ frete grátis (R$) — vazio = não se aplica">Pedido mín. frete grátis</th>
+                  <th title="Canal próprio: precificar por markup sobre o custo (venda direta)">Preço</th>
                   <th></th>
                 </tr>
               </thead>
@@ -354,6 +408,7 @@ export default function Canais({ onToast }) {
                     <td className="num">
                       <CampoFreteGratis canal={c} onToast={onToast} />
                     </td>
+                    <td>{c.tipo === "custom" ? <CampoModoPreco canal={c} onToast={onToast} /> : <span className="muted-cel">pela margem</span>}</td>
                     <td>
                       {(c.tipo === "custom" || c.tipo === "tiktok" || c.tipo === "shein") && (
                         <button className="del" title="Excluir" onClick={() => setExcluirAlvo(c)}>×</button>

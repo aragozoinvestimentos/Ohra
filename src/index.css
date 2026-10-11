@@ -1510,3 +1510,6 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 @media (min-width: 1280px) { .table-wrap.cabecalho-fixo.tabela-precificados.rola { overflow-x: auto; } }
 .inicio-minhas-tit { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
 .inicio-minhas { margin-top: 10px; }
+/* checkbox dentro de .field (Encomenda em volume: "Isentar arte a partir de") */
+.field .check-inline input[type="checkbox"] { width: auto; min-height: 0; height: auto; padding: 0; margin: 0; flex: none; }
+.field label.check-inline { flex-direction: row; text-transform: none; }
