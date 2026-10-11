@@ -93,3 +93,22 @@ export function pendenciasDeTarefas(tarefas, hoje) {
     };
   });
 }
+
+// "Pra fazer": as tarefas NÃO entram no limite de 5 dos avisos automáticos.
+// Aparecem sempre — vencidas em Resolver, hoje/amanhã no topo de "Atenção e
+// rotina", as demais no bloco "Minhas tarefas" (por data; sem data no fim) —,
+// até LIMITE_TAREFAS no total + "ver todas as tarefas (N)".
+export const LIMITE_TAREFAS = 8;
+const rank = (p) => (p.estadoTarefa?.vencida ? 0 : p.estadoTarefa?.tipo ? 1 : 2);
+export function ordenarPendenciasTarefa(lista) {
+  return [...lista].sort((a, b) => rank(a) - rank(b) || (a.data || "9999").localeCompare(b.data || "9999") || a.titulo.localeCompare(b.titulo));
+}
+export function repartirTarefas(pendTarefas, { todas = false } = {}) {
+  const ordem = ordenarPendenciasTarefa(pendTarefas);
+  const vis = todas ? ordem : ordem.slice(0, LIMITE_TAREFAS);
+  const onde = (p) => (rank(p) === 0 ? "resolver" : rank(p) === 1 ? "topo" : "minhas");
+  const out = { resolver: [], topo: [], minhas: [], n: { resolver: 0, topo: 0, minhas: 0 }, total: ordem.length, ocultas: ordem.length - vis.length };
+  for (const p of ordem) out.n[onde(p)]++;
+  for (const p of vis) out[onde(p)].push(p);
+  return out;
+}

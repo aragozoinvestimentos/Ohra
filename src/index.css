@@ -1508,3 +1508,5 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .tabela-precificados .cel-preco .st { display: inline-block; white-space: normal; max-width: 150px; text-align: right; }
 .tabela-precificados .cel-preco .st .st-ic { margin-right: 4px; }
 @media (min-width: 1280px) { .table-wrap.cabecalho-fixo.tabela-precificados.rola { overflow-x: auto; } }
+.inicio-minhas-tit { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
+.inicio-minhas { margin-top: 10px; }

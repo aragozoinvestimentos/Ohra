@@ -20,7 +20,7 @@ import { estadoDoTom } from "../lib/estados.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import { LinhaTarefa, TarefaDialog } from "./Tarefas.jsx";
 import { useTarefas } from "../hooks/useTarefas.js";
-import { concluidasRecentes, estadoTarefa, tarefasAbertas } from "../lib/tarefas.js";
+import { LIMITE_TAREFAS, concluidasRecentes, estadoTarefa, repartirTarefas, tarefasAbertas } from "../lib/tarefas.js";
 import { abrirTarefa, concluirTarefa, desfazerConclusao, excluirTarefa, rotuloLink } from "../lib/tarefasAcoes.js";
 
 const VISIVEIS = 5;
@@ -109,6 +109,7 @@ export default function Inicio({ onIrPara, onToast }) {
   const [excluir, setExcluir] = useState(null);
   const [desfazer, setDesfazer] = useState(null); // { tarefa, proximaId, prox }
   const [verConcluidas, setVerConcluidas] = useState(false);
+  const [verTodasTarefas, setVerTodasTarefas] = useState(false);
   const timerDesfazer = useRef(null);
   useEffect(() => () => clearTimeout(timerDesfazer.current), []);
 
@@ -238,7 +239,19 @@ export default function Inicio({ onIrPara, onToast }) {
   const concluidas = concluidasRecentes(tarefasH.tarefas, hoje);
 
   const carregando = gestao.carregando || rampasH.carregando || dados.carregando;
-  const visiveis = verTodos ? pendencias : pendencias.slice(0, VISIVEIS);
+  // Avisos automáticos: limite de 5 + "ver todos". Tarefas manuais fora do
+  // limite (repartirTarefas): Resolver / topo de Atenção e rotina / Minhas tarefas.
+  const avisos = pendencias.filter((p) => !p.tarefa);
+  const avisosVis = verTodos ? avisos : avisos.slice(0, VISIVEIS);
+  const tf = repartirTarefas(
+    pendencias.filter((p) => p.tarefa),
+    { todas: verTodasTarefas }
+  );
+  const doGrupoVis = (g) => {
+    const av = avisosVis.filter((p) => p.grupo === g);
+    return g === "resolver" ? [...av, ...tf.resolver] : g === "rotina" ? [...tf.topo, ...av] : av;
+  };
+  const totalGrupo = (g) => avisos.filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : g === "rotina" ? tf.n.topo : 0);
 
   const CARDS = [
     { k: "dinheiro", n: 1, titulo: "Dinheiro" },
@@ -247,6 +260,43 @@ export default function Inicio({ onIrPara, onToast }) {
     { k: "producao", n: 4, titulo: "Produção" },
   ];
 
+
+  // Uma linha do "Pra fazer" (aviso automático ou tarefa manual).
+  const linhaPendencia = (p) => (
+    <li key={p.id} className={`inicio-item${estadoPendencia(p) ? ` st-${estadoPendencia(p)}` : ""}${p.tarefa ? " inicio-tarefa" : ""}`}>
+      <Bolinha tipo={estadoPendencia(p)} />
+      {p.tarefa ? (
+        <LinhaTarefa
+          p={p}
+          itens={itens}
+          onEditar={(t) => setDialogTarefa({ tarefa: t })}
+          onConcluir={concluir}
+          onExcluir={setExcluir}
+          onAbrir={(t) => abrirTarefa(t, itens, onIrPara)}
+        />
+      ) : (
+      <>
+      <div className="inicio-item-txt">
+        <b>{p.titulo}</b>
+        <span>{p.texto}</span>
+        {p.semana && (
+          <span className="inicio-item-sec">
+            <button type="button" className="link-btn" onClick={() => semana.adiar(p.semana, "pular")} title="Some até a semana que vem. Nada é gravado: o período fica em aberto e entra no próximo registro.">
+              não registrar esta semana
+            </button>
+            <button type="button" className="link-btn" onClick={() => semana.adiar(p.semana, "amanha")}>
+              lembrar amanhã
+            </button>
+          </span>
+        )}
+      </div>
+      <button type="button" className={`btn btn-mini${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => ir(p.ir)}>
+        {p.rotulo}
+      </button>
+      </>
+      )}
+    </li>
+  );
 
   return (
     <div className="inicio">
@@ -294,7 +344,7 @@ export default function Inicio({ onIrPara, onToast }) {
         ) : (
           <>
             {GRUPOS_PENDENCIA.map((g) => {
-              const doGrupo = visiveis.filter((p) => p.grupo === g.chave);
+              const doGrupo = doGrupoVis(g.chave);
               if (!doGrupo.length) return null;
               return (
                 <div key={g.chave} className="inicio-grupo">
@@ -302,51 +352,28 @@ export default function Inicio({ onIrPara, onToast }) {
                     <Estado tipo={(ESTADO_GRUPO[g.chave] || ["info"])[0]} icone={(ESTADO_GRUPO[g.chave] || [])[1]}>
                       {g.titulo}
                     </Estado>{" "}
-                    <span className="muted-cel">{pendencias.filter((p) => p.grupo === g.chave).length}</span>
+                    <span className="muted-cel">{totalGrupo(g.chave)}</span>
                   </div>
-                  <ul className="inicio-lista">
-                    {doGrupo.map((p) => (
-                      <li key={p.id} className={`inicio-item${estadoPendencia(p) ? ` st-${estadoPendencia(p)}` : ""}${p.tarefa ? " inicio-tarefa" : ""}`}>
-                        <Bolinha tipo={estadoPendencia(p)} />
-                        {p.tarefa ? (
-                          <LinhaTarefa
-                            p={p}
-                            itens={itens}
-                            onEditar={(t) => setDialogTarefa({ tarefa: t })}
-                            onConcluir={concluir}
-                            onExcluir={setExcluir}
-                            onAbrir={(t) => abrirTarefa(t, itens, onIrPara)}
-                          />
-                        ) : (
-                        <>
-                        <div className="inicio-item-txt">
-                          <b>{p.titulo}</b>
-                          <span>{p.texto}</span>
-                          {p.semana && (
-                            <span className="inicio-item-sec">
-                              <button type="button" className="link-btn" onClick={() => semana.adiar(p.semana, "pular")} title="Some até a semana que vem. Nada é gravado: o período fica em aberto e entra no próximo registro.">
-                                não registrar esta semana
-                              </button>
-                              <button type="button" className="link-btn" onClick={() => semana.adiar(p.semana, "amanha")}>
-                                lembrar amanhã
-                              </button>
-                            </span>
-                          )}
-                        </div>
-                        <button type="button" className={`btn btn-mini${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => ir(p.ir)}>
-                          {p.rotulo}
-                        </button>
-                        </>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                  <ul className="inicio-lista">{doGrupo.map(linhaPendencia)}</ul>
                 </div>
               );
             })}
-            {pendencias.length > VISIVEIS && (
+            {avisos.length > VISIVEIS && (
               <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodos((v) => !v)}>
-                {verTodos ? "ver menos" : `ver todos (${pendencias.length})`}
+                {verTodos ? "ver menos" : `ver todos (${avisos.length})`}
+              </button>
+            )}
+            {tf.minhas.length > 0 && (
+              <div className="inicio-grupo inicio-minhas">
+                <div className="inicio-grupo-tit">
+                  <span className="inicio-minhas-tit">Minhas tarefas</span> <span className="muted-cel">{tf.n.minhas}</span>
+                </div>
+                <ul className="inicio-lista">{tf.minhas.map(linhaPendencia)}</ul>
+              </div>
+            )}
+            {tf.total > LIMITE_TAREFAS && (
+              <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodasTarefas((v) => !v)}>
+                {verTodasTarefas ? "ver menos tarefas" : `ver todas as tarefas (${tf.total})`}
               </button>
             )}
           </>
