@@ -461,7 +461,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
             </button>
           )}
           <button type="button" className="btn btn-mini" onClick={() => setTirarAlvo({ item, canal: canalObj })} title="Removeu o anúncio deste canal? Apaga a marcação ou tudo deste item neste canal">
-            Tirar do {canalObj.nome}
+            Tirar deste canal <CanalTag canal={canalObj} />
           </button>
         </div>
       </div>

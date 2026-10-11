@@ -71,18 +71,32 @@ export function markupDoCanal(canal, cfg) {
 export function precoPorMarkup(custo, markup) {
   const x = num(custo) * num(markup);
   if (!(x > 0)) return null;
-  const p = r90perto(x);
-  return p > 0 ? p : r90up(x);
+  const p = r5090perto(x);
+  return p > 0 ? p : r5090up(x);
 }
 export function cfgDoCanal(canal, cfg) {
   if (!canalEmMarkup(canal)) return cfg;
-  return { ...cfg, descontoMax: num(cfg?.descontoMax ?? ESCADA_PADRAO.descontoMax) / 2 };
+  return { ...cfg, descontoMax: num(cfg?.descontoMax ?? ESCADA_PADRAO.descontoMax) / 2, final5090: true };
 }
 
 // ,90 pra baixo / pra cima
 export const r90 = (x) => Math.floor(x + 0.1 + 1e-9) - 0.1;
 export const r90up = (x) => Math.ceil(x + 0.1 - 1e-9) - 0.1;
 const centavos = (v) => Math.round(v * 100) / 100;
+// Venda direta (canal próprio em markup): final ,50 OU ,90 — pra baixo, pra
+// cima e o mais próximo (7,62 → 7,50; 7,75 → 7,90; 14,60 → 14,50; empate →
+// pra baixo). Marketplaces continuam no ,90; atacado em centavos.
+const finais5090 = (x) => {
+  const k = Math.floor(x);
+  return [k - 1 + 0.5, k - 1 + 0.9, k + 0.5, k + 0.9, k + 1 + 0.5, k + 1 + 0.9].map(centavos);
+};
+export const r5090 = (x) => finais5090(x).filter((v) => v <= x + 1e-9).pop();
+export const r5090up = (x) => finais5090(x).find((v) => v >= x - 1e-9);
+export const r5090perto = (x) => {
+  const a = r5090(x);
+  const b = r5090up(x);
+  return x - a <= b - x ? a : b;
+};
 // ,90 MAIS PRÓXIMO (empate → pra baixo)
 export const r90perto = (x) => {
   const a = r90(x);
@@ -225,13 +239,15 @@ export function precoNaCurva({ canal, n, base, custo, peso, cfg, lucroAnterior, 
   const dMax = cfg?.descontoMax != null && cfg.descontoMax !== "" ? num(cfg.descontoMax) : ESCADA_PADRAO.descontoMax;
   const descontoAlvo = descontoDaCurva(n, dMax);
   const notas = [];
-  let p = r90perto(teto * (1 - descontoAlvo));
+  // canal próprio em markup (cfgDoCanal): finais ,50/,90; senão ,90
+  const [rDown, rUp, rPerto] = cfg?.final5090 ? [r5090, r5090up, r5090perto] : [r90, r90up, r90perto];
+  let p = rPerto(teto * (1 - descontoAlvo));
   let limitadoPor = null;
   // concorrente: teto, mas nunca abaixo das travas (a) e (b)
   const pMin = precoMinimoAceitavel(canal, custo, peso, cfg);
   let concorrenteAbaixoDoPiso = false;
   if (num(concorrente) > 0) {
-    const cap = r90(num(concorrente) * 0.98);
+    const cap = rDown(num(concorrente) * 0.98);
     if (pMin != null && cap < pMin) concorrenteAbaixoDoPiso = true;
     else if (cap < p) {
       p = cap;
@@ -240,14 +256,14 @@ export function precoNaCurva({ canal, n, base, custo, peso, cfg, lucroAnterior, 
   }
   // (a) mínimo aceitável
   if (pMin != null && p < pMin - 0.004) {
-    p = r90up(pMin);
+    p = rUp(pMin);
     limitadoPor = "minimo";
   }
   // (b) lucro sobe vs o anterior
   if (lucroAnterior != null) {
     const pl = precoParaLucro(canal, num(lucroAnterior) + 0.01, custo, peso, cfg);
     if (pl != null && p < pl - 0.004) {
-      p = r90up(pl);
+      p = rUp(pl);
       limitadoPor = "lucro";
     }
   }
@@ -259,7 +275,7 @@ export function precoNaCurva({ canal, n, base, custo, peso, cfg, lucroAnterior, 
     if (!isFinite(hi) || hi <= 0) continue;
     const b = hi - 0.01;
     if (b < p && b >= p * 0.85) {
-      const cand = r90(b + 0.001);
+      const cand = rDown(b + 0.001);
       const lc = lucroNoPreco(canal, cand, custo, peso, cfg);
       const lp = lucroNoPreco(canal, p, custo, peso, cfg);
       if (cand < p && lc > lp + 0.5 && (pMin == null || cand >= pMin - 0.004) && (lucroAnterior == null || lc > num(lucroAnterior))) {

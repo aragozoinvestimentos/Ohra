@@ -341,7 +341,7 @@ export default function Publicar({ onToast, onSub }) {
             </button>
           )}
           <button type="button" className="btn btn-mini" onClick={() => setTirarAlvo({ item: l.item, canal: c })} title="Removeu o anúncio deste canal? Apaga a marcação ou tudo deste item neste canal">
-            Tirar do {nomeCanal(c)}
+            Tirar deste canal <CanalTag canal={c} />
           </button>
         </div>
       </div>

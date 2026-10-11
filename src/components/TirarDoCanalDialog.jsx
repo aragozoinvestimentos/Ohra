@@ -6,6 +6,7 @@ import { useRampas } from "../hooks/useRampas.js";
 import { useAfiliados } from "../hooks/useAfiliados.js";
 import { familiaDoItem, oQueExisteNoCanal, tirarDoCanal } from "../lib/tirarDoCanal.js";
 import { BRL } from "../lib/format.js";
+import CanalTag from "./CanalTag.jsx";
 
 const pct = (v) => `${Math.round(Number(v) * 1000) / 10}%`.replace(".", ",");
 
@@ -49,7 +50,11 @@ export default function TirarDoCanalDialog({ item, canal, onClose, onToast }) {
 
   return (
     <ConfirmDialog
-      titulo={`Tirar do ${canal.nome}`}
+      titulo={
+        <>
+          Tirar {item.nome} deste canal <CanalTag canal={canal} />
+        </>
+      }
       confirmarLabel={salvando ? "Apagando…" : modo === "relancar" ? "Apagar a marcação" : "Tirar tudo deste canal"}
       perigo={modo === "tudo"}
       larga
