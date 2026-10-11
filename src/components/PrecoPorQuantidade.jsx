@@ -16,7 +16,8 @@ import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
-import { markupDoCanal } from "../lib/escada.js";
+import { canalEmMarkup, markupDoCanal } from "../lib/escada.js";
+import { configAtacado } from "../lib/vendaDireta.js";
 import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, rotuloMinimo, escadaDoProduto, configEscada, lucroNoPreco, precoMinimoAceitavel } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -609,6 +610,11 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
               ⚙ Regras da escada{escadaPropria ? " (própria)" : ""}
             </button>
           </h3>
+          {canalEmMarkup(canal) && (
+            <div className="hint" style={{ margin: "0 0 10px" }}>
+              Venda direta: mesmo preço por peça; desconto por volume no atacado ({configAtacado(cfgLoja).faixas[0].min}+) — Orçamento → Encomenda em volume.
+            </div>
+          )}
           {mostrarRegras && regrasEdit && (
             <div className="regras-escada">
               <div className="grid-auto">
@@ -819,7 +825,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                         <td className="num">
                           <span className="sug">{BRL(l.sugerido)}</span>
                           <span className="sub">
-                            {BRL(l.porPeca)} cada · {Math.round(l.desconto * 100)}% off
+                            {BRL(l.porPeca)} cada{Math.round(l.desconto * 100) > 0 ? ` · ${Math.round(l.desconto * 100)}% off` : ""}
                           </span>
                           <span className="sub">+{BRL(l.porUnidadeExtra)} por unidade extra</span>
                           {l.motivo && <span className="nota">{l.motivo}</span>}

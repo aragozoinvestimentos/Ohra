@@ -56,9 +56,9 @@ export function configEscada(configLoja, configProduto) {
 // ===== Venda direta: canal próprio em "modo markup" (schema v43) =====
 // Conta ÚNICA. No canal próprio (tipo custom) com canais.modo_preco = 'markup'
 // o preço parte do CUSTO, não da margem/taxas de marketplace: avulso = custo
-// total × markup (,90 mais próximo); kits = a mesma curva de desconto da
-// escada sobre esse avulso, com descontoMax pela METADE (sem taxa fixa pra
-// dividir, o ganho do kit é menor) e as travas de sempre. Markup: o do produto
+// total × markup (final ,50/,90 mais próximo); kits SEM curva = N × avulso
+// (,50/,90) — sem "não vale oferecer"; continuam as travas de mínimo
+// aceitável. Desconto por volume só no atacado. Markup: o do produto
 // (escada_config.markup, "Regras próprias") › o do canal › MARKUP_PADRAO.
 export const MARKUP_PADRAO = 2.5;
 export const canalEmMarkup = (canal) => canal?.tipo === "custom" && canal?.modo_preco === "markup";
@@ -76,7 +76,9 @@ export function precoPorMarkup(custo, markup) {
 }
 export function cfgDoCanal(canal, cfg) {
   if (!canalEmMarkup(canal)) return cfg;
-  return { ...cfg, descontoMax: num(cfg?.descontoMax ?? ESCADA_PADRAO.descontoMax) / 2, final5090: true };
+  // Decisão do Gustavo (out/2026): no canal próprio NÃO há curva — kit N = N ×
+  // avulso (,50/,90). Desconto por volume só no atacado (vendaDireta.js, 10+).
+  return { ...cfg, descontoMax: 0, semCurva: true, final5090: true };
 }
 
 // ,90 pra baixo / pra cima
@@ -269,7 +271,8 @@ export function precoNaCurva({ canal, n, base, custo, peso, cfg, lucroAnterior, 
   }
   // (c) preço por peça cai pelo menos R$0,30
   let naoVale = false;
-  if (porPecaAnterior != null && p / n > num(porPecaAnterior) - QUEDA_MIN_POR_PECA + 0.004) naoVale = true;
+  // (sem curva — canal próprio em markup — essa trava não se aplica)
+  if (!cfg?.semCurva && porPecaAnterior != null && p / n > num(porPecaAnterior) - QUEDA_MIN_POR_PECA + 0.004) naoVale = true;
   // (d) troca de faixa do canal: desce pra antes dela se der mais lucro (sem quebrar a, b, c)
   for (const [, hi] of limitesDoCanal(canal, peso)) {
     if (!isFinite(hi) || hi <= 0) continue;
@@ -285,7 +288,7 @@ export function precoNaCurva({ canal, n, base, custo, peso, cfg, lucroAnterior, 
     }
   }
   p = centavos(p);
-  const naoCompensa = teto > 0 && p >= teto - 0.004;
+  const naoCompensa = !cfg?.semCurva && teto > 0 && p >= teto - 0.004;
   const desconto = teto > 0 ? 1 - p / teto : 0;
   const pctTxtLoc = (v) => `${Math.round(Math.max(0, v) * 100)}%`;
   let motivo = null;
