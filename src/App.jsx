@@ -67,9 +67,9 @@ function loadTheme() {
   return "light";
 }
 
-// A barra lateral é agrupada em etapas do fluxo de uso do dia a dia:
-// precificar vem primeiro (é o que mais se usa), depois o catálogo, vender e
-// gestão; a configuração da loja (feita uma vez só) fica por último. Cada
+// A barra lateral segue a JORNADA (out/2026): Início, 1 Produto, 2 Preço e
+// anúncio, 3 Vender e crescer, 4 Produção, 5 Gestão; a configuração da loja
+// (feita uma vez só) fica por último. As chaves das abas não mudam. Cada
 // aba tem um ícone de traço (Icone.jsx) e um subtítulo curto mostrado no
 // cabeçalho da tela.
 const GRUPOS = [
@@ -78,43 +78,46 @@ const GRUPOS = [
     tabs: [{ key: "inicio", label: "Início", sub: "O que pede atenção hoje e como a loja está" }],
   },
   {
-    titulo: "Precificar",
+    titulo: "1 · Produto",
     tabs: [
-      { key: "producao", label: "Custo de Produção", sub: "Simule o custo de uma peça a partir do fatiador" },
-      { key: "canal", label: "Precificação por Canal", sub: "Avulso, por quantidade, ficha do anúncio e anunciar" },
-    ],
-  },
-  {
-    titulo: "Catálogo",
-    tabs: [
-      { key: "historico", label: "Produtos precificados", sub: "Preços salvos por produto/kit e canal" },
       { key: "cadastros", label: "Cadastros", sub: "Materiais, embalagens, produtos e kits" },
+      { key: "producao", label: "Custo de Produção", sub: "Custo da peça a partir do fatiador" },
     ],
   },
   {
-    titulo: "Vender",
+    titulo: "2 · Preço e anúncio",
     tabs: [
-      { key: "orcamento", label: "Orçamento", sub: "Encomendas avulsas e em volume" },
-      { key: "promocoes", label: "Promoções", sub: "Simule descontos antes de publicar" },
-      { key: "crescimento", label: "Crescimento", sub: "Rampa de preço no orgânico, Ads e afiliados" },
+      { key: "canal", label: "Precificação por Canal", sub: "Avulso, por quantidade, ficha, lançamento e anunciar" },
+      { key: "historico", label: "Produtos precificados", sub: "Preços salvos por produto/kit e canal" },
     ],
   },
   {
-    titulo: "Gestão",
+    titulo: "3 · Vender e crescer",
+    tabs: [
+      { key: "crescimento", label: "Crescimento", sub: "Rampa de preço no orgânico, Ads e afiliados" },
+      { key: "promocoes", label: "Promoções", sub: "Simule descontos antes de publicar" },
+      { key: "orcamento", label: "Orçamento", sub: "Encomendas avulsas e em volume" },
+    ],
+  },
+  {
+    titulo: "4 · Produção",
+    tabs: [
+      { key: "registroImpressoes", label: "Registro de Impressões", sub: "Taxa de falha real e lote máximo seguro" },
+      { key: "otimizacao", label: "Otimização", sub: "Capacidade de produção da loja" },
+    ],
+  },
+  {
+    titulo: "5 · Gestão",
     tabs: [
       { key: "caixa", label: "Fluxo de Caixa", sub: "Entradas, saídas e projeção de até 12 meses" },
       { key: "metas", label: "Metas", sub: "Faturamento e lucro do mês" },
       { key: "ranking", label: "Ranking por Retorno", sub: "Quais itens dão mais lucro por hora" },
-      { key: "otimizacao", label: "Otimização", sub: "Capacidade de produção da loja" },
-      { key: "registroImpressoes", label: "Registro de Impressões", sub: "Taxa de falha real e lote máximo seguro" },
       { key: "importarVendas", label: "Importar vendas", sub: "Relatório de vendas da Olist (em construção)" },
     ],
   },
   {
     titulo: "Configuração",
-    tabs: [
-      { key: "config", label: "Lojas, canais e taxas", sub: "Configurações da loja e dos marketplaces" },
-    ],
+    tabs: [{ key: "config", label: "Lojas, canais e taxas", sub: "Configurações da loja e dos marketplaces" }],
   },
 ];
 
@@ -151,9 +154,9 @@ export default function App() {
   const [configSub, setConfigSub] = useState("lojas");
   const [canalSub, setCanalSub] = useState(() => {
     try {
-      if (localStorage.getItem(TAB_KEY) === "comparativo") return "comparar";
+      if (sessionStorage.getItem(TAB_KEY) === "comparativo" || localStorage.getItem(TAB_KEY) === "comparativo") return "comparar";
       const s = localStorage.getItem("ohra:canal-sub");
-      if (["avulso", "quantidade", "ficha", "comparar", "publicar"].includes(s)) return s;
+      if (["avulso", "quantidade", "ficha", "lancamento", "comparar", "publicar"].includes(s)) return s;
     } catch {
       // sem problema
     }
@@ -251,8 +254,8 @@ export default function App() {
       setCanalSub("comparar");
       key = "canal";
     }
-    if (key === "publicar") {
-      setCanalSub("publicar");
+    if (key === "publicar" || key === "lancamento" || key === "ficha" || key === "quantidade" || key === "avulso") {
+      setCanalSub(key);
       key = "canal";
     }
     setTab(key);

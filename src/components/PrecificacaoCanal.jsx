@@ -1,3 +1,5 @@
+import ProximoPasso from "./ProximoPasso.jsx";
+import { publicarSelecao, useSelecaoPasso } from "../lib/passosPreco.js";
 import { useEffect, useMemo, useState } from "react";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import BuscaItem from "./BuscaItem.jsx";
@@ -45,15 +47,32 @@ const DEFAULTS = {
   nome: "",
 };
 
-export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar, onToast, ativo = true }) {
+export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar, onToast, ativo = true, onSub }) {
   const { lojaId, lojas } = useLoja();
   const [f, setF] = useState(DEFAULTS);
   const [salvando, setSalvando] = useState(false);
   const [baseSelecionada, setBaseSelecionada] = useState(""); // "" | "p:<id>" | "k:<id>"
   const [canalProprioId, setCanalProprioId] = useState("");
+  const { pedido: pedidoPasso } = useSelecaoPasso();
+  const [pedidoVisto, setPedidoVisto] = useState(0);
+
   const [confirmarKit, setConfirmarKit] = useState(false);
   const [verFilamentos, setVerFilamentos] = useState(false);
   const { itens: baseItens, canais, produtos, kits: kitsCat, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje, publicacoesCanal } = useEscada();
+  // Passos (1º→5º): aplica a seleção vinda do "Próximo →".
+  if (pedidoPasso && pedidoPasso.para === "avulso" && pedidoPasso.seq !== pedidoVisto) {
+    setPedidoVisto(pedidoPasso.seq);
+    const idv = pedidoPasso.itemId;
+    // Avulso aceita produto e kit; variação vira o produto dela.
+    if (idv) setBaseSelecionada(idv.startsWith("v:") ? `p:${baseItens.find((i) => i.id === idv)?.produtoId || ""}` : idv);
+    const cp = canais.find((x) => x.id === pedidoPasso.canalId);
+    if (cp) {
+      if (cp.tipo === "custom") {
+        setF((prev) => ({ ...prev, canal: "outro" }));
+        setCanalProprioId(cp.id);
+      } else setF((prev) => ({ ...prev, canal: cp.tipo }));
+    }
+  }
   const { rampas } = useRampas();
   // margem de partida: a do produto escolhido (se tiver regras próprias) ou a da loja
   const produtoEscolhido = baseSelecionada.startsWith("p:") ? produtos.find((p) => p.id === baseSelecionada.slice(2)) : null;
@@ -318,6 +337,10 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const qtdSel = itemSel?.pecas || itemSel?.quantidade || 1;
 
   const canalIdAtual = resolverCanalId();
+  // Passos (1º→5º): publica a seleção e aplica a vinda do "Próximo →".
+  useEffect(() => {
+    publicarSelecao("avulso", baseSelecionada || null, canalIdAtual || null);
+  }, [baseSelecionada, canalIdAtual]);
   const precoExistente =
     baseSelecionada && canalIdAtual
       ? (() => {
@@ -971,6 +994,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     {verFilamentos && itemSel && (
       <CustoFilamentosDialog itemId={itemSel.id} canalIdInicial={canalIdAtual || undefined} onToast={onToast} onClose={() => setVerFilamentos(false)} />
     )}
+      <ProximoPasso atual="avulso" itemId={baseSelecionada} canalId={canalIdAtual} onSub={onSub} />
     </>
   );
 }

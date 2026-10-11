@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import ProximoPasso from "./ProximoPasso.jsx";
+import { publicarSelecao, useSelecaoPasso } from "../lib/passosPreco.js";
+import { useEffect, useMemo, useState } from "react";
 import { alertaPreco } from "../lib/estrategia.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { supabase } from "../lib/supabaseClient.js";
@@ -48,6 +50,14 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
   const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
   const [sel, setSel] = useState("");
   const [canalId, setCanalId] = useState("");
+  const { pedido: pedidoPasso } = useSelecaoPasso();
+  const [pedidoVisto, setPedidoVisto] = useState(0);
+  if (pedidoPasso && pedidoPasso.para === "ficha" && pedidoPasso.seq !== pedidoVisto) {
+    setPedidoVisto(pedidoPasso.seq);
+    const idv = pedidoPasso.itemId || "";
+    if (idv) setSel(idv.startsWith("v:") ? `p:${itens.find((i) => i.id === idv)?.produtoId || ""}` : idv);
+    if (pedidoPasso.canalId) setCanalId(pedidoPasso.canalId);
+  }
   const [novaOpcao, setNovaOpcao] = useState({}); // { [idxVariacao]: { nome, sufixo } }
   // Anúncios abertos/recolhidos: o 1º abre, os seguintes (2, 3… — muitas vezes
   // só simulação, não cadastrados) começam recolhidos. Chave item|canal|nº.
@@ -57,6 +67,10 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
   const [skuEdit, setSkuEdit] = useState(null); // { itemId, valor }
 
   const canal = canais.find((c) => c.id === canalId) || canais[0] || null;
+  // O 4º Lançamento usa o produto e o canal escolhidos aqui.
+  useEffect(() => {
+    publicarSelecao("ficha", sel || null, canal?.id || null);
+  }, [sel, canal?.id]);
   const opcoesBusca = useMemo(() => gruposDoSeletor(itens.filter((i) => !i.id.startsWith("v:"))), [itens]);
   const isKit = sel.startsWith("k:");
   const donoId = sel ? sel.slice(2) : null;
@@ -582,6 +596,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
           </div>
         </>
       ) : null}
+      <ProximoPasso atual="ficha" itemId={sel} canalId={canal?.id} onSub={onIrPara} />
     </>
   );
 }

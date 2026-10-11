@@ -13,6 +13,9 @@ import { nomeCanal } from "../lib/canais.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
 import OndeSeDecide from "./OndeSeDecide.jsx";
+import ProximoPasso from "./ProximoPasso.jsx";
+import { useSelecaoPasso } from "../lib/passosPreco.js";
+import { irParaAba } from "../lib/navegar.js";
 import { linhasAnunciar } from "../lib/anunciar.js";
 
 const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
@@ -27,7 +30,7 @@ const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
 // Item em rampa: o cliente paga agora (Rampa) é o mesmo do alvo (salvo)?
 const agoraIgualAlvo = (x) => Math.abs(Number(x.clientePaga) - Number(x.anSalvo?.clientePaga)) < 0.005;
 
-export default function Publicar({ onToast }) {
+export default function Publicar({ onToast, onSub }) {
   const { lojaId } = useLoja();
   const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, anunciadoNoCanal } = useEscada();
   const [verTodos, setVerTodos] = useState(false);
@@ -35,7 +38,9 @@ export default function Publicar({ onToast }) {
   const [abertos, setAbertos] = useState(() => new Set());
   const [descEdit, setDescEdit] = useState(null); // { chave, itemId, canalId, valor }
   const [sel, setSel] = useState(null); // "itemId|canalId" com o detalhe aberto
-  const [recalcular, setRecalcular] = useState(null); // { l, c } — recalcular o riscado (ação explícita)
+  const [recalcular, setRecalcular] = useState(null);
+  const [lancado, setLancado] = useState(null); // { nome, emRampa } — tudo do item marcado "feito"
+  const { atual: selPasso } = useSelecaoPasso(); // { l, c } — recalcular o riscado (ação explícita)
   // Itens em rampa (aba Crescimento) vendendo num preço diferente do salvo:
   // o que digitar vem da Rampa (riscado fixo no alvo + promo do degrau) e o
   // "↻ atualizar" compara com isso. No alvo / rampa encerrada → preço salvo.
@@ -126,6 +131,11 @@ export default function Publicar({ onToast }) {
       return;
     }
     recarregarCatalogo();
+    // Tudo do item marcado "feito" → produto lançado.
+    const doItem = new Map();
+    for (const pr of pares) doItem.set(pr.l.item.id, [...(doItem.get(pr.l.item.id) || []), pr]);
+    const completo = [...doItem.values()].find((ps) => ps.length >= ps[0].l.pendentes);
+    if (completo) setLancado({ nome: completo[0].l.item.nome, emRampa: Object.values(completo[0].l.porCanal).some((x) => x.rampa) });
     onToast(pares.length === 1 ? `Marcado como atualizado na ${nomeCanal(canais.find((c) => c.id === pares[0].canalId))}` : `${pares.length} preços marcados como atualizados`);
   }
   // Recalcular o riscado SÓ por ação explícita: apaga a marcação "feito" deste
@@ -353,6 +363,20 @@ export default function Publicar({ onToast }) {
       />
     )}
     <OndeSeDecide />
+    {lancado && (
+      <div className="alerta alerta-good lancado-ok">
+        <b>{lancado.nome}: produto lançado ✓</b>
+        {lancado.emRampa ? "Está em rampa: acompanhe e registre a semana no Crescimento." : "Tudo atualizado nas plataformas."}
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          {lancado.emRampa ? (
+            <button type="button" className="btn btn-mini primary" onClick={() => irParaAba("crescimento", { sub: "rampa" })}>Acompanhar no Crescimento →</button>
+          ) : (
+            <button type="button" className="btn btn-mini primary" onClick={() => irParaAba("inicio")}>Voltar ao Início</button>
+          )}
+          <button type="button" className="btn btn-mini" onClick={() => setLancado(null)}>Fechar</button>
+        </div>
+      </div>
+    )}
     <div className="aviso-fluxo">
       Os preços vêm de <b>Precificação</b> (1º Avulso / 2º Por quantidade). Aqui você só confere o que digitar em cada plataforma — o <b>preço original</b> (“de”) e a <b>promo</b> — e marca “feito” depois de atualizar.
     </div>
@@ -498,6 +522,7 @@ export default function Publicar({ onToast }) {
         <div className="empty">{linhas.length ? "Tudo atualizado — nenhum preço mudou desde a última vez." : "Nenhum item com preço salvo ainda. Salve os preços em Precificação por Canal e eles aparecem aqui."}</div>
       )}
     </div>
+    <ProximoPasso atual="publicar" itemId={selPasso.itemId} canalId={selPasso.canalId} onSub={onSub} />
     </>
   );
 }

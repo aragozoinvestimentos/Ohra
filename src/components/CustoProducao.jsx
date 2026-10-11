@@ -1,3 +1,4 @@
+import { pegarPedido } from "../lib/navegar.js";
 import { useEffect, useMemo, useState } from "react";
 import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
 import { salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
@@ -51,6 +52,15 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   useEffect(() => {
     setProdutoId("");
   }, [lojaId]);
+
+  // "Calcular custo →" vindo de Cadastros → Produtos (lib/navegar.js).
+  useEffect(() => {
+    const aplicar = (p) => p?.produtoId && setProdutoId(p.produtoId);
+    aplicar(pegarPedido("producao"));
+    const ouvir = (e) => e.detail.aba === "producao" && aplicar(pegarPedido("producao"));
+    window.addEventListener("ohra:ir-para", ouvir);
+    return () => window.removeEventListener("ohra:ir-para", ouvir);
+  }, []);
 
   const produtoSelecionado = produtos.find((p) => p.id === produtoId) || null;
 

@@ -1,3 +1,4 @@
+import { irParaAba } from "../lib/navegar.js";
 import { useEffect, useMemo, useState } from "react";
 import ImpactoCusto from "./ImpactoCusto.jsx";
 import { useEscada } from "../hooks/useEscada.js";
@@ -313,7 +314,8 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           ? `Produto atualizado · lucro ${mediaImpacto >= 0 ? "+" : "−"}R$ ${Math.abs(mediaImpacto).toFixed(2).replace(".", ",")}/venda em média (${impacto.itensAfetados} item(ns)) · detalhes em Produtos precificados → Custo mudou`
           : "Produto atualizado"
     );
-    setProdutoCriado(eraNovo && produtoId ? { id: produtoId, nome } : null);
+    // Atalhos depois de salvar (novo ou editado): calcular custo / precificar.
+    setProdutoCriado(produtoId ? { id: produtoId, nome, novo: eraNovo } : null);
     limpar();
   }
 
@@ -610,18 +612,30 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       {produtoCriado && (
         <div className="panel" style={{ background: "var(--surface-2)" }}>
           <div className="hint" style={{ marginTop: 0 }}>
-            Produto "{produtoCriado.nome}" cadastrado. Próxima etapa: definir o preço de venda em cada canal.
+            Produto "{produtoCriado.nome}" {produtoCriado.novo ? "cadastrado" : "salvo"}. Próximo passo:
           </div>
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => {
-              onProdutoCriado?.(produtoCriado.id, produtoCriado.nome);
-              setProdutoCriado(null);
-            }}
-          >
-            Ir para Precificação por Canal →
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                irParaAba("producao", { produtoId: produtoCriado.id });
+                setProdutoCriado(null);
+              }}
+            >
+              Calcular custo →
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                onProdutoCriado?.(produtoCriado.id, produtoCriado.nome);
+                setProdutoCriado(null);
+              }}
+            >
+              Precificar este produto →
+            </button>
+          </div>
         </div>
       )}
     </div>

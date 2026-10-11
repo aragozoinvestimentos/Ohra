@@ -1288,14 +1288,16 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
   );
 }
 
-function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose }) {
+// Exportado: o 4º Lançamento (Precificação por Canal) abre o MESMO diálogo,
+// já com produto e canal (produtoInicial / canalInicial).
+export function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose, produtoInicial = "", canalInicial = "" }) {
   const { lojaId } = useLoja();
   const { itens, produtos, kits, canais, precos, cfgDoProduto, publicacoesCanal } = dados;
   const hoje = hojeISO();
   const salvoDe = (pid, cid) => precos.find((p) => p.item_tipo === "produto" && p.item_id === pid && p.canal_id === cid) || null;
-  const [produtoId, setProdutoId] = useState(editar?.produto_id || "");
+  const [produtoId, setProdutoId] = useState(editar?.produto_id || produtoInicial || "");
   const canaisDoProduto = produtoId ? canais.filter((c) => salvoDe(produtoId, c.id) && (editar ? c.id === editar.canal_id : !rampas.some((r) => r.produto_id === produtoId && r.canal_id === c.id))) : [];
-  const [canalId, setCanalId] = useState(editar?.canal_id || "");
+  const [canalId, setCanalId] = useState(editar?.canal_id || canalInicial || "");
   const canal = canais.find((c) => c.id === (canalId || canaisDoProduto[0]?.id)) || null;
   const item = itens.find((i) => i.id === `p:${produtoId}`);
   const cfg = produtoId ? cfgDoProduto(produtoId) : null;

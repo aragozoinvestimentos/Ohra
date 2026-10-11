@@ -110,8 +110,8 @@ function ChecklistProgresso() {
 
 const ETAPAS = [
   {
-    titulo: "1. Configuração",
-    intro: "Defina a loja e os canais de venda (Configuração → Lojas, canais e taxas).",
+    titulo: "Primeiro: Configuração",
+    intro: "Defina a loja e os canais de venda (Configuração → Lojas, canais e taxas) — feito uma vez só.",
     passos: [
       {
         icone: "🏬",
@@ -128,8 +128,8 @@ const ETAPAS = [
     ],
   },
   {
-    titulo: "2. Cadastros",
-    intro: "O que se repete de produto pra produto — cadastre uma vez e o app usa em tudo, sempre com o preço atual (“ao vivo”).",
+    titulo: "1 · Produto",
+    intro: "Cadastre o que se repete e calcule o custo — o app usa em tudo, sempre com o preço atual (“ao vivo”).",
     passos: [
       {
         icone: "🧵",
@@ -153,18 +153,18 @@ const ETAPAS = [
         nome: "Kits",
         texto: "Produtos diferentes num anúncio só (ex.: Gato + Cachorro). A embalagem do kit é própria; o app sugere o preço por canal comparando com as peças vendidas separadas.",
       },
-    ],
-  },
-  {
-    titulo: "3. Precificar",
-    intro: "Custo da peça → preço por canal → anúncio pronto. Precificação por Canal tem as sub-abas na ordem de uso (1º a 4º).",
-    passos: [
       {
         icone: "🧮",
         nome: "Custo de Produção",
         texto:
           "Dados do fatiador (comprimento, tempo, peças por chapa) + energia, manutenção, falhas, acabamento, consumíveis e o ROI da impressora → custo por peça e o sugerido na Shopee. “⇄ comparar filamentos” mostra quanto a peça custaria em cada filamento. Salve como produto ou leve pra Precificação.",
       },
+    ],
+  },
+  {
+    titulo: "2 · Preço e anúncio",
+    intro: "Precificação por Canal tem as sub-abas na ordem de uso (1º a 5º): preço da unidade → por quantidade → ficha → lançamento → anunciar.",
+    passos: [
       {
         icone: "🏷️",
         nome: "1º Avulso",
@@ -178,9 +178,14 @@ const ETAPAS = [
       },
       {
         icone: "📝",
-        nome: "3º Ficha do anúncio e 4º Anunciar",
+        nome: "3º Ficha do anúncio",
+        texto: "Monta as tabelas pra criar o anúncio (variações, SKUs, preço original, promo) no formato de cada canal.",
+      },
+      {
+        icone: "🚀",
+        nome: "4º Lançamento e 5º Anunciar",
         texto:
-          "A Ficha monta as tabelas pra criar o anúncio (variações, SKUs, preço original, promo) no formato de cada canal. Anunciar lista, por canal, o preço original (riscado) e a promo pro cliente pagar o preço real, e marca o que mudou pra você atualizar na plataforma. Comparar canais mostra o mesmo produto em todos os canais.",
+          "Lançamento: decida se o produto entra em rampa neste canal (abre o mesmo “Iniciar rampa” do Crescimento) ou se anuncia direto no alvo, e veja o que digitar. Anunciar lista, por canal, o preço original (riscado, fixo depois de anunciado) e a promo pro cliente pagar o preço real, e marca o que mudou pra você atualizar. Rodapé “Próximo →” leva produto e canal de um passo pro outro. Comparar canais mostra o mesmo produto em todos os canais.",
       },
       {
         icone: "💰",
@@ -190,13 +195,14 @@ const ETAPAS = [
     ],
   },
   {
-    titulo: "4. Vender",
-    intro: "Orçamentos, promoções e o crescimento no orgânico.",
+    titulo: "3 · Vender e crescer",
+    intro: "O crescimento no orgânico, promoções e orçamentos.",
     passos: [
       {
-        icone: "🧾",
-        nome: "Orçamento",
-        texto: "Encomenda avulsa (venda direta, sem taxa de plataforma) e encomenda em volume (frete diluído no lote), com lista de orçamentos salvos.",
+        icone: "📈",
+        nome: "Crescimento (rampa de preço)",
+        texto:
+          "Entre perto do 0 a 0 pra ganhar vendas e avaliações e suba em degraus pequenos até o preço salvo (o alvo, que não muda). “+ Iniciar rampa” → registre a semana (vendas, avaliações, nota, Ads) → o app mostra os portões e sugere subir, segurar ou voltar, quanto o Ads precisa render, o que digitar no anúncio e um checklist pra melhorar a conversão.",
       },
       {
         icone: "🏷",
@@ -204,15 +210,25 @@ const ETAPAS = [
         texto: "Simula desconto, progressivo por quantidade, combo, venda combinada, frete grátis e liquidação com piso de margem, e avisa o % certo a lançar na campanha da plataforma.",
       },
       {
-        icone: "📈",
-        nome: "Crescimento (rampa de preço)",
-        texto:
-          "Entre perto do 0 a 0 pra ganhar vendas e avaliações e suba em degraus pequenos até o preço salvo (o alvo, que não muda). “+ Iniciar rampa” → registre a semana (vendas, avaliações, nota, Ads) → o app mostra os portões e sugere subir, segurar ou voltar, quanto o Ads precisa render, o que digitar no anúncio e um checklist pra melhorar a conversão.",
+        icone: "🧾",
+        nome: "Orçamento",
+        texto: "Encomenda avulsa (venda direta, sem taxa de plataforma) e encomenda em volume (frete diluído no lote), com lista de orçamentos salvos.",
       },
     ],
   },
   {
-    titulo: "5. Gestão",
+    titulo: "4 · Produção",
+    intro: "Falhas e capacidade.",
+    passos: [
+      {
+        icone: "🖨️",
+        nome: "Registro de Impressões e Otimização",
+        texto: "Registro de Impressões: taxa de falha real e o lote máximo seguro. Otimização: capacidade de produção e se o gargalo é impressora ou mão de obra.",
+      },
+    ],
+  },
+  {
+    titulo: "5 · Gestão",
     intro: "O dinheiro de verdade e onde focar.",
     passos: [
       {
@@ -228,9 +244,8 @@ const ETAPAS = [
       },
       {
         icone: "🏆",
-        nome: "Ranking, Otimização e Registro de Impressões",
-        texto:
-          "Ranking: itens por lucro (salvo ou estimado). Otimização: capacidade de produção e se o gargalo é impressora ou mão de obra. Registro de Impressões: taxa de falha real e o lote máximo seguro.",
+        nome: "Ranking e Importar vendas",
+        texto: "Ranking: itens por lucro (salvo ou estimado). Importar vendas: em construção (relatório da Olist).",
       },
     ],
   },
@@ -271,10 +286,9 @@ export default function Tutorial() {
       <div className="panel">
         <h3>Como usar o Ohra</h3>
         <p style={{ margin: "0 0 4px", fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.6 }}>
-          O menu lateral é organizado pelo uso do dia a dia (Precificar primeiro, Configuração por último), mas na
-          primeira vez o caminho é outro: configure a loja e os canais (Configuração → Lojas, canais e taxas), cadastre
-          os dados que se repetem (materiais, embalagens, produtos, kits), calcule o custo e o preço de uma peça, use
-          isso pra vender e, por fim, acompanhe onde vale mais a pena focar e sua capacidade de produção. Abaixo vai
+          O menu lateral segue a jornada de um produto: Início, 1 · Produto (cadastros e custo), 2 · Preço e anúncio,
+          3 · Vender e crescer, 4 · Produção e 5 · Gestão. Na primeira vez, comece pela Configuração (loja e canais),
+          depois siga os números do menu. Abaixo vai
           um passo a passo rápido de cada etapa — o checklist acima já mostra, na prática, onde você está nessa
           cadeia agora.
         </p>

@@ -1376,3 +1376,21 @@ button.ficha-anuncio-cab:hover { background: var(--surface-2); }
 .qtds-anuncio .link-btn { margin: 0; }
 .qtds-aviso { margin: 8px 14px 0; }
 .linha-outras td { background: var(--surface-3); padding-top: 6px; padding-bottom: 6px; }
+
+/* Rodapé "Próximo passo" (Precificação por Canal 1º–5º) */
+.proximo-passo { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 18px 0 4px; padding: 12px 14px; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: var(--surface); }
+
+/* 4º Lançamento, preço de cadastro editável e subtítulo de coluna */
+.th-sub { display: block; font-size: 10px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink-faint); margin-top: 1px; }
+.lanc-topo { align-items: end; margin-bottom: 8px; }
+.lanc-pergunta { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-3); margin-top: 8px; }
+.lanc-anuncio, .lanc-rampa { margin-top: 12px; }
+.lanc-degraus { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.lanc-degrau { padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-strong); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.lanc-degrau.at { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.lanc-degrau.alvo { border-style: dashed; color: var(--ink); }
+.editar-cadastro { margin-bottom: 10px; }
+.editar-cadastro .kv-cel { display: flex; flex-direction: column; gap: 3px; max-width: 420px; }
+.editar-cadastro-linha { display: flex; gap: 6px; align-items: center; }
+.editar-cadastro-linha .input-conc { width: 110px; }
+.lancado-ok { margin-bottom: 12px; }

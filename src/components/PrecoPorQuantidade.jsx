@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import ProximoPasso from "./ProximoPasso.jsx";
+import { publicarSelecao, useSelecaoPasso } from "../lib/passosPreco.js";
+import { useEffect, useMemo, useState } from "react";
 import BuscaItem from "./BuscaItem.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { gravarPrecoNovo, alertaPreco } from "../lib/estrategia.js";
 import EditarDialog from "./EditarDialog.jsx";
 import FreteAviso from "./FreteAviso.jsx";
-import { anuncioDoItem } from "../lib/rampaAnuncio.js";
+import { anuncioDoItem, anuncioNoRiscado } from "../lib/rampaAnuncio.js";
 import { alternarQuantidade, quantidadeAnunciada, quantidadesGravadas, quantidadesPadrao, temColunaQuantidades } from "../lib/quantidadesAnuncio.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { dicaKitFreteGratis } from "../lib/freteGratis.js";
@@ -12,7 +14,7 @@ import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
-import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, calcularAnuncio, rotuloMinimo, escadaDoProduto, configEscada, lucroNoPreco, precoMinimoAceitavel } from "../lib/escada.js";
+import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, rotuloMinimo, escadaDoProduto, configEscada, lucroNoPreco, precoMinimoAceitavel } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
 import Kpis from "./Kpis.jsx";
@@ -30,6 +32,57 @@ function faixaTxt(canal, taxas) {
 // Campos da escada editáveis (em %).
 // Curva de desconto (out/2026): r2/r10/piso/vantagemMin não definem mais preço
 // (ficam no banco, não são apagados).
+
+// "Preço de cadastro na <canal>": deixa o riscado igual ao da plataforma.
+// Grava em publicacoes_canal como riscado FIXO daquele item × canal (marcado
+// "feito"), com a promo (% inteiro pra baixo) e o cliente paga recalculados
+// sobre o preço de agora (salvo ou Rampa) — mesma conta da Anunciar.
+function EditarCadastro({ canal, itemTipo, itemId, real, atual, lojaId, onToast }) {
+  const [valor, setValor] = useState(atual != null ? Number(atual).toFixed(2).replace(".", ",") : "");
+  const [salvando, setSalvando] = useState(false);
+  const riscado = Number(String(valor).replace(",", ".")) || 0;
+  const previa = riscado > 0 && real > 0 ? anuncioNoRiscado(real, riscado) : null;
+  async function salvar() {
+    if (!supabase || !(riscado > 0) || !previa) return onToast("Digite o preço de cadastro");
+    setSalvando(true);
+    const { error } = await supabase.from("publicacoes_canal").upsert(
+      {
+        loja_id: lojaId || null,
+        item_tipo: itemTipo,
+        item_id: itemId,
+        canal_id: canal.id,
+        preco_original: Math.round(riscado * 100) / 100,
+        promo: previa.promo,
+        cliente_paga: previa.clientePaga,
+        publicado_em: new Date().toISOString(),
+      },
+      { onConflict: "item_tipo,item_id,canal_id" }
+    );
+    setSalvando(false);
+    if (error) return onToast(`Não foi possível salvar: ${error.message}`);
+    recarregarCatalogo();
+    onToast(`Preço de cadastro na ${canal.nome}: ${BRL(riscado)} · promo ${previa.promo}% → cliente paga ${BRL(previa.clientePaga)}`);
+  }
+  return (
+    <div className="editar-cadastro" onClick={(ev) => ev.stopPropagation()}>
+      <label className="kv-cel">
+        <small>Preço de cadastro na {canal.nome}</small>
+        <span className="editar-cadastro-linha">
+          <input className="input-conc" type="text" inputMode="decimal" value={valor} onChange={(ev) => setValor(ev.target.value)} />
+          <button type="button" className="btn btn-mini primary" onClick={salvar} disabled={salvando || !previa}>
+            {salvando ? "Salvando…" : "Salvar"}
+          </button>
+        </span>
+        <span>
+          {previa ? `promo ${previa.promo}% → cliente paga ${BRL(previa.clientePaga)}` : "—"}
+          {previa?.acimaDoRiscado ? " · abaixo do preço de agora: não dá promo" : ""}
+        </span>
+        <span className="hint" style={{ margin: 0 }}>pra deixar igual à plataforma — evite mudar o preço cheio no marketplace</span>
+      </label>
+    </div>
+  );
+}
+
 const CAMPOS_ESCADA = [
   { k: "descontoMax", label: "Desconto máximo dos kits (%)", ajuda: "Kit N = N × avulso × (1 − d), d = este % × (1 − 1/N): com 30%, kit 2 = 15%, kit 3 = 20%, kit 4 = 22,5%… sempre com o lucro subindo." },
 ];
@@ -41,14 +94,16 @@ const CAMPOS_MARGEM = [
   { k: "lucroMinimo", label: "Lucro mínimo por venda (R$)", pct: false },
 ];
 
-export default function PrecoPorQuantidade({ onToast }) {
+export default function PrecoPorQuantidade({ onToast, onSub }) {
   const { lojaId, atualizar } = useLoja();
-  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe, clientePagaHoje, publicacoesCanal } = useEscada();
+  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe, clientePagaHoje, publicacoesCanal, mapaRampa } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // diálogo "Manter assim" do avulso
   const [selPQ, setSelPQ] = useState(null); // linha com o detalhe aberto ("base" ou "n<qtd>")
   const [revisar, setRevisar] = useState(null); // linha de produto_variacoes aberta na tela suspensa (revisar insumos)
   const [produtoId, setProdutoId] = useState("");
   const [canalId, setCanalId] = useState("");
+  const { pedido: pedidoPasso } = useSelecaoPasso();
+  const [pedidoVisto, setPedidoVisto] = useState(0);
   const [p1Edit, setP1Edit] = useState({}); // { "<produto>|<canal>": "12.9" }
   const [extras, setExtras] = useState({}); // { "<produto>": [n...] }
   const [concEdit, setConcEdit] = useState({}); // { "<produto>|<canal>|<n>": "175" }
@@ -60,10 +115,21 @@ export default function PrecoPorQuantidade({ onToast }) {
   const [verOutras, setVerOutras] = useState(false); // quantidades não anunciadas no canal (recolhidas)
 
   const produtosLista = useMemo(() => itens.filter((i) => i.id.startsWith("p:")), [itens]);
+  // "Próximo →" de outro passo: produto (variação → o produto dela; kit não entra aqui) e canal.
+  if (pedidoPasso && pedidoPasso.para === "quantidade" && pedidoPasso.seq !== pedidoVisto) {
+    setPedidoVisto(pedidoPasso.seq);
+    const idv = pedidoPasso.itemId || "";
+    if (idv.startsWith("p:")) setProdutoId(idv.slice(2));
+    else if (idv.startsWith("v:")) setProdutoId(itens.find((i) => i.id === idv)?.produtoId || "");
+    if (pedidoPasso.canalId) setCanalId(pedidoPasso.canalId);
+  }
   const pid = produtoId && produtosLista.some((p) => p.id === `p:${produtoId}`) ? produtoId : produtosLista[0]?.id.slice(2) || "";
   const canal = canais.find((c) => c.id === canalId) || canais[0] || null;
   const chave = `${pid}|${canal?.id}`;
   const cfg = pid ? cfgDoProduto(pid) : null;
+  useEffect(() => {
+    publicarSelecao("quantidade", pid ? `p:${pid}` : null, canal?.id || null);
+  }, [pid, canal?.id]);
   const produto = produtos.find((p) => p.id === pid) || null;
 
   const variacoesDoProduto = itens.filter((i) => i.id.startsWith("v:") && i.produtoId === pid);
@@ -95,10 +161,32 @@ export default function PrecoPorQuantidade({ onToast }) {
   // "Preço de cadastro": o preço original (riscado) a cadastrar na plataforma
   // pra que, com a promo do desconto do canal/produto, o cliente pague o
   // preço real (mesma conta da 4º Anunciar — calcularAnuncio).
-  const celCadastro = (real, salvo, itemId) => {
+  const temItemNoCanal = (itemId) => itens.some((i) => i.id === itemId);
+  // Lucro de hoje do preço salvo (ao vivo, useEscada).
+  const lucroSalvoDe = (itemId) => {
+    if (!itemId || !canal) return null;
+    const t = itemId.startsWith("v:") ? "variacao" : itemId.startsWith("k:") ? "kit" : "produto";
+    const lp = precosEsc.find((x) => x.item_tipo === t && x.item_id === itemId.slice(2) && x.canal_id === canal.id);
+    return lp && lp.lucro != null ? Number(lp.lucro) : null;
+  };
+  // Preço que vale AGORA pro anúncio: o da Rampa (se em rampa), senão o salvo, senão o sugerido.
+  const precoAgora = (sugerido, salvo, itemId) => (itemId && canal ? mapaRampa.get(`${itemId}|${canal.id}`)?.real : null) ?? salvo ?? sugerido;
+  const anDe = (sugerido, salvo, itemId) => {
+    const real = precoAgora(sugerido, salvo, itemId);
+    return real > 0 ? anuncioDoItem({ itemId, canal, real, desconto: descAnuncio, publicacoes: publicacoesCanal }) : null;
+  };
+  const campoCadastro = (sugerido, salvo, itemId) => {
+    if (!itemId || !canal || !temItemNoCanal(itemId)) return null;
+    const a = anDe(sugerido, salvo, itemId);
+    if (!a) return null;
+    const t = itemId.startsWith("v:") ? "variacao" : itemId.startsWith("k:") ? "kit" : "produto";
+    return <EditarCadastro key={`${itemId}|${canal.id}|${a.original}`} canal={canal} itemTipo={t} itemId={itemId.slice(2)} real={precoAgora(sugerido, salvo, itemId)} atual={a.original} lojaId={lojaId} onToast={onToast} />;
+  };
+  const celCadastro = (sugerido, salvo, itemId) => {
+    const real = precoAgora(sugerido, salvo, itemId);
     // Já anunciado no canal: o preço original é o FIXO (só a promo muda).
     const an = real > 0 ? anuncioDoItem({ itemId, canal, real, desconto: descAnuncio, publicacoes: publicacoesCanal }) : null;
-    const anSalvo = !an?.riscadoFixo && salvo != null && Math.abs(salvo - real) >= 0.005 ? calcularAnuncio(salvo, descAnuncio) : null;
+    const anSalvo = null;
     return (
       <td className="num">
         {an ? (
@@ -602,11 +690,19 @@ export default function PrecoPorQuantidade({ onToast }) {
               <thead>
                 <tr>
                   <th>Kit</th>
-                  <th className="num">Preço sugerido</th>
-                  <th className="num">Lucro do pedido</th>
-                  <th className="num" title="Preço original (riscado) pra cadastrar na plataforma: com a promo do desconto do canal/produto, o cliente paga o preço sugerido">Preço de cadastro</th>
+                  <th className="num" title="Preço original (riscado) na plataforma — fixo depois de anunciado; a promo leva ao preço de agora (salvo ou Rampa)">
+                    Preço de cadastro<span className="th-sub">riscado · promo → cliente paga</span>
+                  </th>
+                  <th className="num">
+                    Preço sugerido<span className="th-sub">pelo app (curva)</span>
+                  </th>
+                  <th className="num">
+                    Lucro<span className="th-sub">no preço sugerido</span>
+                  </th>
+                  <th className="num">
+                    Preço salvo<span className="th-sub">o cliente paga</span>
+                  </th>
                   <th className="num">Cliente economiza</th>
-                  <th className="num">Preço salvo</th>
                   <th></th>
                 </tr>
               </thead>
@@ -637,6 +733,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                             {!anunciada && <span className="chip-cel">não anunciada em {canal.nome}</span>}
                             <FreteAviso frete={freteDe(valorBase)} compacto />
                           </td>
+                          {celCadastro(l.sugerido, dados.salvo1, `p:${pid}`)}
                           <td className="num">
                             <b>{BRL(l.sugerido)}</b>
                             <span className="sub">preço avulso</span>
@@ -646,19 +743,20 @@ export default function PrecoPorQuantidade({ onToast }) {
                             <span className="sub">{BRL(l.lucro)}/peça</span>
                             <div className="barra-lpp"><i style={{ width: `${Math.max(0, (l.lucro / maxLpp) * 100)}%` }} /></div>
                           </td>
-                          {celCadastro(l.sugerido, dados.salvo1, `p:${pid}`)}
-                          <td className="num">—</td>
                           <td className="num">
-                            {dados.salvo1 != null ? BRL(dados.salvo1) : "—"}
+                            {dados.salvo1 != null ? <b>{BRL(dados.salvo1)}</b> : "—"}
+                            {lucroSalvoDe(`p:${pid}`) != null && <span className="sub">lucro {BRL(lucroSalvoDe(`p:${pid}`))}</span>}
                             <span className="sub">
                               <span className="badge good">base</span>
                             </span>
                           </td>
+                          <td className="num">—</td>
                           <td></td>
                         </tr>,
                         linhaDetalhe(
                           "base",
                           <>
+                            {anunciada && campoCadastro(l.sugerido, dados.salvo1, `p:${pid}`)}
                             <div className="detalhe-cel-grade">
                               <div className="kv-cel">
                                 <small>Custo</small>
@@ -692,6 +790,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                           {l.concorrenteAbaixoDoPiso && <span className="chip-cel ruim">concorrente abaixo do mínimo</span>}
                           <FreteAviso frete={freteDe(valorLinha(l))} compacto />
                         </td>
+                        {celCadastro(l.sugerido, l.salvo, l.itemId)}
                         <td className="num">
                           <span className="sug">{BRL(l.sugerido)}</span>
                           <span className="sub">
@@ -705,13 +804,6 @@ export default function PrecoPorQuantidade({ onToast }) {
                           <span className="sub">{BRL(l.lucroPorPeca)}/peça</span>
                           <div className="barra-lpp"><i style={{ width: `${Math.max(0, (l.lucroPorPeca / maxLpp) * 100)}%` }} /></div>
                         </td>
-                        {celCadastro(l.sugerido, l.salvo, l.itemId)}
-                        <td className="num" style={{ color: "var(--good)" }}>
-                          {BRL(l.economia)}
-                          <span className="sub">
-                            {PCT(l.economiaPct)} vs {l.n}× avulso
-                          </span>
-                        </td>
                         <td className="num">
                           {l.salvo != null ? (
                             <span className="cel-preco-cmp" title={st?.texto}>
@@ -723,7 +815,14 @@ export default function PrecoPorQuantidade({ onToast }) {
                           ) : (
                             <span className="chip-cel">não existe</span>
                           )}
+                          {l.salvo != null && lucroSalvoDe(l.itemId) != null && <span className="sub">lucro {BRL(lucroSalvoDe(l.itemId))}</span>}
                           {st && st.tom !== "good" && <span className="sub">{st.texto.replace(/^[^\wÀ-ú]+\s*/, "")}</span>}
+                        </td>
+                        <td className="num" style={{ color: "var(--good)" }}>
+                          {BRL(l.economia)}
+                          <span className="sub">
+                            {PCT(l.economiaPct)} vs {l.n}× avulso
+                          </span>
                         </td>
                         <td>
                           {!anunciada ? (
@@ -748,6 +847,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                       linhaDetalhe(
                         chave,
                         <>
+                          {anunciada && l.cadastrada && campoCadastro(l.sugerido, l.salvo, l.itemId)}
                           <div className="detalhe-cel-grade">
                             <div className="kv-cel">
                               <small>Custo</small>
@@ -924,6 +1024,7 @@ export default function PrecoPorQuantidade({ onToast }) {
           onCancel={() => setConfirmar(null)}
         />
       )}
+      <ProximoPasso atual="quantidade" itemId={pid ? `p:${pid}` : null} canalId={canal?.id} onSub={onSub} />
     </>
   );
 }
