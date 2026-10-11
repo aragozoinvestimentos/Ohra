@@ -23,6 +23,7 @@ import {
 } from "../lib/fluxoCaixa.js";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
+import ResumoFixo from "./ResumoFixo.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -148,6 +149,15 @@ export default function FluxoCaixa({ onToast }) {
   // Gráfico e tabela: os meses passados (só realizado) + a projeção.
   const linhasProjecao = [...projecao.passado, ...projecao.linhas];
   const iMesAtual = projecao.passado.length;
+  // Mês escolhido (clique no gráfico/tabela ou o seletor dos Lançamentos):
+  // os KPIs do topo mostram ele. Mesma conta da projeção, cobrindo os 12
+  // meses antes e depois (alcance do seletor), pra qualquer mês escolhido.
+  const projecaoAmpla = useMemo(
+    () => projetar(lancamentos, { mesAtual, meses: 13, mesesPassados: 12, vendasEstimadas: vendasEst, custosEstimados: custosEst }),
+    [lancamentos, mesAtual, vendasEst, custosEst]
+  );
+  const linhaSel = [...projecaoAmpla.passado, ...projecaoAmpla.linhas].find((l) => l.mes === mesFiltro) || mesCorrente;
+  const selFase = mesFiltro < mesAtual ? "passado" : mesFiltro > mesAtual ? "futuro" : "atual";
   const mesCorrente = projecao.linhas[0];
   const ultimo = projecao.linhas[projecao.linhas.length - 1];
   const menor = projecao.linhas.reduce((m, l) => (!m || l.saldoFinal < m.saldoFinal ? l : m), null);
@@ -442,30 +452,38 @@ export default function FluxoCaixa({ onToast }) {
         </button>
       </TopbarAcoes>
 
+      <ResumoFixo>
       <Kpis
         itens={[
           { label: "Saldo atual", valor: BRL(saldoAtual), tom: saldoAtual >= 0 ? "destaque" : "bad", sub: "tudo que já foi recebido − pago" },
           {
-            label: `Entradas de ${rotuloMes(mesAtual)}`,
-            valor: BRL((mesCorrente?.entradasRealizadas || 0) + (mesCorrente?.entradasPrevistas || 0)),
-            sub: `${BRL(mesCorrente?.entradasRealizadas || 0)} recebido · ${BRL(mesCorrente?.entradasPrevistas || 0)} a receber`,
+            label: `Entradas de ${rotuloMes(mesFiltro)}`,
+            valor: BRL(linhaSel?.entradas || 0),
+            sub:
+              selFase === "passado"
+                ? `${BRL(linhaSel?.entradasRealizadas || 0)} recebido`
+                : `${BRL(linhaSel?.entradasRealizadas || 0)} recebido · ${BRL(linhaSel?.entradasPrevistas || 0)} a receber${linhaSel?.entradasEstimadas ? ` · ${BRL(linhaSel.entradasEstimadas)} estimado` : ""}`,
           },
           {
-            label: `Saídas de ${rotuloMes(mesAtual)}`,
-            valor: BRL((mesCorrente?.saidasRealizadas || 0) + (mesCorrente?.saidasPrevistas || 0)),
-            sub: `${BRL(mesCorrente?.saidasRealizadas || 0)} pago · ${BRL(mesCorrente?.saidasPrevistas || 0)} a pagar`,
+            label: `Saídas de ${rotuloMes(mesFiltro)}`,
+            valor: BRL(linhaSel?.saidas || 0),
+            sub:
+              selFase === "passado"
+                ? `${BRL(linhaSel?.saidasRealizadas || 0)} pago`
+                : `${BRL(linhaSel?.saidasRealizadas || 0)} pago · ${BRL(linhaSel?.saidasPrevistas || 0)} a pagar${linhaSel?.saidasEstimadas ? ` · ${BRL(linhaSel.saidasEstimadas)} estimado` : ""}`,
           },
           {
-            label: `Saldo projetado (${rotuloMes(ultimo?.mes || mesAtual)})`,
-            valor: BRL(ultimo?.saldoFinal || 0),
-            tom: (ultimo?.saldoFinal || 0) >= 0 ? undefined : "bad",
+            label: `Saldo no fim de ${rotuloMes(mesFiltro)}${selFase === "futuro" ? " (projetado)" : ""}`,
+            valor: BRL(linhaSel?.saldoFinal || 0),
+            tom: (linhaSel?.saldoFinal || 0) >= 0 ? undefined : "bad",
             sub:
               menor && menor.saldoFinal < 0
                 ? `fica negativo em ${rotuloMes(menor.mes)} (${BRL(menor.saldoFinal)})`
-                : `menor saldo: ${BRL(menor?.saldoFinal || 0)} em ${rotuloMes(menor?.mes || mesAtual)}`,
+                : `fim da projeção (${rotuloMes(ultimo?.mes || mesAtual)}): ${BRL(ultimo?.saldoFinal || 0)} · menor: ${BRL(menor?.saldoFinal || 0)} em ${rotuloMes(menor?.mes || mesAtual)}`,
           },
         ]}
       />
+      </ResumoFixo>
 
       {!temSaldoInicial && lancamentos.length > 0 && (
         <div className="alerta alerta-warn">
@@ -525,7 +543,16 @@ export default function FluxoCaixa({ onToast }) {
           </div>
         </div>
 
-        <GraficoProjecao linhas={linhasProjecao} iAtual={iMesAtual} />
+        <GraficoProjecao linhas={linhasProjecao} iAtual={iMesAtual} selecionado={mesFiltro} onSelecionar={setMesFiltro} />
+        <div className="grafico-sel">
+          Mostrando <b>{rotuloMes(mesFiltro)}</b> no topo e nos lançamentos — clique num mês do gráfico pra trocar
+          {mesFiltro !== mesAtual && (
+            <>
+              {" · "}
+              <button type="button" className="link-btn" onClick={() => setMesFiltro(mesAtual)}>voltar ao mês atual</button>
+            </>
+          )}
+        </div>
 
         <div className="tabela-toggle">
           <button type="button" className={`variacoes-toggle${verTabela ? " aberto" : ""}`} onClick={alternarTabela}>
@@ -546,7 +573,12 @@ export default function FluxoCaixa({ onToast }) {
             </thead>
             <tbody>
               {linhasProjecao.map((l, i) => (
-                <tr key={l.mes} className={i === iMesAtual ? "linha-atual" : l.passado ? "linha-passado" : ""}>
+                <tr
+                  key={l.mes}
+                  className={`linha-clicavel${i === iMesAtual ? " linha-atual" : l.passado ? " linha-passado" : ""}${l.mes === mesFiltro ? " linha-sel" : ""}`}
+                  onClick={() => setMesFiltro(l.mes)}
+                  title="Mostrar este mês no topo e nos lançamentos"
+                >
                   <td>
                     {rotuloMes(l.mes)}
                     {i === iMesAtual && <span className="h3-contagem">mês atual</span>}
@@ -1054,7 +1086,7 @@ function passoBonito(bruto) {
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
 }
 
-function GraficoProjecao({ linhas, iAtual = 0 }) {
+function GraficoProjecao({ linhas, iAtual = 0, selecionado, onSelecionar }) {
   const [hover, setHover] = useState(null);
   if (!linhas.length) return null;
   const W = 960;
@@ -1079,7 +1111,8 @@ function GraficoProjecao({ linhas, iAtual = 0 }) {
   const cx = (i) => padL + larguraMes * i + larguraMes / 2;
   const fmtCurto = (v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : Math.round(v).toLocaleString("pt-BR"));
   const pontos = linhas.map((l, i) => `${cx(i)},${y(l.saldoFinal)}`).join(" ");
-  const h = hover != null ? linhas[hover] : null;
+  const iSel = linhas.findIndex((l) => l.mes === selecionado);
+  const h = hover != null ? linhas[hover] : iSel >= 0 ? linhas[iSel] : null;
   const temEstimado = linhas.some((l) => l.entradasEstimadas || l.saidasEstimadas);
   const y0 = y(0);
   const ret = (x, v0, v1, cls) => {
@@ -1104,7 +1137,7 @@ function GraficoProjecao({ linhas, iAtual = 0 }) {
               {h.saidasEstimadas || h.entradasEstimadas ? " (com estimativa)" : ""} · saldo <b style={{ color: h.saldoFinal < 0 ? "var(--bad)" : undefined }}>{BRL(h.saldoFinal)}</b>
             </>
           ) : (
-            <span className="muted-cel">passe o mouse num mês</span>
+            <span className="muted-cel">passe o mouse ou clique num mês</span>
           )}
         </span>
       </div>
@@ -1120,12 +1153,13 @@ function GraficoProjecao({ linhas, iAtual = 0 }) {
           return (
             <g key={l.mes}>
               {i < iAtual && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-passado" />}
-              {hover === i && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-hover" />}
+              {iSel === i && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-sel" />}
+              {hover === i && iSel !== i && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-hover" />}
               {ret(x, 0, reaisE(l), "barra-entrada")}
               {ret(x, reaisE(l), l.entradas, "barra-entrada estimada")}
               {ret(x, 0, -reaisS(l), "barra-saida")}
               {ret(x, -reaisS(l), -l.saidas, "barra-saida estimada")}
-              <text x={cx(i)} y={H - 8} textAnchor="middle" className={`eixo${i === iAtual ? " eixo-atual" : ""}`}>{rotuloMes(l.mes, i === 0 || i === iAtual || l.mes.endsWith("-01"))}</text>
+              <text x={cx(i)} y={H - 8} textAnchor="middle" className={`eixo${i === iAtual ? " eixo-atual" : ""}${i === iSel ? " eixo-sel" : ""}`}>{rotuloMes(l.mes, i === 0 || i === iAtual || l.mes.endsWith("-01"))}</text>
             </g>
           );
         })}
@@ -1145,10 +1179,10 @@ function GraficoProjecao({ linhas, iAtual = 0 }) {
         <polygon points={`${cx(0)},${y0} ${pontos} ${cx(linhas.length - 1)},${y0}`} className="area-saldo negativo" clipPath="url(#fc-abaixo)" />
         <polyline points={pontos} className="linha-saldo" />
         {linhas.map((l, i) => (
-          <circle key={l.mes} cx={cx(i)} cy={y(l.saldoFinal)} r={hover === i ? 5 : 3.5} className={l.saldoFinal < 0 ? "ponto-saldo negativo" : "ponto-saldo"} />
+          <circle key={l.mes} cx={cx(i)} cy={y(l.saldoFinal)} r={hover === i || iSel === i ? 5 : 3.5} className={l.saldoFinal < 0 ? "ponto-saldo negativo" : "ponto-saldo"} />
         ))}
         {linhas.map((l, i) => (
-          <rect key={l.mes} x={padL + larguraMes * i} y={0} width={larguraMes} height={H} fill="transparent" onMouseEnter={() => setHover(i)} onClick={() => setHover(i)}>
+          <rect key={l.mes} x={padL + larguraMes * i} y={0} width={larguraMes} height={H} fill="transparent" style={{ cursor: "pointer" }} onMouseEnter={() => setHover(i)} onClick={() => onSelecionar?.(l.mes)}>
             <title>{`${rotuloMes(l.mes)}: entradas ${BRL(l.entradas)}, saídas ${BRL(l.saidas)}, saldo ${BRL(l.saldoFinal)}`}</title>
           </rect>
         ))}
