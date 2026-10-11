@@ -16,6 +16,7 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
   children,
+  larga = false,
 }) {
   const [texto, setTexto] = useState("");
   const bloqueado = confirmarComTexto != null && texto.trim() !== confirmarComTexto;
@@ -23,7 +24,7 @@ export default function ConfirmDialog({
   return (
     <Portal>
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div className={`modal-box${larga ? " modal-box-larga" : ""}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <h3>{titulo}</h3>
         {mensagem && <p className="modal-msg">{mensagem}</p>}
         {children}

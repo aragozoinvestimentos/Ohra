@@ -1513,3 +1513,14 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 /* checkbox dentro de .field (Encomenda em volume: "Isentar arte a partir de") */
 .field .check-inline input[type="checkbox"] { width: auto; min-height: 0; height: auto; padding: 0; margin: 0; flex: none; }
 .field label.check-inline { flex-direction: row; text-transform: none; }
+
+/* "Tirar do <canal>" (Produtos precificados / Anunciar) */
+.tirar-canal-lista { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 4px; font-size: 12.5px; }
+.tirar-canal-lista li { display: flex; flex-direction: column; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-3); }
+.tirar-canal-lista li span { color: var(--ink-soft); }
+.tirar-canal-opcoes { display: grid; gap: 6px; margin-top: 10px; }
+.tirar-opcao { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.tirar-opcao.on { border-color: var(--accent); background: var(--accent-soft); }
+.tirar-opcao input { margin-top: 3px; width: auto; flex: none; }
+.tirar-opcao small { display: block; color: var(--ink-soft); font-size: 11.5px; margin-top: 2px; }
+.tirar-canal .check-linha input { width: auto; }

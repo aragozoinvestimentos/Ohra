@@ -26,6 +26,7 @@ import { useRampas } from "../hooks/useRampas.js";
 import { useLembrado } from "../hooks/useLembrado.js";
 import { pegarPedido } from "../lib/navegar.js";
 import OndeSeDecide from "./OndeSeDecide.jsx";
+import TirarDoCanalDialog from "./TirarDoCanalDialog.jsx";
 import Estado, { PontoSaude } from "./Estado.jsx";
 import { estadoDoAlerta, estadoDoStatusSalvo, piorEstado } from "../lib/estados.js";
 
@@ -48,6 +49,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [excluirVariacao, setExcluirVariacao] = useState(null); // item "v:<id>" // { item, canal, sugerido, linha }
   const [salvandoAplicar, setSalvandoAplicar] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
+  const [tirarAlvo, setTirarAlvo] = useState(null); // { item, canal } — "Tirar do <canal>"
   const [editAlvo, setEditAlvo] = useState(null); // { id, nomeItem, nomeCanal, custoTotal, canal }
   const [edicao, setEdicao] = useState({ preco: "" });
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
@@ -458,6 +460,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
               × Excluir preço
             </button>
           )}
+          <button type="button" className="btn btn-mini" onClick={() => setTirarAlvo({ item, canal: canalObj })} title="Removeu o anúncio deste canal? Apaga a marcação ou tudo deste item neste canal">
+            Tirar do {canalObj.nome}
+          </button>
         </div>
       </div>
     );
@@ -1202,6 +1207,17 @@ export default function Historico({ onEditarCompleto, onToast }) {
         />
       )}
 
+      {tirarAlvo && (
+        <TirarDoCanalDialog
+          item={tirarAlvo.item}
+          canal={tirarAlvo.canal}
+          onToast={onToast}
+          onClose={() => {
+            setTirarAlvo(null);
+            setSel(null);
+          }}
+        />
+      )}
       {excluirAlvo && (
         <ConfirmDialog
           titulo="Excluir preço salvo"

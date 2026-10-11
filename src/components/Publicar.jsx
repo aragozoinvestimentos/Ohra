@@ -13,6 +13,7 @@ import { nomeCanal } from "../lib/canais.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
+import TirarDoCanalDialog from "./TirarDoCanalDialog.jsx";
 import OndeSeDecide from "./OndeSeDecide.jsx";
 import ProximoPasso from "./ProximoPasso.jsx";
 import { useSelecaoPasso } from "../lib/passosPreco.js";
@@ -40,6 +41,7 @@ export default function Publicar({ onToast, onSub }) {
   const [descEdit, setDescEdit] = useState(null); // { chave, itemId, canalId, valor }
   const [sel, setSel] = useState(null); // "itemId|canalId" com o detalhe aberto
   const [recalcular, setRecalcular] = useState(null);
+  const [tirarAlvo, setTirarAlvo] = useState(null); // { item, canal } — "Tirar do <canal>"
   const [lancado, setLancado] = useState(null); // { nome, emRampa } — tudo do item marcado "feito"
   const { atual: selPasso } = useSelecaoPasso(); // { l, c } — recalcular o riscado (ação explícita)
   // Itens em rampa (aba Crescimento) vendendo num preço diferente do salvo:
@@ -338,6 +340,9 @@ export default function Publicar({ onToast, onSub }) {
               Recalcular preço original
             </button>
           )}
+          <button type="button" className="btn btn-mini" onClick={() => setTirarAlvo({ item: l.item, canal: c })} title="Removeu o anúncio deste canal? Apaga a marcação ou tudo deste item neste canal">
+            Tirar do {nomeCanal(c)}
+          </button>
         </div>
       </div>
     );
@@ -354,6 +359,7 @@ export default function Publicar({ onToast, onSub }) {
 
   return (
     <>
+    {tirarAlvo && <TirarDoCanalDialog item={tirarAlvo.item} canal={tirarAlvo.canal} onToast={onToast} onClose={() => setTirarAlvo(null)} />}
     {recalcular && (
       <ConfirmDialog
         titulo="Recalcular o preço original?"
