@@ -159,7 +159,7 @@ export default function Crescimento({ onToast }) {
 
 function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, podeRegistrar, onRegistrar, onToast, selId, setSelId }) {
   const { lojas, lojaId, atualizar } = useLoja();
-  const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal } = dados;
+  const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal } = dados;
   const { rampas, disponivel, carregando } = rampasH;
   const [iniciar, setIniciar] = useState(null); // {} novo | { rampa } editar degraus
   const [mudar, setMudar] = useState(null); // { linha, dir: 1 | -1 }
@@ -190,9 +190,11 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
     if (!sel) return null;
     const { canal, est, cfg, r } = sel;
     const res = anuncioDaRampa({ produtoId: r.produto_id, canal, preco: est.preco, alvo: est.alvo, cfg, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoes: publicacoesCanal });
-    // Lucro do avulso = o da rampa (mesmo custo/taxas ao vivo).
-    return { ...res, linhas: res.linhas.map((l) => (l.id === "avulso" ? { ...l, lucro: est.lucroAtual } : l)) };
-  }, [sel, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoesCanal]);
+    // Lucro do avulso = o da rampa (mesmo custo/taxas ao vivo). Variação não
+    // anunciada no canal (2º Por quantidade → Anunciado em) fica de fora.
+    const linhasA = res.linhas.filter((l) => l.id === "avulso" || !l.itemId?.startsWith("v:") || anunciadoNoCanal(itens.find((i) => i.id === l.itemId), canal));
+    return { ...res, linhas: linhasA.map((l) => (l.id === "avulso" ? { ...l, lucro: est.lucroAtual } : l)) };
+  }, [sel, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal]);
 
   // --- KPIs ---
   const prontos = linhas.filter((l) => l.est.sugestao.chave === "subir");

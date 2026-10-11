@@ -42,7 +42,7 @@ function combinacoes(variacoes) {
 // em anúncios; ML/Shein = um anúncio por quantidade, com as variações. SKU do
 // item editável direto na tabela (✎).
 export default function FichaAnuncio({ onToast, onIrPara }) {
-  const { itens, canais, precos, produtos, kits, mapaRampa, clientePagaHoje, publicacoesCanal } = useEscada();
+  const { itens, canais, precos, produtos, kits, mapaRampa, clientePagaHoje, publicacoesCanal, anunciadoNoCanal } = useEscada();
   // Itens em rampa (Crescimento) vendendo num preço diferente do salvo: a
   // ficha usa os números da Rampa (riscado fixo no alvo + promo do degrau).
   const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
@@ -68,8 +68,9 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
     if (!itemBase) return [];
     if (isKit) return [itemBase];
     const vars = itens.filter((i) => i.id.startsWith("v:") && i.produtoId === donoId).sort((a, b) => (a.pecas || 0) - (b.pecas || 0));
-    return [itemBase, ...vars];
-  }, [itemBase, isKit, itens, donoId]);
+    // Só as quantidades anunciadas neste canal (2º Por quantidade → Anunciado em).
+    return [itemBase, ...vars.filter((it) => !canal || anunciadoNoCanal(it, canal))];
+  }, [itemBase, isKit, itens, donoId, canal, anunciadoNoCanal]);
 
   const ficha = useMemo(() => {
     if (!canal || !itensLista.length) return null;

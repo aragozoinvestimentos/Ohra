@@ -5,6 +5,8 @@ import { gravarPrecoNovo, alertaPreco } from "../lib/estrategia.js";
 import EditarDialog from "./EditarDialog.jsx";
 import FreteAviso from "./FreteAviso.jsx";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
+import { alternarQuantidade, quantidadeAnunciada, quantidadesGravadas, quantidadesPadrao, temColunaQuantidades } from "../lib/quantidadesAnuncio.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { dicaKitFreteGratis } from "../lib/freteGratis.js";
 import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -12,6 +14,7 @@ import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
 import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, calcularAnuncio, rotuloMinimo, escadaDoProduto, configEscada, lucroNoPreco, precoMinimoAceitavel } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
+import CanalTag from "./CanalTag.jsx";
 import Kpis from "./Kpis.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import { EditorVariacao } from "./VariacoesProduto.jsx";
@@ -54,6 +57,7 @@ export default function PrecoPorQuantidade({ onToast }) {
   const [regrasEdit, setRegrasEdit] = useState(null);
   const [confirmar, setConfirmar] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const [verOutras, setVerOutras] = useState(false); // quantidades não anunciadas no canal (recolhidas)
 
   const produtosLista = useMemo(() => itens.filter((i) => i.id.startsWith("p:")), [itens]);
   const pid = produtoId && produtosLista.some((p) => p.id === `p:${produtoId}`) ? produtoId : produtosLista[0]?.id.slice(2) || "";
@@ -116,17 +120,37 @@ export default function PrecoPorQuantidade({ onToast }) {
       </td>
     );
   };
-  const regra4x =
+  const linhas4xPQ =
     e && canal?.tipo === "shopee"
-      ? gruposRegra4x(
-          e.linhas.map((l) => {
-            const promo = l.base ? dados.p1 : l.salvo ?? l.sugerido;
-            // Riscado já anunciado fica fixo (anuncioDoItem); sem anúncio, real ÷ (1 − desconto).
-            const an = anuncioDoItem({ itemId: l.base ? `p:${pid}` : l.itemId, canal, real: promo, desconto: descAnuncio, publicacoes: publicacoesCanal });
-            return { n: l.n, promo, original: an?.original ?? promo * fatorOrig };
-          })
-        )
+      ? e.linhas.map((l) => {
+          const promo = l.base ? dados.p1 : l.salvo ?? l.sugerido;
+          // Riscado já anunciado fica fixo (anuncioDoItem); sem anúncio, real ÷ (1 − desconto).
+          const an = anuncioDoItem({ itemId: l.base ? `p:${pid}` : l.itemId, canal, real: promo, desconto: descAnuncio, publicacoes: publicacoesCanal });
+          return { n: l.n, promo, original: an?.original ?? promo * fatorOrig };
+        })
       : null;
+  const regra4x = linhas4xPQ ? gruposRegra4x(linhas4xPQ) : null;
+  // Quantidades anunciadas neste canal (v41, lib/quantidadesAnuncio.js).
+  const temV41 = temColunaQuantidades(produto);
+  const anunciadaPQ = (n) => quantidadeAnunciada({ produto, canal, n, linhas4x: linhas4xPQ });
+  const gravadasPQ = produto && canal ? quantidadesGravadas(produto, canal.id) : null;
+  const padraoPQ = canal ? quantidadesPadrao(canal, linhas4xPQ) : null;
+  async function alternarAnunciada(n) {
+    if (!supabase || !produto || !canal) return;
+    if (!temV41) return onToast("Rode o supabase/schema_v41.sql no Supabase pra escolher as quantidades anunciadas");
+    const novo = alternarQuantidade(produto, canal, n, e.linhas.map((l) => l.n), linhas4xPQ);
+    const { error } = await supabase.from("produtos_cadastro").update({ quantidades_anuncio: novo }).eq("id", produto.id);
+    if (error) return onToast(/quantidades_anuncio|column/i.test(error.message) ? "Rode o supabase/schema_v41.sql no Supabase" : `Não foi possível salvar: ${error.message}`);
+    recarregarCatalogo();
+  }
+  async function voltarPadraoQtds() {
+    if (!supabase || !produto || !canal || !temV41) return;
+    const novo = { ...(produto.quantidades_anuncio || {}) };
+    delete novo[canal.id];
+    const { error } = await supabase.from("produtos_cadastro").update({ quantidades_anuncio: Object.keys(novo).length ? novo : null }).eq("id", produto.id);
+    if (error) return onToast(`Não foi possível salvar: ${error.message}`);
+    recarregarCatalogo();
+  }
   const anuncioDe = (n) => (regra4x ? regra4x.grupos.findIndex((g) => g.includes(n)) + 1 : 1);
   const k2 = kits.find((l) => l.n === 2);
   const melhor = kits.reduce((a, b) => (a == null || b.lucro > a.lucro ? b : a), null);
@@ -521,6 +545,50 @@ export default function PrecoPorQuantidade({ onToast }) {
               </div>
             </div>
           )}
+          <div className="qtds-anuncio">
+            <span className="qtds-anuncio-tit">
+              Anunciado em <CanalTag canal={canal} />:
+            </span>
+            {e.linhas.map((l) => (
+              <button
+                key={l.n}
+                type="button"
+                className={`chip-qtd${anunciadaPQ(l.n) ? " on" : ""}`}
+                onClick={() => alternarAnunciada(l.n)}
+                disabled={!temV41}
+                aria-pressed={anunciadaPQ(l.n)}
+                title={anunciadaPQ(l.n) ? "Anunciada neste canal — clique pra tirar" : "Não anunciada neste canal — clique pra marcar"}
+              >
+                {l.n}
+              </button>
+            ))}
+            <span className="muted-cel">
+              {!temV41 ? (
+                "rode o supabase/schema_v41.sql pra escolher (por enquanto todas valem)"
+              ) : gravadasPQ ? (
+                <>
+                  escolha sua ·{" "}
+                  <button type="button" className="link-btn" onClick={voltarPadraoQtds}>
+                    voltar ao padrão
+                  </button>
+                </>
+              ) : canal?.tipo === "shopee" && padraoPQ ? (
+                "padrão: as que cabem no anúncio do avulso (regra de 4×)"
+              ) : (
+                "padrão: todas"
+              )}
+            </span>
+            <Ajuda texto="Quantidades que você anuncia neste canal. As não anunciadas ficam recolhidas embaixo (só consulta), sem Aplicar/Criar, e ficam fora da Anunciar, da Ficha, do “O que digitar” da Rampa e do filtro “Sugerido ≠ salvo” — nenhum ↻ nem lembrete pra elas. Preço salvo que já existir não é apagado. Na Shopee o padrão são as que cabem no anúncio do avulso pela regra de 4×." />
+          </div>
+          {temV41 && canal?.tipo === "shopee" && padraoPQ && gravadasPQ && gravadasPQ.some((n) => !padraoPQ.includes(n)) && (
+            <div className="aviso-cel qtds-aviso">
+              {gravadasPQ
+                .filter((n) => !padraoPQ.includes(n))
+                .map((n) => `Kit ${n} não cabe no mesmo anúncio`)
+                .join(" · ")}{" "}
+              — precisaria de anúncio separado (regra de 4× da Shopee).
+            </div>
+          )}
           <div className="legenda-tabela">
             <span className="legenda-tit">Legenda</span>
             <span>preço salvo: <i className="leg-ponto st-good" /> = sugerido</span>
@@ -558,13 +626,15 @@ export default function PrecoPorQuantidade({ onToast }) {
                       </tr>
                     );
                   const alternar = (chave) => () => setSelPQ((x) => (x === chave ? null : chave));
-                  return e.linhas.flatMap((l) => {
+                  const render = (l) => {
+                    const anunciada = anunciadaPQ(l.n);
                     if (l.base) {
                       return [
                         <tr key="base" className={`linha-cad linha-clicavel${selPQ === "base" ? " linha-atual" : ""}`} onClick={alternar("base")}>
                           <td>
                             <b className="kit-n">1 un.</b>
                             <span className="sub">{dados.itemPai.nome} · base</span>
+                            {!anunciada && <span className="chip-cel">não anunciada em {canal.nome}</span>}
                             <FreteAviso frete={freteDe(valorBase)} compacto />
                           </td>
                           <td className="num">
@@ -618,6 +688,7 @@ export default function PrecoPorQuantidade({ onToast }) {
                         <td>
                           <b className="kit-n">{l.n} un.</b>
                           <span className="sub">{l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}</span>
+                          {!anunciada && <span className="chip-cel">não anunciada em {canal.nome}</span>}
                           {l.concorrenteAbaixoDoPiso && <span className="chip-cel ruim">concorrente abaixo do mínimo</span>}
                           <FreteAviso frete={freteDe(valorLinha(l))} compacto />
                         </td>
@@ -655,7 +726,9 @@ export default function PrecoPorQuantidade({ onToast }) {
                           {st && st.tom !== "good" && <span className="sub">{st.texto.replace(/^[^\wÀ-ú]+\s*/, "")}</span>}
                         </td>
                         <td>
-                          {l.naoVale ? (
+                          {!anunciada ? (
+                            <span className="muted-cel">—</span>
+                          ) : l.naoVale ? (
                             <span className="badge neutro" title={l.motivo}>não vale oferecer</span>
                           ) : l.naoCompensa ? (
                             <span className="badge bad">não compensa</span>
@@ -726,12 +799,12 @@ export default function PrecoPorQuantidade({ onToast }) {
                             </div>
                           </div>
                           <div className="detalhe-cel-acoes">
-                            {!l.naoCompensa && !l.naoVale && l.cadastrada && (
+                            {anunciada && !l.naoCompensa && !l.naoVale && l.cadastrada && (
                               <button type="button" className={`btn btn-mini${st?.tom === "good" ? "" : " primary"}`} onClick={() => setConfirmar({ tipo: "aplicar", linha: l, precoEdit: st?.tom === "good" && l.salvo != null ? l.salvo.toFixed(2) : undefined })}>
                                 {st?.tom === "good" ? "✎ Editar preço" : `Aplicar ${BRL(l.sugerido)} (editável)`}
                               </button>
                             )}
-                            {!l.naoCompensa && !l.naoVale && !l.cadastrada && (
+                            {anunciada && !l.naoCompensa && !l.naoVale && !l.cadastrada && (
                               <button type="button" className="btn btn-mini primary" onClick={() => setConfirmar({ tipo: "criar", linha: l })}>
                                 + Criar variação
                               </button>
@@ -745,7 +818,25 @@ export default function PrecoPorQuantidade({ onToast }) {
                         </>
                       ),
                     ];
-                  });
+                  };
+                  // Quantidades não anunciadas neste canal: recolhidas embaixo, só pra consultar.
+                  const visiveis = e.linhas.filter((l) => l.base || anunciadaPQ(l.n));
+                  const outras = e.linhas.filter((l) => !l.base && !anunciadaPQ(l.n));
+                  return [
+                    ...visiveis.flatMap(render),
+                    ...(outras.length
+                      ? [
+                          <tr key="outras" className="linha-outras">
+                            <td colSpan={7}>
+                              <button type="button" className={`variacoes-toggle${verOutras ? " aberto" : ""}`} onClick={() => setVerOutras((v) => !v)}>
+                                <span className="seta">▸</span> outras quantidades ({outras.length}) · não anunciadas em {canal.nome}
+                              </button>
+                            </td>
+                          </tr>,
+                          ...(verOutras ? outras.flatMap(render) : []),
+                        ]
+                      : []),
+                  ];
                 })()}
               </tbody>
             </table>

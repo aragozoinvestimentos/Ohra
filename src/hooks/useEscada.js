@@ -2,9 +2,10 @@ import { useCallback, useMemo } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "./useRankingData.js";
 import { useRampas } from "./useRampas.js";
-import { configEscada, escadaDoProduto, pareceAtracao, precoMinimoAceitavel } from "../lib/escada.js";
+import { configEscada, descontoDoItem, escadaDoProduto, pareceAtracao, precoMinimoAceitavel } from "../lib/escada.js";
 import { alertaPreco, estrategiaEfetiva, produtosEmRampa } from "../lib/estrategia.js";
-import { mapaAnuncioRampa, valorClientePagaHoje } from "../lib/rampaAnuncio.js";
+import { anuncioDoItem, mapaAnuncioRampa, valorClientePagaHoje } from "../lib/rampaAnuncio.js";
+import { quantidadeAnunciada } from "../lib/quantidadesAnuncio.js";
 
 // Tudo que as telas de preço por quantidade/Anunciar/Produtos precificados
 // precisam, em cima do catálogo AO VIVO (mudou custo, preço salvo, taxa,
@@ -70,5 +71,38 @@ export function useEscada() {
     [alertaDe, escada, cfgDoProduto]
   );
 
-  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, pareceAtracaoDe, mapaRampa, clientePagaHoje };
+  // Quantidades anunciadas por canal (v41, lib/quantidadesAnuncio.js). Padrão
+  // da Shopee = regra de 4× pelos preços SALVOS (avulso + variações), com o
+  // riscado já anunciado fixo — a mesma conta da Anunciar.
+  const linhas4x = useMemo(() => {
+    const out = new Map();
+    for (const c of dados.canais.filter((x) => x.tipo === "shopee")) {
+      for (const p of dados.produtos) {
+        const doProduto = itens.filter((i) => i.id === `p:${p.id}` || (i.id.startsWith("v:") && i.produtoId === p.id));
+        const linhas = [];
+        for (const it of doProduto) {
+          const tipo = it.id.startsWith("p:") ? "produto" : "variacao";
+          const s = precos.find((x) => x.item_tipo === tipo && x.item_id === it.id.slice(2) && x.canal_id === c.id);
+          if (!s || !(Number(s.preco) > 0)) continue;
+          const { desconto } = descontoDoItem(it.id, c, { itens, produtos: dados.produtos, kits: dados.kits });
+          const an = anuncioDoItem({ itemId: it.id, canal: c, real: Number(s.preco), desconto, publicacoes: dados.publicacoesCanal });
+          linhas.push({ n: tipo === "produto" ? 1 : Number(it.pecas || it.quantidade) || 1, promo: Number(s.preco), original: an?.original ?? Number(s.preco) });
+        }
+        if (linhas.length) out.set(`${p.id}|${c.id}`, linhas);
+      }
+    }
+    return out;
+  }, [dados.canais, dados.produtos, dados.kits, dados.publicacoesCanal, itens, precos]);
+  // Item (p:/v:) anunciado no canal? Kit = sempre (escolha é por produto).
+  const anunciadoNoCanal = useCallback(
+    (item, canal) => {
+      if (!item || !canal || item.id.startsWith("k:")) return true;
+      const pid = item.id.startsWith("p:") ? item.id.slice(2) : item.produtoId;
+      const n = item.id.startsWith("p:") ? 1 : Number(item.pecas || item.quantidade) || 1;
+      return quantidadeAnunciada({ produto: produtosPorId.get(pid), canal, n, linhas4x: linhas4x.get(`${pid}|${canal.id}`) });
+    },
+    [produtosPorId, linhas4x]
+  );
+
+  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, pareceAtracaoDe, mapaRampa, clientePagaHoje, anunciadoNoCanal };
 }

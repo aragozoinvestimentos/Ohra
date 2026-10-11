@@ -38,7 +38,7 @@ import OndeSeDecide from "./OndeSeDecide.jsx";
 // foram simplificadas pra só o formulário.
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, pareceAtracaoDe, clientePagaHoje } = useEscada();
+  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, pareceAtracaoDe, clientePagaHoje, anunciadoNoCanal } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // { alvo, inicial } — diálogo "Manter assim"
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
   const [filamentosAlvo, setFilamentosAlvo] = useState(null);
@@ -410,7 +410,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
               ✎ Editar preço
             </button>
           )}
-          {sg && !sg.linha.naoVale && (!p || Math.abs(Number(p.preco) - sg.linha.sugerido) >= 0.005) && (
+          {!anunciadoNoCanal(item, canalObj) && <span className="chip-cel" title="Escolha em 2º Por quantidade → Anunciado em">não anunciada neste canal</span>}
+          {sg && !sg.linha.naoVale && anunciadoNoCanal(item, canalObj) && (!p || Math.abs(Number(p.preco) - sg.linha.sugerido) >= 0.005) && (
             <button type="button" className="btn btn-mini" onClick={() => setAplicarAlvo({ item, canal: canalObj, linha: sg.linha, salvo: p ? p.preco : null })}>
               Aplicar sugerido {BRL(sg.linha.sugerido)}
             </button>
@@ -687,7 +688,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
     canais.some((c) => {
       const sg = sugeridos.get(`${item.id}|${c.id}`);
       const p = sg ? precoDe(item, c) : null;
-      return !!(sg && p && !sg.linha.naoVale && Math.abs(Number(p.preco) - sg.linha.sugerido) >= 0.005);
+      // Quantidade não anunciada no canal (v41) fica fora do filtro.
+      return !!(sg && p && !sg.linha.naoVale && anunciadoNoCanal(item, c) && Math.abs(Number(p.preco) - sg.linha.sugerido) >= 0.005);
     });
   const variacoesDe = (produtoId) =>
     itens.filter((i) => i.tipo === "Variação" && i.produtoId === produtoId).sort((a, b) => a.quantidade - b.quantidade);
@@ -702,7 +704,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const pid = item.id.split(":")[1];
     const vars = variacoesDe(pid);
     const aberto = expandirTudo || expandidos.has(pid) || (alvoBusca && vars.some(bate) && !bate(item)) || (soSugeridoDifere && vars.some(itemSugeridoDifere));
-    return [{ item, nVariacoes: vars.length, aberto, pid }, ...(aberto ? vars.map((v) => ({ item: v, variacao: true })) : [])];
+    // Com "Sugerido ≠ salvo", só as variações que diferem (quantidade não anunciada no canal fica fora).
+    const varsVis = soSugeridoDifere ? vars.filter(itemSugeridoDifere) : vars;
+    return [{ item, nVariacoes: vars.length, aberto, pid }, ...(aberto ? varsVis.map((v) => ({ item: v, variacao: true })) : [])];
   });
   // Exportação e contagem usam tudo (produto + todas as variações dele).
   const itensFiltrados = topo.flatMap((item) => (item.tipo === "Produto" ? [item, ...variacoesDe(item.id.split(":")[1])] : [item]));

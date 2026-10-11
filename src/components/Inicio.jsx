@@ -85,7 +85,7 @@ function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
 export default function Inicio({ onIrPara }) {
   const { lojaId } = useLoja();
   const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf } = useCrescimento();
-  const { itens, canais, precos, produtos, kits, materiais, publicacoesCanal, mapaRampa, clientePagaHoje, alertaDe, pareceAtracaoDe } = dados;
+  const { itens, canais, precos, produtos, kits, materiais, publicacoesCanal, mapaRampa, clientePagaHoje, alertaDe, pareceAtracaoDe, anunciadoNoCanal } = dados;
   const semana = useSemanaPendente();
   const gestao = useDadosGestao();
   const [verTodos, setVerTodos] = useState(false);
@@ -100,8 +100,8 @@ export default function Inicio({ onIrPara }) {
 
   // --- Catálogo: só itens ANUNCIADOS (marcados "feito" na Anunciar) ---
   const anunciar = useMemo(
-    () => linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje }),
-    [itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje]
+    () => linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, anunciadoNoCanal }),
+    [itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, anunciadoNoCanal]
   );
   const anunciados = useMemo(() => {
     const out = [];

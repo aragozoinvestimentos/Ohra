@@ -1366,3 +1366,13 @@ button.ficha-anuncio-cab:hover { background: var(--surface-2); }
 .semana-pend-acoes { display: flex; gap: 12px; }
 .bloco-periodo { margin: 6px 0 8px; }
 .periodo-dias { font-size: 12.5px; padding: 7px 0; color: var(--ink-soft); }
+
+/* Quantidades anunciadas por canal (2º Por quantidade, v41) */
+.qtds-anuncio { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.qtds-anuncio-tit { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.chip-qtd { min-width: 30px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink-soft); font-size: 12px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
+.chip-qtd.on { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.chip-qtd:disabled { cursor: default; opacity: .6; }
+.qtds-anuncio .link-btn { margin: 0; }
+.qtds-aviso { margin: 8px 14px 0; }
+.linha-outras td { background: var(--surface-3); padding-top: 6px; padding-bottom: 6px; }

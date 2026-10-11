@@ -6,7 +6,8 @@ import { anuncioMudou, descontoDoItem } from "./escada.js";
 import { anuncioDoItem, descricaoMudanca } from "./rampaAnuncio.js";
 import { itemTipoDoId } from "./variacoes.js";
 
-export function linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje }) {
+// Quantidade não anunciada no canal (v41, anunciadoNoCanal) fica de fora: sem ↻ nem lembrete.
+export function linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, anunciadoNoCanal = null }) {
   const ordem = [];
   for (const p of itens.filter((i) => i.id.startsWith("p:"))) {
     ordem.push(p);
@@ -21,6 +22,7 @@ export function linhasAnunciar({ itens, canais, precos, produtos, kits, publicac
       for (const c of canais) {
         const s = precos.find((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === c.id);
         if (!s || !(Number(s.preco) > 0)) continue;
+        if (anunciadoNoCanal && !anunciadoNoCanal(item, c)) continue;
         const { desconto, proprio } = descontoDoItem(item.id, c, { itens, produtos, kits });
         const ra = mapaRampa.get(`${item.id}|${c.id}`) || null;
         // Já anunciado = riscado FIXO (só a promo muda) — anuncioDoItem, conta única.
