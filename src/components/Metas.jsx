@@ -7,7 +7,7 @@ import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import Termometro from "./Termometro.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
-import { somarMeses } from "../lib/fluxoCaixa.js";
+import { realDoMes, somarMeses } from "../lib/fluxoCaixa.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
 import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
@@ -234,9 +234,7 @@ export default function Metas({ onToast }) {
 
   // Faturamento real = vendas/encomendas recebidas no mês; resultado real =
   // tudo que entrou − tudo que saiu (sem saldo inicial/aporte, que não são venda).
-  const caixaValido = (caixaMes || []).filter((l) => l.recorrencia !== "mensal" && l.categoria !== "saldo_inicial" && l.categoria !== "aporte");
-  const faturamentoReal = caixaValido.filter((l) => l.tipo === "entrada" && (l.categoria === "venda" || l.categoria === "encomenda")).reduce((s, l) => s + Number(l.valor || 0), 0);
-  const resultadoReal = caixaValido.reduce((s, l) => s + (l.tipo === "entrada" ? 1 : -1) * Number(l.valor || 0), 0);
+  const { faturamento: faturamentoReal, resultado: resultadoReal } = realDoMes(caixaMes || [], mesAtual);
   const pctDe = (v, meta) => (meta > 0 ? ` · ${Math.round((v / meta) * 100)}% da meta` : "");
 
   return (

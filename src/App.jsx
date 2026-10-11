@@ -5,6 +5,8 @@ import LojaSwitcher from "./components/LojaSwitcher.jsx";
 import LojaGate from "./components/LojaGate.jsx";
 import Icone from "./components/Icone.jsx";
 import { useLoja } from "./lib/LojaContext.jsx";
+import SemanaPendenteProvider from "./components/SemanaPendenteProvider.jsx";
+import { useSemanaPendente } from "./hooks/useSemanaPendente.js";
 
 // Se um deploy novo saiu com o app aberto, o pedaço antigo da aba não existe
 // mais no servidor — recarrega a página uma vez pra pegar a versão nova.
@@ -51,6 +53,7 @@ const Tutorial = lazyAba(() => import("./components/Tutorial.jsx"));
 const Configuracao = lazyAba(() => import("./components/Configuracao.jsx"));
 const Crescimento = lazyAba(() => import("./components/Crescimento.jsx"));
 const FluxoCaixa = lazyAba(() => import("./components/FluxoCaixa.jsx"));
+const Inicio = lazyAba(() => import("./components/Inicio.jsx"));
 
 const THEME_KEY = "ohra:theme";
 
@@ -70,6 +73,10 @@ function loadTheme() {
 // aba tem um ícone de traço (Icone.jsx) e um subtítulo curto mostrado no
 // cabeçalho da tela.
 const GRUPOS = [
+  {
+    titulo: "Início",
+    tabs: [{ key: "inicio", label: "Início", sub: "O que pede atenção hoje e como a loja está" }],
+  },
   {
     titulo: "Precificar",
     tabs: [
@@ -117,12 +124,12 @@ const TABS = [...GRUPOS.flatMap((g) => g.tabs), TUTORIAL];
 
 const TAB_KEY = "ohra:ultima-aba";
 
-// Lembra a última aba aberta pra não voltar sempre pro início ao atualizar
-// a página — só aceita uma chave que ainda exista (uma aba pode ter sido
-// renomeada/removida entre versões do app).
+// O app abre no Início (sessão nova do navegador). Recarregar a página na
+// mesma sessão continua na aba em que estava — só aceita uma chave que ainda
+// exista (uma aba pode ter sido renomeada/removida entre versões do app).
 function loadTab() {
   try {
-    const saved = localStorage.getItem(TAB_KEY);
+    const saved = sessionStorage.getItem(TAB_KEY);
     // "lojas"/"canais"/"taxas" viraram sub-abas de "config" (set/2026)
     if (saved === "lojas" || saved === "canais" || saved === "taxas") return "config";
     // "Comparativo" virou a sub-aba "Comparar canais" da Precificação por Canal (set/2026)
@@ -131,7 +138,7 @@ function loadTab() {
   } catch {
     // sem problema, usa o padrão
   }
-  return "producao";
+  return "inicio";
 }
 
 export default function App() {
@@ -185,6 +192,7 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem(TAB_KEY, tab);
+      sessionStorage.setItem(TAB_KEY, tab);
     } catch {
       // sem problema, só não lembra da próxima vez
     }
@@ -276,6 +284,7 @@ export default function App() {
   }
 
   return (
+    <SemanaPendenteProvider onToast={showToast}>
     <div className={`shell ${menuAberto ? "menu-aberto" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
@@ -300,6 +309,7 @@ export default function App() {
                 <button key={t.key} data-tab={t.key} className={tab === t.key ? "active" : ""} onClick={() => irPara(t.key)} title={t.label}>
                   <Icone nome={t.key} />
                   <span>{t.label}</span>
+                  {t.key === "crescimento" && <BolinhaSemana />}
                 </button>
               ))}
             </div>
@@ -339,6 +349,14 @@ export default function App() {
         </header>
 
         <div className="content">
+        <section className={`view ${tab === "inicio" ? "active" : ""}`}>
+          {visitadas.has("inicio") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Inicio key={lojaId || "sem-loja"} onIrPara={irPara} onToast={showToast} />
+            </Suspense>
+          )}
+        </section>
+
         <section className={`view ${tab === "config" ? "active" : ""}`}>
           {visitadas.has("config") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
@@ -474,5 +492,18 @@ export default function App() {
 
       <div className={`toast ${toast.show ? "show" : ""}`}>{toast.msg}</div>
     </div>
+    </SemanaPendenteProvider>
+  );
+}
+
+// Bolinha com a contagem de semanas pendentes no item Crescimento do menu
+// (mesmo estado do Início e da faixa no Crescimento).
+function BolinhaSemana() {
+  const { pendentes } = useSemanaPendente();
+  if (!pendentes.length) return null;
+  return (
+    <span className="bolinha-menu" title={`${pendentes.length} ${pendentes.length === 1 ? "item" : "itens"} com a semana pendente`}>
+      {pendentes.length}
+    </span>
   );
 }

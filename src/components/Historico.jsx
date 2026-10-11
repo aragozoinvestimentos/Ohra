@@ -8,7 +8,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../hooks/useRankingData.js";
 import { useEscada } from "../hooks/useEscada.js";
-import { statusPrecoSalvo, sugestaoKit, configEscada, pareceAtracao, precoMinimoAceitavel } from "../lib/escada.js";
+import { statusPrecoSalvo, sugestaoKit, configEscada, precoMinimoAceitavel } from "../lib/escada.js";
 import { alertaPreco, rotuloEstrategia, ESTRATEGIAS } from "../lib/estrategia.js";
 import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import FreteAviso from "./FreteAviso.jsx";
@@ -38,7 +38,7 @@ import OndeSeDecide from "./OndeSeDecide.jsx";
 // foram simplificadas pra só o formulário.
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, clientePagaHoje } = useEscada();
+  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, pareceAtracaoDe, clientePagaHoje } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // { alvo, inicial } — diálogo "Manter assim"
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
   const [filamentosAlvo, setFilamentosAlvo] = useState(null);
@@ -156,13 +156,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const outras = canais.map((c) => ({ canal: c, linha: precoDe(item, c) })).filter((o) => o.linha);
     setEstrategiaAlvo({ alvo: { item, canal: canalObj, linha, outras }, inicial });
   }
-  // Avulso que "parece atração" (margem abaixo da desejada, kit 2 compensa) e
-  // ainda sem estratégia escolhida → só sugestão.
-  function sugereAtracao(item, canalObj, al) {
-    if (!item.id.startsWith("p:") || !al || al.estrategia.origem !== "padrao" || al.linha?.estrategia) return false;
-    const d = escada(item.id.slice(2), canalObj);
-    return !!d && pareceAtracao(d.escada, d.p1, cfgDoProduto(item.id.slice(2)));
-  }
+  // "Parece atração" — conta única no useEscada (também lida pelo Início).
+  const sugereAtracao = (item, canalObj, al) => pareceAtracaoDe(item, canalObj, al);
 
   // Exclui a variação (e os preços salvos dela, que não têm FK) — o produto não muda.
   async function confirmarExcluirVariacao() {

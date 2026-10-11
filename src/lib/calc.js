@@ -367,3 +367,29 @@ export function reservaProducao(produto, materiais) {
   const acabamento = Number(r.acabamento) || 0;
   return { falhas, manutencao, acabamento, total: falhas + manutencao + acabamento };
 }
+
+// Reserva de produção de um item do catálogo (p:/v:/k:) — produto = a dele;
+// variação = a do produto × quantidade; kit = soma das peças × qtd. Sem
+// detalhamento do Custo de Produção = null.
+export function reservaDoItem(item, produtos, materiais) {
+  if (!item) return null;
+  const umProduto = (pid) => reservaProducao((produtos || []).find((p) => p.id === pid), materiais);
+  if (item.id.startsWith("p:")) return umProduto(item.id.slice(2));
+  if (item.id.startsWith("v:")) {
+    const r = umProduto(item.produtoId);
+    return r ? { total: r.total * (Number(item.pecas || item.quantidade) || 1) } : null;
+  }
+  if (item.id.startsWith("k:")) {
+    let total = 0;
+    let algum = false;
+    for (const c of item.componentes || []) {
+      const r = umProduto(c.produtoId);
+      if (r) {
+        total += r.total * (Number(c.quantidade) || 0);
+        algum = true;
+      }
+    }
+    return algum ? { total } : null;
+  }
+  return null;
+}

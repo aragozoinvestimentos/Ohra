@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import BuscaItem from "./BuscaItem.jsx";
-import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, reservaProducao } from "../lib/calc.js";
+import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, reservaDoItem } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { gravarPrecoNovo, alertaPreco, produtosEmRampa } from "../lib/estrategia.js";
@@ -384,24 +384,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   // Reserva de produção (falhas + manutenção + acabamento) do item escolhido —
   // já dentro do custo; só informativa, pro fundo de reserva do mês. Kit =
   // soma das peças; produto sem detalhamento do Custo de Produção = não mostra.
-  const reserva = (() => {
-    if (!itemSel) return null;
-    const umProduto = (pid) => reservaProducao(produtos.find((p) => p.id === pid), materiais);
-    if (itemSel.id.startsWith("p:")) return umProduto(itemSel.id.slice(2));
-    if (itemSel.id.startsWith("k:")) {
-      let total = 0;
-      let algum = false;
-      for (const c of itemSel.componentes || []) {
-        const r = umProduto(c.produtoId);
-        if (r) {
-          total += r.total * (Number(c.quantidade) || 0);
-          algum = true;
-        }
-      }
-      return algum ? { total } : null;
-    }
-    return null;
-  })();
+  const reserva = itemSel ? reservaDoItem(itemSel, produtos, materiais) : null;
 
   async function salvarSugeridoKit() {
     setConfirmarKit(false);

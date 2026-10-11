@@ -1,7 +1,7 @@
 import { hojeSP } from "../lib/datas.js";
 import { useState } from "react";
 import { BRL } from "../lib/format.js";
-import { conhecidosDe, pedidosParaDecisao, vendasParaDecisao } from "../lib/rampa.js";
+import { conhecidosDe, diasDoRegistro, fmtSemana, pedidosParaDecisao, porSemana, vendasParaDecisao } from "../lib/rampa.js";
 
 const num = (v) => {
   const x = Number(v);
@@ -33,7 +33,9 @@ export default function GraficoRampa({ est }) {
   const pontos = [];
   for (const d of datas) {
     const ant = pontos[pontos.length - 1] || { preco: null, aval: null };
-    const doDia = regs.filter((r) => r.data === d);
+    // Registro por período (v40): vendas/funil por semana (× 7 ÷ N dias).
+    const doDia = regs.filter((r) => r.data === d).map((r) => (r.tipo === "semana" ? porSemana(r) : r));
+    const diasPer = Math.max(0, ...regs.filter((r) => r.data === d && r.tipo === "semana").map(diasDoRegistro).filter((x) => x !== 7));
     const ultPreco = [...doDia].reverse().find((r) => r.preco != null);
     const ultAval = [...doDia].reverse().find((r) => r.avaliacoes != null);
     const vendas = doDia.filter((r) => r.tipo === "semana").reduce((s, r) => s + num(r.vendas), 0);
@@ -53,6 +55,7 @@ export default function GraficoRampa({ est }) {
       vendas,
       conhecidos: Math.min(conhecidos, vendas),
       temSemana: doDia.some((r) => r.tipo === "semana"),
+      diasPer,
       mudanca,
       ctr: comFunil.length && imp > 0 ? cli / imp : null,
       conv: comFunil.length && cli > 0 ? ped / cli : null,
@@ -139,8 +142,8 @@ export default function GraficoRampa({ est }) {
             <>
               <strong>{dataBR(h.data)}</strong>
               {h.preco != null ? ` · ${BRL(h.preco)}` : ""}
-              {h.temSemana ? ` · ${h.vendas} venda${h.vendas === 1 ? "" : "s"}` : ""}
-              {h.conhecidos > 0 ? ` (${h.conhecidos} de conhecidos)` : ""}
+              {h.temSemana ? ` · ${fmtSemana(h.vendas)} venda${h.vendas === 1 ? "" : "s"}${h.diasPer ? `/semana (registro de ${h.diasPer} dias)` : ""}` : ""}
+              {h.conhecidos > 0 ? ` (${fmtSemana(h.conhecidos)} de conhecidos)` : ""}
               {h.aval != null ? ` · ${h.aval} avaliações` : ""}
               {h.ctr != null ? ` · CTR ${fmtPct(h.ctr)}` : ""}
               {h.conv != null ? ` · conversão ${fmtPct(h.conv)}` : ""}
@@ -191,10 +194,10 @@ export default function GraficoRampa({ est }) {
               <rect x={cx(i) - Math.min(14, larg * 0.22)} y={baseVendas - hV(p.vendas)} width={Math.min(28, larg * 0.44)} height={hV(p.vendas)} rx="4" className="barra-vendas" />
               {p.conhecidos > 0 && (
                 <rect x={cx(i) - Math.min(14, larg * 0.22)} y={baseVendas - hV(p.vendas)} width={Math.min(28, larg * 0.44)} height={hV(p.conhecidos)} rx="4" className="barra-conhecidos">
-                  <title>{`${p.conhecidos} de conhecidos (amigos/família) — fora do orgânico`}</title>
+                  <title>{`${fmtSemana(p.conhecidos)} de conhecidos (amigos/família) — fora do orgânico`}</title>
                 </rect>
               )}
-              <text x={cx(i)} y={baseVendas - hV(p.vendas) - 4} textAnchor="middle" className="eixo rotulo-vendas">{p.vendas}</text>
+              <text x={cx(i)} y={baseVendas - hV(p.vendas) - 4} textAnchor="middle" className="eixo rotulo-vendas">{fmtSemana(p.vendas)}</text>
             </g>
           ) : null
         )}

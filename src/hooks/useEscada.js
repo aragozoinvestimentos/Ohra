@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "./useRankingData.js";
 import { useRampas } from "./useRampas.js";
-import { configEscada, escadaDoProduto, precoMinimoAceitavel } from "../lib/escada.js";
+import { configEscada, escadaDoProduto, pareceAtracao, precoMinimoAceitavel } from "../lib/escada.js";
 import { alertaPreco, estrategiaEfetiva, produtosEmRampa } from "../lib/estrategia.js";
 import { mapaAnuncioRampa, valorClientePagaHoje } from "../lib/rampaAnuncio.js";
 
@@ -58,5 +58,17 @@ export function useEscada() {
     [precos, cfgDoProduto, emRampa, clientePagaHoje]
   );
 
-  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, mapaRampa, clientePagaHoje };
+  // Avulso abaixo do mínimo que "parece atração" (margem abaixo da desejada,
+  // mas o kit 2 compensa) e ainda sem estratégia escolhida → só sugestão.
+  const pareceAtracaoDe = useCallback(
+    (item, canal, al = null) => {
+      const a = al || alertaDe(item, canal);
+      if (!item?.id?.startsWith("p:") || !a || a.tipo !== "abaixo-minimo" || a.estrategia.origem !== "padrao" || a.linha?.estrategia) return false;
+      const d = escada(item.id.slice(2), canal);
+      return !!d && pareceAtracao(d.escada, d.p1, cfgDoProduto(item.id.slice(2)));
+    },
+    [alertaDe, escada, cfgDoProduto]
+  );
+
+  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, pareceAtracaoDe, mapaRampa, clientePagaHoje };
 }

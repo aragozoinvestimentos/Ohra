@@ -1,6 +1,13 @@
 // Ícones de traço do menu lateral (substituem os emojis) — SVG inline, herdam
 // a cor do texto via currentColor, então funcionam igual no tema claro/escuro.
 const PATHS = {
+  inicio: (
+    <>
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5.5 9.5V20h13V9.5" />
+      <path d="M10 20v-5h4v5" />
+    </>
+  ),
   producao: (
     <>
       <rect x="4" y="3" width="16" height="18" rx="2" />

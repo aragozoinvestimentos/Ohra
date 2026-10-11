@@ -178,3 +178,69 @@ export function statusLancamento(l, hoje) {
   if (l.data_realizada) return l.tipo === "entrada" ? "recebido" : "pago";
   return l.data_prevista < hoje ? "atrasado" : "previsto";
 }
+
+// Estimativa mensal de vendas/custos variáveis da projeção (campo da tela do
+// Fluxo de Caixa; "" = média dos 3 últimos meses fechados), por loja, no navegador.
+const ESTIMATIVA_KEY = "ohra:caixa:estimativas";
+
+export function loadEstimativas(lojaId) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ESTIMATIVA_KEY) || "{}");
+    return raw[lojaId || "sem-loja"] || { vendas: "", custos: "" };
+  } catch {
+    return { vendas: "", custos: "" };
+  }
+}
+
+export function saveEstimativas(lojaId, valor) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ESTIMATIVA_KEY) || "{}");
+    raw[lojaId || "sem-loja"] = valor;
+    localStorage.setItem(ESTIMATIVA_KEY, JSON.stringify(raw));
+  } catch {
+    // sem problema, só não lembra da próxima vez
+  }
+}
+
+
+// Faturamento real (vendas/encomendas recebidas) e resultado real (entradas −
+// saídas, sem saldo inicial/aporte) dos lançamentos realizados de um mês —
+// mesma conta da aba Metas.
+export function realDoMes(lancamentos, mes) {
+  const validos = (lancamentos || []).filter(
+    (l) => l.recorrencia !== "mensal" && l.data_realizada && mesDe(l.data_realizada) === mes && l.categoria !== "saldo_inicial" && l.categoria !== "aporte"
+  );
+  const faturamento = validos.filter((l) => l.tipo === "entrada" && (l.categoria === "venda" || l.categoria === "encomenda")).reduce((s, l) => s + Number(l.valor || 0), 0);
+  const resultado = validos.reduce((s, l) => s + (l.tipo === "entrada" ? 1 : -1) * Number(l.valor || 0), 0);
+  return { faturamento, resultado };
+}
+
+// Resumo do caixa pro Início (as mesmas contas da aba Fluxo de Caixa):
+// saldo de hoje, menor saldo previsto nos próximos `meses`, contas atrasadas
+// (previstas não realizadas, inclusive recorrentes ainda não confirmadas) e
+// os próximos `dias` dias.
+export function resumoCaixa(lancamentos, { hoje, estimativas = { vendas: "", custos: "" }, meses = 3, dias = 7 } = {}) {
+  const mesAtual = mesDe(hoje);
+  const vendasEst = estimativas.vendas === "" ? mediaMensal(lancamentos, "entrada", mesAtual) : Number(estimativas.vendas) || 0;
+  const custosEst = estimativas.custos === "" ? mediaMensal(lancamentos, "saida", mesAtual) : Number(estimativas.custos) || 0;
+  const proj = projetar(lancamentos, { mesAtual, meses, vendasEstimadas: vendasEst, custosEstimados: custosEst });
+  const menor = proj.linhas.reduce((m, l) => (!m || l.saldoFinal < m.saldoFinal ? l : m), null);
+  const limite = (() => {
+    const d = new Date(`${hoje}T12:00:00`);
+    d.setDate(d.getDate() + dias);
+    return d.toISOString().slice(0, 10);
+  })();
+  const abertos = [...lancamentosReais(lancamentos).filter((l) => !l.data_realizada), ...ocorrenciasRecorrentes(lancamentos, mesAtual, somarMeses(mesAtual, 1))];
+  const atrasados = abertos.filter((l) => l.data_prevista < hoje).sort((a, b) => a.data_prevista.localeCompare(b.data_prevista));
+  const proximos = abertos.filter((l) => l.data_prevista >= hoje && l.data_prevista <= limite).sort((a, b) => a.data_prevista.localeCompare(b.data_prevista));
+  return {
+    saldoHoje: saldoRealizado(lancamentos, hoje),
+    menor,
+    mesAtual: proj.linhas[0] || null,
+    atrasados,
+    proximos,
+    ...realDoMes(lancamentos, mesAtual),
+    temLancamentos: lancamentos.length > 0,
+    temSaldoInicial: lancamentos.some((l) => l.categoria === "saldo_inicial"),
+  };
+}

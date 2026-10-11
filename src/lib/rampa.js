@@ -176,9 +176,32 @@ const menosDias = (iso, n) => {
 // semana; NÃO contam em nenhuma decisão (portão de vendas, check da subida,
 // acima do alvo, conversão do funil, vendas baixas no lançamento, teste de
 // lançamento). null = 0. Toda regra de decisão usa estas funções.
-export const conhecidosDe = (r) => Math.max(0, Math.round(num(r?.conhecidos)));
+export const conhecidosDe = (r) => Math.max(0, num(r?.conhecidos));
 export const vendasParaDecisao = (r) => Math.max(0, num(r?.vendas) - conhecidosDe(r));
 export const pedidosParaDecisao = (r) => Math.max(0, num(r?.pedidos) - conhecidosDe(r));
+
+// ---- Registro por período (schema v40) ----
+// Registro normal = 7 dias (até a véspera da data). Depois de pular semanas,
+// o registro cobre de `periodo_inicio` até a véspera da data (N dias). Toda
+// regra SEMANAL (check da subida, acima do alvo, ROAS/Ads, funil, lucro da
+// semana, gráficos) usa os números por semana (× 7 ÷ N); somas acumuladas
+// (vendas desde o degrau, vendas no total, teste de lançamento) usam o real.
+// Número por semana pra mostrar: inteiro quando é inteiro, senão 1 casa ("2,3").
+export const fmtSemana = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1).replace(".", ","));
+export const CAMPOS_POR_SEMANA = ["vendas", "conhecidos", "ads_vendas", "ads_gasto", "ads_cliques", "visualizacoes", "visitas", "pedidos", "vendas_total", "comissao"];
+export function diasDoRegistro(r) {
+  if (!r?.periodo_inicio || !r?.data) return 7;
+  const d = diasEntre(String(r.periodo_inicio).slice(0, 10), String(r.data).slice(0, 10));
+  return d > 0 ? d : 7;
+}
+export function porSemana(r) {
+  const dias = diasDoRegistro(r);
+  if (dias === 7) return r;
+  const f = 7 / dias;
+  const out = { ...r, diasPeriodo: dias };
+  for (const k of CAMPOS_POR_SEMANA) if (r[k] != null && r[k] !== "") out[k] = num(r[k]) * f;
+  return out;
+}
 
 // ---- Funil do anúncio ----
 // Semanas válidas = registros "semana" com impressões e cliques preenchidos,
@@ -194,7 +217,8 @@ export function metricasFunil(rampa, registros, regras, hoje) {
   const preco = degraus[i] ?? null;
   const regs = (registros || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.criado_em || "").localeCompare(String(b.criado_em || "")));
   const temFunil = (r) => r.tipo === "semana" && r.visualizacoes != null && r.visitas != null;
-  const comDados = regs.filter(temFunil);
+  // Registro por período: impressões/cliques/pedidos por semana (× 7 ÷ N).
+  const comDados = regs.filter(temFunil).map(porSemana);
   const inicio = regs.find((r) => r.tipo === "inicio")?.data || (rampa.criado_em ? dataSP(rampa.criado_em) : hoje);
   const diasRampa = Math.max(0, diasEntre(inicio, hoje));
   const noPreco = comDados.filter((r) => preco != null && Math.abs(num(r.preco) - preco) < 0.005);
@@ -210,7 +234,8 @@ export function metricasFunil(rampa, registros, regras, hoje) {
   const faltamDias = Math.max(0, num(regras.funilDiasMin) - diasRampa);
   const faltamSemanas = Math.max(0, FUNIL_SEMANAS - noPreco.length);
   const status = !comDados.length ? "sem-dados" : faltamDias > 0 || faltamSemanas > 0 ? "coletando" : "pronto";
-  return { status, faltamDias, faltamSemanas, visualizacoes, visitas, vendas, usaPedidos, ctr, conversao, comAds, semanas: usadas.length };
+  const r1 = (v) => Math.round(v * 10) / 10;
+  return { status, faltamDias, faltamSemanas, visualizacoes: Math.round(visualizacoes), visitas: Math.round(visitas), vendas: r1(vendas), usaPedidos, ctr, conversao, comAds, semanas: usadas.length };
 }
 
 // Mediana de CTR e conversão dos produtos da loja com funil calculável —
@@ -299,6 +324,9 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const regs = (registros || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.criado_em || "").localeCompare(String(b.criado_em || "")));
   const semanas = regs.filter((r) => r.tipo === "semana");
   const ultimaSemana = semanas[semanas.length - 1] || null;
+  // Por semana (registro por período normalizado × 7 ÷ N) — regras semanais.
+  const semanasN = semanas.map(porSemana);
+  const ultimaSemanaN = semanasN[semanasN.length - 1] || null;
   const comAval = [...regs].reverse().find((r) => r.avaliacoes != null);
   const avaliacoesTotal = comAval ? num(comAval.avaliacoes) : num(rampa.base_avaliacoes);
   const comNota = [...regs].reverse().find((r) => r.nota != null && r.nota !== "");
@@ -350,8 +378,8 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const ultimaSubida = [...regs].reverse().find((r) => r.tipo === "subida" || r.tipo === "descida");
   let check = null;
   if (ultimaSubida && ultimaSubida.tipo === "subida") {
-    const antes = [...semanas].reverse().find((s) => s.data < ultimaSubida.data || (s.data === ultimaSubida.data && String(s.criado_em || "") < String(ultimaSubida.criado_em || "")));
-    const depois = semanas.filter((s) => s.data > ultimaSubida.data || (s.data === ultimaSubida.data && String(s.criado_em || "") > String(ultimaSubida.criado_em || "")));
+    const antes = [...semanasN].reverse().find((s) => s.data < ultimaSubida.data || (s.data === ultimaSubida.data && String(s.criado_em || "") < String(ultimaSubida.criado_em || "")));
+    const depois = semanasN.filter((s) => s.data > ultimaSubida.data || (s.data === ultimaSubida.data && String(s.criado_em || "") > String(ultimaSubida.criado_em || "")));
     if (antes && depois.length) {
       // Sem conhecidos (vendasParaDecisao): a decisão olha só busca + Ads.
       const lucroSem = (s) => vendasParaDecisao(s) * (lucroEm(num(s.preco) || preco) ?? 0);
@@ -381,14 +409,14 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   // Ads: última semana com gasto.
   const lucroAtual = lucroEm(preco);
   const roasMin = lucroAtual > 0 ? preco / lucroAtual : null;
-  const semanasAds = semanas.filter((s) => num(s.ads_gasto) > 0);
+  const semanasAds = semanasN.filter((s) => num(s.ads_gasto) > 0);
   const roasDe = (s) => (num(s.ads_gasto) > 0 ? (num(s.ads_vendas) * (num(s.preco) || preco)) / num(s.ads_gasto) : null);
   // % orgânico = (total − Ads − conhecidos) ÷ (total − conhecidos).
   const organicoDe = (s) => (vendasParaDecisao(s) > 0 ? Math.max(0, vendasParaDecisao(s) - num(s.ads_vendas)) / vendasParaDecisao(s) : null);
   const ultAds = semanasAds[semanasAds.length - 1] || null;
   const roas = ultAds ? roasDe(ultAds) : null;
-  const organico = ultimaSemana ? organicoDe(ultimaSemana) : null;
-  const organicoAntes = semanas.length > 1 ? organicoDe(semanas[semanas.length - 2]) : null;
+  const organico = ultimaSemanaN ? organicoDe(ultimaSemanaN) : null;
+  const organicoAntes = semanasN.length > 1 ? organicoDe(semanasN[semanasN.length - 2]) : null;
   const ultimas2Ads = semanasAds.slice(-2);
   const abaixo2 = ultimas2Ads.length === 2 && roasMin != null && ultimas2Ads.every((s) => (roasDe(s) ?? 0) < roasMin);
   const muitoAbaixo2 = ultimas2Ads.length === 2 && roasMin != null && ultimas2Ads.every((s) => (roasDe(s) ?? 0) < 0.8 * roasMin);
@@ -466,12 +494,12 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const bloqueadoAte = rampa.checklist?.acimaBloqueadoAte || null;
   if ((noAlvo || acimaAtivo) && alvo > 0) {
     const tetoAcima = finalAbaixo(alvo * (1 + num(regras.acimaMax)));
-    const semNoPreco = semanas.filter((s) => s.data >= desde);
+    const semNoPreco = semanasN.filter((s) => s.data >= desde);
     const ult3 = semNoPreco.slice(-regras.acimaSemanas);
     const estaveis = ult3.length >= regras.acimaSemanas && vendasParaDecisao(ult3[ult3.length - 1]) >= 0.9 * vendasParaDecisao(ult3[0]) && vendasParaDecisao(ult3[0]) > 0;
     if (acimaAtivo) {
       // Testando acima: compara o lucro médio por semana neste preço com as semanas no preço anterior.
-      const antesSem = semanas.filter((s) => s.data < desde).slice(-regras.acimaSemanas);
+      const antesSem = semanasN.filter((s) => s.data < desde).slice(-regras.acimaSemanas);
       const lucroSem = (s) => vendasParaDecisao(s) * (lucroEm(num(s.preco) || preco) ?? 0);
       const media = (arr) => (arr.length ? arr.reduce((t, s) => t + lucroSem(s), 0) / arr.length : null);
       const lAntes = media(antesSem);
@@ -500,7 +528,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
       const bloqueado = bloqueadoAte && bloqueadoAte > hoje;
       const criterios = [
         { rotulo: `${regras.acimaDias} dias no alvo`, ok: dias >= regras.acimaDias, valor: `${dias} dia${dias === 1 ? "" : "s"}` },
-        { rotulo: `${regras.acimaSemanas} semanas de vendas estáveis`, ok: estaveis, valor: ult3.length ? ult3.map((s) => vendasParaDecisao(s)).join(" → ") : "sem registro" },
+        { rotulo: `${regras.acimaSemanas} semanas de vendas estáveis`, ok: estaveis, valor: ult3.length ? ult3.map((s) => fmtSemana(vendasParaDecisao(s))).join(" → ") : "sem registro" },
         { rotulo: `Nota ≥ ${String(regras.nota).replace(".", ",")} e nenhuma 1–2★ recente`, ok: nota != null && nota >= regras.nota && ruins7 === 0, valor: nota != null ? String(nota).replace(".", ",") : "—" },
       ];
       if (campanha) criterios.push({ rotulo: "Sem campanha perto", ok: !campanhaPerto, valor: campanhaPerto ? `em ${diasAteCampanha} dias` : "ok" });
@@ -550,9 +578,9 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   else if (portoesOk && !alertaNota) sugestao = { chave: "subir", tom: "good", rotulo: "Subir degrau", saltos: 1 };
   else sugestao = { chave: "segurar", tom: "warn", rotulo: "Segurar" };
 
-  const lucroSemana = ultimaSemana && ultimaSemana.data > corte7 ? num(ultimaSemana.vendas) * (lucroEm(num(ultimaSemana.preco) || preco) ?? 0) : null;
-  const lucroSemanaAds = lucroSemana != null ? lucroSemana - num(ultimaSemana.ads_gasto) : null;
-  const lucroSemanaAlvo = ultimaSemana && ultimaSemana.data > corte7 ? num(ultimaSemana.vendas) * (lucroEm(alvo) ?? 0) : null;
+  const lucroSemana = ultimaSemanaN && ultimaSemanaN.data > corte7 ? num(ultimaSemanaN.vendas) * (lucroEm(num(ultimaSemanaN.preco) || preco) ?? 0) : null;
+  const lucroSemanaAds = lucroSemana != null ? lucroSemana - num(ultimaSemanaN.ads_gasto) : null;
+  const lucroSemanaAlvo = ultimaSemanaN && ultimaSemanaN.data > corte7 ? num(ultimaSemanaN.vendas) * (lucroEm(alvo) ?? 0) : null;
 
   const alvoMudou = num(ctx.alvo) > 0 ? alvoMudouDaRampa(degraus, alvo, rampa.checklist) : null;
 

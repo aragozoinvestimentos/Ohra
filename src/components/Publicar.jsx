@@ -3,19 +3,17 @@ import { Fragment, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
-import { descricaoMudanca, anuncioDoItem } from "../lib/rampaAnuncio.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
-import { alertaPreco } from "../lib/estrategia.js";
 import { dicaKitFreteGratis } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { BRL } from "../lib/format.js";
-import { anuncioMudou, descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
-import { itemTipoDoId } from "../lib/variacoes.js";
+import { descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
 import { nomeCanal } from "../lib/canais.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
 import OndeSeDecide from "./OndeSeDecide.jsx";
+import { linhasAnunciar } from "../lib/anunciar.js";
 
 const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
 
@@ -43,40 +41,10 @@ export default function Publicar({ onToast }) {
   // "↻ atualizar" compara com isso. No alvo / rampa encerrada → preço salvo.
   const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
 
-  const linhas = useMemo(() => {
-    const ordem = [];
-    for (const p of itens.filter((i) => i.id.startsWith("p:"))) {
-      ordem.push(p);
-      for (const v of itens.filter((i) => i.id.startsWith("v:") && i.produtoId === p.id.slice(2)).sort((a, b) => (a.pecas || 0) - (b.pecas || 0))) ordem.push(v);
-    }
-    for (const k of itens.filter((i) => i.id.startsWith("k:"))) ordem.push(k);
-    return ordem
-      .map((item) => {
-        const tipo = itemTipoDoId(item.id);
-        const id = item.id.slice(2);
-        const porCanal = {};
-        for (const c of canais) {
-          const s = precos.find((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === c.id);
-          if (!s || !(Number(s.preco) > 0)) continue;
-          const { desconto, proprio } = descontoDoItem(item.id, c, { itens, produtos, kits });
-          const ra = rampaMapa.get(`${item.id}|${c.id}`) || null;
-          // Já anunciado = riscado FIXO (só a promo muda) — anuncioDoItem, conta única.
-          const an = ra ? { original: ra.original, promo: ra.promo, clientePaga: ra.clientePaga, real: ra.real, riscadoFixo: ra.riscadoFixo, acimaDoRiscado: ra.acimaDoRiscado, riscadoSugerido: ra.riscadoSugerido, desconto } : anuncioDoItem({ itemId: item.id, canal: c, real: Number(s.preco), desconto, publicacoes: publicacoesCanal });
-          const salvo = publicacoesCanal.find((x) => x.item_tipo === tipo && x.item_id === id && x.canal_id === c.id) || null;
-          const mudou = anuncioMudou(salvo, an);
-          // Regra de 4× da Shopee: sempre pelo preço SALVO (alvo) — a promo
-          // temporária da rampa não decide quantas unidades cabem no anúncio.
-          const anSalvo = ra ? anuncioDoItem({ itemId: item.id, canal: c, real: Number(s.preco), desconto, publicacoes: publicacoesCanal }) : an;
-          // Frete grátis (v38): pelo que o cliente PAGA (cliente_paga, depois da promo).
-          const frete = alertaPreco({ preco: an.real, canal: c, valorCliente: clientePagaHoje(item, c) ?? an.clientePaga }).frete;
-          porCanal[c.id] = { ...an, proprio, salvo, mudou, nunca: !salvo, rampa: ra, anSalvo, frete, oQueMudou: mudou && salvo ? descricaoMudanca(salvo, an) : null };
-        }
-        if (!Object.keys(porCanal).length) return null;
-        const pendentes = Object.values(porCanal).filter((x) => x.mudou).length;
-        return { item, tipo, id, porCanal, pendentes };
-      })
-      .filter(Boolean);
-  }, [itens, canais, precos, produtos, kits, publicacoesCanal, rampaMapa, clientePagaHoje]);
+  const linhas = useMemo(
+    () => linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa: rampaMapa, clientePagaHoje }),
+    [itens, canais, precos, produtos, kits, publicacoesCanal, rampaMapa, clientePagaHoje]
+  );
 
   // Regra da Shopee (4×) por produto: variações do mesmo produto num anúncio;
   // preço original = riscado, promo = o que o cliente paga.

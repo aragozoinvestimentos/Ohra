@@ -17,6 +17,8 @@ import {
   mediaMensal,
   projetar,
   statusLancamento,
+  loadEstimativas,
+  saveEstimativas,
 } from "../lib/fluxoCaixa.js";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
@@ -26,7 +28,6 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import CompraMaterialDialog from "./CompraMaterialDialog.jsx";
 import { dividirParcelas, linhasParceladas } from "../lib/comprasMaterial.js";
 
-const ESTIMATIVA_KEY = "ohra:caixa:estimativas";
 const IGNORAR_COMPRA_KEY = "ohra:caixa:ignorar-compra";
 
 function loadIgnorados() {
@@ -39,25 +40,6 @@ function loadIgnorados() {
 
 // "Compra PLA (2/3)" → "Compra PLA"
 const semSufixoParcela = (d) => String(d || "").replace(/\s*\(\d+\/\d+\)\s*$/, "");
-
-function loadEstimativas(lojaId) {
-  try {
-    const raw = JSON.parse(localStorage.getItem(ESTIMATIVA_KEY) || "{}");
-    return raw[lojaId || "sem-loja"] || { vendas: "", custos: "" };
-  } catch {
-    return { vendas: "", custos: "" };
-  }
-}
-
-function saveEstimativas(lojaId, valor) {
-  try {
-    const raw = JSON.parse(localStorage.getItem(ESTIMATIVA_KEY) || "{}");
-    raw[lojaId || "sem-loja"] = valor;
-    localStorage.setItem(ESTIMATIVA_KEY, JSON.stringify(raw));
-  } catch {
-    // sem problema, só não lembra da próxima vez
-  }
-}
 
 const novoForm = (tipo) => ({
   id: null,
