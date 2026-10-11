@@ -32,7 +32,7 @@ export function montarPendencias({
       id: `prejuizo|${item.id}|${canal.id}`,
       grupo: "resolver",
       ordem: 1,
-      tom: al.discreto ? "warn" : "bad",
+      tom: "bad",
       titulo: `${item.nome}: dando prejuízo`,
       texto: `${canal.nome} · cada venda no preço salvo perde dinheiro${al.discreto ? " (explicado pela estratégia)" : ""}`,
       ir: { aba: "historico", pedido: { busca: item.nome } },
@@ -71,7 +71,7 @@ export function montarPendencias({
       id: `anuncio|${l.r.id}`,
       grupo: "resolver",
       ordem: teste ? 4 : 5,
-      tom: "bad",
+      tom: teste ? "bad" : "warn",
       titulo: `${l.produto.nome}: ${teste ? "teste com cliques sem venda" : "revisar anúncio"}`,
       texto: `${l.canal.nome} · ${a.titulo} — começar por: ${String(a.porOnde || "").toLowerCase()}`,
       ir: { aba: "crescimento", pedido: { sub: "rampa", rampaId: l.r.id } },
@@ -209,7 +209,7 @@ export function statusInicio({ caixa, rampas = [], semana = [], afAtivo = false,
   const vendas = !rampas.length && !afAtivo
     ? { tom: "neu", frase: "Nenhum produto em rampa nem afiliado" }
     : revisar.length
-      ? { tom: "bad", frase: `${plural(revisar.length, "produto pede", "produtos pedem")} revisão` }
+      ? { tom: revisar.some((l) => l.est.anuncio?.motivo === "teste") ? "bad" : "warn", frase: `${plural(revisar.length, "produto pede", "produtos pedem")} revisão` }
       : semana.length || rampas.some((l) => l.est.sugestao?.chave === "segurar")
         ? { tom: "warn", frase: semana.length ? `${plural(semana.length, "semana pendente", "semanas pendentes")}` : "Rampa segurando" }
         : { tom: "good", frase: lucroSemana != null ? `Lucro da semana ${brl(lucroSemana)}` : `${plural(rampas.length, "produto", "produtos")} em rampa` };

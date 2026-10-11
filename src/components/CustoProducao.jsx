@@ -273,7 +273,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         { label: "Custo por peça", valor: BRL(resultado.total), tom: "destaque", sub: n(f.pecasPorPlaca) > 1 ? `chapa com ${n(f.pecasPorPlaca)} peças` : "custo de produção total" },
         { label: "Material", valor: BRL(resultado.material), sub: `${pesoTxt} de ${materialSelecionado?.nome || "filamento"}` },
         { label: "Máquina e energia", valor: BRL(resultado.energia + resultado.manutencao + resultado.roiPeca), sub: "energia + manutenção + ROI" },
-        { label: canalRef ? `Sugerido na ${canalRef.nome || "Shopee"}` : "Preço sugerido", valor: sugeridoCanal != null ? BRL(sugeridoCanal) : "—", tom: "good", sub: sugeridoCanal != null ? `margem ${Math.round(cfgLoja.margemDesejada * 100)}% · já com as taxas` : "cadastre um canal" },
+        { label: canalRef ? `Sugerido na ${canalRef.nome || "Shopee"}` : "Preço sugerido", valor: sugeridoCanal != null ? BRL(sugeridoCanal) : "—", sub: sugeridoCanal != null ? `margem ${Math.round(cfgLoja.margemDesejada * 100)}% · já com as taxas` : "cadastre um canal" },
       ]}
     />
     </ResumoFixo>

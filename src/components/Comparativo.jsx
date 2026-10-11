@@ -240,8 +240,8 @@ export default function Comparativo() {
                     <tr key={canal.id}>
                       <td>
                         <CanalTag canal={canal} />
-                        {melhorOrganico?.canal.id === canal.id && <span className="badge good" style={{ marginLeft: 6 }}>melhor orgânico</span>}
-                        {melhorComAds?.canal.id === canal.id && canal.ads_pct > 0 && <span className="badge good" style={{ marginLeft: 6 }}>melhor c/ Ads</span>}
+                        {melhorOrganico?.canal.id === canal.id && <span className="badge good" style={{ marginLeft: 6 }}>↑ melhor orgânico</span>}
+                        {melhorComAds?.canal.id === canal.id && canal.ads_pct > 0 && <span className="badge good" style={{ marginLeft: 6 }}>↑ melhor c/ Ads</span>}
                         {inconsistente && (
                           <span
                             className="badge bad"
@@ -370,7 +370,7 @@ export default function Comparativo() {
           itens={[
             { label: "Melhor canal", valor: melhorA.canal.nome, tom: "destaque", sub: canalFiltro ? "canal escolhido" : "maior lucro orgânico" },
             { label: "Preço nesse canal", valor: BRL(melhorA.resultado.preco), sub: `pra ${lucratividade}% de margem` },
-            { label: "Lucro líquido / un.", valor: BRL(melhorA.resultado.lucro), tom: melhorA.resultado.lucro >= 0 ? "good" : "bad", sub: "sem Ads" },
+            { label: "Lucro líquido / un.", valor: BRL(melhorA.resultado.lucro), tom: melhorA.resultado.lucro >= 0 ? undefined : "bad", sub: "sem Ads" },
             {
               label: "Diferença pro pior canal",
               valor: (() => {

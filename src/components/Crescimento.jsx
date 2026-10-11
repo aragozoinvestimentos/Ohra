@@ -34,6 +34,8 @@ import { pegarPedido } from "../lib/navegar.js";
 import { useSemanaPendente } from "../hooks/useSemanaPendente.js";
 import SemanaPendenteFaixa from "./SemanaPendenteFaixa.jsx";
 import { chaveSemanaRampa, periodoEmAberto, somarDiasIso, ultimoRegistroAf, ultimoRegistroRampa } from "../lib/semanaPendente.js";
+import Estado, { PontoSaude } from "./Estado.jsx";
+import { estadoSugestaoRampa, saudeRampa } from "../lib/estados.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -425,7 +427,8 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
                   const e = l.est;
                   return (
                     <tr key={l.r.id} className={`linha-clicavel${sel?.r.id === l.r.id ? " linha-atual" : ""}`} onClick={() => setSelId(l.r.id)}>
-                      <td>
+                      <td className="td-com-saude">
+                        <PontoSaude estado={saudeRampa(e, pendDe(l))} />
                         <b>{l.produto.nome}</b>
                         <div className="sub-linha">
                           <CanalTag canal={l.canal} /> · {e.avaliacoesTotal} avaliações{e.nota != null ? ` · nota ${virgula(e.nota, 1)}` : ""}
@@ -435,19 +438,19 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
                             ✓ pronto
                           </span>
                         ) : (
-                          <span className="badge neutro tag-pronto" title="Ainda não marcado como pronto (botão no fim do painel do produto, em Revisar anúncio)">
+                          <span className="badge info tag-pronto" title="Ainda não marcado como pronto (botão no fim do painel do produto, em Revisar anúncio)">
                             preparando
                           </span>
                         )}
                         <TagTeste teste={e.teste} />
                         {pendDe(l) && (
                           <span className="badge warn tag-pronto" title={`Último registro em ${diaMes(pendDe(l).ultimo)} — use “Registrar semana”`}>
-                            semana pendente há {pendDe(l).dias} dias
+                            ↻ semana pendente há {pendDe(l).dias} dias
                           </span>
                         )}
                         {e.alvoMudou && (
                           <span className="badge warn tag-pronto" title={`O preço salvo mudou de ${BRL(e.alvoMudou.de)} para ${BRL(e.alvoMudou.para)} — abra o produto pra ajustar os degraus`}>
-                            alvo mudou
+                            ⚠ alvo mudou
                           </span>
                         )}
                       </td>
@@ -477,14 +480,23 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
                           <div className="chips-portoes">
                             {e.portoes.map((p) => (
                               <span key={p.chave} className={`chip-portao ${p.ok ? "ok" : "no"}`} title={`${p.rotulo}: ${p.valor}`}>
-                                {p.ok ? p.curto : p.falta ? `faltam ${p.falta} ${p.curto}` : p.curto}
+                                {p.ok ? `✓ ${p.curto}` : p.falta ? `faltam ${p.falta} ${p.curto}` : `✗ ${p.curto}`}
                               </span>
                             ))}
                           </div>
                         )}
                       </td>
                       <td>
-                        <span className={`badge ${{ good: "good", warn: "warn", bad: "bad" }[e.sugestao.tom] || "neutro"}`}>{e.sugestao.rotulo}</span>
+                        {(() => {
+                          const tipo = estadoSugestaoRampa(e);
+                          return tipo ? (
+                            <Estado tipo={tipo} icone={tipo === "oportunidade" ? "↑" : undefined}>
+                              {e.sugestao.rotulo}
+                            </Estado>
+                          ) : (
+                            <span className="muted-cel">{e.sugestao.rotulo}</span>
+                          );
+                        })()}
                         {e.sugestao.chave === "revisar" && e.anuncio && (
                           <div className="sub-num" title={`${e.anuncio.titulo} — por onde começar`}>começar por: {e.anuncio.porOnde.toLowerCase()}</div>
                         )}
@@ -618,15 +630,19 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
 }
 
 const TESTE_TAG = {
-  observando: ["neutro", (t) => `observando orgânico · dia ${t.dia} de ${t.de}`],
-  recomendado: ["warn", () => "teste de lançamento recomendado"],
-  andamento: ["acc", (t) => `teste em andamento · ${t.diasRestantes}d`],
-  concluido: ["good", (t) => `teste concluído${t.resultado ? ` · ${t.resultado.titulo.toLowerCase()}` : ""}`],
+  observando: ["info", (t) => `observando orgânico · dia ${t.dia} de ${t.de}`],
+  recomendado: ["atencao", () => "teste de lançamento recomendado"],
+  andamento: ["decisao", (t) => `teste em andamento · ${t.diasRestantes}d`],
+  concluido: ["info", (t) => `teste concluído${t.resultado ? ` · ${t.resultado.titulo.toLowerCase()}` : ""}`],
 };
 function TagTeste({ teste }) {
   const c = TESTE_TAG[teste?.status];
   if (!c) return null;
-  return <span className={`tag-teste tag-${c[0]}`}>{c[1](teste)}</span>;
+  return (
+    <Estado tipo={c[0]} icone={c[0] === "info" || c[0] === "decisao" ? null : undefined} className="tag-teste">
+      {c[1](teste)}
+    </Estado>
+  );
 }
 
 function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo }) {

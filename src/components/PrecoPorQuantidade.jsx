@@ -3,7 +3,9 @@ import { publicarSelecao, useSelecaoPasso } from "../lib/passosPreco.js";
 import { useEffect, useMemo, useState } from "react";
 import BuscaItem from "./BuscaItem.jsx";
 import { supabase } from "../lib/supabaseClient.js";
-import { gravarPrecoNovo, alertaPreco } from "../lib/estrategia.js";
+import { gravarPrecoNovo, alertaPreco, rotuloEstrategia } from "../lib/estrategia.js";
+import Estado, { PontoSaude } from "./Estado.jsx";
+import { estadoDoAlerta, estadoDoStatusSalvo, piorEstado } from "../lib/estados.js";
 import EditarDialog from "./EditarDialog.jsx";
 import FreteAviso from "./FreteAviso.jsx";
 import { anuncioDoItem, anuncioNoRiscado } from "../lib/rampaAnuncio.js";
@@ -96,7 +98,7 @@ const CAMPOS_MARGEM = [
 
 export default function PrecoPorQuantidade({ onToast, onSub }) {
   const { lojaId, atualizar } = useLoja();
-  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe, clientePagaHoje, publicacoesCanal, mapaRampa } = useEscada();
+  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe, clientePagaHoje, publicacoesCanal, mapaRampa, alertaDe } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // diálogo "Manter assim" do avulso
   const [selPQ, setSelPQ] = useState(null); // linha com o detalhe aberto ("base" ou "n<qtd>")
   const [revisar, setRevisar] = useState(null); // linha de produto_variacoes aberta na tela suspensa (revisar insumos)
@@ -170,6 +172,22 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
     return lp && lp.lucro != null ? Number(lp.lucro) : null;
   };
   // Preço que vale AGORA pro anúncio: o da Rampa (se em rampa), senão o salvo, senão o sugerido.
+  // Bolinha de saúde da linha (regra única de cores — lib/estados.js): o pior
+  // entre o alerta do preço salvo (alertaDe), o status salvo × sugerido, o
+  // concorrente abaixo do mínimo e a rampa. Quantidade não anunciada = sem bolinha.
+  const saudeLinha = (itemId, st, l, anunciada) => {
+    if (!anunciada || !canal) return null;
+    const it = itemId ? itens.find((i) => i.id === itemId) : null;
+    const al = it ? alertaDe(it, canal) : null;
+    const e = estadoDoStatusSalvo(st);
+    return piorEstado([
+      estadoDoAlerta(al, { rotuloEstrategia: al ? rotuloEstrategia(al.estrategia) : null }),
+      e?.tipo === "atencao" ? e : null,
+      l?.concorrenteAbaixoDoPiso ? { tipo: "atencao", motivo: "concorrente abaixo do mínimo" } : null,
+      l?.naoCompensa ? { tipo: "atencao", motivo: "kit não compensa neste degrau" } : null,
+      itemId && mapaRampa.get(`${itemId}|${canal.id}`) ? { tipo: "decisao", motivo: "em rampa" } : null,
+    ]);
+  };
   const precoAgora = (sugerido, salvo, itemId) => (itemId && canal ? mapaRampa.get(`${itemId}|${canal.id}`)?.real : null) ?? salvo ?? sugerido;
   const anDe = (sugerido, salvo, itemId) => {
     const real = precoAgora(sugerido, salvo, itemId);
@@ -562,7 +580,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
           itens={[
             { label: "Avulso", valor: BRL(dados.p1), sub: `lucro ${BRL(e.l1)} · ${PCT(dados.p1 > 0 ? e.l1 / dados.p1 : 0)}` },
             k2 ? { label: "Salto do kit 2", valor: `${PCT(k2.economiaPct)} off`, tom: "destaque", sub: `${BRL(k2.sugerido)} · ${BRL(k2.porPeca)} cada · lucro ${BRL(k2.lucro)}` } : null,
-            melhor ? { label: "Maior lucro por pedido", valor: BRL(melhor.lucro), tom: "good", sub: `${melhor.n} un. a ${BRL(melhor.sugerido)} · ${BRL(melhor.porPeca)}/peça` } : null,
+            melhor ? { label: "Maior lucro por pedido", valor: BRL(melhor.lucro), sub: `${melhor.n} un. a ${BRL(melhor.sugerido)} · ${BRL(melhor.porPeca)}/peça` } : null,
             kits.length
               ? {
                   label: "Desconto máximo possível",
@@ -679,10 +697,10 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
           )}
           <div className="legenda-tabela">
             <span className="legenda-tit">Legenda</span>
-            <span>preço salvo: <i className="leg-ponto st-good" /> = sugerido</span>
-            <span><i className="leg-ponto st-acc" /> dá pra cobrar mais</span>
-            <span><i className="leg-ponto st-neu" /> acima do sugerido</span>
-            <span><i className="leg-ponto st-bad" /> abaixo do piso / escada invertida</span>
+            <span>preço salvo sem marca = igual ao sugerido</span>
+            <span><Estado tipo="oportunidade">dá pra cobrar mais</Estado></span>
+            <span><Estado tipo="info" icone="↓">acima do sugerido</Estado></span>
+            <span><Estado tipo="atencao">abaixo do piso / escada invertida</Estado></span>
             <span className="legenda-dica">Clique na linha: custo, faixa, texto pro anúncio, concorrente e insumos.</span>
           </div>
           <div className="table-wrap tabela-escada cabecalho-fixo">
@@ -727,10 +745,11 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                     if (l.base) {
                       return [
                         <tr key="base" className={`linha-cad linha-clicavel${selPQ === "base" ? " linha-atual" : ""}`} onClick={alternar("base")}>
-                          <td>
+                          <td className="td-com-saude">
+                            <PontoSaude estado={saudeLinha(`p:${pid}`, null, null, anunciada)} />
                             <b className="kit-n">1 un.</b>
                             <span className="sub">{dados.itemPai.nome} · base</span>
-                            {!anunciada && <span className="chip-cel">não anunciada em {canal.nome}</span>}
+                            {!anunciada && <Estado tipo="info" icone={null}>não anunciada em {canal.nome}</Estado>}
                             <FreteAviso frete={freteDe(valorBase)} compacto />
                           </td>
                           {celCadastro(l.sugerido, dados.salvo1, `p:${pid}`)}
@@ -747,7 +766,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                             {dados.salvo1 != null ? <b>{BRL(dados.salvo1)}</b> : "—"}
                             {lucroSalvoDe(`p:${pid}`) != null && <span className="sub">lucro {BRL(lucroSalvoDe(`p:${pid}`))}</span>}
                             <span className="sub">
-                              <span className="badge good">base</span>
+                              <span className="badge neutro">base</span>
                             </span>
                           </td>
                           <td className="num">—</td>
@@ -783,11 +802,12 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                     const chave = `n${l.n}`;
                     return [
                       <tr key={l.n} className={`${l.cadastrada ? "linha-cad " : ""}linha-clicavel${selPQ === chave ? " linha-atual" : ""}`} onClick={alternar(chave)}>
-                        <td>
+                        <td className="td-com-saude">
+                          <PontoSaude estado={saudeLinha(l.itemId, st, l, anunciada)} />
                           <b className="kit-n">{l.n} un.</b>
                           <span className="sub">{l.cadastrada ? `${l.nome} · cadastrada` : "ainda não existe"}</span>
-                          {!anunciada && <span className="chip-cel">não anunciada em {canal.nome}</span>}
-                          {l.concorrenteAbaixoDoPiso && <span className="chip-cel ruim">concorrente abaixo do mínimo</span>}
+                          {!anunciada && <Estado tipo="info" icone={null}>não anunciada em {canal.nome}</Estado>}
+                          {l.concorrenteAbaixoDoPiso && <Estado tipo="atencao">concorrente abaixo do mínimo</Estado>}
                           <FreteAviso frete={freteDe(valorLinha(l))} compacto />
                         </td>
                         {celCadastro(l.sugerido, l.salvo, l.itemId)}
@@ -807,18 +827,24 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                         <td className="num">
                           {l.salvo != null ? (
                             <span className="cel-preco-cmp" title={st?.texto}>
-                              {st && <span className={`ponto-st ${st.tom}`} />}
                               <b>{BRL(l.salvo)}</b>
                             </span>
                           ) : l.cadastrada ? (
-                            <span className="chip-cel">sem preço</span>
+                            <Estado tipo="info" icone={null}>sem preço</Estado>
                           ) : (
-                            <span className="chip-cel">não existe</span>
+                            <Estado tipo="info" icone={null}>não existe</Estado>
                           )}
                           {l.salvo != null && lucroSalvoDe(l.itemId) != null && <span className="sub">lucro {BRL(lucroSalvoDe(l.itemId))}</span>}
-                          {st && st.tom !== "good" && <span className="sub">{st.texto.replace(/^[^\wÀ-ú]+\s*/, "")}</span>}
+                          {(() => {
+                            const e = estadoDoStatusSalvo(st);
+                            return e ? (
+                              <span className="sub">
+                                <Estado tipo={e.tipo} icone={st.texto.slice(0, 1)}>{e.motivo}</Estado>
+                              </span>
+                            ) : null;
+                          })()}
                         </td>
-                        <td className="num" style={{ color: "var(--good)" }}>
+                        <td className="num">
                           {BRL(l.economia)}
                           <span className="sub">
                             {PCT(l.economiaPct)} vs {l.n}× avulso
@@ -828,9 +854,9 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                           {!anunciada ? (
                             <span className="muted-cel">—</span>
                           ) : l.naoVale ? (
-                            <span className="badge neutro" title={l.motivo}>não vale oferecer</span>
+                            <Estado tipo="info" icone={null} title={l.motivo}>não vale oferecer</Estado>
                           ) : l.naoCompensa ? (
-                            <span className="badge bad">não compensa</span>
+                            <Estado tipo="atencao">não compensa</Estado>
                           ) : l.cadastrada ? (
                             st?.tom === "good" ? null : (
                               <button type="button" className="btn primary btn-sm" onClick={pare(() => setConfirmar({ tipo: "aplicar", linha: l }))}>
@@ -881,7 +907,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                           <div className="detalhe-cel-avisos">
                             <FreteAviso frete={freteDe(valorLinha(l))} />
                             {l.concorrenteAbaixoDoPiso && (
-                              <div className="aviso-cel ruim">
+                              <div className="aviso-cel atencao">
                                 <b>Concorrente abaixo do seu mínimo</b> — não acompanhado: diferencie pelo kit, foto ou qualidade.
                               </div>
                             )}

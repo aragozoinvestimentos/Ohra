@@ -4,6 +4,8 @@ import TelaDescanso from "./components/TelaDescanso.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
 import LojaGate from "./components/LojaGate.jsx";
 import Icone from "./components/Icone.jsx";
+import Ajuda from "./components/Ajuda.jsx";
+import { LegendaEstados } from "./components/Estado.jsx";
 import { useLoja } from "./lib/LojaContext.jsx";
 import SemanaPendenteProvider from "./components/SemanaPendenteProvider.jsx";
 import { useSemanaPendente } from "./hooks/useSemanaPendente.js";
@@ -344,6 +346,9 @@ export default function App() {
             <h1>{tabAtual?.label}</h1>
           </div>
           {tabAtual?.sub && <div className="topbar-sub">{tabAtual.sub}</div>}
+          <span className="topbar-legenda">
+            <Ajuda texto={<LegendaEstados />} />
+          </span>
           <div className="topbar-acoes">
             {TABS.map((t) => (
               <div key={t.key} id={`acoes-${t.key}`} className="topbar-acoes-slot" hidden={t.key !== tab} />
@@ -493,9 +498,38 @@ export default function App() {
         </div>
       </div>
 
+      <NavCelular tab={tab} irPara={irPara} menuAberto={menuAberto} abrirMenu={() => setMenuAberto(true)} />
+
       <div className={`toast ${toast.show ? "show" : ""}`}>{toast.msg}</div>
     </div>
     </SemanaPendenteProvider>
+  );
+}
+
+// Barra de navegação no celular (≤ 760px, só CSS decide quando aparece):
+// 4 atalhos + "Mais" (abre o menu lateral). No PC fica escondida.
+const NAV_CELULAR = [
+  { key: "inicio", rot: "Início" },
+  { key: "crescimento", rot: "Crescimento" },
+  { key: "historico", rot: "Precificados" },
+  { key: "caixa", rot: "Caixa" },
+];
+function NavCelular({ tab, irPara, menuAberto, abrirMenu }) {
+  const naBarra = NAV_CELULAR.some((n) => n.key === tab);
+  return (
+    <nav className="nav-celular" aria-label="Navegação rápida">
+      {NAV_CELULAR.map((n) => (
+        <button key={n.key} type="button" className={tab === n.key && !menuAberto ? "ativo" : ""} onClick={() => irPara(n.key)} aria-current={tab === n.key ? "page" : undefined}>
+          <Icone nome={n.key} size={19} />
+          <span className="rot">{n.rot}</span>
+          {n.key === "crescimento" && <BolinhaSemana />}
+        </button>
+      ))}
+      <button type="button" className={menuAberto || !naBarra ? "ativo" : ""} onClick={abrirMenu} aria-label="Mais — abre o menu">
+        <Icone nome="menu" size={19} />
+        <span className="rot">Mais</span>
+      </button>
+    </nav>
   );
 }
 

@@ -86,7 +86,7 @@ export default function Lancamento({ onToast, onSub }) {
             <span>{ra ? "preço de agora (Rampa)" : "preço salvo (alvo)"}</span>
           </div>
         </div>
-        {a.acimaDoRiscado && <div className="aviso-cel ruim">Precisaria subir o preço original — pode ser visto como manipulação; considere manter.</div>}
+        {a.acimaDoRiscado && <div className="aviso-cel atencao">Precisaria subir o preço original — pode ser visto como manipulação; considere manter.</div>}
         {nota && <div className="hint" style={{ margin: "6px 0 0" }}>{nota}</div>}
       </div>
     ) : null;
@@ -182,7 +182,7 @@ export default function Lancamento({ onToast, onSub }) {
                   <div className="chips-portoes" style={{ marginTop: 6 }}>
                     {est.portoes.map((p) => (
                       <span key={p.chave} className={`chip-portao ${p.ok ? "ok" : "no"}`} title={`${p.rotulo}: ${p.valor}`}>
-                        {p.ok ? p.curto : p.falta ? `faltam ${p.falta} ${p.curto}` : p.curto}
+                        {p.ok ? `✓ ${p.curto}` : p.falta ? `faltam ${p.falta} ${p.curto}` : `✗ ${p.curto}`}
                       </span>
                     ))}
                   </div>

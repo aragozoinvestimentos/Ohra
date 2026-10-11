@@ -321,7 +321,7 @@ export default function PromocoesSalvas({ onToast }) {
                   <td className="num">{p.lucro != null ? BRL(p.lucro) : "—"}</td>
                   <td className="num">
                     {p.margem != null ? (
-                      <span className={`badge ${Number(p.margem) < 0 ? "bad" : Number(p.margem) < 0.1 ? "warn" : "good"}`}>{PCT(p.margem)}</span>
+                      <span className={`badge ${Number(p.margem) < 0 ? "bad" : Number(p.margem) < 0.1 ? "warn" : "neutro"}`}>{Number(p.margem) < 0 ? "! " : Number(p.margem) < 0.1 ? "⚠ " : ""}{PCT(p.margem)}</span>
                     ) : (
                       "—"
                     )}
@@ -351,8 +351,8 @@ export default function PromocoesSalvas({ onToast }) {
                     )}
                     <span style={{ flex: 1 }} />
                     {menorMargem != null && (
-                      <span className={`badge ${menorMargem < 0 ? "bad" : menorMargem < 0.1 ? "warn" : "good"}`} title="Menor margem entre os itens dessa promoção">
-                        menor margem {PCT(menorMargem)}
+                      <span className={`badge ${menorMargem < 0 ? "bad" : menorMargem < 0.1 ? "warn" : "neutro"}`} title="Menor margem entre os itens dessa promoção">
+                        {menorMargem < 0 ? "! " : menorMargem < 0.1 ? "⚠ " : ""}menor margem {PCT(menorMargem)}
                       </span>
                     )}
                     <span className="promo-grupo-lucro">

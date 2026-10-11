@@ -553,8 +553,8 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                                   )}
                                   {l.an.acimaDoRiscado && (
                                     <div>
-                                      <span className="chip-cel ruim" title="O preço desejado passou do preço original já anunciado — subir o preço cheio pode ser visto como manipulação; considere manter (Anunciar → detalhe)">
-                                        acima do riscado
+                                      <span className="chip-cel atencao" title="O preço desejado passou do preço original já anunciado — subir o preço cheio pode ser visto como manipulação; considere manter (Anunciar → detalhe)">
+                                        ⚠ acima do riscado
                                       </span>
                                     </div>
                                   )}

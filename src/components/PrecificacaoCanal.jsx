@@ -579,7 +579,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         {
           label: qtdSel > 1 ? "Lucro líquido / venda" : "Lucro líquido / un.",
           valor: semCusto ? "—" : BRL(resultado.lucro),
-          tom: semCusto ? undefined : resultado.lucro >= 0 ? "good" : "bad",
+          tom: semCusto ? undefined : resultado.lucro >= 0 ? undefined : "bad",
           sub: qtdSel > 1 && resultado.lucro != null ? `${BRL(resultado.lucro / qtdSel)} por peça (${qtdSel} peças)` : "depois de todas as taxas",
         },
         {
@@ -589,7 +589,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           ) : (
             <>
               {PCT(resultado.margem)}{" "}
-              <span className={`badge ${lucrativo ? "good" : "bad"}`} style={{ verticalAlign: 4 }}>{lucrativo ? "lucrativo" : "abaixo da meta"}</span>
+              <span className={`badge ${lucrativo ? "neutro" : "warn"}`} style={{ verticalAlign: 4 }}>{lucrativo ? "✓ na meta" : "⚠ abaixo da meta"}</span>
             </>
           ),
           extra: semCusto ? null : <Termometro valor={resultado.margem} meta={lucratividadeFrac} />,
@@ -873,8 +873,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               <span className="k">Confere com a faixa escolhida?</span>
               <span className="v">
                 {resultado.faixaOk
-                  ? <span className="badge good">Sim</span>
-                  : <span className="badge bad">Não — teste outra faixa</span>}
+                  ? <span className="badge neutro">✓ Sim</span>
+                  : <span className="badge warn">⚠ Não — teste outra faixa</span>}
               </span>
             </div>
           )}
@@ -949,7 +949,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
                       </td>
                       <td className="num">{r.preco != null ? BRL(r.preco) : "—"}</td>
                       <td className="num">{r.lucro != null ? BRL(r.lucro) : "—"}</td>
-                      <td className="num">{r.margem != null ? <span className={`badge ${r.margem >= lucratividadeFrac - 0.001 ? "good" : "bad"}`}>{PCT(r.margem)}</span> : "—"}</td>
+                      <td className="num">{r.margem != null ? <span className={`badge ${r.margem < 0 ? "bad" : r.margem >= lucratividadeFrac - 0.001 ? "neutro" : "warn"}`}>{r.margem < 0 ? "! " : r.margem >= lucratividadeFrac - 0.001 ? "" : "⚠ "}{PCT(r.margem)}</span> : "—"}</td>
                       {qtdSel > 1 && <td className="num">{r.lucro != null ? BRL(r.lucro / qtdSel) : "—"}</td>}
                       {baseSelecionada && <td className="num">{salvo ? BRL(salvo.preco) : <span style={{ color: "var(--ink-faint)" }}>—</span>}</td>}
                     </tr>

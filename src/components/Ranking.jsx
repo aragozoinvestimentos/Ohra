@@ -107,7 +107,7 @@ export default function Ranking() {
                       <td>
                         <CanalTag canal={linha.canal} />{" "}
                         {linha.origem === "salvo" ? (
-                          <span className="badge good" title="Preço realmente salvo em Produtos precificados">salvo</span>
+                          <span className="badge neutro" title="Preço realmente salvo em Produtos precificados">✓ salvo</span>
                         ) : (
                           <span className="campo-anterior" title={`Ainda não tem preço salvo pra esse canal — estimativa a ${margemLoja}% de margem (a desejada da loja)`}>
                             (estimado {margemLoja}%)

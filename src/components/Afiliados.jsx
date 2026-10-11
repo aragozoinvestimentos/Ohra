@@ -22,6 +22,8 @@ import {
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
+import Estado from "./Estado.jsx";
+import { estadoSituacaoAfiliado, estadoSugestaoAfiliado } from "../lib/estados.js";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
@@ -232,7 +234,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
               <tbody>
                 {tabela.map((l) => (
                   <Fragment key={l.chave}>
-                  <tr className={`linha-clicavel${selAf === l.chave ? " linha-atual" : ""}${l.situacao === "acima" ? " linha-ruim" : ""}`} onClick={() => setSelAf((x) => (x === l.chave ? null : l.chave))}>
+                  <tr className={`linha-clicavel${selAf === l.chave ? " linha-atual" : ""}`} onClick={() => setSelAf((x) => (x === l.chave ? null : l.chave))}>
                     <td>
                       <b>{l.item.nome}</b>
                       <div className="sub-linha">
@@ -257,7 +259,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                     </td>
                     <td className="centro">
                       {l.conf.ativo ? (
-                        <span className="badge acc">
+                        <span className="badge neutro">
                           {pct(l.conf.comissao)} · {l.conf.fonte === "propria" ? "do item" : "padrão"}
                         </span>
                       ) : (
@@ -515,7 +517,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
           <ul className="sug-af">
             {sugestoes.map((sg) => (
               <li key={sg.chave}>
-                <span className={`sug-af-ic ${sg.tom}`}>{sg.icone}</span>
+                <span className={`sug-af-ic st-${estadoSugestaoAfiliado(sg)}`}>{sg.icone}</span>
                 <div>
                   <b>{sg.titulo}</b>
                   <div className="sub-linha">{sg.texto}</div>
@@ -604,12 +606,13 @@ function Situacao({ l, onUsar, compacto = false, soAcao = false }) {
         Usar {pct(alvo)} só neste item
       </button>
     ) : null;
+  const tipo = estadoSituacaoAfiliado(l);
   if (compacto && (l.situacao === "acima" || l.situacao === "alta"))
-    return <span className={`badge ${l.situacao === "acima" ? "bad" : "warn"}`}>{l.situacao === "acima" ? "acima da máxima" : "come sua margem"}</span>;
+    return <Estado tipo={tipo}>{l.situacao === "acima" ? "acima da máxima" : "come sua margem"}</Estado>;
   if (l.situacao === "acima" || l.situacao === "alta")
     return (
       <div className="sit-af">
-        <span className={`badge ${l.situacao === "acima" ? "bad" : "warn"}`}>{l.situacao === "acima" ? "acima da máxima" : "come sua margem"}</span>
+        <Estado tipo={tipo}>{l.situacao === "acima" ? "acima da máxima" : "come sua margem"}</Estado>
         {alvo ? (
           <button type="button" className="link-btn" onClick={() => onUsar(alvo)}>
             usar {pct(alvo)} só neste item
@@ -621,25 +624,29 @@ function Situacao({ l, onUsar, compacto = false, soAcao = false }) {
     );
   if (l.situacao === "rampa")
     return (
-      <span className="badge neutro" title="Estratégia do preço em crescimento (escolhida, rampa ou peça em rampa): lucro baixo de propósito, sem espaço pra comissão">
+      <Estado tipo="decisao" icone={null} title="Estratégia do preço em crescimento (escolhida, rampa ou peça em rampa): lucro baixo de propósito, sem espaço pra comissão">
         {l.emRampa || l.estrategia?.origem === "rampa" ? "em rampa" : l.estrategia?.origem === "kit-em-rampa" ? "peça em rampa" : "em crescimento"}: não usar ainda
-      </span>
+      </Estado>
     );
   if (l.situacao === "atracao")
     return (
-      <span className="badge neutro" title="Avulso marcado como atração: o lucro vem do kit. Dá pra ativar, mas o app não sugere">
+      <Estado tipo="decisao" icone={null} title="Avulso marcado como atração: o lucro vem do kit. Dá pra ativar, mas o app não sugere">
         atração: só se quiser
-      </span>
+      </Estado>
     );
-  if (l.situacao === "ok") return <span className="badge good">✓ ok</span>;
-  if (l.situacao === "pode") return <span className="badge acc">pode ativar até {pct(l.recomendada)}</span>;
+  if (l.situacao === "ok") return <span className="muted-cel">✓ ok</span>;
+  if (l.situacao === "pode") return <Estado tipo="oportunidade">{`pode ativar até ${pct(l.recomendada)}`}</Estado>;
   if (l.situacao === "apertado")
     return (
-      <span className="badge neutro" title="Há folga até o lucro mínimo, mas nada acima da sua margem desejada — afiliado só se houver espaço">
+      <Estado tipo="info" icone={null} title="Há folga até o lucro mínimo, mas nada acima da sua margem desejada — afiliado só se houver espaço">
         sem espaço acima da sua margem
-      </span>
+      </Estado>
     );
-  return <span className="badge neutro">sem folga pra comissão</span>;
+  return (
+    <Estado tipo="info" icone={null}>
+      sem folga pra comissão
+    </Estado>
+  );
 }
 
 function PadraoCanal({ item, onSalvar }) {

@@ -60,10 +60,12 @@ const novoForm = (tipo) => ({
 });
 
 const STATUS_BADGE = {
-  recebido: ["good", "✓ Recebido"],
-  pago: ["good", "✓ Pago"],
+  // Regra única de cores: pago/recebido = OK (sem cor, só ✓); saída atrasada
+  // = conta vencida (resolver); entrada atrasada = atenção.
+  recebido: ["neutro", "✓ Recebido"],
+  pago: ["neutro", "✓ Pago"],
   previsto: ["", "Previsto"],
-  atrasado: ["warn", "Atrasado"],
+  atrasado: ["warn", "⚠ Atrasado"],
 };
 
 export default function FluxoCaixa({ onToast }) {
@@ -440,7 +442,6 @@ export default function FluxoCaixa({ onToast }) {
           {
             label: `Entradas de ${rotuloMes(mesAtual)}`,
             valor: BRL((mesCorrente?.entradasRealizadas || 0) + (mesCorrente?.entradasPrevistas || 0)),
-            tom: "good",
             sub: `${BRL(mesCorrente?.entradasRealizadas || 0)} recebido · ${BRL(mesCorrente?.entradasPrevistas || 0)} a receber`,
           },
           {
@@ -451,7 +452,7 @@ export default function FluxoCaixa({ onToast }) {
           {
             label: `Saldo projetado (${rotuloMes(ultimo?.mes || mesAtual)})`,
             valor: BRL(ultimo?.saldoFinal || 0),
-            tom: (ultimo?.saldoFinal || 0) >= 0 ? "good" : "bad",
+            tom: (ultimo?.saldoFinal || 0) >= 0 ? undefined : "bad",
             sub:
               menor && menor.saldoFinal < 0
                 ? `fica negativo em ${rotuloMes(menor.mes)} (${BRL(menor.saldoFinal)})`
@@ -647,7 +648,10 @@ export default function FluxoCaixa({ onToast }) {
               <tbody>
                 {listaMes.map((l) => {
                   const st = statusLancamento(l, hoje);
-                  const [tom, texto] = STATUS_BADGE[st];
+                  const [tom0, texto0] = STATUS_BADGE[st];
+                  const vencida = st === "atrasado" && l.tipo === "saida";
+                  const tom = vencida ? "bad" : tom0;
+                  const texto = vencida ? "! Vencida" : texto0;
                   const data = l.data_realizada || l.data_prevista;
                   return (
                     <tr key={l.id}>

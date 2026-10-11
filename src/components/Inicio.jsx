@@ -14,6 +14,8 @@ import { BRL, PCT } from "../lib/format.js";
 import Kpis from "./Kpis.jsx";
 import CanalTag from "./CanalTag.jsx";
 import GraficoOrigem from "./GraficoOrigem.jsx";
+import Estado from "./Estado.jsx";
+import { estadoDoTom } from "../lib/estados.js";
 
 const VISIVEIS = 5;
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
@@ -61,7 +63,12 @@ function useDadosGestao() {
   return d;
 }
 
-const Bolinha = ({ tom }) => <i className={`bolinha-status ${tom}`} aria-hidden="true" />;
+// Regra única de cores (lib/estados.js): good = OK = sem bolinha; a
+// pendência do grupo Oportunidades é verde (dá pra agir e ganhar).
+const Bolinha = ({ tipo }) => (tipo ? <i className={`bolinha-status st-${tipo}`} aria-hidden="true" /> : null);
+const estadoStatus = (tom) => estadoDoTom(tom);
+const estadoPendencia = (p) => (p.grupo === "oportunidade" ? (p.tom === "neu" ? "info" : "oportunidade") : estadoDoTom(p.tom) || "info");
+const ESTADO_GRUPO = { resolver: ["resolver", "!"], rotina: ["atencao", "↻"], oportunidade: ["oportunidade", "↑"] };
 
 // Área numerada recolhível, com o resumo na linha do título.
 function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
@@ -72,7 +79,7 @@ function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
           <span className="seta">▸</span> <span className="inicio-num">{n}</span> {titulo}
         </button>
         <span className="h3-contagem inicio-resumo">
-          <Bolinha tom={tom} /> {resumo}
+          <Bolinha tipo={estadoStatus(tom)} /> {resumo}
         </span>
       </h3>
       {aberta && <div className="inicio-area-corpo">{children}</div>}
@@ -213,9 +220,9 @@ export default function Inicio({ onIrPara }) {
     <div className="inicio">
       <div className="inicio-status">
         {CARDS.map((c) => (
-          <button key={c.k} type="button" className={`inicio-card ${status[c.k].tom}`} onClick={() => rolar(c.k)}>
+          <button key={c.k} type="button" className={`inicio-card${estadoStatus(status[c.k].tom) ? ` st-${estadoStatus(status[c.k].tom)}` : ""}`} onClick={() => rolar(c.k)}>
             <span className="inicio-card-tit">
-              <Bolinha tom={status[c.k].tom} /> {c.titulo}
+              <Bolinha tipo={estadoStatus(status[c.k].tom)} /> {c.titulo}
             </span>
             <span className="inicio-card-frase">{carregando ? "carregando…" : status[c.k].frase}</span>
           </button>
@@ -239,12 +246,15 @@ export default function Inicio({ onIrPara }) {
               return (
                 <div key={g.chave} className="inicio-grupo">
                   <div className="inicio-grupo-tit">
-                    {g.titulo} <span className="muted-cel">{pendencias.filter((p) => p.grupo === g.chave).length}</span>
+                    <Estado tipo={(ESTADO_GRUPO[g.chave] || ["info"])[0]} icone={(ESTADO_GRUPO[g.chave] || [])[1]}>
+                      {g.titulo}
+                    </Estado>{" "}
+                    <span className="muted-cel">{pendencias.filter((p) => p.grupo === g.chave).length}</span>
                   </div>
                   <ul className="inicio-lista">
                     {doGrupo.map((p) => (
-                      <li key={p.id} className={`inicio-item ${p.tom}`}>
-                        <Bolinha tom={p.tom} />
+                      <li key={p.id} className={`inicio-item st-${estadoPendencia(p)}`}>
+                        <Bolinha tipo={estadoPendencia(p)} />
                         <div className="inicio-item-txt">
                           <b>{p.titulo}</b>
                           <span>{p.texto}</span>
@@ -351,11 +361,11 @@ export default function Inicio({ onIrPara }) {
           <div className="inicio-ok">✓ ok — {anunciados.length} {anunciados.length === 1 ? "anúncio" : "anúncios"} sem problema</div>
         ) : (
           <ul className="inicio-mini">
-            {[...precosAlerta.map((a) => ({ ...a, problema: a.al.tipo === "prejuizo" ? "prejuízo" : "abaixo do mínimo", tom: a.al.tipo === "prejuizo" && !a.al.discreto ? "bad" : "warn", aba: "historico" })),
+            {[...precosAlerta.map((a) => ({ ...a, problema: a.al.tipo === "prejuizo" ? "prejuízo" : "abaixo do mínimo", tom: a.al.tipo === "prejuizo" ? "bad" : "warn", aba: "historico" })),
               ...anunciosAtualizar.map((a) => ({ ...a, problema: "↻ atualizar anúncio", tom: "warn", aba: "publicar" }))].map((a) => (
               <li key={`${a.item.id}|${a.canal.id}|${a.problema}`}>
                 <span>
-                  {a.item.nome} <CanalTag canal={a.canal} /> <span className={`chip-cel ${a.tom === "bad" ? "ruim" : "atencao"}`}>{a.problema}</span>
+                  {a.item.nome} <CanalTag canal={a.canal} /> <Estado tipo={a.tom === "bad" ? "resolver" : "atencao"}>{a.problema}</Estado>
                 </span>
                 <button type="button" className="link-btn" onClick={() => (a.aba === "historico" ? irParaAba("historico", { busca: a.item.nome }) : onIrPara?.("publicar"))}>
                   {a.aba === "historico" ? "ver em Produtos precificados" : "abrir Anunciar"}

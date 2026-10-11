@@ -335,7 +335,7 @@ export default function RegistroImpressoes({ onToast }) {
                       <td className="num">{r.quantidade_lote}</td>
                       <td>
                         {r.status === "sucesso" ? (
-                          <span className="badge good">✓ Certo</span>
+                          <span className="badge neutro">✓ Certo</span>
                         ) : (
                           <span className="badge bad">✕ Falhou{r.falha_pct != null ? ` aos ${r.falha_pct}%` : ""}</span>
                         )}

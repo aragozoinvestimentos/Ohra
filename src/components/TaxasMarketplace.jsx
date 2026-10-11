@@ -47,8 +47,8 @@ export default function TaxasMarketplace() {
           <h3 className="section-title">
             {canal.nome}
             {!carregando && (
-              <span className={`badge ${statusCanal(canal.tipo) ? "good" : "bad"}`} style={{ marginLeft: 10, fontWeight: 600 }}>
-                {statusCanal(canal.tipo) ? "cadastrado nesta loja" : "não cadastrado nesta loja"}
+              <span className={`badge ${statusCanal(canal.tipo) ? "neutro" : "info"}`} style={{ marginLeft: 10, fontWeight: 600 }}>
+                {statusCanal(canal.tipo) ? "✓ cadastrado nesta loja" : "não cadastrado nesta loja"}
               </span>
             )}
           </h3>
@@ -80,8 +80,8 @@ export default function TaxasMarketplace() {
         <h3 className="section-title">
           Mercado Livre
           {!carregando && (
-            <span className={`badge ${statusCanal("ml") ? "good" : "bad"}`} style={{ marginLeft: 10, fontWeight: 600 }}>
-              {statusCanal("ml") ? "cadastrado nesta loja" : "não cadastrado nesta loja"}
+            <span className={`badge ${statusCanal("ml") ? "neutro" : "info"}`} style={{ marginLeft: 10, fontWeight: 600 }}>
+              {statusCanal("ml") ? "✓ cadastrado nesta loja" : "não cadastrado nesta loja"}
             </span>
           )}
         </h3>

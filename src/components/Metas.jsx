@@ -250,7 +250,7 @@ export default function Metas({ onToast }) {
         {
           label: "Faturamento simulado",
           valor: BRL(faturamentoSimulado),
-          tom: faturamentoObjetivoNum > 0 ? (faturamentoSimulado >= faturamentoObjetivoNum ? "good" : "warn") : undefined,
+          tom: faturamentoObjetivoNum > 0 ? (faturamentoSimulado >= faturamentoObjetivoNum ? undefined : "warn") : undefined,
           sub: `${totalPecasSimuladas} ${totalPecasSimuladas === 1 ? "peça" : "peças"}${pctDe(faturamentoSimulado, faturamentoObjetivoNum)}`,
         },
         {
@@ -261,7 +261,7 @@ export default function Metas({ onToast }) {
         {
           label: "Lucro simulado",
           valor: BRL(lucroSimulado),
-          tom: lucroObjetivoNum > 0 ? (lucroSimulado >= lucroObjetivoNum ? "good" : "warn") : lucroSimulado > 0 ? "good" : undefined,
+          tom: lucroObjetivoNum > 0 ? (lucroSimulado >= lucroObjetivoNum ? undefined : "warn") : undefined,
           sub: lucroObjetivoNum > 0 ? pctDe(lucroSimulado, lucroObjetivoNum).replace(" · ", "") : "monte o cenário no simulador",
         },
       ]}

@@ -91,7 +91,7 @@ function ChecklistProgresso() {
                     )}
                     {!p.feito && p === proximo && (
                       <span className="badge good" style={{ marginLeft: 8 }}>
-                        faça agora
+                        ↑ faça agora
                       </span>
                     )}
                   </h4>

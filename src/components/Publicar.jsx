@@ -12,6 +12,7 @@ import { descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
 import { nomeCanal } from "../lib/canais.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
+import Estado from "./Estado.jsx";
 import OndeSeDecide from "./OndeSeDecide.jsx";
 import ProximoPasso from "./ProximoPasso.jsx";
 import { useSelecaoPasso } from "../lib/passosPreco.js";
@@ -303,7 +304,7 @@ export default function Publicar({ onToast, onSub }) {
             </div>
           )}
           {x.acimaDoRiscado && (
-            <div className="aviso-cel ruim">
+            <div className="aviso-cel atencao">
               <b>Precisaria subir o preço original</b> O preço desejado ({BRL(x.real)}) passou do preço original anunciado ({BRL(x.original)}): com promo 0% o cliente paga {BRL(x.original)}. Subir o preço cheio pode ser visto como manipulação — considere manter. Nada foi trocado.
             </div>
           )}
@@ -408,9 +409,9 @@ export default function Publicar({ onToast, onSub }) {
           <span className="legenda-tit">Legenda</span>
           <span><b>R$ 17,00</b> preço original (riscado) a digitar</span>
           <span><b>promo 30%</b> a digitar</span>
-          <span><span className="chip-cel ok">✓ em dia</span></span>
-          <span><span className="chip-cel atencao">↻ atualizar</span> o anúncio está diferente</span>
-          <span><span className="chip-cel rampa">rampa</span> use a promo da Rampa · <b>agora</b> × <b>alvo</b> = cliente paga hoje × no preço salvo</span>
+          <span><Estado tipo="oportunidade">✓ em dia</Estado> feito</span>
+          <span><Estado tipo="atencao">↻ atualizar</Estado> o anúncio está diferente</span>
+          <span><Estado tipo="decisao" icone={null}>rampa</Estado> use a promo da Rampa · <b>agora</b> × <b>alvo</b> = cliente paga hoje × no preço salvo</span>
           <span className="legenda-dica">Clique na célula: cliente paga, desconto, o que trocar e “feito”.</span>
         </div>
       )}
@@ -457,7 +458,7 @@ export default function Publicar({ onToast, onSub }) {
                     {nVars > 0 && (
                       <button type="button" className={`variacoes-toggle${aberto ? " aberto" : ""}`} onClick={() => alternar(pid)} title={aberto ? "Esconder variações" : "Ver variações"}>
                         <span className="seta">▸</span> {nVars} {nVars === 1 ? "variação" : "variações"}
-                        {nPend > 0 && <span className="badge warn" style={{ marginLeft: 6 }}>{nPend} p/ atualizar</span>}
+                        {nPend > 0 && <span className="badge warn" style={{ marginLeft: 6 }}>↻ {nPend} p/ atualizar</span>}
                       </button>
                     )}
                   </td>
@@ -485,13 +486,13 @@ export default function Publicar({ onToast, onSub }) {
                             </span>
                           )}
                           {x.acimaDoRiscado ? (
-                            <span className="chip-cel ruim" title="O preço desejado passou do preço original já anunciado">acima do riscado</span>
+                            <Estado tipo="atencao" title="O preço desejado passou do preço original já anunciado">acima do riscado</Estado>
                           ) : x.rampa ? (
-                            <span className="chip-cel rampa">{x.rampa.acima ? "testando acima" : "rampa"}{x.mudou ? " · ↻" : ""}</span>
+                            <Estado tipo="decisao" icone={null}>{`${x.rampa.acima ? "testando acima" : "rampa"}${x.mudou ? " · ↻" : ""}`}</Estado>
                           ) : x.mudou ? (
-                            <span className="chip-cel atencao">{x.nunca ? "novo" : "↻ atualizar"}</span>
+                            <Estado tipo="atencao" icone={x.nunca ? "↻" : undefined}>{x.nunca ? "novo" : "↻ atualizar"}</Estado>
                           ) : x.frete ? null : (
-                            <span className="chip-cel ok">✓ em dia</span>
+                            <Estado tipo="oportunidade">✓ em dia</Estado>
                           )}
                           <FreteAviso frete={x.frete} compacto />
                         </button>
