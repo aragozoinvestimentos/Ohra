@@ -11,6 +11,8 @@ import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
 import ProximoPasso from "./ProximoPasso.jsx";
 import { IniciarRampaDialog } from "./Crescimento.jsx";
+import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
+import { ehIdGrupo, fichaDoGrupo } from "../lib/anunciosGrupo.js";
 
 const virgula = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -21,7 +23,8 @@ const virgula = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits
 // subir degrau e registrar semana continuam no Crescimento.
 export default function Lancamento({ onToast, onSub }) {
   const { dados, rampasH, regras, linhas } = useCrescimento();
-  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, cobraNoCanal } = dados;
+  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, cobraNoCanal, clientePagaHoje } = dados;
+  const { grupos } = useAnunciosGrupo();
   const { porPasso, pedido } = useSelecaoPasso();
   const [sel, setSel] = useState(null); // null = segue o da Ficha
   const [canalSel, setCanalSel] = useState(null);
@@ -39,6 +42,11 @@ export default function Lancamento({ onToast, onSub }) {
   const itemId = sel ?? daFicha.itemId ?? "";
   const canal = canais.find((c) => c.id === (canalSel ?? daFicha.canalId)) || canais[0] || null;
   const item = itens.find((i) => i.id === itemId) || null;
+  // Anúncio com vários itens (Ficha etapa 2): o que digitar por opção; a rampa
+  // continua sendo do produto de cada opção.
+  const grupo = ehIdGrupo(itemId) ? grupos.find((g) => g.id === itemId.slice(2)) || null : null;
+  const fichaG = grupo && canal ? fichaDoGrupo({ grupo, canal, itens, precos, produtos, kits, mapaRampa, publicacoes: publicacoesCanal, clientePagaHoje }) : null;
+  const opcoesBusca = [...gruposDoSeletor(itens), ...(grupos.length ? [{ label: "Anúncios com vários itens", itens: grupos.map((g) => ({ id: `g:${g.id}`, rotulo: `${g.nome} · ${g.variacao_nome}` })) }] : [])];
 
   useEffect(() => {
     publicarSelecao("lancamento", itemId || null, canal?.id || null);
@@ -109,7 +117,7 @@ export default function Lancamento({ onToast, onSub }) {
         <div className="lanc-topo">
           <div className="field">
             <label>Produto, variação ou kit</label>
-            <BuscaItem grupos={gruposDoSeletor(itens)} value={itemId} onChange={setSel} vazio="— escolha (ou use o da Ficha) —" />
+            <BuscaItem grupos={opcoesBusca} value={itemId} onChange={setSel} vazio="— escolha (ou use o da Ficha) —" />
           </div>
           <div className="field">
             <label>Canal</label>
@@ -131,7 +139,77 @@ export default function Lancamento({ onToast, onSub }) {
         </div>
         {!anunciada && <div className="aviso-cel">Fora de {canal?.nome}: o produto não tem preço salvo neste canal ou a quantidade não é anunciada aqui (2º Por quantidade → Anunciado em).</div>}
 
-        {estado === "vazio" && <div className="empty">Escolha o produto e o canal (ou na 3º Ficha).</div>}
+        {grupo && canal && fichaG && (
+          <div className="lanc-grupo">
+            <div className="legenda-tit">
+              Anúncio com vários itens · {grupo.nome} · {grupo.variacao_nome}
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Opção</th>
+                    <th className="num">Preço de cadastro</th>
+                    <th className="num">Promo</th>
+                    <th className="num">Cliente paga</th>
+                    <th>Rampa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fichaG.linhas.filter((l, i, arr) => arr.findIndex((x) => x.opcao === l.opcao) === i).map((l) => {
+                    const pid = !l.item ? null : l.item.id.startsWith("p:") ? l.item.id.slice(2) : l.item.id.startsWith("v:") ? l.item.produtoId : null;
+                    const rp = pid ? linhas.find((x) => x.r.produto_id === pid && x.r.canal_id === canal.id) : null;
+                    return (
+                      <tr key={l.chave}>
+                        <td>
+                          {l.rotulo}
+                          <div className="muted-cel">{l.item?.nome || "item não encontrado"}</div>
+                        </td>
+                        {l.an ? (
+                          <>
+                            <td className="num">
+                              {BRL(l.an.original)}
+                              <div className="muted-cel">{l.an.riscadoFixo ? "já anunciado (fixo)" : "a cadastrar"}</div>
+                            </td>
+                            <td className="num">{l.an.promo ? `${l.an.promo}%` : "—"}</td>
+                            <td className="num">
+                              {l.an.emRampa ? (
+                                <>
+                                  agora {BRL(l.an.clientePaga)}
+                                  <div className="muted-cel">{l.anSalvo && Math.abs(l.anSalvo.clientePaga - l.an.clientePaga) > 0.004 ? `alvo ${BRL(l.anSalvo.clientePaga)}` : "= alvo"}</div>
+                                </>
+                              ) : (
+                                BRL(l.an.clientePaga)
+                              )}
+                            </td>
+                          </>
+                        ) : (
+                          <td className="num" colSpan={3} style={{ color: "var(--warn)" }}>
+                            sem preço salvo em {canal.nome}
+                          </td>
+                        )}
+                        <td>
+                          {rp ? (
+                            <button type="button" className="link-btn" onClick={() => irParaAba("crescimento", { sub: "rampa", rampaId: rp.r.id })}>
+                              em rampa ({rp.produto.nome}) →
+                            </button>
+                          ) : (
+                            <span className="muted-cel">no alvo</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="hint" style={{ margin: "6px 0 0" }}>A rampa é de cada produto (Crescimento); aqui só se vê o que digitar em cada opção. O “feito” é na 5º Anunciar.</p>
+          </div>
+        )}
+        {grupo && !fichaG && <div className="empty">Escolha o canal.</div>}
+        {ehIdGrupo(itemId) && !grupo && <div className="empty">Anúncio com vários itens não encontrado (excluído?).</div>}
+
+        {!ehIdGrupo(itemId) && estado === "vazio" && <div className="empty">Escolha o produto e o canal (ou na 3º Ficha).</div>}
         {estado === "sem-preco" && (
           <div className="empty">
             Sem preço salvo em {canal.nome}. Salve no{" "}

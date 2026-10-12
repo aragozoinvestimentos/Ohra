@@ -68,7 +68,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     setPedidoVisto(pedidoPasso.seq);
     const idv = pedidoPasso.itemId;
     // Avulso aceita produto e kit; variação vira o produto dela.
-    if (idv) setBaseSelecionada(idv.startsWith("v:") ? `p:${baseItens.find((i) => i.id === idv)?.produtoId || ""}` : idv);
+    if (idv && !idv.startsWith("g:")) setBaseSelecionada(idv.startsWith("v:") ? `p:${baseItens.find((i) => i.id === idv)?.produtoId || ""}` : idv);
     const cp = canais.find((x) => x.id === pedidoPasso.canalId);
     if (cp) {
       if (cp.tipo === "custom") {

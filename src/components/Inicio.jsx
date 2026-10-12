@@ -6,6 +6,8 @@ import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useSemanaPendente } from "../hooks/useSemanaPendente.js";
 import { hojeISO, loadEstimativas, mesDe, resumoCaixa, rotuloMes } from "../lib/fluxoCaixa.js";
 import { linhasAnunciar } from "../lib/anunciar.js";
+import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
+import { gruposPorItem } from "../lib/anunciosGrupo.js";
 import { sugestoesAfiliado, vendasPorOrigem } from "../lib/afiliados.js";
 import { calcTaxaFalhaAtual, TAXA_FALHA_PRIOR_PCT } from "../lib/registroImpressao.js";
 import { reservaDoItem } from "../lib/calc.js";
@@ -100,6 +102,9 @@ export default function Inicio({ onIrPara, onToast }) {
   const { lojaId } = useLoja();
   const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf, linhasAds } = useCrescimento();
   const { itens, canais, precos, produtos, kits, materiais, publicacoesCanal, mapaRampa, clientePagaHoje, alertaDe, pareceAtracaoDe, cobraNoCanal } = dados;
+  // Itens de anúncio com vários itens (Ficha etapa 2) contam como anunciados.
+  const { grupos: gruposAnuncio } = useAnunciosGrupo();
+  const mapaGrupos = useMemo(() => gruposPorItem(gruposAnuncio), [gruposAnuncio]);
   const semana = useSemanaPendente();
   const gestao = useDadosGestao();
   const [verTodos, setVerTodos] = useState(false);
@@ -136,8 +141,8 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- Catálogo: só itens ANUNCIADOS (marcados "feito" na Anunciar) ---
   const anunciar = useMemo(
-    () => linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, anunciadoNoCanal: cobraNoCanal }),
-    [itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, cobraNoCanal]
+    () => linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, anunciadoNoCanal: (it, c) => cobraNoCanal(it, c) || mapaGrupos.has(it.id) }),
+    [itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, cobraNoCanal, mapaGrupos]
   );
   const anunciados = useMemo(() => {
     const out = [];

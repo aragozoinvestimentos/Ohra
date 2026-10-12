@@ -1,5 +1,7 @@
 import ProximoPasso from "./ProximoPasso.jsx";
-import { publicarSelecao, useSelecaoPasso } from "../lib/passosPreco.js";
+import { pedirPasso, publicarSelecao, useSelecaoPasso } from "../lib/passosPreco.js";
+import FichaGrupo from "./FichaGrupo.jsx";
+import { ehIdGrupo, idGrupo } from "../lib/anunciosGrupo.js";
 import { useEffect, useMemo, useState } from "react";
 import { alertaPreco } from "../lib/estrategia.js";
 import FreteAviso from "./FreteAviso.jsx";
@@ -50,12 +52,21 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
   const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
   const [sel, setSel] = useState("");
   const [canalId, setCanalId] = useState("");
+  // Etapa 2: "Um item" (como sempre) | "Anúncio com vários itens" (anuncios_grupo, v46).
+  const [modo, setModo] = useState("item");
+  const [grupoId, setGrupoId] = useState("");
   const { pedido: pedidoPasso } = useSelecaoPasso();
   const [pedidoVisto, setPedidoVisto] = useState(0);
   if (pedidoPasso && pedidoPasso.para === "ficha" && pedidoPasso.seq !== pedidoVisto) {
     setPedidoVisto(pedidoPasso.seq);
     const idv = pedidoPasso.itemId || "";
-    if (idv) setSel(idv.startsWith("v:") ? `p:${itens.find((i) => i.id === idv)?.produtoId || ""}` : idv);
+    if (ehIdGrupo(idv)) {
+      setModo("grupo");
+      setGrupoId(idv.slice(2));
+    } else if (idv) {
+      setModo("item");
+      setSel(idv.startsWith("v:") ? `p:${itens.find((i) => i.id === idv)?.produtoId || ""}` : idv);
+    }
     if (pedidoPasso.canalId) setCanalId(pedidoPasso.canalId);
   }
   const [novaOpcao, setNovaOpcao] = useState({}); // { [idxVariacao]: { nome, sufixo } }
@@ -68,9 +79,21 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
 
   const canal = canais.find((c) => c.id === canalId) || canais[0] || null;
   // O 4º Lançamento usa o produto e o canal escolhidos aqui.
+  const selPublicada = modo === "grupo" ? (grupoId ? idGrupo(grupoId) : null) : sel || null;
   useEffect(() => {
-    publicarSelecao("ficha", sel || null, canal?.id || null);
-  }, [sel, canal?.id]);
+    publicarSelecao("ficha", selPublicada, canal?.id || null);
+  }, [selPublicada, canal?.id]);
+  // Botão "sem preço → salvar" do anúncio com vários itens: abre o passo com o item.
+  const irComItem = (sub, itemId) => {
+    pedirPasso(sub, itemId || null, canal?.id || null);
+    onIrPara?.(sub);
+  };
+  const seletorModo = (
+    <div className="subabas subabas-compacta ficha-modo">
+      <button type="button" className={`btn${modo === "item" ? " primary" : ""}`} onClick={() => setModo("item")}>Um item</button>
+      <button type="button" className={`btn${modo === "grupo" ? " primary" : ""}`} onClick={() => setModo("grupo")}>Anúncio com vários itens</button>
+    </div>
+  );
   const opcoesBusca = useMemo(() => gruposDoSeletor(itens.filter((i) => !i.id.startsWith("v:"))), [itens]);
   const isKit = sel.startsWith("k:");
   const donoId = sel ? sel.slice(2) : null;
@@ -276,11 +299,24 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
 
   const rotuloItem = (i) => (i.id.startsWith("v:") ? `${i.pecas} un.` : i.nome);
 
+  if (modo === "grupo")
+    return (
+      <>
+        <div className="aviso-fluxo">
+          Os preços vêm de <b>Precificação</b> (o preço salvo de cada item). Aqui você só monta o anúncio que junta itens diferentes — ex.: Kit de Natal com Letreiro, Kit Básico e Kit Completo.
+        </div>
+        {seletorModo}
+        <FichaGrupo canal={canal} canais={canais} onCanal={setCanalId} grupoId={grupoId} onGrupo={setGrupoId} onToast={onToast} onIrPara={irComItem} />
+        <ProximoPasso atual="ficha" itemId={selPublicada} canalId={canal?.id} onSub={onIrPara} />
+      </>
+    );
+
   return (
     <>
       <div className="aviso-fluxo">
         Os preços vêm de <b>Precificação</b> (1º Avulso / 2º Por quantidade). Aqui você só monta o anúncio: copia as variações, os SKUs, o <b>preço original</b> e a <b>promo</b> pra plataforma.
       </div>
+      {seletorModo}
       <div className="ficha-topo">
         <div className="panel">
           <h3 className="section-title">

@@ -1558,3 +1558,17 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .historico-ads { margin-top: 8px; font-size: 12.5px; display: grid; gap: 3px; }
 .historico-ads-linha { display: grid; grid-template-columns: minmax(110px, max-content) minmax(120px, max-content) 1fr auto; gap: 4px 12px; align-items: center; padding: 3px 0; border-top: 1px solid var(--border); }
 @media (max-width: 760px) { .historico-ads-linha { grid-template-columns: 1fr auto; } .kv-ads { grid-template-columns: 1fr; } }
+
+/* Ficha do anúncio — etapa 2 (anúncio com vários itens) */
+.ficha-modo { margin: 0 0 12px; }
+.ficha-grupos { display: flex; flex-wrap: wrap; gap: 6px; }
+.ficha-grupo { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: 8px; padding: 3px 4px 3px 10px; background: var(--surface); }
+.ficha-grupo.on { border-color: var(--accent); background: var(--accent-soft); }
+.ficha-grupo-resumo { display: grid; gap: 6px; font-size: 13px; }
+.grupo-opcoes { display: grid; gap: 6px; margin: 10px 0 4px; }
+.grupo-opcao { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(180px, 1.6fr) 100px auto; gap: 6px; align-items: center; }
+.grupo-opcao-cab { font-size: 11.5px; color: var(--ink-soft); }
+.grupo-opcao-acoes { display: inline-flex; gap: 2px; }
+.chk.info { color: var(--ink-soft); background: var(--surface-2); }
+.pub-grupo-cab td { background: var(--surface-2); font-size: 12.5px; }
+@media (max-width: 760px) { .grupo-opcao { grid-template-columns: 1fr 1fr; } }

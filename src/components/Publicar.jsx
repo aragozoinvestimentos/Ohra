@@ -19,6 +19,8 @@ import ProximoPasso from "./ProximoPasso.jsx";
 import { useSelecaoPasso } from "../lib/passosPreco.js";
 import { irParaAba } from "../lib/navegar.js";
 import { linhasAnunciar } from "../lib/anunciar.js";
+import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
+import { gruposPorItem, idDoItemOpcao, opcoesDoGrupo } from "../lib/anunciosGrupo.js";
 
 const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
 
@@ -49,9 +51,35 @@ export default function Publicar({ onToast, onSub }) {
   // "↻ atualizar" compara com isso. No alvo / rampa encerrada → preço salvo.
   const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
 
+  // Anúncios com vários itens (Ficha etapa 2, v46): cada opção é o MESMO item ×
+  // canal da lista (mesma marcação "feito"); item de grupo conta como anunciado.
+  const { grupos } = useAnunciosGrupo();
+  const mapaGrupos = useMemo(() => gruposPorItem(grupos), [grupos]);
+  const anunciadoAqui = useMemo(() => (it, c) => cobraNoCanal(it, c) || mapaGrupos.has(it.id), [cobraNoCanal, mapaGrupos]);
   const linhas = useMemo(
-    () => linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa: rampaMapa, clientePagaHoje, anunciadoNoCanal: cobraNoCanal }),
-    [itens, canais, precos, produtos, kits, publicacoesCanal, rampaMapa, clientePagaHoje, cobraNoCanal]
+    () => linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa: rampaMapa, clientePagaHoje, anunciadoNoCanal: anunciadoAqui }),
+    [itens, canais, precos, produtos, kits, publicacoesCanal, rampaMapa, clientePagaHoje, anunciadoAqui]
+  );
+  // Item de grupo só aparece solto se também tem anúncio próprio fora dele
+  // (produto com variações de quantidade soltas); o ↻ é o mesmo item × canal.
+  const linhasSoltas = useMemo(
+    () =>
+      linhas.filter(
+        (l) => !mapaGrupos.has(l.item.id) || (l.tipo === "produto" && linhas.some((v) => v.tipo === "variacao" && v.item.produtoId === l.id && !mapaGrupos.has(v.item.id)))
+      ),
+    [linhas, mapaGrupos]
+  );
+  const blocos = useMemo(
+    () =>
+      grupos
+        .map((g) => {
+          // Opção sem preço salvo em nenhum canal continua no bloco ("sem preço salvo").
+          const ops = opcoesDoGrupo(g).map((o) => ({ o, l: linhas.find((l) => l.item.id === idDoItemOpcao(o)) || null, item: itens.find((i) => i.id === idDoItemOpcao(o)) || null }));
+          const unicas = [...new Map(ops.filter((x) => x.l).map((x) => [x.l.item.id, x.l])).values()];
+          return { g, ops, unicas, pendentes: unicas.reduce((t, l) => t + l.pendentes, 0) };
+        })
+        .filter((b) => b.ops.length),
+    [grupos, linhas, itens]
   );
 
   // Regra da Shopee (4×) por produto: variações do mesmo produto num anúncio;
@@ -76,19 +104,20 @@ export default function Publicar({ onToast, onSub }) {
   }, [linhas, canais]);
   const regra4xDe = (l) => regra4xPorProduto.get(l.tipo === "produto" ? l.id : l.item.produtoId) || null;
 
-  const comPendencia = linhas.filter((l) => l.pendentes > 0);
+  const comPendencia = linhasSoltas.filter((l) => l.pendentes > 0);
   const totalPendentes = linhas.reduce((s, l) => s + l.pendentes, 0);
-  const visiveis = verTodos ? linhas : comPendencia;
+  const visiveis = verTodos ? linhasSoltas : comPendencia;
+  const blocosVisiveis = verTodos ? blocos : blocos.filter((b) => b.pendentes > 0);
 
   // Variações recolhidas embaixo do produto (▸ N variações). O pai aparece
   // sempre que ele ou alguma variação dele estiver na lista.
   const linhasTela = useMemo(() => {
     const visivel = new Set(visiveis.map((l) => l.item.id));
     const out = [];
-    const paisComPreco = new Set(linhas.filter((l) => l.tipo === "produto").map((l) => l.id));
-    for (const l of linhas) {
+    const paisComPreco = new Set(linhasSoltas.filter((l) => l.tipo === "produto").map((l) => l.id));
+    for (const l of linhasSoltas) {
       if (l.tipo === "produto") {
-        const vars = linhas.filter((v) => v.tipo === "variacao" && v.item.produtoId === l.id && visivel.has(v.item.id));
+        const vars = linhasSoltas.filter((v) => v.tipo === "variacao" && v.item.produtoId === l.id && visivel.has(v.item.id));
         if (!visivel.has(l.item.id) && !vars.length) continue;
         const aberto = abertos.has(l.id);
         out.push({ l, pid: l.id, nVars: vars.length, nPend: vars.reduce((s, v) => s + v.pendentes, 0), aberto });
@@ -98,7 +127,7 @@ export default function Publicar({ onToast, onSub }) {
       }
     }
     return out;
-  }, [linhas, visiveis, abertos]);
+  }, [linhasSoltas, visiveis, abertos]);
   const alternar = (pid) =>
     setAbertos((s) => {
       const n = new Set(s);
@@ -348,6 +377,57 @@ export default function Publicar({ onToast, onSub }) {
     );
   }
 
+  // Célula de um canal (preço original, promo, etiqueta) — a mesma nas linhas
+  // soltas e nas opções de um anúncio com vários itens (base = chave da linha).
+  const celulas = (l, base) =>
+    canais.map((c) => {
+                    const x = l.porCanal[c.id];
+                    if (!x)
+                      return (
+                        <td className="num" key={c.id}>
+                          <span className="cel-vazia" title="Sem preço salvo neste canal">—</span>
+                        </td>
+                      );
+                    const chave = `${base}|${c.id}`;
+                    return (
+                      <td className="num" key={c.id}>
+                        <button type="button" className={`cel-preco${sel === chave ? " sel" : ""}`} onClick={() => setSel((v) => (v === chave ? null : chave))}>
+                          <span className="cel-preco-v" title="Preço original (riscado) — digite no anúncio">{BRL(x.original)}</span>
+                          <span className="preco-canal-linha">
+                            promo <b>{x.promo}%</b>
+                          </span>
+                          {x.rampa && (
+                            <span className="preco-canal-linha agora-alvo" title="Cliente paga agora (preço da Rampa) × no alvo (preço salvo)">
+                              agora <b>{BRL(x.clientePaga)}</b>
+                              <br />
+                              {agoraIgualAlvo(x) ? "= alvo" : <>alvo {BRL(x.anSalvo.clientePaga)}</>}
+                            </span>
+                          )}
+                          {x.acimaDoRiscado ? (
+                            <Estado tipo="atencao" title="O preço desejado passou do preço original já anunciado">acima do riscado</Estado>
+                          ) : x.rampa ? (
+                            <Estado tipo="decisao" icone={null}>{`${x.rampa.acima ? "testando acima" : "rampa"}${x.mudou ? " · ↻" : ""}`}</Estado>
+                          ) : x.mudou ? (
+                            <Estado tipo="atencao" icone={x.nunca ? "↻" : undefined}>{x.nunca ? "novo" : "↻ atualizar"}</Estado>
+                          ) : x.frete ? null : (
+                            <Estado tipo="oportunidade">✓ em dia</Estado>
+                          )}
+                          <FreteAviso frete={x.frete} compacto />
+                        </button>
+                      </td>
+                    );
+                  });
+  const linhaDetalhe = (l, base) => {
+    if (!sel || !sel.startsWith(`${base}|`)) return null;
+    const c = canais.find((x) => sel === `${base}|${x.id}`);
+    if (!c || !l.porCanal[c.id]) return null;
+    return (
+      <tr className="linha-detalhe">
+        <td colSpan={canais.length + 2}>{detalhe(l, c)}</td>
+      </tr>
+    );
+  };
+
   if (!canais.length) {
     return (
       <div className="panel">
@@ -410,7 +490,7 @@ export default function Publicar({ onToast, onSub }) {
           </button>
         </span>
       </h3>
-      {visiveis.length > 0 && (
+      {(visiveis.length > 0 || blocosVisiveis.length > 0) && (
         <div className="legenda-tabela">
           <span className="legenda-tit">Legenda</span>
           <span><b>R$ 17,00</b> preço original (riscado) a digitar</span>
@@ -421,7 +501,7 @@ export default function Publicar({ onToast, onSub }) {
           <span className="legenda-dica">Clique na célula: cliente paga, desconto, o que trocar e “feito”.</span>
         </div>
       )}
-      {visiveis.length ? (
+      {visiveis.length || blocosVisiveis.length ? (
         <div className="table-wrap tabela-pub cabecalho-fixo">
           <table>
             <thead>
@@ -439,11 +519,74 @@ export default function Publicar({ onToast, onSub }) {
               </tr>
             </thead>
             <tbody>
+              {blocosVisiveis.map((b) => (
+                <Fragment key={`g:${b.g.id}`}>
+                  <tr className="pub-grupo-cab">
+                    <td colSpan={canais.length + 1}>
+                      <b>Anúncio: {b.g.nome}</b> · {b.g.variacao_nome}
+                      <span className="sub">anúncio com vários itens (3º Ficha) · {b.ops.length} opções</span>
+                    </td>
+                    <td>
+                      {b.pendentes > 0 ? (
+                        <button type="button" className="btn btn-sm" disabled={salvando} onClick={() => marcar(pendentesDe(b.unicas))} title="Marcar todas as opções deste anúncio como atualizadas">
+                          Marcar tudo
+                        </button>
+                      ) : (
+                        <span className="badge good">✓</span>
+                      )}
+                    </td>
+                  </tr>
+                  {b.ops.map(({ o, l, item }) => {
+                    if (!l)
+                      return (
+                        <tr key={`g:${b.g.id}:${o.item_id}${o.sufixo_sku}`} className="linha-cad">
+                          <td>
+                            ↳ {o.rotulo || item?.nome || "?"}
+                            <span className="sub">{item ? item.nome : "item não encontrado"}</span>
+                          </td>
+                          <td colSpan={canais.length + 1} className="num">
+                            <span className="cel-vazia">{item ? "sem preço salvo — salve em Precificação" : "item excluído — edite o anúncio na 3º Ficha"}</span>
+                          </td>
+                        </tr>
+                      );
+                    const base = `g:${b.g.id}:${l.item.id}`;
+                    return (
+                      <Fragment key={base + o.sufixo_sku}>
+                        <tr className="linha-cad">
+                          <td>
+                            ↳ {o.rotulo || l.item.nome}
+                            <span className="sub">
+                              {l.item.nome}
+                              {l.item.sku ? ` · ${l.item.sku}${o.sufixo_sku || ""}` : ""}
+                            </span>
+                          </td>
+                          {celulas(l, base)}
+                          <td>
+                            {l.pendentes > 0 ? (
+                              <button type="button" className="btn btn-sm" disabled={salvando} onClick={() => marcar(pendentesDe([l]))} title="Marcar todos os canais desta opção como atualizados">
+                                Marcar
+                              </button>
+                            ) : (
+                              <span className="badge good">✓</span>
+                            )}
+                          </td>
+                        </tr>
+                        {linhaDetalhe(l, base)}
+                      </Fragment>
+                    );
+                  })}
+                </Fragment>
+              ))}
               {linhasTela.map(({ l, pid, nVars, nPend, aberto }) => (
                 <Fragment key={l.item.id}>
                 <tr className={l.tipo === "variacao" ? "linha-cad" : ""}>
                   <td>
                     {l.tipo === "variacao" ? `↳ ${l.item.nomeVariacao || l.item.nome}` : l.item.nome}
+                    {mapaGrupos.has(l.item.id) && (
+                      <span className="frete-tag info-4x" title="Este item também é uma opção de um anúncio com vários itens (mesma marcação “feito”)">
+                        também em: {mapaGrupos.get(l.item.id).map((x) => x.grupo.nome).join(", ")}
+                      </span>
+                    )}
                     <span className="sub">
                       {l.tipo === "variacao" ? `${l.item.pecas} un.` : l.tipo === "kit" ? "kit" : "avulso"}
                       {l.item.sku ? ` · ${l.item.sku}` : ""}
@@ -468,43 +611,7 @@ export default function Publicar({ onToast, onSub }) {
                       </button>
                     )}
                   </td>
-                  {canais.map((c) => {
-                    const x = l.porCanal[c.id];
-                    if (!x)
-                      return (
-                        <td className="num" key={c.id}>
-                          <span className="cel-vazia" title="Sem preço salvo neste canal">—</span>
-                        </td>
-                      );
-                    const chave = `${l.item.id}|${c.id}`;
-                    return (
-                      <td className="num" key={c.id}>
-                        <button type="button" className={`cel-preco${sel === chave ? " sel" : ""}`} onClick={() => setSel((v) => (v === chave ? null : chave))}>
-                          <span className="cel-preco-v" title="Preço original (riscado) — digite no anúncio">{BRL(x.original)}</span>
-                          <span className="preco-canal-linha">
-                            promo <b>{x.promo}%</b>
-                          </span>
-                          {x.rampa && (
-                            <span className="preco-canal-linha agora-alvo" title="Cliente paga agora (preço da Rampa) × no alvo (preço salvo)">
-                              agora <b>{BRL(x.clientePaga)}</b>
-                              <br />
-                              {agoraIgualAlvo(x) ? "= alvo" : <>alvo {BRL(x.anSalvo.clientePaga)}</>}
-                            </span>
-                          )}
-                          {x.acimaDoRiscado ? (
-                            <Estado tipo="atencao" title="O preço desejado passou do preço original já anunciado">acima do riscado</Estado>
-                          ) : x.rampa ? (
-                            <Estado tipo="decisao" icone={null}>{`${x.rampa.acima ? "testando acima" : "rampa"}${x.mudou ? " · ↻" : ""}`}</Estado>
-                          ) : x.mudou ? (
-                            <Estado tipo="atencao" icone={x.nunca ? "↻" : undefined}>{x.nunca ? "novo" : "↻ atualizar"}</Estado>
-                          ) : x.frete ? null : (
-                            <Estado tipo="oportunidade">✓ em dia</Estado>
-                          )}
-                          <FreteAviso frete={x.frete} compacto />
-                        </button>
-                      </td>
-                    );
-                  })}
+                  {celulas(l, l.item.id)}
                   <td>
                     {l.pendentes > 0 ? (
                       <button type="button" className="btn btn-sm" disabled={salvando} onClick={() => marcar(pendentesDe([l]))} title="Marcar todos os canais deste item como atualizados">
@@ -515,11 +622,7 @@ export default function Publicar({ onToast, onSub }) {
                     )}
                   </td>
                 </tr>
-                {sel && sel.startsWith(`${l.item.id}|`) && l.porCanal[sel.split("|").slice(1).join("|")] && (
-                  <tr className="linha-detalhe">
-                    <td colSpan={canais.length + 2}>{detalhe(l, canais.find((c) => sel === `${l.item.id}|${c.id}`))}</td>
-                  </tr>
-                )}
+                {linhaDetalhe(l, l.item.id)}
                 </Fragment>
               ))}
             </tbody>
