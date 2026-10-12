@@ -21,6 +21,7 @@ const num = (v) => {
 const um = (v) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
 const pct = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
+const diasEntre = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
 const virg = (v) => (v == null || v === "" ? "" : String(v).replace(".", ","));
 const ORDEM = { resolver: 0, atencao: 1, oportunidade: 2, decisao: 3, info: 4, ok: 5 };
 
@@ -266,37 +267,51 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
   const historico = l.periodos.map((p) => ({ p, r: resumoPeriodo(p, l.semanas, l.preco, av.empate, regrasA) }));
+  const totalDias = av.ativo?.fim ? diasEntre(av.ativo.inicio, av.ativo.fim) + 1 : null;
+  const diaAtual = (n.dias ?? 0) + 1;
+  const tomRoas = (r) => (r == null || !av.empate ? "" : r >= av.empate ? " bom" : " ruim");
   return (
-    <div className="detalhe-cel">
+    <div className="detalhe-cel ads-det">
       <div className={`alerta alerta-${{ resolver: "bad", atencao: "warn", oportunidade: "good" }[av.estado] || "neutro"}`}>
         <b>{av.titulo}</b>
         {av.texto}
       </div>
       {av.ativo && (
-        <div className="kv-ads">
-          <span>Período</span>
-          <b>
-            desde {dm(av.ativo.inicio)} · dia {(n.dias ?? 0) + 1}
-            {av.ativo.fim ? ` · até ${dm(av.ativo.fim)}` : " · sem data final"}
-          </b>
-          <span>Orçamento / meta</span>
-          <b>
-            {vals.orcamento ? `${BRL(vals.orcamento)}/dia` : "—"} · meta {um(vals.meta)} · empate {um(av.empate)}
-          </b>
-          <span>No período</span>
-          <b>
-            gasto {BRL(n.gasto || 0)} · {n.vendas || 0} venda{n.vendas === 1 ? "" : "s"} via Ads · {n.cliques || 0} cliques · ROAS {um(n.roas)}
-            {n.custoPorVenda != null ? ` · ${BRL(n.custoPorVenda)} por venda` : ""}
-          </b>
-          {n.roasSemana != null && (
-            <>
-              <span>Última semana</span>
+        <div className="ads-cartao">
+          <div className="ads-periodo">
+            <div className="ads-periodo-cab">
+              <span className="ads-rotulo">{av.ativo.tipo === "teste" ? "Teste de lançamento" : "Período atual"}</span>
               <b>
-                ROAS {um(n.roasSemana)} · gastou {BRL(n.gastoSemana)}
-                {n.usoOrc != null ? ` (${Math.round(n.usoOrc * 100)}% do orçamento)` : ""}
-                {n.organico != null ? ` · ${Math.round(n.organico * 100)}% das vendas orgânicas` : ""}
+                {dm(av.ativo.inicio)} → {av.ativo.fim ? dm(av.ativo.fim) : "sem data final"}
               </b>
-            </>
+              <span className="ads-chips">
+                <span className="chip-ads">{vals.orcamento ? `${BRL(vals.orcamento)}/dia` : "sem orçamento"}</span>
+                <span className="chip-ads">meta {um(vals.meta)}</span>
+                <span className="chip-ads">empate {um(av.empate)}</span>
+              </span>
+            </div>
+            {totalDias ? (
+              <div className="ads-barra" title={`dia ${diaAtual} de ${totalDias}`}>
+                <div style={{ width: `${Math.min(100, (diaAtual / totalDias) * 100)}%` }} />
+                <small>dia {Math.min(diaAtual, totalDias)} de {totalDias}</small>
+              </div>
+            ) : (
+              <small className="muted-cel">dia {diaAtual}</small>
+            )}
+          </div>
+          <div className="ads-metricas">
+            <div><span>Gasto</span><b>{BRL(n.gasto || 0)}</b></div>
+            <div><span>Vendas via Ads</span><b>{n.vendas || 0}</b></div>
+            <div><span>Cliques</span><b>{n.cliques || 0}</b></div>
+            <div><span>ROAS</span><b className={`ads-roas${tomRoas(n.roas)}`}>{um(n.roas)}</b></div>
+            <div><span>Custo por venda</span><b>{n.custoPorVenda != null ? BRL(n.custoPorVenda) : "—"}</b></div>
+          </div>
+          {n.roasSemana != null && (
+            <div className="ads-semana">
+              Última semana: ROAS <b className={`ads-roas${tomRoas(n.roasSemana)}`}>{um(n.roasSemana)}</b> · gastou {BRL(n.gastoSemana)}
+              {n.usoOrc != null ? ` (${Math.round(n.usoOrc * 100)}% do orçamento)` : ""}
+              {n.organico != null ? ` · ${Math.round(n.organico * 100)}% das vendas orgânicas` : ""}
+            </div>
           )}
         </div>
       )}
@@ -328,30 +343,37 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
       </div>
       {historico.length > 0 && (
         <div className="historico-ads">
-          <b>Períodos</b>
-          {historico.map(({ p, r }) => {
-            const v = valoresAtuais(p);
-            const ativo = periodoLigado(p, hoje);
-            return (
-              <div key={p.id} className="historico-ads-linha">
-                <span>
-                  {dm(p.inicio)}–{p.fim ? dm(p.fim) : "agora"}
-                  {p.nota ? ` · ${p.nota}` : ""}
-                </span>
-                <span className="muted-cel">
-                  {v.orcamento ? `${BRL(v.orcamento)}/dia` : ""}
-                  {v.meta ? ` · meta ${um(v.meta)}` : ""}
-                  {(Array.isArray(p.ajustes) ? p.ajustes.length : 0) > 0 ? ` · ${p.ajustes.length} ajuste${p.ajustes.length > 1 ? "s" : ""}` : ""}
-                </span>
-                <span>
-                  gasto {BRL(r.gasto)} · {r.vendas} venda{r.vendas === 1 ? "" : "s"} · ROAS {um(r.roas)}
-                  {r.resultado && !ativo ? ` · ${r.resultado.texto}` : ""}
-                  {p.motivo_fim && p.motivo_fim !== "encerrado" ? <span className="muted-cel"> · {p.motivo_fim}</span> : null}
-                </span>
-                <button type="button" className="btn-icone" title="Excluir este período" onClick={() => onExcluir(p)}>×</button>
-              </div>
-            );
-          })}
+          <div className="ads-rotulo">Histórico de períodos</div>
+          <table className="tabela-ads">
+            <tbody>
+              {historico.map(({ p, r }) => {
+                const v = valoresAtuais(p);
+                const ativo = periodoLigado(p, hoje);
+                const nAj = Array.isArray(p.ajustes) ? p.ajustes.length : 0;
+                return (
+                  <tr key={p.id}>
+                    <td>
+                      <b>{dm(p.inicio)}–{p.fim ? dm(p.fim) : "agora"}</b>
+                      {ativo && <span className="chip-ads ligado">ligado</span>}
+                      {p.nota ? <div className="muted-cel">{p.nota}</div> : null}
+                    </td>
+                    <td className="muted-cel">
+                      {v.orcamento ? `${BRL(v.orcamento)}/dia` : "—"}
+                      {v.meta ? ` · meta ${um(v.meta)}` : ""}
+                      {nAj > 0 ? ` · ${nAj} ajuste${nAj > 1 ? "s" : ""}` : ""}
+                    </td>
+                    <td className="num">
+                      {BRL(r.gasto)} · {r.vendas} venda{r.vendas === 1 ? "" : "s"} · ROAS <span className={`ads-roas${tomRoas(r.roas)}`}>{um(r.roas)}</span>
+                      {r.resultado && !ativo ? <div className="muted-cel">{r.resultado.texto}{p.motivo_fim && p.motivo_fim !== "encerrado" ? ` · ${p.motivo_fim}` : ""}</div> : null}
+                    </td>
+                    <td className="acao">
+                      <button type="button" className="btn-icone" title="Excluir este período" onClick={() => onExcluir(p)}>×</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
           <p className="hint" style={{ margin: "4px 0 0" }}>Os números vêm das semanas registradas: o período que começa no meio da semana é aproximado.</p>
         </div>
       )}

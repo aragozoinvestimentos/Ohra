@@ -1557,6 +1557,32 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .acoes-ads { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
 .historico-ads { margin-top: 8px; font-size: 12.5px; display: grid; gap: 3px; }
 .historico-ads-linha { display: grid; grid-template-columns: minmax(110px, max-content) minmax(120px, max-content) 1fr auto; gap: 4px 12px; align-items: center; padding: 3px 0; border-top: 1px solid var(--border); }
+.ads-det { display: grid; gap: 10px; }
+.ads-det > .alerta { margin: 0; }
+.ads-cartao { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.ads-periodo { padding: 10px 14px; display: grid; gap: 8px; border-bottom: 1px solid var(--border); }
+.ads-periodo-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; }
+.ads-rotulo { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); font-weight: 600; }
+.ads-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.chip-ads { display: inline-block; font-size: 11.5px; padding: 1px 8px; border-radius: 99px; background: var(--bg-soft, rgba(127,127,127,.1)); color: var(--ink-soft); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.chip-ads.ligado { background: var(--st-decisao-soft); color: var(--st-decisao); }
+.ads-barra { position: relative; height: 6px; border-radius: 99px; background: var(--border); margin-bottom: 14px; }
+.ads-barra > div { height: 100%; border-radius: 99px; background: var(--accent); }
+.ads-barra > small { position: absolute; right: 0; top: 8px; font-size: 11px; color: var(--ink-soft); }
+.ads-metricas { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.ads-metricas > div { padding: 10px 14px; display: grid; gap: 2px; border-right: 1px solid var(--border); }
+.ads-metricas > div:last-child { border-right: 0; }
+.ads-metricas span { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
+.ads-metricas b { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.ads-roas.bom { color: var(--good); }
+.ads-roas.ruim { color: var(--warn); }
+.ads-semana { padding: 8px 14px; font-size: 12.5px; border-top: 1px solid var(--border); color: var(--ink-soft); }
+.ads-semana b { color: var(--ink); }
+.tabela-ads { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px; }
+.tabela-ads td { padding: 7px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+.tabela-ads td.acao { width: 1%; text-align: right; }
+.historico-ads .acoes-ads { margin: 0; }
+@media (max-width: 760px) { .ads-metricas { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ads-metricas > div { border-bottom: 1px solid var(--border); } .ads-chips { margin-left: 0; } .tabela-ads td.num { text-align: left; } }
 @media (max-width: 760px) { .historico-ads-linha { grid-template-columns: 1fr auto; } .kv-ads { grid-template-columns: 1fr; } }
 
 /* Ficha do anúncio — etapa 2 (anúncio com vários itens) */
