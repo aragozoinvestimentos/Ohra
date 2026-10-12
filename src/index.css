@@ -1138,6 +1138,12 @@ tr.linha-clicavel:hover td { background: var(--surface-3); }
 .modal-box .busca-item-lista { position: static; margin-top: 4px; box-shadow: none; max-height: 240px; }
 .bloco-semana { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
 .bloco-semana-titulo { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; margin-bottom: 6px; }
+.importar-shopee { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.importar-shopee > label.btn { cursor: pointer; }
+.importar-resumo { flex-basis: 100%; font-size: 12.5px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); display: grid; gap: 3px; }
+.importar-aviso { color: var(--st-atencao); }
+.importar-linha { font-size: 12.5px; color: var(--ink-soft); margin: -2px 0 6px; }
+input.campo-importado { border-color: var(--st-info, var(--border-strong)); background: var(--st-info-soft, var(--surface-2)); }
 .grid-semana { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 10px; }
 .grid-semana .field { margin-bottom: 6px; }
 .grid-semana .field label { font-size: 11.5px; }

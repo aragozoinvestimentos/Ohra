@@ -36,6 +36,8 @@ import SemanaPendenteFaixa from "./SemanaPendenteFaixa.jsx";
 import { chaveSemanaRampa, periodoEmAberto, somarDiasIso, ultimoRegistroAf, ultimoRegistroRampa } from "../lib/semanaPendente.js";
 import Estado, { PontoSaude } from "./Estado.jsx";
 import { estadoSugestaoRampa, saudeRampa } from "../lib/estados.js";
+import { useRankingData } from "../hooks/useRankingData.js";
+import { cruzarRelatorios, lerRelatorio, normSku, textoMistura } from "../lib/relatorioShopee.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -1561,7 +1563,7 @@ const diasEntreIso = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(
 
 // Período a puxar no painel da Shopee pro registro na data `data`: um registro
 // cobre até a véspera. Em dia = os 7 dias antes ("Últimos 7 dias"); atrasou =
-// "Personalizado" começando no dia seguinte ao período anterior (sem pular
+// "Por dia" (somando) começando no dia seguinte ao período anterior (sem pular
 // nem repetir dias). Lacuna muito grande (> 13 dias) volta pros últimos 7.
 function periodoFunil(registros, data) {
   const fim = somaDias(data, -1);
@@ -1569,7 +1571,7 @@ function periodoFunil(registros, data) {
   let inicio = ant ? ant.data : somaDias(data, -7);
   if (diasEntreIso(inicio, fim) + 1 > 13 || inicio > fim) inicio = somaDias(data, -7);
   const dias = diasEntreIso(inicio, fim) + 1;
-  return { inicio, fim, dias, modo: dias === 7 ? "Últimos 7 dias" : "Personalizado" };
+  return { inicio, fim, dias, modo: dias === 7 ? "Últimos 7 Dias" : "Por dia" };
 }
 const VAZIO_AF = { afVendas: "", afComissao: "", parceiro: "" };
 const VAZIO_TODOS = { ...VAZIO_RAMPA, ...VAZIO_FUNIL, ...VAZIO_AF };
@@ -1615,6 +1617,11 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
   }));
   const [salvando, setSalvando] = useState(false);
   const [funilAberto, setFunilAberto] = useState(() => new Set());
+  // Importar relatórios da Shopee (lib/relatorioShopee.js): só PREENCHE os
+  // campos — nada é gravado até "Registrar".
+  const { produtos: catProdutos, kits: catKits } = useRankingData();
+  const [importado, setImportado] = useState(null);
+  const [lendo, setLendo] = useState(false);
   const alternarFunil = (id) =>
     setFunilAberto((s) => {
       const n = new Set(s);
@@ -1626,6 +1633,65 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
   // agora" vindo do Início) começa em branco.
   const fv = (id) => f[id] || VAZIO_TODOS;
   const set = (id, k) => (e) => setF((p) => ({ ...p, [id]: { ...VAZIO_TODOS, ...p[id], [k]: e.target.value } }));
+  const doRelatorio = (id, k) => (importado?.marcados.has(`${id}|${k}`) ? "campo-importado" : undefined);
+
+  async function importarRelatorios(e) {
+    const arquivos = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!arquivos.length) return;
+    setLendo(true);
+    try {
+      const lidos = [];
+      for (const a of arquivos) lidos.push(await lerRelatorio(a));
+      const ehShopee = (canal) => canal?.tipo === "shopee";
+      const skuDoProduto = (id) => catProdutos.find((p) => p.id === id)?.sku || "";
+      const itensApp = [
+        ...linhas.filter((l) => ehShopee(l.canal)).map((l) => ({ chave: l.r.id, sku: l.produto.sku, tipo: "produto", rampa: true })),
+        ...foraRampa
+          .filter((x) => ehShopee(x.canal))
+          .map((x) => ({ chave: x.chave, sku: x.item.sku, tipo: x.tipo, skuPai: x.tipo === "variacao" ? skuDoProduto(x.item.produtoId) : "", quantidade: x.item.quantidade })),
+      ];
+      const res = cruzarRelatorios(lidos, itensApp);
+      const marcados = new Set();
+      const novaData = res.periodo?.ate ? somarDiasIso(res.periodo.ate, 1) : null;
+      setF((prev) => {
+        const nf = { ...prev };
+        for (const it of itensApp) {
+          const n = res.porChave[it.chave];
+          if (!n) continue;
+          const campos = it.rampa ? ["vendas", "impressoes", "cliquesProduto", "pedidos", "gasto", "cliques", "adsVendas"] : ["vendas", "gasto", "cliques", "adsVendas"];
+          const v = { ...VAZIO_TODOS, ...nf[it.chave] };
+          for (const k of campos)
+            if (n[k] != null) {
+              v[k] = String(Math.round(n[k] * 100) / 100).replace(".", ",");
+              marcados.add(`${it.chave}|${k}`);
+            }
+          // Período em aberto: De/Até = o do relatório.
+          if (res.periodo) {
+            v.de = res.periodo.de;
+            v.ate = res.periodo.ate;
+          }
+          nf[it.chave] = v;
+        }
+        return nf;
+      });
+      setFunilAberto((s) => new Set([...s, ...itensApp.filter((it) => it.rampa && res.porChave[it.chave]).map((it) => it.chave)]));
+      if (novaData && novaData !== data) setData(novaData);
+      const skusApp = new Set([...catProdutos, ...catKits].map((i) => normSku(i.sku)).filter(Boolean));
+      setImportado({
+        ...res,
+        arquivos: lidos.map((r) => r.arquivo),
+        marcados,
+        n: Object.keys(res.porChave).length,
+        dataAjustada: novaData && novaData !== data ? novaData : null,
+        semPar: res.semPar.map((i) => ({ ...i, existe: !!i.sku && skusApp.has(i.sku) })),
+      });
+    } catch (err) {
+      onToast?.(err.message || "Não foi possível ler o arquivo");
+    } finally {
+      setLendo(false);
+    }
+  }
   const preenchido = (v, campos) => campos.some((k) => v[k] !== "");
   // Registro por período (v40): sem registro há mais de 7 dias → De (início
   // do período em aberto) e Até (véspera da data), editáveis. Grava
@@ -1779,7 +1845,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
         <b>
           Sem registro desde {diaMes(per.ultimo)} ({per.dias} dias)
         </b>
-        Escolha esse período no painel da Shopee (Personalizado). Nas regras semanais os números entram por semana (× 7 ÷ dias).
+        No painel da Shopee use “Por dia” (somando os dias) ou importe o relatório desse período. Nas regras semanais os números entram por semana (× 7 ÷ dias).
         <div className="grid-semana" style={{ marginTop: 6 }}>
           <div className="field"><label>De</label><input type="date" value={per.de} onChange={set(id, "de")} /></div>
           <div className="field"><label>Até</label><input type="date" value={per.ate} onChange={set(id, "ate")} /></div>
@@ -1825,6 +1891,49 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
         chegaram na semana e, se usou Ads, o gasto e as vendas via Ads. Vendas de amigos/família vão em “Conhecidos” (contam no caixa, não no orgânico). Itens com afiliado ganham o bloco Afiliado (vendas e comissão do painel de afiliados;
         comissão em branco = estimada pelo %). Deixe em branco o que não quiser registrar.
       </p>
+      <div className="importar-shopee">
+        <label className={`btn btn-mini${lendo ? " disabled" : ""}`}>
+          {lendo ? "Lendo…" : "📄 Importar relatórios da Shopee"}
+          <input type="file" accept=".xlsx,.csv" multiple hidden onChange={importarRelatorios} disabled={lendo} />
+        </label>
+        <Ajuda
+          texto={
+            <>
+              Escolha os dois arquivos juntos, com o mesmo período (Últimos 7 Dias):
+              <br />• <b>Desempenho</b> (.xlsx): Dados → Informações Gerenciais → Produto → Performance do produto → Exportar dados.
+              <br />• <b>Shopee Ads</b> (.csv): Marketing → Shopee Ads → Exportar dados → Dados Gerais de Anúncios.
+              <br />O app liga cada anúncio ao produto pelo <b>SKU</b> (o SKU Principal da Shopee = SKU do Cadastros) e preenche vendas (Unidades, pedido pago), impressões, cliques, pedidos e o Ads. Nada é gravado até você clicar em Registrar. Avaliações, nota, 1–2★, conhecidos e afiliado continuam à mão. O arquivo é lido só no seu navegador.
+            </>
+          }
+        />
+        {importado && (
+          <div className="importar-resumo">
+            <b>
+              {importado.n ? `${importado.n} ite${importado.n > 1 ? "ns" : "m"} preenchido${importado.n > 1 ? "s" : ""}` : "Nenhum item preenchido"}
+            </b>
+            {importado.periodo && ` · período ${diaMes(importado.periodo.de)} a ${diaMes(importado.periodo.ate)}`}
+            {importado.temAds && importado.totalAds && ` · Ads da loja: ${BRL(importado.totalAds.gasto)}, ${importado.totalAds.cliques} cliques, ${importado.totalAds.vendas} venda${importado.totalAds.vendas === 1 ? "" : "s"}`}
+            {!importado.temAds && " · sem o arquivo do Ads (campos de Ads ficam como estão)"}
+            {importado.dataAjustada && <div>Data do registro ajustada pra {diaMes(importado.dataAjustada)} (o relatório vai até {diaMes(importado.periodo.ate)}).</div>}
+            {importado.avisos.map((a) => (
+              <div key={a} className="importar-aviso">⚠ {a}</div>
+            ))}
+            {importado.semPar.map((i) => (
+              <div key={i.itemId} className="importar-aviso">
+                ⚠ {i.sku || "sem SKU"} · {i.nome.slice(0, 50)}
+                {i.nome.length > 50 ? "…" : ""} ({i.unidades || 0} venda{i.unidades === 1 ? "" : "s"}):{" "}
+                {i.existe ? "não está em rampa nem com afiliado na Shopee — fica fora do registro" : "SKU não encontrado no app — confira o SKU em Cadastros"}
+              </div>
+            ))}
+            {importado.adsSemPar
+              .filter((a) => !importado.semPar.some((i) => i.itemId === a.itemId))
+              .map((a) => (
+                <div key={a.itemId} className="importar-aviso">⚠ Ads de “{a.nome.slice(0, 50)}” ({BRL(a.gasto)}) sem produto ligado — confira o SKU em Cadastros</div>
+              ))}
+            <div className="muted-cel">Confira os campos marcados “do relatório” e complete avaliações, nota, 1–2★ e conhecidos.</div>
+          </div>
+        )}
+      </div>
       <div className="field" style={{ maxWidth: 200 }}>
         <label>Data</label>
         <input type="date" value={data} onChange={(e) => setData(e.target.value)} />
@@ -1836,6 +1945,13 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
             <div className="bloco-semana-titulo">
               <b>{l.produto.nome}</b> <CanalTag canal={l.canal} /> <span className="muted-cel">em rampa · vendendo {BRL(l.est.preco)} · {l.est.avaliacoesTotal} avaliações até agora</span>
             </div>
+            {importado?.porChave[l.r.id] && (
+              <div className="importar-linha">
+                📄 do relatório: {importado.porChave[l.r.id].vendas ?? 0} venda{importado.porChave[l.r.id].vendas === 1 ? "" : "s"}
+                {importado.porChave[l.r.id].mistura ? ` (${textoMistura(importado.porChave[l.r.id].mistura)})` : ""}
+                {importado.temAds ? (importado.porChave[l.r.id].gasto != null ? ` · Ads ${BRL(importado.porChave[l.r.id].gasto)}` : " · sem Ads") : ""}
+              </div>
+            )}
             {perRampa(l) ? (
               blocoPeriodo(l.r.id, perRampa(l))
             ) : (
@@ -1848,13 +1964,13 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
               />
             )}
             <div className="grid-semana">
-              <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={fv(l.r.id).vendas} onChange={set(l.r.id, "vendas")} /></div>
+              <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={fv(l.r.id).vendas} onChange={set(l.r.id, "vendas")} className={doRelatorio(l.r.id, "vendas")} /></div>
               <div className="field"><label>Avaliações (total)</label><input type="number" min="0" value={fv(l.r.id).avaliacoes} onChange={set(l.r.id, "avaliacoes")} /></div>
               <div className="field"><label>Nota</label><input type="text" inputMode="decimal" value={fv(l.r.id).nota} onChange={set(l.r.id, "nota")} /></div>
               <div className="field"><label>1–2★ na semana</label><input type="number" min="0" value={fv(l.r.id).ruins} onChange={set(l.r.id, "ruins")} /></div>
-              <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(l.r.id).gasto} onChange={set(l.r.id, "gasto")} /></div>
-              <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(l.r.id).cliques} onChange={set(l.r.id, "cliques")} /></div>
-              <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(l.r.id).adsVendas} onChange={set(l.r.id, "adsVendas")} /></div>
+              <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(l.r.id).gasto} onChange={set(l.r.id, "gasto")} className={doRelatorio(l.r.id, "gasto")} /></div>
+              <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(l.r.id).cliques} onChange={set(l.r.id, "cliques")} className={doRelatorio(l.r.id, "cliques")} /></div>
+              <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(l.r.id).adsVendas} onChange={set(l.r.id, "adsVendas")} className={doRelatorio(l.r.id, "adsVendas")} /></div>
               <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={fv(l.r.id).conhecidos} onChange={set(l.r.id, "conhecidos")} placeholder="amigos/família" title="vendas de pessoas próximas — contam no caixa, não no orgânico" /></div>
             </div>
             <button type="button" className={`variacoes-toggle${funilAberto.has(l.r.id) ? " aberto" : ""}`} onClick={() => alternarFunil(l.r.id)}>
@@ -1864,21 +1980,21 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
               <div className="bloco-funil">
                 {(() => {
                   const pr = perRampa(l);
-                  const per = pr ? { inicio: pr.de, fim: pr.ate, dias: pr.diasPeriodo, modo: "Personalizado" } : periodoFunil(l.est.registros, data);
+                  const per = pr ? { inicio: pr.de, fim: pr.ate, dias: pr.diasPeriodo, modo: "Por dia" } : periodoFunil(l.est.registros, data);
                   return (
                     <p className="hint" style={{ margin: "0 0 6px" }}>
-                      Do painel de desempenho do produto na Shopee (Dados de Negócio → Produto → Ver detalhes). Período:{" "}
+                      Da Shopee: Dados → Informações Gerenciais → Produto (colunas Impressão do Produto, Cliques Por Produto e Produto Pago). Período:{" "}
                       <b>
                         {per.modo} — {diaMes(per.inicio)} a {diaMes(per.fim)}
                       </b>
-                      {per.modo === "Personalizado" ? ` (${per.dias} dias, emendando no registro anterior, sem pular dias)` : ""} — termina ontem porque o dia de hoje ainda não fechou na Shopee. Opcional — o que ficar em branco não é gravado.
+                      {per.modo === "Por dia" ? ` (${per.dias} dias somados, emendando no registro anterior, sem pular dias)` : ""} — termina ontem porque o dia de hoje ainda não fechou na Shopee. Opcional — o que ficar em branco não é gravado.
                     </p>
                   );
                 })()}
                 <div className="grid-semana">
-                  <div className="field"><label>Impressões de Produto</label><input type="number" min="0" value={fv(l.r.id).impressoes} onChange={set(l.r.id, "impressoes")} /></div>
-                  <div className="field"><label>Cliques Por Produto</label><input type="number" min="0" value={fv(l.r.id).cliquesProduto} onChange={set(l.r.id, "cliquesProduto")} /></div>
-                  <div className="field"><label>Pedidos</label><input type="number" min="0" value={fv(l.r.id).pedidos} onChange={set(l.r.id, "pedidos")} /></div>
+                  <div className="field"><label>Impressões de Produto</label><input type="number" min="0" value={fv(l.r.id).impressoes} onChange={set(l.r.id, "impressoes")} className={doRelatorio(l.r.id, "impressoes")} /></div>
+                  <div className="field"><label>Cliques Por Produto</label><input type="number" min="0" value={fv(l.r.id).cliquesProduto} onChange={set(l.r.id, "cliquesProduto")} className={doRelatorio(l.r.id, "cliquesProduto")} /></div>
+                  <div className="field"><label>Pedidos</label><input type="number" min="0" value={fv(l.r.id).pedidos} onChange={set(l.r.id, "pedidos")} className={doRelatorio(l.r.id, "pedidos")} /></div>
                 </div>
               </div>
             )}
@@ -1891,6 +2007,12 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
           <div className="bloco-semana-titulo">
             <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">fora de rampa · vendendo {BRL(x.preco)}</span>
           </div>
+          {importado?.porChave[x.chave] && (
+            <div className="importar-linha">
+              📄 do relatório: {importado.porChave[x.chave].vendas ?? 0} venda{importado.porChave[x.chave].vendas === 1 ? "" : "s"}
+              {importado.porChave[x.chave].mistura ? ` (${textoMistura(importado.porChave[x.chave].mistura)})` : ""}
+            </div>
+          )}
           {perAf(x) ? (
             blocoPeriodo(x.chave, perAf(x))
           ) : (
@@ -1902,10 +2024,10 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
             />
           )}
           <div className="grid-semana">
-            <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={fv(x.chave).vendas} onChange={set(x.chave, "vendas")} /></div>
-            <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(x.chave).gasto} onChange={set(x.chave, "gasto")} /></div>
-            <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(x.chave).cliques} onChange={set(x.chave, "cliques")} /></div>
-            <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(x.chave).adsVendas} onChange={set(x.chave, "adsVendas")} /></div>
+            <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={fv(x.chave).vendas} onChange={set(x.chave, "vendas")} className={doRelatorio(x.chave, "vendas")} /></div>
+            <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(x.chave).gasto} onChange={set(x.chave, "gasto")} className={doRelatorio(x.chave, "gasto")} /></div>
+            <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(x.chave).cliques} onChange={set(x.chave, "cliques")} className={doRelatorio(x.chave, "cliques")} /></div>
+            <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(x.chave).adsVendas} onChange={set(x.chave, "adsVendas")} className={doRelatorio(x.chave, "adsVendas")} /></div>
             <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={fv(x.chave).conhecidos} onChange={set(x.chave, "conhecidos")} placeholder="amigos/família" title="vendas de pessoas próximas — contam no caixa, não no orgânico" /></div>
           </div>
           {blocoAfiliado(x.chave, x, x.preco)}
