@@ -74,8 +74,8 @@ function Copiavel({ valor, texto }) {
 
 const SUBABAS_CRESC = [
   { key: "rampa", label: "Rampa de preço" },
-  { key: "afiliados", label: "Afiliados" },
   { key: "ads", label: "Ads" },
+  { key: "afiliados", label: "Afiliados" },
 ];
 const lerSub = () => {
   try {
