@@ -98,7 +98,7 @@ function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
 // Única coisa gravada aqui: as tarefas manuais (schema v42, tabela tarefas).
 export default function Inicio({ onIrPara, onToast }) {
   const { lojaId } = useLoja();
-  const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf } = useCrescimento();
+  const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf, linhasAds } = useCrescimento();
   const { itens, canais, precos, produtos, kits, materiais, publicacoesCanal, mapaRampa, clientePagaHoje, alertaDe, pareceAtracaoDe, cobraNoCanal } = dados;
   const semana = useSemanaPendente();
   const gestao = useDadosGestao();
@@ -207,8 +207,8 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- Pra fazer + status ---
   const pendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, hoje }),
-    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, hoje }),
+    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, hoje]
   );
   const status = statusInicio({
     caixa,

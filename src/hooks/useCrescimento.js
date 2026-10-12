@@ -5,6 +5,10 @@ import { useAfiliados } from "./useAfiliados.js";
 import { estadoRampa, metricasFunil, referenciaFunilLoja, regrasDaLoja } from "../lib/rampa.js";
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
+import { useAdsPeriodos } from "./useAdsPeriodos.js";
+import { adsDaLoja, avaliarAds, periodosDoItem, regrasAds } from "../lib/ads.js";
+import { lucroNoPreco } from "../lib/escada.js";
+import { itemTipoDoId } from "../lib/variacoes.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -59,5 +63,43 @@ export function useCrescimento() {
     [af.registros, registros, rampas, mapaAf, linhas, hoje]
   );
 
-  return { dados, rampasH, af, regras, hoje, funilLoja, linhas, linhasAf, mapaAf, semanaAf };
+  // Ads (schema v44, lib/ads.js): uma linha por produto/kit × canal com preço
+  // salvo — situação da semana (usar? aumentar? pausar?). Semanas: as da rampa
+  // do produto ou, fora de rampa, os registros semanais do item (afiliado_registros
+  // com vendas_total, que também guardam os itens só com Ads).
+  const adsH = useAdsPeriodos();
+  const regrasA = useMemo(() => regrasAds(cfgLoja), [cfgLoja]);
+  const linhasAds = useMemo(() => {
+    const semanasDe = (tipo, id, canalId, rampa) =>
+      rampa
+        ? registros.filter((g) => g.rampa_id === rampa.r.id && g.tipo === "semana")
+        : (af.registros || [])
+            .filter((g) => g.item_tipo === tipo && g.item_id === id && g.canal_id === canalId && g.vendas_total != null)
+            .map((g) => ({ ...g, vendas: g.vendas_total, vendasAfiliado: g.vendas }));
+    const base = [];
+    for (const it of itens) {
+      const tipo = itemTipoDoId(it.id);
+      if (tipo === "variacao") continue; // o Ads é por anúncio (produto pai ou kit)
+      const id = it.id.slice(2);
+      for (const canal of canais) {
+        const salvo = precos.find((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === canal.id);
+        if (!salvo || !(num(salvo.preco) > 0)) continue;
+        const rampa = tipo === "produto" ? linhas.find((l) => l.r.produto_id === id && l.r.canal_id === canal.id) || null : null;
+        const cfg = cfgDoProduto(tipo === "produto" ? id : null);
+        const preco = rampa ? num(rampa.est.preco) : num(salvo.preco);
+        const lucroEm = (p) => lucroNoPreco(canal, p, it.custoTotal, it.peso, cfg);
+        base.push({ chave: `${tipo}|${id}|${canal.id}`, item: it, tipo, id, canal, rampa, preco, lucroEm, lucro: lucroEm(preco), semanas: semanasDe(tipo, id, canal.id, rampa), periodos: periodosDoItem(adsH.periodos, tipo, id, canal.id) });
+      }
+    }
+    const loja = adsDaLoja(base.flatMap((b) => b.semanas.map((s) => ({ ...s, preco: num(s.preco) || b.preco }))), hoje, regrasA);
+    return {
+      loja,
+      linhas: base.map((b) => ({
+        ...b,
+        av: avaliarAds({ preco: b.preco, lucro: b.lucro, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: b.rampa?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: loja }),
+      })),
+    };
+  }, [itens, canais, precos, linhas, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje]);
+
+  return { dados, rampasH, af, regras, hoje, funilLoja, linhas, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds };
 }

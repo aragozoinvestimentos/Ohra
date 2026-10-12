@@ -28,6 +28,7 @@ import EditarDialog from "./EditarDialog.jsx";
 import BuscaItem from "./BuscaItem.jsx";
 import GraficoRampa from "./GraficoRampa.jsx";
 import Afiliados from "./Afiliados.jsx";
+import AdsCrescimento from "./AdsCrescimento.jsx";
 import OndeSeDecide from "./OndeSeDecide.jsx";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { pegarPedido } from "../lib/navegar.js";
@@ -74,17 +75,19 @@ function Copiavel({ valor, texto }) {
 const SUBABAS_CRESC = [
   { key: "rampa", label: "Rampa de preço" },
   { key: "afiliados", label: "Afiliados" },
+  { key: "ads", label: "Ads" },
 ];
 const lerSub = () => {
   try {
-    return localStorage.getItem("ohra:crescimento-sub") === "afiliados" ? "afiliados" : "rampa";
+    const v = localStorage.getItem("ohra:crescimento-sub");
+    return v === "afiliados" || v === "ads" ? v : "rampa";
   } catch {
     return "rampa";
   }
 };
 
 export default function Crescimento({ onToast }) {
-  const { dados, rampasH, af, regras, hoje, linhas, linhasAf, mapaAf, semanaAf } = useCrescimento();
+  const { dados, rampasH, af, regras, hoje, linhas, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds } = useCrescimento();
   const [sub, setSub] = useState(lerSub);
   const [semanaAberta, setSemanaAberta] = useState(false);
   const [selId, setSelId] = useState(null); // rampa aberta no Detalhe
@@ -112,7 +115,7 @@ export default function Crescimento({ onToast }) {
     }
   }
 
-  const podeRegistrar = linhas.length > 0 || linhasAf.some((l) => l.conf.ativo);
+  const podeRegistrar = linhas.length > 0 || linhasAf.some((l) => l.conf.ativo) || linhasAds.linhas.some((l) => l.av.ativo);
 
   return (
     <>
@@ -128,6 +131,8 @@ export default function Crescimento({ onToast }) {
       {sub === "rampa" ? (
         <RampaPreco
           dados={dados}
+          linhasAds={linhasAds}
+          onVerAds={() => trocarSub("ads")}
           rampasH={rampasH}
           regras={regras}
           linhas={linhas}
@@ -138,6 +143,17 @@ export default function Crescimento({ onToast }) {
           onToast={onToast}
           selId={selId}
           setSelId={setSelId}
+        />
+      ) : sub === "ads" ? (
+        <AdsCrescimento
+          linhasAds={linhasAds}
+          adsH={adsH}
+          regrasA={regrasA}
+          hoje={hoje}
+          canais={dados.canais}
+          onToast={onToast}
+          podeRegistrar={podeRegistrar}
+          onRegistrar={() => setSemanaAberta(true)}
         />
       ) : (
         <Afiliados
@@ -155,13 +171,13 @@ export default function Crescimento({ onToast }) {
         />
       )}
       {semanaAberta && (
-        <RegistrarSemanaDialog linhas={linhas} linhasAf={linhasAf} af={af} onToast={onToast} onClose={() => setSemanaAberta(false)} />
+        <RegistrarSemanaDialog linhas={linhas} linhasAf={linhasAf} linhasAds={linhasAds} af={af} onToast={onToast} onClose={() => setSemanaAberta(false)} />
       )}
     </>
   );
 }
 
-function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, podeRegistrar, onRegistrar, onToast, selId, setSelId }) {
+function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje, comissaoSemana, podeRegistrar, onRegistrar, onToast, selId, setSelId }) {
   const { lojas, lojaId, atualizar } = useLoja();
   const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal } = dados;
   const { rampas, disponivel, carregando } = rampasH;
@@ -524,6 +540,8 @@ function RampaPreco({ dados, rampasH, regras, linhas, hoje, comissaoSemana, pode
           acoesTeste={acoesTeste}
           onAcima={(tipo, preco) => setAcimaConfirma({ tipo, linha: sel, preco })}
           onAjustarAlvo={() => setAlvoAjuste(sel)}
+          adsLinha={linhasAds?.linhas.find((x) => x.chave === `produto|${sel.r.produto_id}|${sel.r.canal_id}`) || null}
+          onVerAds={onVerAds}
         />
       )}
       {alvoAjuste && (() => {
@@ -647,7 +665,7 @@ function TagTeste({ teste }) {
   );
 }
 
-function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo }) {
+function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo, adsLinha, onVerAds }) {
   const e = l.est;
   const noAlvo = e.noAlvo;
   const [orcEdit, setOrcEdit] = useState("");
@@ -657,7 +675,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
   const minD = Math.min(...e.degraus, maxD);
   const alt = (d) => 26 + ((d - minD) / Math.max(0.01, maxD - minD)) * 84;
   const faltam = e.portoes.filter((p) => !p.ok);
-  const ads = e.ads;
+  const av = adsLinha?.av || null;
   const roasPos = (v) => Math.max(2, Math.min(98, (v / Math.max(e.roasMin * 2, (e.roas || 0) * 1.2, 1)) * 100));
 
   return (
@@ -1094,14 +1112,14 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
             <div className="alerta alerta-neutro">
               <b>Teste de lançamento em andamento</b>Durante o teste vale o orçamento fechado acima, não a régua do ROAS. Depois dele, a régua volta a valer.
             </div>
-          ) : (
-          <div className={`alerta alerta-${{ good: "good", warn: "warn", bad: "bad" }[ads.tom] || "neutro"}`}>
-            <b>{ads.titulo}</b>
-            {ads.texto}
-            {ads.chave === "inviavel" && e.viavelEm && e.viavelEm.preco !== e.preco ? ` Ads passa a ser viável a partir de ${BRL(e.viavelEm.preco)} (ROAS mínimo ${virgula(e.viavelEm.roasMin, 1)}).` : ""}
-            {ads.chave === "inviavel" && (t.status === "observando" || t.status === "recomendado") ? " A exceção é o teste de lançamento acima: orçamento fechado pra comprar as primeiras vendas." : ""}
+          ) : av ? (
+          <div className={`alerta alerta-${{ resolver: "bad", atencao: "warn", oportunidade: "good" }[av.estado] || "neutro"}`}>
+            <b>{av.titulo}</b>
+            {av.texto}
+            {av.chave === "nao-viavel" && (t.status === "observando" || t.status === "recomendado") ? " A exceção é o teste de lançamento acima: orçamento fechado pra comprar as primeiras vendas." : ""}{" "}
+            <button type="button" className="link-btn" onClick={onVerAds}>Ver em Crescimento → Ads</button>
           </div>
-          )}
+          ) : null}
           <p className="hint" style={{ margin: 0 }}>Lembrete: não suba de degrau e mexa no Ads na mesma semana.</p>
         </div>
       </div>
@@ -1606,12 +1624,15 @@ const AvisoIntervalo = ({ aviso }) =>
 // Uma janela só pra semana: produtos em rampa (vendas, avaliações, nota, 1–2★,
 // Ads) + bloco Afiliado nos itens com comissão ativa — e os itens com
 // afiliado fora de rampa (kits, variações, produtos no alvo sem rampa).
-function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
+function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClose }) {
   const { lojaId } = useLoja();
   const [data, setData] = useState(hojeISO());
   const afDe = (l) => linhasAf.find((x) => x.chave === `produto|${l.r.produto_id}|${l.r.canal_id}` && x.conf.ativo) || null;
   const foraRampa = linhasAf.filter((x) => x.conf.ativo && !x.rampa);
+  // Itens só com Ads ligado (Crescimento → Ads), fora de rampa e sem afiliado.
+  const soAds = (linhasAds?.linhas || []).filter((x) => x.av.ativo && !x.rampa && !foraRampa.some((y) => y.chave === x.chave));
   const [f, setF] = useState(() => ({
+    ...Object.fromEntries(soAds.map((x) => [x.chave, { ...VAZIO_RAMPA }])),
     ...Object.fromEntries(linhas.map((l) => [l.r.id, { ...VAZIO_RAMPA, ...VAZIO_FUNIL, ...VAZIO_AF }])),
     ...Object.fromEntries(foraRampa.map((x) => [x.chave, { ...VAZIO_RAMPA, ...VAZIO_AF }])),
   }));
@@ -1650,6 +1671,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
         ...foraRampa
           .filter((x) => ehShopee(x.canal))
           .map((x) => ({ chave: x.chave, sku: x.item.sku, tipo: x.tipo, skuPai: x.tipo === "variacao" ? skuDoProduto(x.item.produtoId) : "", quantidade: x.item.quantidade })),
+        ...soAds.filter((x) => ehShopee(x.canal)).map((x) => ({ chave: x.chave, sku: x.item.sku, tipo: x.tipo })),
       ];
       const res = cruzarRelatorios(lidos, itensApp);
       const marcados = new Set();
@@ -1707,6 +1729,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
   };
   const perRampa = (l) => periodoDe(l.r.id, ultimoRegistroRampa(l.r, l.est.registros));
   const perAf = (x) => periodoDe(x.chave, ultimoRegistroAf(x.tipo, x.id, x.canal.id, af.registros, x.conf.row));
+  const perAds = (x) => periodoDe(x.chave, ultimoRegistroAf(x.tipo, x.id, x.canal.id, af.registros) || String(x.av.ativo.inicio).slice(0, 10));
   const dataDoPeriodo = (per) => (per ? { data: somarDiasIso(per.ate, 1), periodo_inicio: per.de } : { data });
   const intOuNull = (x) => (x === "" ? null : Math.round(num(x)));
 
@@ -1771,6 +1794,26 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
         parceiro_id: v.parceiro || null,
       });
     }
+    for (const x of soAds) {
+      const v = fv(x.chave);
+      if (!preenchido(v, ["vendas", "gasto", "cliques", "adsVendas", "conhecidos"])) continue;
+      afSalvar.push({
+        loja_id: lojaId || null,
+        item_tipo: x.tipo,
+        item_id: x.id,
+        canal_id: x.canal.id,
+        ...dataDoPeriodo(perAds(x)),
+        preco: x.preco,
+        vendas: 0,
+        comissao: 0,
+        vendas_total: v.vendas === "" ? null : Math.round(num(v.vendas)),
+        ads_gasto: v.gasto === "" ? null : num(v.gasto),
+        ads_cliques: intOuNull(v.cliques),
+        ads_vendas: intOuNull(v.adsVendas),
+        ...(v.conhecidos !== "" ? { conhecidos: Math.round(num(v.conhecidos)) } : {}),
+        parceiro_id: null,
+      });
+    }
     if (!rampaSalvar.length && !afSalvar.length) return onToast?.("Preencha pelo menos um item");
     if ([...rampaSalvar, ...afSalvar].some((g) => g.periodo_inicio && g.periodo_inicio >= g.data)) return onToast?.("Período inválido: o “De” precisa ser antes do “Até”");
     const semAf = afSalvar.find((g) => g.vendas_total != null && g.vendas > g.vendas_total);
@@ -1785,7 +1828,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
     }
     for (const g of afSalvar.filter((x) => x.vendas_total != null))
       if (somaPassa(g.vendas_total, [g.ads_vendas, g.vendas, g.conhecidos])) {
-        const x = foraRampa.find((y) => y.tipo === g.item_tipo && y.id === g.item_id && y.canal.id === g.canal_id);
+        const x = [...foraRampa, ...soAds].find((y) => y.tipo === g.item_tipo && y.id === g.item_id && y.canal.id === g.canal_id);
         return onToast?.(`${x?.item.nome || "Item"}: Ads + afiliado + conhecidos passam das ${g.vendas_total} vendas da semana`);
       }
     setSalvando(true);
@@ -2031,6 +2074,37 @@ function RegistrarSemanaDialog({ linhas, linhasAf, af, onToast, onClose }) {
             <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={fv(x.chave).conhecidos} onChange={set(x.chave, "conhecidos")} placeholder="amigos/família" title="vendas de pessoas próximas — contam no caixa, não no orgânico" /></div>
           </div>
           {blocoAfiliado(x.chave, x, x.preco)}
+        </div>
+      ))}
+      {soAds.map((x) => (
+        <div key={x.chave} className="bloco-semana">
+          <div className="bloco-semana-titulo">
+            <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">só Ads · vendendo {BRL(x.preco)}</span>
+          </div>
+          {importado?.porChave[x.chave] && (
+            <div className="importar-linha">
+              📄 do relatório: {importado.porChave[x.chave].vendas ?? 0} venda{importado.porChave[x.chave].vendas === 1 ? "" : "s"}
+              {importado.porChave[x.chave].mistura ? ` (${textoMistura(importado.porChave[x.chave].mistura)})` : ""}
+              {importado.temAds ? (importado.porChave[x.chave].gasto != null ? ` · Ads ${BRL(importado.porChave[x.chave].gasto)}` : " · sem Ads") : ""}
+            </div>
+          )}
+          {perAds(x) ? (
+            blocoPeriodo(x.chave, perAds(x))
+          ) : (
+            <AvisoIntervalo
+              aviso={avisoIntervalo(
+                (af.registros || []).filter((g) => g.item_tipo === x.tipo && g.item_id === x.id && g.canal_id === x.canal.id).map((g) => g.data),
+                data
+              )}
+            />
+          )}
+          <div className="grid-semana">
+            <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={fv(x.chave).vendas} onChange={set(x.chave, "vendas")} className={doRelatorio(x.chave, "vendas")} /></div>
+            <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(x.chave).gasto} onChange={set(x.chave, "gasto")} className={doRelatorio(x.chave, "gasto")} /></div>
+            <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(x.chave).cliques} onChange={set(x.chave, "cliques")} className={doRelatorio(x.chave, "cliques")} /></div>
+            <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(x.chave).adsVendas} onChange={set(x.chave, "adsVendas")} className={doRelatorio(x.chave, "adsVendas")} /></div>
+            <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={fv(x.chave).conhecidos} onChange={set(x.chave, "conhecidos")} placeholder="amigos/família" /></div>
+          </div>
         </div>
       ))}
     </EditarDialog>

@@ -417,30 +417,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const roas = ultAds ? roasDe(ultAds) : null;
   const organico = ultimaSemanaN ? organicoDe(ultimaSemanaN) : null;
   const organicoAntes = semanasN.length > 1 ? organicoDe(semanasN[semanasN.length - 2]) : null;
-  const ultimas2Ads = semanasAds.slice(-2);
-  const abaixo2 = ultimas2Ads.length === 2 && roasMin != null && ultimas2Ads.every((s) => (roasDe(s) ?? 0) < roasMin);
-  const muitoAbaixo2 = ultimas2Ads.length === 2 && roasMin != null && ultimas2Ads.every((s) => (roasDe(s) ?? 0) < 0.8 * roasMin);
-  let ads;
-  if (roasMin == null || roasMin > regras.roasInviavel)
-    ads = { chave: "inviavel", tom: "bad", titulo: "Ads inviável neste degrau", texto: roasMin == null ? "Sem lucro neste preço: cada venda paga dá prejuízo. Cresça no orgânico." : `Com lucro de ${moeda(lucroAtual)} por venda, cada R$ 1 de Ads precisa trazer ${moeda(roasMin)} de venda só pra empatar. Cresça no orgânico.` };
-  else if (muitoAbaixo2) ads = { chave: "pausar", tom: "bad", titulo: "Pausar Ads", texto: "ROAS abaixo de 80% do mínimo por 2 semanas: o Ads está dando prejuízo." };
-  else if (abaixo2) ads = { chave: "reduzir", tom: "warn", titulo: "Reduzir Ads em 25%", texto: "ROAS abaixo do mínimo por 2 semanas." };
-  else if (organico != null && organico >= 0.6 && organicoAntes != null && organico >= organicoAntes - 0.05 && semanasAds.length)
-    ads = { chave: "reduzir-aos-poucos", tom: "good", titulo: "Reduzir aos poucos", texto: `${Math.round(organico * 100)}% das vendas já são orgânicas: o anúncio anda sozinho. Corte 20–30% do orçamento por semana.` };
-  else if (roas != null && roas >= 1.5 * roasMin && organico != null && organicoAntes != null && organico >= organicoAntes)
-    ads = { chave: "aumentar", tom: "good", titulo: "Pode aumentar ~20%", texto: "ROAS bem acima do mínimo e o orgânico subindo." };
-  else if (roas != null && roas >= roasMin) ads = { chave: "manter", tom: "neu", titulo: "Manter", texto: "ROAS acima do mínimo." };
-  else if (roas != null) ads = { chave: "atencao", tom: "warn", titulo: "Atenção", texto: "ROAS abaixo do mínimo nesta semana — se repetir na próxima, reduza 25%." };
-  else ads = { chave: "sem", tom: "neu", titulo: "Ads viável a partir deste degrau", texto: `ROAS mínimo para empatar: ${roasMin.toFixed(1).replace(".", ",")}. Se ligar, registre gasto e vendas via Ads na semana.` };
-  // A partir de qual degrau o Ads fica viável
-  let viavelEm = null;
-  for (let k = i; k < degraus.length; k++) {
-    const l = lucroEm(degraus[k]);
-    if (l > 0 && degraus[k] / l <= regras.roasInviavel) {
-      viavelEm = { preco: degraus[k], roasMin: degraus[k] / l };
-      break;
-    }
-  }
+  // A sugestão de Ads (usar? aumentar? pausar?) é decidida SÓ em lib/ads.js.
 
   const alertaNota = nota != null && nota < regras.notaAlerta;
 
@@ -590,7 +567,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     lucroAtual, lucroAlvo: lucroEm(alvo), lucroProximo: lucroEm(proximo), lucroEm,
     zero: ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
     avaliacoesTotal, nota, vendasDesde, vendasTotal, vendasTotalDecisao, conhecidosTotal, avaliacoesDesde, dias, ruins7,
-    portoes, portoesOk, check, roasMin, roas, organico, organicoAntes, ads, viavelEm, ultAds,
+    portoes, portoesOk, check, roasMin, roas, organico, organicoAntes, ultAds,
     revisar, revisarPorAds, revisarPorLancamento, revisarPorTeste, anuncio, alertaNota, sugestao, ultimaSemana, diasMin, campanha, diasAteCampanha, campanhaPerto,
     lucroSemana, lucroSemanaAds, lucroSemanaAlvo, semanas, registros: regs, funil,
   };

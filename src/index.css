@@ -1549,3 +1549,12 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .chip-qtd-wrap:hover .chip-qtd-x, .chip-qtd-x:focus-visible { opacity: 1; }
 .chip-qtd-x:hover { color: var(--st-resolver); border-color: var(--st-resolver); }
 @media (hover: none) { .chip-qtd-x { opacity: .85; width: 14px; height: 14px; font-size: 10px; } }
+
+/* Crescimento → Ads */
+.kv-ads { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 12.5px; margin: 8px 0; }
+.kv-ads > span { color: var(--ink-soft); }
+.kv-ads > b { font-weight: 600; }
+.acoes-ads { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.historico-ads { margin-top: 8px; font-size: 12.5px; display: grid; gap: 3px; }
+.historico-ads-linha { display: grid; grid-template-columns: minmax(110px, max-content) minmax(120px, max-content) 1fr auto; gap: 4px 12px; align-items: center; padding: 3px 0; border-top: 1px solid var(--border); }
+@media (max-width: 760px) { .historico-ads-linha { grid-template-columns: 1fr auto; } .kv-ads { grid-template-columns: 1fr; } }

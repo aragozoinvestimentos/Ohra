@@ -46,7 +46,7 @@ export function periodoEmAberto(ultimo, data) {
 // → { itens: [...], pendentes: [...], adiados: [...] }; item = { chave, tipo:
 // 'rampa'|'afiliado', rampaId?, itemTipo, itemId, canal, nome, ultimo, dias,
 // pendente, lembrete }.
-export function semanasPendentes({ rampas = [], rampaRegistros = [], afConfig = [], afRegistros = [], itens = [], canais = [], precos = [], lembretes = [], hoje }) {
+export function semanasPendentes({ rampas = [], rampaRegistros = [], afConfig = [], afRegistros = [], adsPeriodos = [], itens = [], canais = [], precos = [], lembretes = [], hoje }) {
   const out = [];
   const lembreteDe = (chave) => lembretes.find((l) => l.chave === chave && String(l.adiado_ate).slice(0, 10) > hoje) || null;
   for (const r of rampas) {
@@ -74,6 +74,22 @@ export function semanasPendentes({ rampas = [], rampaRegistros = [], afConfig = 
     const dias = diasEntre(ultimo, hoje);
     const chave = chaveSemanaAf(row.item_tipo, row.item_id, row.canal_id);
     out.push({ chave, tipo: "afiliado", itemTipo: row.item_tipo, itemId: row.item_id, canal, nome: item.nome, ultimo, dias, pendente: dias > DIAS_SEMANA_PENDENTE, lembrete: lembreteDe(chave) });
+  }
+  // Item só com Ads ligado (período ativo, schema v44), fora de rampa e sem
+  // afiliado: registra a semana no mesmo afiliado_registros (vendas_total + Ads).
+  for (const p of adsPeriodos) {
+    if (p.fim && p.fim < hoje) continue;
+    const chave = chaveSemanaAf(p.item_tipo, p.item_id, p.canal_id);
+    if (out.some((x) => x.chave === chave)) continue;
+    if (p.item_tipo === "produto" && rampas.some((r) => r.produto_id === p.item_id && r.canal_id === p.canal_id)) continue;
+    const canal = canais.find((c) => c.id === p.canal_id);
+    const item = itens.find((i) => i.id === idPrefixado(p.item_tipo, p.item_id));
+    if (!canal || !item) continue;
+    let ultimo = null;
+    for (const g of afRegistros) if (g.item_tipo === p.item_tipo && g.item_id === p.item_id && g.canal_id === p.canal_id) ultimo = maior(ultimo, String(g.data).slice(0, 10));
+    ultimo = ultimo || String(p.inicio).slice(0, 10);
+    const dias = diasEntre(ultimo, hoje);
+    out.push({ chave, tipo: "afiliado", itemTipo: p.item_tipo, itemId: p.item_id, canal, nome: item.nome, ultimo, dias, pendente: dias > DIAS_SEMANA_PENDENTE, lembrete: lembreteDe(chave) });
   }
   out.sort((a, b) => b.dias - a.dias || a.nome.localeCompare(b.nome));
   return {

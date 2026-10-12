@@ -28,6 +28,7 @@ export function montarPendencias({
   afSugestoes = [], // sugestoesAfiliado: "pode|…" e "amostra|…"
   atracao = [], // [{ item, canal }] pareceAtracaoDe
   tarefas = [], // tarefas manuais (schema v42)
+  ads = null, // useCrescimento().linhasAds (lib/ads.js) — só períodos ligados + teto da loja
   hoje = "",
 }) {
   const out = [];
@@ -86,6 +87,21 @@ export function montarPendencias({
     });
   }
 
+  // ---- Ads (decisão em lib/ads.js; aqui só lê) ----
+  const irAds = { aba: "crescimento", pedido: { sub: "ads" } };
+  for (const l of ads?.linhas || []) {
+    const av = l.av;
+    if (!av.ativo) continue;
+    if (av.chave === "pausar-revisar")
+      add({ id: `ads|${l.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads com cliques sem venda`, texto: `${l.canal.nome} · ${av.titulo}`, ir: irAds, rotulo: "Abrir Ads" });
+    else if (["pausar", "reduzir", "inviavel-ativo"].includes(av.chave))
+      add({ id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo do empate (ROAS ${av.empate ? av.empate.toFixed(1).replace(".", ",") : "—"})`, ir: irAds, rotulo: "Abrir Ads" });
+    else if (["aumentar", "meta-alta"].includes(av.chave))
+      add({ id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? "ROAS acima da meta" : "a Shopee gastou pouco do orçamento"}`, ir: irAds, rotulo: "Abrir Ads" });
+  }
+  if (ads?.loja?.acimaTeto)
+    add({ id: "ads|teto", grupo: "rotina", ordem: 2, tom: "warn", titulo: "Ads acima do teto da loja", texto: `${Math.round(ads.loja.pct * 100)}% do faturamento da semana em Ads`, ir: irAds, rotulo: "Abrir Ads" });
+
   // ---- Rotina ----
   for (const x of semana)
     add({
@@ -94,7 +110,7 @@ export function montarPendencias({
       ordem: 1,
       tom: "warn",
       titulo: `${x.nome}: semana pendente`,
-      texto: `${x.canal.nome} · ${x.tipo === "rampa" ? "em rampa" : "afiliado"} · sem registro desde ${diaMes(x.ultimo)} (${x.dias} dias)`,
+      texto: `${x.canal.nome} · ${x.tipo === "rampa" ? "em rampa" : "afiliado/Ads"} · sem registro desde ${diaMes(x.ultimo)} (${x.dias} dias)`,
       ir: { aba: "crescimento", pedido: { registrar: true } },
       rotulo: "Registrar agora",
       semana: x.chave,
