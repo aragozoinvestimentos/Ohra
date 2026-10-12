@@ -29,6 +29,8 @@ import BuscaItem from "./BuscaItem.jsx";
 import GraficoRampa from "./GraficoRampa.jsx";
 import Afiliados from "./Afiliados.jsx";
 import AdsCrescimento from "./AdsCrescimento.jsx";
+import { PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
+import { encerrarPeriodoAds, iniciarPeriodoAds } from "../lib/adsAcoes.js";
 import OndeSeDecide from "./OndeSeDecide.jsx";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { pegarPedido } from "../lib/navegar.js";
@@ -149,6 +151,7 @@ export default function Crescimento({ onToast }) {
           linhasAds={linhasAds}
           adsH={adsH}
           regrasA={regrasA}
+          regras={regras}
           hoje={hoje}
           canais={dados.canais}
           onToast={onToast}
@@ -259,16 +262,49 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
     return true;
   }
 
+  // O Ads (inclusive o teste de lançamento) é gravado SÓ por lib/adsAcoes.js —
+  // o mesmo diálogo e a mesma função da aba Ads.
+  const adsDe = (l) => linhasAds?.linhas.find((x) => x.chave === `produto|${l.r.produto_id}|${l.r.canal_id}`) || null;
+  const periodoTesteDe = (l) => (adsDe(l)?.periodos || []).find((p) => p.tipo === "teste" && p.inicio === l.r.teste_inicio) || (adsDe(l)?.av.ativo?.tipo === "teste" ? adsDe(l).av.ativo : null);
+  const [testeDlg, setTesteDlg] = useState(null); // { linha, orc }
+  async function iniciarTeste(f) {
+    const l = testeDlg.linha;
+    setSalvando(true);
+    const r = await iniciarPeriodoAds({
+      lojaId,
+      tipo: "produto",
+      id: l.r.produto_id,
+      canalId: l.r.canal_id,
+      inicio: f.inicio,
+      fim: f.comoTeste ? f.fim : f.fim || null,
+      orcamento: f.orcamento === "" ? null : num(f.orcamento),
+      meta: f.meta === "" ? null : num(f.meta),
+      nota: f.nota || null,
+      teste: f.comoTeste,
+      rampa: l.r,
+      regras,
+    });
+    setSalvando(false);
+    if (!r.ok) return onToast?.(r.msg);
+    window.dispatchEvent(new Event("focus"));
+    setTesteDlg(null);
+    onToast?.(f.comoTeste ? "Teste de lançamento iniciado — registre gasto, cliques e vendas via Ads" : "Período de Ads iniciado (sem contar como teste)");
+  }
+  async function concluirTeste(l, motivo = null) {
+    const r = await encerrarPeriodoAds(periodoTesteDe(l), { fim: hoje, motivo, rampa: l.r });
+    if (!r.ok) return onToast?.(r.msg), false;
+    window.dispatchEvent(new Event("focus"));
+    return true;
+  }
   const acoesTeste = {
-    iniciar: (l, orc) =>
-      atualizarRampa(
-        l,
-        { teste_status: "iniciado", teste_inicio: hoje, teste_fim: null, teste_orcamento: orc, teste_dias: regras.testeDias, teste_meta: regras.testeMeta },
-        `Teste de lançamento iniciado: ${BRL(orc)} em ${regras.testeDias} dias (≈ ${BRL(orc / regras.testeDias)}/dia). Registre gasto, cliques e vendas via Ads.`
-      ),
+    iniciar: (l, orc) => setTesteDlg({ linha: l, orc }),
     pular: (l) => atualizarRampa(l, { teste_status: "pulado" }, "Teste de lançamento pulado"),
-    concluir: (l) => atualizarRampa(l, { teste_status: "concluido", teste_fim: hoje }, "Teste concluído — desligue o Ads na plataforma"),
-    reabrir: (l) => atualizarRampa(l, { teste_status: null, teste_inicio: null, teste_fim: null }, "Teste de lançamento reaberto"),
+    concluir: async (l) => (await concluirTeste(l)) && onToast?.("Teste concluído — desligue o Ads na plataforma"),
+    reabrir: async (l) => {
+      const p = periodoTesteDe(l);
+      if (p && !p.motivo_fim && (!p.fim || p.fim >= hoje)) await encerrarPeriodoAds(p, { fim: hoje, motivo: "teste refeito" });
+      atualizarRampa(l, { teste_status: null, teste_inicio: null, teste_fim: null }, "Teste de lançamento reaberto");
+    },
   };
 
   async function testarAcima(l, preco) {
@@ -542,6 +578,18 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
           onAjustarAlvo={() => setAlvoAjuste(sel)}
           adsLinha={linhasAds?.linhas.find((x) => x.chave === `produto|${sel.r.produto_id}|${sel.r.canal_id}`) || null}
           onVerAds={onVerAds}
+        />
+      )}
+      {testeDlg && (
+        <PeriodoAdsDialog
+          nome={testeDlg.linha.produto.nome}
+          av={adsDe(testeDlg.linha)?.av || null}
+          hoje={hoje}
+          regrasA={{ minDiario: regras.testeMinDiario }}
+          teste={{ padrao: true, dias: regras.testeDias, orcamentoDia: Math.round(((testeDlg.orc || 0) / regras.testeDias) * 100) / 100, meta: regras.testeMeta }}
+          salvando={salvando}
+          onCancelar={() => setTesteDlg(null)}
+          onSalvar={iniciarTeste}
         />
       )}
       {alvoAjuste && (() => {
@@ -905,6 +953,17 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
         </div>
 
         <div>
+          {t.status === "ads-ligado" && (
+            <div className="teste-card">
+              <h4 className="sub-h">Ads ligado</h4>
+              <p className="teste-texto">
+                Período de Ads desde {dataBR(t.periodo.inicio)}
+                {t.periodo.orcamento_diario ? ` · ${BRL(t.periodo.orcamento_diario)}/dia` : ""}
+                {t.periodo.meta_roas ? ` · meta ${virgula(t.periodo.meta_roas, 1)}` : ""}: o teste de lançamento não se aplica enquanto ele estiver ligado.{" "}
+                <button type="button" className="link-btn" onClick={onVerAds}>Ver em Crescimento → Ads</button>
+              </p>
+            </div>
+          )}
           {["observando", "recomendado", "andamento", "concluido"].includes(t.status) && (
             <div className={`teste-card teste-${t.status}`}>
               <h4 className="sub-h">

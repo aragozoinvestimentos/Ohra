@@ -458,7 +458,8 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
       inicio: ini, ate, prazo, meta, orc, gasto, cliques, vendasAds, custoVenda,
       diasRestantes: Math.max(0, prazo - diasPassados), resultado,
     };
-  } else if (num(rampa.vendas_iniciais) >= regras.testeMeta) teste = { status: "nao-aplica" };
+  } else if (ctx.adsAtivo) teste = { status: "ads-ligado", periodo: ctx.adsAtivo };
+  else if (num(rampa.vendas_iniciais) >= regras.testeMeta) teste = { status: "nao-aplica" };
   else if (vendasTotalDecisao >= regras.testeDispensaVendas) teste = { status: "nao-precisa" };
   else if (diasRampa < regras.testeObservarDias) teste = { status: "observando", dia: diasRampa + 1, de: regras.testeObservarDias };
   else teste = { status: "recomendado" };

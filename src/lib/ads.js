@@ -61,7 +61,10 @@ export function periodosDoItem(periodos, tipo, id, canalId) {
     .filter((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === canalId)
     .sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)));
 }
-export const periodoAtivo = (lista, hoje) => (lista || []).find((p) => !p.fim || p.fim >= hoje) || null;
+// Ligado = não foi encerrado (motivo_fim vazio — o "Encerrar" sempre grava um)
+// e a data de fim, se houver, ainda não passou.
+export const periodoLigado = (p, hoje) => !!p && !p.motivo_fim && (!p.fim || p.fim >= hoje);
+export const periodoAtivo = (lista, hoje) => (lista || []).find((p) => periodoLigado(p, hoje)) || null;
 
 // Ajustes do período (aumentou/reduziu orçamento, mudou a meta): o orçamento
 // e a meta "de agora" são os do último ajuste.
@@ -119,7 +122,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
   const ss = (semanas || []).map(porSemana).sort((a, b) => String(a.data).localeCompare(String(b.data)));
   const empate = roasEmpate(preco, lucro);
   const ativo = periodoAtivo(periodos, hoje);
-  const ultimoFechado = (periodos || []).find((p) => p.fim && p.fim < hoje) || null;
+  const ultimoFechado = (periodos || []).find((p) => !periodoLigado(p, hoje) && p.fim) || null;
   const base = { empate, ativo, ultimoFechado, preco, lucro };
   const sit = (chave, estado, titulo, texto, extra = {}) => ({ ...base, chave, estado, titulo, texto, ...extra });
 
@@ -130,6 +133,11 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const numeros = { orcamento, meta, dias, ...r };
     // Desde o último ajuste (ou início), conta de novo o aprendizado.
     const refAprend = ultimoAjuste && ultimoAjuste > ativo.inicio ? ultimoAjuste : ativo.inicio;
+    // Teste de lançamento: orçamento fechado, regras e resultado na Rampa.
+    if (ativo.tipo === "teste") {
+      const total = ativo.fim ? diasEntre(ativo.inicio, ativo.fim) + 1 : regras.aprendizadoDias;
+      return sit("teste", "decisao", `Teste de lançamento · dia ${Math.min(dias + 1, total)} de ${total}`, `Orçamento fechado${ativo.fim ? ` até ${dm(ativo.fim)}` : ""}: a régua do ROAS não vale durante o teste. Acompanhe e conclua na Rampa; o resultado entra no histórico daqui.`, { numeros });
+    }
     const diasAprend = diasEntre(refAprend, hoje);
     if (r.vendas === 0 && r.cliques >= regras.cliquesSemVenda)
       return sit("pausar-revisar", "resolver", "Pausar e revisar o anúncio", `${r.cliques} cliques pagos e nenhuma venda: o Ads está trazendo gente, mas a página não convence. Pause e revise foto, descrição, medidas e preço antes de gastar mais.`, { numeros });

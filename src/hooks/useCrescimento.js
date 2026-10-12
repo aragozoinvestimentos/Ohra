@@ -6,7 +6,7 @@ import { estadoRampa, metricasFunil, referenciaFunilLoja, regrasDaLoja } from ".
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
-import { adsDaLoja, avaliarAds, periodosDoItem, regrasAds } from "../lib/ads.js";
+import { adsDaLoja, avaliarAds, periodoAtivo, periodosDoItem, regrasAds } from "../lib/ads.js";
 import { lucroNoPreco } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
 
@@ -25,6 +25,9 @@ export function useCrescimento() {
   const af = useAfiliados();
   const regras = useMemo(() => regrasDaLoja(cfgLoja), [cfgLoja]);
   const hoje = hojeISO();
+  // Períodos de Ads (lib/adsAcoes.js grava; ads.js decide): a Rampa só fica
+  // sabendo que há Ads ligado no produto (teste "ads-ligado").
+  const adsH = useAdsPeriodos();
 
   // Referência do funil: mediana de CTR e conversão dos produtos da loja
   // (só com 5+ produtos com funil calculável; senão, referência geral).
@@ -43,14 +46,15 @@ export function useCrescimento() {
         if (!produto || !canal || !item) return null;
         const cfg = cfgDoProduto(r.produto_id);
         const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === r.produto_id && p.canal_id === r.canal_id);
-        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja };
+        const adsAtivo = periodoAtivo(periodosDoItem(adsH.periodos, "produto", r.produto_id, r.canal_id), hoje);
+        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo };
         const regs = registros.filter((g) => g.rampa_id === r.id);
         const est = estadoRampa(r, regs, regras, ctx, hoje);
         return { r, produto, canal, item, cfg, ctx, est };
       })
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja]);
+  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos]);
 
   // Comissão de afiliado por item × canal (ao vivo).
   const linhasAf = useMemo(
@@ -67,7 +71,6 @@ export function useCrescimento() {
   // salvo — situação da semana (usar? aumentar? pausar?). Semanas: as da rampa
   // do produto ou, fora de rampa, os registros semanais do item (afiliado_registros
   // com vendas_total, que também guardam os itens só com Ads).
-  const adsH = useAdsPeriodos();
   const regrasA = useMemo(() => regrasAds(cfgLoja), [cfgLoja]);
   const linhasAds = useMemo(() => {
     const semanasDe = (tipo, id, canalId, rampa) =>

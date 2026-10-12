@@ -1,13 +1,14 @@
 import { Fragment, useMemo, useState } from "react";
-import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { metaSugerida, resumoPeriodo, valoresAtuais } from "../lib/ads.js";
+import { periodoLigado, resumoPeriodo, valoresAtuais } from "../lib/ads.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
 import EditarDialog from "./EditarDialog.jsx";
+import { EncerrarAdsDialog, NAO_RECOMENDA, PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
+import { ajustarPeriodoAds, encerrarPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds } from "../lib/adsAcoes.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 
 // Crescimento → Ads (schema v44): avaliação semanal de Ads por produto/kit ×
@@ -22,14 +23,13 @@ const pct = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 const virg = (v) => (v == null || v === "" ? "" : String(v).replace(".", ","));
 const ORDEM = { resolver: 0, atencao: 1, oportunidade: 2, decisao: 3, info: 4, ok: 5 };
-const NAO_RECOMENDA = new Set(["nao-viavel", "arrumar", "aguardar", "sem-necessidade"]);
 
 function Situacao({ av, compacto }) {
   if (av.estado === "ok") return <span className={compacto ? "muted-cel" : undefined}>✓ {av.titulo}</span>;
   return <Estado tipo={av.estado}>{av.titulo}</Estado>;
 }
 
-export default function AdsCrescimento({ linhasAds, adsH, regrasA, hoje, canais, onToast, podeRegistrar, onRegistrar }) {
+export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje, canais, onToast, podeRegistrar, onRegistrar }) {
   const { lojaId, lojas, atualizar } = useLoja();
   const loja = lojas?.find((l) => l.id === lojaId) || null;
   const canaisComLinha = useMemo(() => canais.filter((c) => linhasAds.linhas.some((l) => l.canal.id === c.id)), [canais, linhasAds]);
@@ -64,45 +64,63 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, hoje, canais,
       </div>
     );
 
-  async function gravar(fn, ok) {
+  // Teste de lançamento possível: produto em rampa com o teste ainda não feito.
+  const testeDe = (l) => {
+    const t = l.rampa?.est.teste;
+    if (!t || !["observando", "recomendado"].includes(t.status)) return null;
+    return { padrao: t.status === "recomendado", dias: regras.testeDias, orcamentoDia: t.porDia, meta: regras.testeMeta };
+  };
+  async function rodar(fn, ok) {
     setSalvando(true);
-    const { error } = await fn();
+    const r = await fn();
     setSalvando(false);
-    if (error) return onToast?.(/ads_periodos|schema cache|does not exist/.test(error.message) ? "Falta rodar o supabase/schema_v44.sql no Supabase" : `Não foi possível salvar: ${error.message}`), false;
+    if (!r.ok) return onToast?.(r.msg), false;
     window.dispatchEvent(new Event("focus"));
-    onToast?.(ok);
+    onToast?.(r.semTipo ? `${ok} — rode o supabase/schema_v45.sql pra separar teste de período normal` : ok);
     return true;
   }
 
   async function salvarPeriodo(f) {
     const l = periodoDlg.linha;
-    const linha = {
-      loja_id: lojaId || null,
-      item_tipo: l.tipo,
-      item_id: l.id,
-      canal_id: l.canal.id,
-      inicio: f.inicio,
-      fim: f.fim || null,
-      orcamento_diario: f.orcamento === "" ? null : num(f.orcamento),
-      meta_roas: f.meta === "" ? null : num(f.meta),
-      nota: f.nota || null,
-    };
-    if (await gravar(() => supabase.from("ads_periodos").insert(linha), `Período de Ads iniciado: ${l.item.nome}`)) setPeriodoDlg(null);
+    const ok = await rodar(
+      () =>
+        iniciarPeriodoAds({
+          lojaId,
+          tipo: l.tipo,
+          id: l.id,
+          canalId: l.canal.id,
+          inicio: f.inicio,
+          fim: f.fim || null,
+          orcamento: f.orcamento === "" ? null : num(f.orcamento),
+          meta: f.meta === "" ? null : num(f.meta),
+          nota: f.nota || null,
+          teste: f.comoTeste,
+          rampa: l.rampa?.r || null,
+          regras,
+        }),
+      f.comoTeste ? `Teste de lançamento iniciado: ${l.item.nome}` : `Período de Ads iniciado: ${l.item.nome}`
+    );
+    if (ok) setPeriodoDlg(null);
   }
 
   async function salvarAjuste(f) {
     const p = ajusteDlg.linha.av.ativo;
-    const ajustes = [...(Array.isArray(p.ajustes) ? p.ajustes : []), { data: f.data, orcamento: f.orcamento === "" ? null : num(f.orcamento), meta: f.meta === "" ? null : num(f.meta), motivo: f.motivo || null }];
-    if (await gravar(() => supabase.from("ads_periodos").update({ ajustes }).eq("id", p.id), "Ajuste registrado — a Shopee reaprende uns dias")) setAjusteDlg(null);
+    const ok = await rodar(
+      () => ajustarPeriodoAds(p, { data: f.data, orcamento: f.orcamento === "" ? null : num(f.orcamento), meta: f.meta === "" ? null : num(f.meta), motivo: f.motivo || null }),
+      "Ajuste registrado — a Shopee reaprende uns dias"
+    );
+    if (ok) setAjusteDlg(null);
   }
 
   async function encerrar(f) {
-    const p = encerrarDlg.linha.av.ativo;
-    if (await gravar(() => supabase.from("ads_periodos").update({ fim: f.fim, motivo_fim: f.motivo || null }).eq("id", p.id), "Período encerrado — lembre de pausar na plataforma")) setEncerrarDlg(null);
+    const l = encerrarDlg.linha;
+    const ok = await rodar(() => encerrarPeriodoAds(l.av.ativo, { fim: f.fim, motivo: f.motivo || null, rampa: l.rampa?.r || null }), "Período encerrado — lembre de pausar na plataforma");
+    if (ok) setEncerrarDlg(null);
   }
 
   async function excluir() {
-    if (await gravar(() => supabase.from("ads_periodos").delete().eq("id", excluirDlg.periodo.id), "Período excluído")) setExcluirDlg(null);
+    const ok = await rodar(() => excluirPeriodoAds(excluirDlg.periodo, { rampa: excluirDlg.rampa || null, hoje }), "Período excluído");
+    if (ok) setExcluirDlg(null);
   }
 
   async function salvarRegras(f) {
@@ -212,7 +230,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, hoje, canais,
                               onNovo={() => setPeriodoDlg({ linha: l })}
                               onAjuste={(sug) => setAjusteDlg({ linha: l, ...sug })}
                               onEncerrar={() => setEncerrarDlg({ linha: l })}
-                              onExcluir={(periodo) => setExcluirDlg({ periodo })}
+                              onExcluir={(periodo) => setExcluirDlg({ periodo, rampa: l.rampa?.r || null })}
                             />
                           </td>
                         </tr>
@@ -226,9 +244,9 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, hoje, canais,
         )}
       </div>
 
-      {periodoDlg && <PeriodoDialog l={periodoDlg.linha} hoje={hoje} regrasA={regrasA} salvando={salvando} onCancelar={() => setPeriodoDlg(null)} onSalvar={salvarPeriodo} />}
+      {periodoDlg && <PeriodoAdsDialog nome={periodoDlg.linha.item.nome} av={periodoDlg.linha.av} teste={testeDe(periodoDlg.linha)} hoje={hoje} regrasA={regrasA} salvando={salvando} onCancelar={() => setPeriodoDlg(null)} onSalvar={salvarPeriodo} />}
       {ajusteDlg && <AjusteDialog d={ajusteDlg} hoje={hoje} salvando={salvando} onCancelar={() => setAjusteDlg(null)} onSalvar={salvarAjuste} />}
-      {encerrarDlg && <EncerrarDialog l={encerrarDlg.linha} hoje={hoje} salvando={salvando} onCancelar={() => setEncerrarDlg(null)} onSalvar={encerrar} />}
+      {encerrarDlg && <EncerrarAdsDialog nome={encerrarDlg.linha.item.nome} teste={encerrarDlg.linha.av.ativo?.tipo === "teste"} hoje={hoje} salvando={salvando} onCancelar={() => setEncerrarDlg(null)} onSalvar={encerrar} />}
       {excluirDlg && (
         <ConfirmDialog
           titulo="Excluir este período de Ads?"
@@ -313,7 +331,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
           <b>Períodos</b>
           {historico.map(({ p, r }) => {
             const v = valoresAtuais(p);
-            const ativo = !p.fim || p.fim >= hoje;
+            const ativo = periodoLigado(p, hoje);
             return (
               <div key={p.id} className="historico-ads-linha">
                 <span>
@@ -328,7 +346,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
                 <span>
                   gasto {BRL(r.gasto)} · {r.vendas} venda{r.vendas === 1 ? "" : "s"} · ROAS {um(r.roas)}
                   {r.resultado && !ativo ? ` · ${r.resultado.texto}` : ""}
-                  {p.motivo_fim ? <span className="muted-cel"> · {p.motivo_fim}</span> : null}
+                  {p.motivo_fim && p.motivo_fim !== "encerrado" ? <span className="muted-cel"> · {p.motivo_fim}</span> : null}
                 </span>
                 <button type="button" className="btn-icone" title="Excluir este período" onClick={() => onExcluir(p)}>×</button>
               </div>
@@ -338,35 +356,6 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
         </div>
       )}
     </div>
-  );
-}
-
-function PeriodoDialog({ l, hoje, regrasA, salvando, onCancelar, onSalvar }) {
-  const av = l.av;
-  const [f, setF] = useState({ inicio: hoje, orcamento: String(regrasA.minDiario), meta: av.empate ? virg(metaSugerida(av.empate)) : "", fim: "", nota: "" });
-  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
-  const metaBaixa = av.empate && f.meta !== "" && num(f.meta) < av.empate;
-  return (
-    <EditarDialog titulo={`Novo período de Ads — ${l.item.nome}`} salvando={salvando} onCancelar={onCancelar} onSalvar={() => (f.inicio ? onSalvar(f) : null)} salvarLabel="Iniciar período" classe="modal-box-md">
-      {NAO_RECOMENDA.has(av.chave) && (
-        <div className="alerta alerta-warn">
-          <b>O app não recomenda agora: {av.titulo}</b>
-          {av.texto} Dá pra iniciar mesmo assim, a decisão é sua.
-        </div>
-      )}
-      <p className="hint" style={{ marginTop: 0 }}>
-        Registre o que você configurou na plataforma. Os 7 primeiros dias são de aprendizado: o app não sugere mexer. Empate deste produto: ROAS {um(av.empate)}.
-      </p>
-      <div className="grid-auto">
-        <div className="field"><label>Início</label><input type="date" value={f.inicio} onChange={set("inicio")} /></div>
-        <div className="field"><label>Orçamento diário (R$)</label><input type="text" inputMode="decimal" value={f.orcamento} onChange={set("orcamento")} /></div>
-        <div className="field"><label>Meta de ROAS</label><input type="text" inputMode="decimal" value={f.meta} onChange={set("meta")} placeholder={av.empate ? virg(metaSugerida(av.empate)) : ""} /></div>
-        <div className="field"><label>Fim (opcional)</label><input type="date" value={f.fim} onChange={set("fim")} /></div>
-      </div>
-      {metaBaixa && <div className="alerta alerta-warn"><b>Meta abaixo do empate ({um(av.empate)})</b>Com essa meta, a Shopee pode vender com prejuízo pra você.</div>}
-      {num(f.orcamento) > 0 && num(f.orcamento) < regrasA.minDiario && <div className="alerta alerta-warn"><b>Abaixo do mínimo da Shopee</b>A Shopee exige no mínimo {BRL(regrasA.minDiario)}/dia.</div>}
-      <div className="field"><label>Observação (opcional)</label><input type="text" value={f.nota} onChange={set("nota")} placeholder="ex.: GMV Max, meta de ROAS" /></div>
-    </EditarDialog>
   );
 }
 
@@ -384,19 +373,6 @@ function AjusteDialog({ d, hoje, salvando, onCancelar, onSalvar }) {
       </div>
       {empate && f.meta !== "" && num(f.meta) < empate && <div className="alerta alerta-warn"><b>Meta abaixo do empate ({um(empate)})</b>Com essa meta, a Shopee pode vender com prejuízo pra você.</div>}
       <div className="field"><label>Motivo (opcional)</label><input type="text" value={f.motivo} onChange={set("motivo")} /></div>
-    </EditarDialog>
-  );
-}
-
-function EncerrarDialog({ l, hoje, salvando, onCancelar, onSalvar }) {
-  const [f, setF] = useState({ fim: hoje, motivo: "" });
-  return (
-    <EditarDialog titulo={`Encerrar Ads — ${l.item.nome}`} salvando={salvando} onCancelar={onCancelar} onSalvar={() => (f.fim ? onSalvar(f) : null)} salvarLabel="Encerrar período" classe="modal-box-md">
-      <p className="hint" style={{ marginTop: 0 }}>Marque o dia em que pausou na plataforma. O período fica no histórico com o resultado.</p>
-      <div className="grid-auto">
-        <div className="field"><label>Pausei em</label><input type="date" value={f.fim} onChange={(e) => setF((p) => ({ ...p, fim: e.target.value }))} /></div>
-        <div className="field"><label>Motivo (opcional)</label><input type="text" value={f.motivo} onChange={(e) => setF((p) => ({ ...p, motivo: e.target.value }))} placeholder="ex.: ROAS abaixo do empate" /></div>
-      </div>
     </EditarDialog>
   );
 }

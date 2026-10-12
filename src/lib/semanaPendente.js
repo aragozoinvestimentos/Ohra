@@ -78,7 +78,7 @@ export function semanasPendentes({ rampas = [], rampaRegistros = [], afConfig = 
   // Item só com Ads ligado (período ativo, schema v44), fora de rampa e sem
   // afiliado: registra a semana no mesmo afiliado_registros (vendas_total + Ads).
   for (const p of adsPeriodos) {
-    if (p.fim && p.fim < hoje) continue;
+    if (p.motivo_fim || (p.fim && p.fim < hoje)) continue;
     const chave = chaveSemanaAf(p.item_tipo, p.item_id, p.canal_id);
     if (out.some((x) => x.chave === chave)) continue;
     if (p.item_tipo === "produto" && rampas.some((r) => r.produto_id === p.item_id && r.canal_id === p.canal_id)) continue;
