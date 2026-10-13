@@ -187,6 +187,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
   const { rampas, disponivel, carregando } = rampasH;
   const [iniciar, setIniciar] = useState(null); // {} novo | { rampa } editar degraus
   const [mudar, setMudar] = useState(null); // { linha, dir: 1 | -1 }
+  const [ajusteDeg, setAjusteDeg] = useState(null); // linha: ajustar o preço do degrau atual
   const [encerrar, setEncerrar] = useState(null);
   const [verRegras, setVerRegras] = useState(false);
   const [acimaConfirma, setAcimaConfirma] = useState(null);
@@ -243,6 +244,33 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
     setMudar(null);
     if (error) return onToast?.(`Não foi possível mudar o degrau: ${error.message}`);
     onToast?.(`${linha.produto.nome}: agora vendendo ${BRL(est.degraus[novo])} em ${linha.canal.nome} — atualize o anúncio (preço original e promo abaixo)`);
+  }
+
+  // Ajustar o preço do degrau ATUAL sem subir: troca o valor, mantém o índice,
+  // `desde` e a base de avaliações (os portões seguem contando) e não gera
+  // registro de subida (o check da subida não roda). Degraus intermediários
+  // que ficarem ≤ o preço novo saem (seria pular etapa — avisado no diálogo).
+  // Histórico em checklist.ajustesDegrau [{ data, de, para }].
+  async function ajustarDegrau(novo) {
+    const { r, est } = ajusteDeg;
+    const de = est.degraus[est.i];
+    const ultimo = est.degraus.length - 1;
+    const degraus = est.degraus.map(num).filter((d, k) => k <= est.i || k === ultimo || d > novo + 0.004);
+    degraus[est.i] = novo;
+    // novo = alvo → o degrau atual vira o próprio alvo (sem duplicar)
+    const lista = degraus.filter((d, k) => !(k === est.i && k < degraus.length - 1 && Math.abs(d - degraus[degraus.length - 1]) < 0.005));
+    const idx = Math.min(est.i, lista.length - 1);
+    const ajustes = [...(Array.isArray(r.checklist?.ajustesDegrau) ? r.checklist.ajustesDegrau : []), { data: hoje, de, para: novo }];
+    setSalvando(true);
+    const { error } = await supabase
+      .from("rampas_preco")
+      .update({ degraus: lista, degrau_atual: idx, checklist: { ...(r.checklist || {}), ajustesDegrau: ajustes }, atualizado_em: new Date().toISOString() })
+      .eq("id", r.id);
+    setSalvando(false);
+    if (error) return onToast?.(`Não foi possível ajustar: ${error.message}`);
+    setAjusteDeg(null);
+    window.dispatchEvent(new Event("focus"));
+    onToast?.(`${ajusteDeg.produto.nome}: degrau ajustado pra ${BRL(novo)} (não conta como subida) — atualize a promo no anúncio`);
   }
 
   async function encerrarRampa() {
@@ -572,6 +600,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
           regras={regras}
           onMudar={(dir) => setMudar({ linha: sel, dir })}
           onEditar={() => setIniciar({ rampa: sel.r })}
+          onAjustarDegrau={() => setAjusteDeg(sel)}
           onEncerrar={() => setEncerrar(sel)}
           onChecklist={marcarChecklist}
           acoesTeste={acoesTeste}
@@ -593,6 +622,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
           onSalvar={iniciarTeste}
         />
       )}
+      {ajusteDeg && <AjustarDegrauDialog l={ajusteDeg} salvando={salvando} onCancelar={() => setAjusteDeg(null)} onSalvar={ajustarDegrau} />}
       {alvoAjuste && (() => {
         const aj = ajustarDegrausAoAlvo(alvoAjuste.est.degraus, alvoAjuste.est.i, alvoAjuste.est.alvo);
         return (
@@ -698,6 +728,47 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
   );
 }
 
+// Diálogo "Ajustar preço deste degrau" (não conta como subida).
+function AjustarDegrauDialog({ l, salvando, onCancelar, onSalvar }) {
+  const e = l.est;
+  const atual = num(e.degraus[e.i]);
+  const anterior = e.i > 0 ? num(e.degraus[e.i - 1]) : null;
+  const alvo = num(e.degraus[e.degraus.length - 1]);
+  const [valor, setValor] = useState(virgula(atual));
+  const novo = Math.round(num(valor) * 100) / 100;
+  const pulados = e.degraus.map(num).filter((d, k) => k > e.i && k < e.degraus.length - 1 && d <= novo + 0.004);
+  const erro =
+    !(novo > 0) ? "Informe o preço" : anterior != null && novo <= anterior ? `Precisa ficar acima do degrau anterior (${BRL(anterior)})` : novo > alvo + 0.004 ? `Não pode passar do alvo (${BRL(alvo)}) — pra vender acima do alvo use "testar acima do alvo"` : null;
+  const lucroNovo = e.lucroEm ? e.lucroEm(novo) : null;
+  return (
+    <EditarDialog titulo={`Ajustar preço do degrau — ${l.produto.nome}`} salvando={salvando} onCancelar={onCancelar} onSalvar={() => !erro && onSalvar(novo)} salvarLabel="Ajustar preço">
+      <p className="hint" style={{ marginTop: 0 }}>
+        Troca só o preço do degrau em que você está. <b>Não conta como subida</b>: os dias, as vendas e as avaliações desde {dataBR(l.r.desde)} continuam valendo pros portões.
+      </p>
+      <div className="grid-auto">
+        <div className="field">
+          <label>Preço agora</label>
+          <input type="text" value={BRL(atual)} disabled />
+          {e.lucroAtual != null && <small className="muted-cel">lucro {BRL(e.lucroAtual)}</small>}
+        </div>
+        <div className="field">
+          <label>Novo preço</label>
+          <input type="text" inputMode="decimal" value={valor} onChange={(ev) => setValor(ev.target.value)} autoFocus />
+          {lucroNovo != null && !erro && <small className="muted-cel">lucro {BRL(lucroNovo)}{e.lucroAtual != null ? ` (${lucroNovo >= e.lucroAtual ? "+" : "−"}${BRL(Math.abs(lucroNovo - e.lucroAtual))} por venda)` : ""}</small>}
+        </div>
+      </div>
+      {erro && valor !== "" && <div className="alerta alerta-warn">{erro}</div>}
+      {!erro && pulados.length > 0 && (
+        <div className="alerta alerta-warn">
+          <b>Isso pula {pulados.length === 1 ? "um degrau" : `${pulados.length} degraus`}</b>
+          {pulados.map((d) => BRL(d)).join(", ")} {pulados.length === 1 ? "sai" : "saem"} da escada ao ajustar — é como subir sem passar pelos portões. Se for isso mesmo, pode seguir.
+        </div>
+      )}
+      <p className="hint">Depois, na Anunciar, atualize a promo (o preço original continua fixo). As semanas no preço antigo deixam de contar pro funil do anúncio, que compara só semanas no mesmo preço.</p>
+    </EditarDialog>
+  );
+}
+
 const TESTE_TAG = {
   observando: ["info", (t) => `observando orgânico · dia ${t.dia} de ${t.de}`],
   recomendado: ["atencao", () => "teste de lançamento recomendado"],
@@ -714,7 +785,7 @@ function TagTeste({ teste }) {
   );
 }
 
-function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo, adsLinha, onVerAds }) {
+function Detalhe({ l, anuncio, regras, onMudar, onEditar, onAjustarDegrau, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo, adsLinha, onVerAds }) {
   const e = l.est;
   const noAlvo = e.noAlvo;
   const [orcEdit, setOrcEdit] = useState("");
@@ -734,10 +805,20 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onEncerrar, onChecklis
           {l.produto.nome} <CanalTag canal={l.canal} />
           <span className="h3-contagem">
             degrau {e.i + 1} de {e.degraus.length} desde {dataBR(l.r.desde)} ({e.dias} dia{e.dias === 1 ? "" : "s"}) · {e.vendasTotal} vendas no total{e.conhecidosTotal > 0 ? ` (${e.conhecidosTotal} de conhecidos)` : ""}
+            {(() => {
+              const aj = Array.isArray(l.r.checklist?.ajustesDegrau) ? l.r.checklist.ajustesDegrau : [];
+              const u = aj[aj.length - 1];
+              return u ? ` · ajustado em ${dataBR(u.data)}: ${BRL(u.de)} → ${BRL(u.para)}` : "";
+            })()}
           </span>
         </span>
         <span className="acoes-detalhe">
           <button type="button" className="btn btn-mini" onClick={onEditar}>Editar degraus</button>
+          {!noAlvo && (
+            <button type="button" className="btn btn-mini" onClick={onAjustarDegrau} title="Corrige o preço do degrau em que você está, sem contar como subida">
+              ✎ Ajustar preço deste degrau
+            </button>
+          )}
           <button type="button" className="btn btn-mini" onClick={() => onMudar(-1)} disabled={e.i === 0}>↓ Voltar degrau</button>
           <button type="button" className={`btn btn-mini${e.sugestao.chave === "subir" && e.sugestao.saltos !== 2 ? " primary" : ""}`} onClick={() => onMudar(1)} disabled={noAlvo || !e.proximo}>
             ↑ Subir{e.proximo ? ` para ${BRL(e.proximo)}` : ""}
