@@ -1619,6 +1619,11 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .cat-precos td { padding: 6px; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
 .cat-cor-0 { background: #b8743f; } .cat-cor-1 { background: #d9a46f; } .cat-cor-2 { background: #6f8a7a; } .cat-cor-3 { background: #9db08f; }
 .cat-cor-4 { background: #a3584a; } .cat-cor-5 { background: #c9b28a; } .cat-cor-6 { background: #7d8fa6; } .cat-cor-7 { background: #b0a7c4; }
+.cat-rotulo { display: block; font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+.cat-precos tr.cat-agora td { border-top: 0; padding-top: 0; background: var(--st-decisao-soft); }
+.cat-precos tr.cat-alvo td { background: transparent; }
+.cat-agora .cat-rotulo { display: inline; }
+.cat-seta { color: var(--ink-soft); }
 .catalogo-acoes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
 .manut .acao .btn { white-space: nowrap; }
 @media (max-width: 900px) { .catalogo-det { grid-template-columns: 1fr; } }

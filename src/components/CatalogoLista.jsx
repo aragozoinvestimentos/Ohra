@@ -7,6 +7,7 @@ import { custoProdutoPorPeca } from "../lib/calc.js";
 import { impressoraDoProduto } from "../lib/farm.js";
 import { linhasDoKit } from "../lib/planoKit.js";
 import { estadoDoAlerta } from "../lib/estados.js";
+import { lucroNoPreco } from "../lib/escada.js";
 import { irParaAba } from "../lib/navegar.js";
 import { pedirPasso } from "../lib/passosPreco.js";
 import { BRL, PCT } from "../lib/format.js";
@@ -25,7 +26,7 @@ const g = (v) => (v ? `${Math.round(v)} g` : "—");
 
 export default function CatalogoLista({ onEditar }) {
   const dados = useEscada();
-  const { itens, produtos, canais, precos, materiais, rampas, alertaDe, carregando } = dados;
+  const { itens, produtos, canais, precos, materiais, rampas, alertaDe, mapaRampa, cfgDoProduto, carregando } = dados;
   const { impressoras } = useCatalogo();
   const { grupos } = useAnunciosGrupo();
   const mapaGrupos = useMemo(() => gruposPorItem(grupos), [grupos]);
@@ -192,14 +193,34 @@ export default function CatalogoLista({ onEditar }) {
                   <tbody>
                     {salvosDet.map(({ c, s }) => {
                       const est = estadoDoAlerta(alertaDe(it, c));
+                      // Em rampa (ou variação/kit derivado): alvo = preço salvo; agora = preço da Rampa.
+                      const ra = mapaRampa?.get(`${it.id}|${c.id}`) || null;
+                      const agora = ra && Math.abs(num(ra.real) - num(s.preco)) >= 0.005 ? num(ra.real) : null;
+                      const lucroAgora = agora != null ? lucroNoPreco(c, agora, it.custoTotal, it.peso, cfgDoProduto(it.produtoId || (it.id[0] === "p" ? it.id.slice(2) : null))) : null;
                       return (
-                        <tr key={c.id}>
-                          <td><CanalTag canal={c} /></td>
-                          <td className="num"><b>{BRL(s.preco)}</b></td>
-                          <td className="num" style={num(s.lucro) < 0 ? { color: "var(--bad)" } : undefined}>{BRL(s.lucro)}</td>
-                          <td className="num">{PCT(s.margem)}</td>
-                          <td>{est && <Estado tipo={est.tipo}>{est.motivo}</Estado>}</td>
-                        </tr>
+                        <Fragment key={c.id}>
+                          <tr className={agora != null ? "cat-alvo" : undefined}>
+                            <td>
+                              <CanalTag canal={c} />
+                              {agora != null && <small className="cat-rotulo">alvo (preço salvo)</small>}
+                            </td>
+                            <td className="num"><b>{BRL(s.preco)}</b></td>
+                            <td className="num" style={num(s.lucro) < 0 ? { color: "var(--bad)" } : undefined}>{BRL(s.lucro)}</td>
+                            <td className="num">{PCT(s.margem)}</td>
+                            <td>{est && <Estado tipo={est.tipo}>{est.motivo}</Estado>}</td>
+                          </tr>
+                          {agora != null && (
+                            <tr className="cat-agora">
+                              <td>
+                                <span className="cat-seta">↳</span> <small className="cat-rotulo">agora · {ra.acima ? "testando acima do alvo" : "em rampa"}</small>
+                              </td>
+                              <td className="num"><b>{BRL(agora)}</b></td>
+                              <td className="num" style={lucroAgora != null && lucroAgora < 0 ? { color: "var(--bad)" } : undefined}>{lucroAgora != null ? BRL(lucroAgora) : "—"}</td>
+                              <td className="num">{lucroAgora != null && agora > 0 ? PCT(lucroAgora / agora) : "—"}</td>
+                              <td><Estado tipo="decisao">até chegar no alvo</Estado></td>
+                            </tr>
+                          )}
+                        </Fragment>
                       );
                     })}
                   </tbody>
