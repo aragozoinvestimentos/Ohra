@@ -21,6 +21,30 @@ export const GRUPOS_PENDENCIA = [
 ];
 
 // → [{ id, grupo, ordem, tom, titulo, texto, ir: { aba, pedido }, rotulo, semana? }]
+// Áreas do filtro do "Pra fazer" (pela aba pra onde o aviso leva). Os
+// urgentes (grupo Resolver) aparecem SEMPRE, com qualquer filtro.
+export const AREAS_PENDENCIA = [
+  { chave: "preco", rotulo: "Preço e anúncio" },
+  { chave: "crescimento", rotulo: "Crescimento" },
+  { chave: "ads", rotulo: "Ads" },
+  { chave: "afiliados", rotulo: "Afiliados" },
+  { chave: "dinheiro", rotulo: "Dinheiro" },
+  { chave: "producao", rotulo: "Produção" },
+  { chave: "tarefas", rotulo: "Minhas tarefas" },
+  { chave: "outros", rotulo: "Outros" },
+];
+const ABAS_PRECO = ["historico", "publicar", "avulso", "canal", "quantidade", "ficha", "lancamento", "comparativo", "cadastros"];
+export function areaPendencia(p) {
+  if (p.tarefa) return "tarefas";
+  const aba = p.ir?.aba;
+  if (aba === "crescimento") return p.ir.pedido?.sub === "ads" ? "ads" : p.ir.pedido?.sub === "afiliados" ? "afiliados" : "crescimento";
+  if (aba === "promocoes") return "crescimento";
+  if (ABAS_PRECO.includes(aba)) return "preco";
+  if (aba === "caixa" || aba === "metas") return "dinheiro";
+  if (["farm", "registro", "otimizacao", "producao"].includes(aba)) return "producao";
+  return "outros";
+}
+
 export function montarPendencias({
   precosAlerta = [], // [{ item, canal, al }] anunciados com al.tipo prejuizo | abaixo-minimo (alertaDe)
   caixa = null, // resumoCaixa (fluxoCaixa.js)

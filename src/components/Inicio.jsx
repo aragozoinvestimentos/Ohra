@@ -18,7 +18,8 @@ import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { sugestoesAfiliado, vendasPorOrigem } from "../lib/afiliados.js";
 import { calcTaxaFalhaAtual, TAXA_FALHA_PRIOR_PCT } from "../lib/registroImpressao.js";
 import { reservaDoItem } from "../lib/calc.js";
-import { GRUPOS_PENDENCIA, montarPendencias, statusInicio } from "../lib/inicio.js";
+import { AREAS_PENDENCIA, GRUPOS_PENDENCIA, areaPendencia, montarPendencias, statusInicio } from "../lib/inicio.js";
+import { publicarUrgentes } from "../lib/urgentes.js";
 import { irParaAba } from "../lib/navegar.js";
 import { BRL, PCT } from "../lib/format.js";
 import Kpis from "./Kpis.jsx";
@@ -29,7 +30,7 @@ import { estadoDoTom } from "../lib/estados.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import { LinhaTarefa, TarefaDialog } from "./Tarefas.jsx";
 import { useTarefas } from "../hooks/useTarefas.js";
-import { LIMITE_TAREFAS, concluidasRecentes, estadoTarefa, repartirTarefas, tarefasAbertas } from "../lib/tarefas.js";
+import { LIMITE_TAREFAS, concluidasRecentes, repartirTarefas } from "../lib/tarefas.js";
 import { abrirTarefa, concluirTarefa, desfazerConclusao, excluirTarefa, rotuloLink } from "../lib/tarefasAcoes.js";
 
 const VISIVEIS = 5;
@@ -142,6 +143,22 @@ export default function Inicio({ onIrPara, onToast }) {
   }
   const gestao = useDadosGestao();
   const [verTodos, setVerTodos] = useState(false);
+  // Filtro do "Pra fazer" por área (lembrado neste aparelho). Urgentes aparecem sempre.
+  const [filtro, setFiltroEstado] = useState(() => {
+    try {
+      return localStorage.getItem("ohra:inicio:filtro") || "todos";
+    } catch {
+      return "todos";
+    }
+  });
+  const setFiltro = (v) => {
+    setFiltroEstado(v);
+    try {
+      localStorage.setItem("ohra:inicio:filtro", v);
+    } catch {
+      // sem localStorage — só não lembra
+    }
+  };
   const [abertas, setAbertas] = useState({}); // área → aberta (sobrepõe o padrão)
   const tarefasH = useTarefas();
   const [dialogTarefa, setDialogTarefa] = useState(null); // { tarefa? }
@@ -273,24 +290,34 @@ export default function Inicio({ onIrPara, onToast }) {
     setTimeout(() => document.getElementById(`inicio-area-${k}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
   };
 
-  const abertasT = tarefasAbertas(tarefasH.tarefas);
-  const vencidas = abertasT.filter((t) => estadoTarefa(t, hoje).vencida).length;
   const concluidas = concluidasRecentes(tarefasH.tarefas, hoje);
 
   const carregando = gestao.carregando || rampasH.carregando || dados.carregando;
   // Avisos automáticos: limite de 5 + "ver todos". Tarefas manuais fora do
   // limite (repartirTarefas): Resolver / topo de Atenção e rotina / Minhas tarefas.
+  // Urgentes (Resolver) ficam fora do limite e de qualquer filtro.
   const avisos = pendencias.filter((p) => !p.tarefa);
-  const avisosVis = verTodos ? avisos : avisos.slice(0, VISIVEIS);
+  const urgAvisos = avisos.filter((p) => p.grupo === "resolver");
+  const contagemArea = AREAS_PENDENCIA.map((a) => ({ ...a, n: pendencias.filter((p) => areaPendencia(p) === a.chave).length })).filter((a) => a.n > 0);
+  const filtroAtivo = filtro !== "todos" && contagemArea.some((a) => a.chave === filtro) ? filtro : "todos";
+  const resto = avisos.filter((p) => p.grupo !== "resolver" && (filtroAtivo === "todos" || areaPendencia(p) === filtroAtivo));
+  const restoVis = filtroAtivo !== "todos" || verTodos ? resto : resto.slice(0, VISIVEIS);
+  const avisosVis = [...urgAvisos, ...restoVis];
   const tf = repartirTarefas(
     pendencias.filter((p) => p.tarefa),
     { todas: verTodasTarefas }
   );
+  const mostraTarefas = filtroAtivo === "todos" || filtroAtivo === "tarefas";
+  const urgentes = [...urgAvisos, ...pendencias.filter((p) => p.tarefa && p.grupo === "resolver")];
   const doGrupoVis = (g) => {
     const av = avisosVis.filter((p) => p.grupo === g);
-    return g === "resolver" ? [...av, ...tf.resolver] : g === "rotina" ? [...tf.topo, ...av] : av;
+    return g === "resolver" ? [...av, ...tf.resolver] : g === "rotina" ? [...(mostraTarefas ? tf.topo : []), ...av] : av;
   };
-  const totalGrupo = (g) => avisos.filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : g === "rotina" ? tf.n.topo : 0);
+  const nUrgentes = urgentes.length;
+  useEffect(() => {
+    if (!carregando) publicarUrgentes(nUrgentes);
+  }, [nUrgentes, carregando]);
+  const totalGrupo = (g) => [...urgAvisos, ...resto].filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : g === "rotina" && mostraTarefas ? tf.n.topo : 0);
 
   const CARDS = [
     { k: "dinheiro", n: 1, titulo: "Dinheiro" },
@@ -346,6 +373,24 @@ export default function Inicio({ onIrPara, onToast }) {
 
   return (
     <div className="inicio">
+      {urgentes.length > 0 && (
+        <div className="inicio-urgentes" role="alert">
+          <b>
+            ! {urgentes.length === 1 ? "1 urgente" : `${urgentes.length} urgentes`}
+          </b>
+          <span className="inicio-urgentes-lista">
+            {urgentes.slice(0, 3).map((p) => (
+              <button key={p.id} type="button" className="link-btn" onClick={() => (p.tarefa ? document.querySelector(".inicio-fazer")?.scrollIntoView({ behavior: "smooth" }) : ir(p.ir))}>
+                {p.tarefa ? `tarefa vencida: ${p.titulo}` : p.titulo}
+              </button>
+            ))}
+            {urgentes.length > 3 && <span>e mais {urgentes.length - 3}</span>}
+          </span>
+          <button type="button" className="btn btn-mini" onClick={() => document.querySelector(".inicio-fazer")?.scrollIntoView({ behavior: "smooth" })}>
+            ver
+          </button>
+        </div>
+      )}
       <div className="inicio-status">
         {CARDS.map((c) => (
           <button key={c.k} type="button" className={`inicio-card${estadoStatus(status[c.k].tom) ? ` st-${estadoStatus(status[c.k].tom)}` : ""}`} onClick={() => rolar(c.k)}>
@@ -370,11 +415,19 @@ export default function Inicio({ onIrPara, onToast }) {
             + Tarefa
           </button>
         </h3>
-        {vencidas > 0 && (
-          <div className="aviso-cel ruim tarefas-vencidas">
-            <b>! {vencidas === 1 ? "1 tarefa vencida" : `${vencidas} tarefas vencidas`}</b> — estão em Resolver.
+        {contagemArea.length > 1 && (
+          <div className="inicio-filtros" role="group" aria-label="Filtrar o Pra fazer">
+            <button type="button" className={`chip-filtro-area${filtroAtivo === "todos" ? " ativo" : ""}`} onClick={() => setFiltro("todos")}>
+              Todos <span>{pendencias.length}</span>
+            </button>
+            {contagemArea.map((a) => (
+              <button key={a.chave} type="button" className={`chip-filtro-area${filtroAtivo === a.chave ? " ativo" : ""}`} onClick={() => setFiltro(a.chave)}>
+                {a.rotulo} <span>{a.n}</span>
+              </button>
+            ))}
           </div>
         )}
+        {filtroAtivo !== "todos" && urgentes.length > 0 && <p className="hint" style={{ margin: "0 0 6px" }}>Os urgentes (Resolver) aparecem com qualquer filtro.</p>}
         {desfazer && (
           <div className="tarefa-desfazer" role="status">
             ✓ “{desfazer.tarefa.descricao}” concluída{desfazer.prox ? ` · próxima em ${diaMes(desfazer.prox)}` : ""}
@@ -404,12 +457,12 @@ export default function Inicio({ onIrPara, onToast }) {
                 </div>
               );
             })}
-            {avisos.length > VISIVEIS && (
+            {filtroAtivo === "todos" && resto.length > VISIVEIS && (
               <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodos((v) => !v)}>
                 {verTodos ? "ver menos" : `ver todos (${avisos.length})`}
               </button>
             )}
-            {tf.minhas.length > 0 && (
+            {mostraTarefas && tf.minhas.length > 0 && (
               <div className="inicio-grupo inicio-minhas">
                 <div className="inicio-grupo-tit">
                   <span className="inicio-minhas-tit">Minhas tarefas</span> <span className="muted-cel">{tf.n.minhas}</span>
@@ -417,7 +470,7 @@ export default function Inicio({ onIrPara, onToast }) {
                 <ul className="inicio-lista">{tf.minhas.map(linhaPendencia)}</ul>
               </div>
             )}
-            {tf.total > LIMITE_TAREFAS && (
+            {mostraTarefas && tf.total > LIMITE_TAREFAS && (
               <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodasTarefas((v) => !v)}>
                 {verTodasTarefas ? "ver menos tarefas" : `ver todas as tarefas (${tf.total})`}
               </button>

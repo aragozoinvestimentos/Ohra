@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { assinarUrgentes, lerUrgentes } from "./lib/urgentes.js";
 import logo from "./assets/logo.png";
 import TelaDescanso from "./components/TelaDescanso.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
@@ -317,6 +318,7 @@ export default function App() {
                   <Icone nome={t.key} />
                   <span>{t.label}</span>
                   {t.key === "crescimento" && <BolinhaSemana />}
+                  {t.key === "inicio" && <BolinhaUrgentes />}
                 </button>
               ))}
             </div>
@@ -533,6 +535,7 @@ function NavCelular({ tab, irPara, menuAberto, abrirMenu }) {
           <Icone nome={n.key} size={19} />
           <span className="rot">{n.rot}</span>
           {n.key === "crescimento" && <BolinhaSemana />}
+          {n.key === "inicio" && <BolinhaUrgentes />}
         </button>
       ))}
       <button type="button" className={menuAberto || !naBarra ? "ativo" : ""} onClick={abrirMenu} aria-label="Mais — abre o menu">
@@ -545,6 +548,17 @@ function NavCelular({ tab, irPara, menuAberto, abrirMenu }) {
 
 // Bolinha com a contagem de semanas pendentes no item Crescimento do menu
 // (mesmo estado do Início e da faixa no Crescimento).
+// Urgentes (grupo Resolver do Início): bolinha vermelha no menu, de qualquer tela.
+function BolinhaUrgentes() {
+  const n = useSyncExternalStore(assinarUrgentes, lerUrgentes, lerUrgentes);
+  if (!n) return null;
+  return (
+    <span className="bolinha-menu bolinha-urgente" title={`${n} ${n === 1 ? "item urgente" : "itens urgentes"} no Início`}>
+      {n}
+    </span>
+  );
+}
+
 function BolinhaSemana() {
   const { pendentes } = useSemanaPendente();
   if (!pendentes.length) return null;
