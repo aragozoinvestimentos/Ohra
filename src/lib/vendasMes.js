@@ -7,6 +7,9 @@ import { mesDe } from "./fluxoCaixa.js";
 //   • afiliado_registros com vendas_total (item fora de rampa: afiliado ou só Ads).
 // Cada venda vale o preço da semana (o de AGORA naquela semana) com o custo e as
 // taxas de HOJE: recebe (o canal repassa) − repor o produto (custo) = lucro.
+//   • vendas_organicas (schema v52): venda orgânica registrada à mão no próprio
+//     Vendas do mês (produto fora de rampa) — SÓ financeiro, no preço digitado,
+//     no mês da data "Até". Ads/Afiliados/Rampa não leem essa tabela.
 // Unidades vendidas em kit contam como unidades no preço da semana (estimativa).
 // A semana entra no mês do ÚLTIMO dia dela (o registro cobre até a véspera da data).
 // Fase B (depois): valores reais do relatório da Shopee/Olist, custo congelado.
@@ -30,10 +33,10 @@ const ID_PREFIXO = { produto: "p", variacao: "v", kit: "k" };
  * → { linhas: [{ chave, item, canal, unidades, faturamento, recebe, repor, lucro, ads, comissao, semanas }],
  *     total: { unidades, faturamento, recebe, repor, lucro, ads, comissao, sobra }, semanas }
  */
-export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros = [], itens = [], canais = [], cfgDoProduto = () => null }) {
+export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros = [], organicas = [], itens = [], canais = [], cfgDoProduto = () => null }) {
   const porChave = new Map();
   const itemDe = (tipo, id) => itens.find((i) => i.id === `${ID_PREFIXO[tipo] || "p"}:${id}`) || null;
-  const somar = ({ tipo, id, canalId, unidades, preco, ads, comissao }) => {
+  const somar = ({ tipo, id, canalId, unidades, preco, ads, comissao, aMao = false }) => {
     const item = itemDe(tipo, id);
     const canal = canais.find((c) => c.id === canalId);
     if (!item || !canal || !(unidades > 0) || !(preco > 0)) return;
@@ -41,7 +44,7 @@ export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros
     const custo = num(item.custoTotal);
     const lucroUn = lucroNoPreco(canal, preco, custo, num(item.peso), cfg) ?? 0;
     const chave = `${item.id}|${canal.id}`;
-    const l = porChave.get(chave) || { chave, item, canal, unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, ads: 0, comissao: 0, semanas: 0 };
+    const l = porChave.get(chave) || { chave, item, canal, unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, ads: 0, comissao: 0, semanas: 0, aMao: 0 };
     l.unidades += unidades;
     l.faturamento += unidades * preco;
     l.recebe += unidades * (lucroUn + custo);
@@ -49,7 +52,8 @@ export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros
     l.lucro += unidades * lucroUn;
     l.ads += num(ads);
     l.comissao += num(comissao);
-    l.semanas += 1;
+    if (aMao) l.aMao += unidades;
+    else l.semanas += 1;
     porChave.set(chave, l);
   };
   const doMes = (g) => g.data && mesDe(diaFimRegistro(g.data)) === mes;
@@ -73,6 +77,11 @@ export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros
   for (const g of afRegistros) {
     if (g.vendas_total == null || !doMes(g)) continue;
     somar({ tipo: g.item_tipo, id: g.item_id, canalId: g.canal_id, unidades: num(g.vendas_total), preco: num(g.preco), ads: g.ads_gasto, comissao: g.comissao });
+  }
+
+  for (const o of organicas) {
+    if (!o.data || mesDe(String(o.data).slice(0, 10)) !== mes) continue;
+    somar({ tipo: o.item_tipo, id: o.item_id, canalId: o.canal_id, unidades: num(o.unidades), preco: num(o.preco), aMao: true });
   }
 
   const linhas = [...porChave.values()]

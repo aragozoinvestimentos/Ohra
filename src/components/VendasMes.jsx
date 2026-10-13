@@ -5,8 +5,11 @@ import { useEscada } from "../hooks/useEscada.js";
 import { useRampas } from "../hooks/useRampas.js";
 import { useAfiliados } from "../hooks/useAfiliados.js";
 import { recarregarReserva, useReservaProducao } from "../hooks/useReservaProducao.js";
+import { recarregarVendasOrganicas, useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
+import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
+import BuscaItem from "./BuscaItem.jsx";
 import { saldoReserva, vendasDoMes } from "../lib/vendasMes.js";
-import { hojeISO, rotuloMes } from "../lib/fluxoCaixa.js";
+import { hojeISO, mesDe, rotuloMes } from "../lib/fluxoCaixa.js";
 import { BRL, PCT } from "../lib/format.js";
 import { irParaAba } from "../lib/navegar.js";
 import Kpis from "./Kpis.jsx";
@@ -16,6 +19,12 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 
 const dm = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}` : "");
+const PREFIXO = { produto: "p", variacao: "v", kit: "k" };
+// Último dia do mês 'YYYY-MM'.
+const fimDoMes = (mes) => {
+  const [a, m] = mes.split("-").map(Number);
+  return `${mes}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`;
+};
 
 // Fluxo de Caixa → Vendas do mês (Fase A, estimada — lib/vendasMes.js):
 // vendas registradas no Crescimento × preço da semana → recebe, repor e lucro,
@@ -23,10 +32,13 @@ const dm = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7
 // num envelope (não é saída — o dinheiro fica na conta, só deixa de estar livre).
 export default function VendasMes({ mes, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, cfgDoProduto } = useEscada();
+  const { itens, canais, precos, cfgDoProduto } = useEscada();
   const { rampas, registros } = useRampas({ comRegistros: true });
   const af = useAfiliados();
   const reserva = useReservaProducao();
+  const org = useVendasOrganicas();
+  const [vendaOrg, setVendaOrg] = useState(null); // formulário da venda orgânica (novo ou edição)
+  const [excluirOrg, setExcluirOrg] = useState(null);
   const [verItem, setVerItem] = useState(null);
   const [verHistorico, setVerHistorico] = useState(false);
   const [separar, setSeparar] = useState(null); // valor sugerido
@@ -36,8 +48,8 @@ export default function VendasMes({ mes, onToast }) {
   const hoje = hojeISO();
 
   const v = useMemo(
-    () => vendasDoMes({ mes, rampas, rampaRegistros: registros, afRegistros: af.registros, itens, canais, cfgDoProduto }),
-    [mes, rampas, registros, af.registros, itens, canais, cfgDoProduto]
+    () => vendasDoMes({ mes, rampas, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto }),
+    [mes, rampas, registros, af.registros, org.registros, itens, canais, cfgDoProduto]
   );
   const res = useMemo(() => saldoReserva(reserva.registros), [reserva.registros]);
   const jaSeparado = res.porMes.get(mes) || 0;
@@ -70,6 +82,84 @@ export default function VendasMes({ mes, onToast }) {
     recarregarReserva();
     onToast?.("Movimento da reserva excluído");
   }
+
+  // --- Venda orgânica registrada à mão (schema v52) — só financeiro ---
+  const organicasMes = org.registros.filter((o) => o.data && mesDe(String(o.data).slice(0, 10)) === mes);
+  const gruposBusca = useMemo(() => gruposDoSeletor(itens), [itens]);
+  const ultimoDia = mes === mesDe(hoje) ? hoje : fimDoMes(mes);
+  const precoSalvo = (itemId, canalId) => {
+    const tipo = itemTipoDoId(itemId);
+    const l = precos.find((p) => p.item_tipo === tipo && p.item_id === itemId.slice(2) && p.canal_id === canalId);
+    return l && Number(l.preco) > 0 ? Number(l.preco) : null;
+  };
+  const canaisComPreco = (itemId) => (itemId ? canais.filter((c) => precoSalvo(itemId, c.id) != null) : []);
+  // Produto em rampa (ou variação dele) no canal: as vendas já entram pelo Registrar semana.
+  const emRampaNoCanal = (itemId, canalId) => {
+    if (!itemId || !canalId || itemId.startsWith("k:")) return false;
+    const pid = itemId.startsWith("p:") ? itemId.slice(2) : itens.find((i) => i.id === itemId)?.produtoId;
+    return rampas.some((r) => r.produto_id === pid && r.canal_id === canalId);
+  };
+  const jaNoRegistrarSemana = (itemId, canalId) =>
+    !!itemId && !!canalId && (af.registros || []).some((g) => g.vendas_total != null && g.item_tipo === itemTipoDoId(itemId) && g.item_id === itemId.slice(2) && g.canal_id === canalId && g.data && mesDe(String(g.data).slice(0, 10)) === mes);
+
+  function novaVendaOrg() {
+    setVendaOrg({ id: null, itemId: "", canalId: "", de: `${mes}-01`, ate: ultimoDia, unidades: "", preco: "", conhecidos: "", observacao: "" });
+  }
+  function editarVendaOrg(o) {
+    setVendaOrg({ id: o.id, itemId: `${PREFIXO[o.item_tipo] || "p"}:${o.item_id}`, canalId: o.canal_id || "", de: o.periodo_inicio || "", ate: String(o.data).slice(0, 10), unidades: String(o.unidades), preco: String(o.preco), conhecidos: o.conhecidos != null ? String(o.conhecidos) : "", observacao: o.observacao || "" });
+  }
+  function escolherItemOrg(itemId) {
+    const cs = canaisComPreco(itemId);
+    const canalId = cs.some((c) => c.id === vendaOrg.canalId) ? vendaOrg.canalId : cs[0]?.id || "";
+    setVendaOrg((p) => ({ ...p, itemId, canalId, preco: canalId ? String(precoSalvo(itemId, canalId)) : "" }));
+  }
+  function escolherCanalOrg(canalId) {
+    setVendaOrg((p) => ({ ...p, canalId, preco: canalId && p.itemId ? String(precoSalvo(p.itemId, canalId) ?? p.preco) : p.preco }));
+  }
+  async function salvarVendaOrg() {
+    const f = vendaOrg;
+    const unidades = Math.round(Number(f.unidades));
+    const preco = Number(String(f.preco).replace(",", "."));
+    if (!f.itemId) return onToast?.("Escolha o produto, variação ou kit");
+    if (!f.canalId) return onToast?.("Escolha o canal");
+    if (emRampaNoCanal(f.itemId, f.canalId)) return onToast?.("Esse produto está em rampa nesse canal — as vendas dele entram pelo Registrar semana do Crescimento");
+    if (!(unidades > 0)) return onToast?.("Informe quantas unidades vendeu");
+    if (!(preco > 0)) return onToast?.("Informe o preço de venda");
+    if (!f.ate) return onToast?.("Informe a data (Até)");
+    if (f.de && f.de > f.ate) return onToast?.("A data De precisa ser antes do Até");
+    const conhecidos = f.conhecidos === "" ? null : Math.round(Number(f.conhecidos));
+    if (conhecidos != null && (conhecidos < 0 || conhecidos > unidades)) return onToast?.("Conhecidos precisa ficar entre 0 e as unidades vendidas");
+    const registro = {
+      loja_id: lojaId || null,
+      item_tipo: itemTipoDoId(f.itemId),
+      item_id: f.itemId.slice(2),
+      canal_id: f.canalId,
+      periodo_inicio: f.de || null,
+      data: f.ate,
+      unidades,
+      preco,
+      conhecidos,
+      observacao: f.observacao.trim() || null,
+    };
+    setSalvando(true);
+    const { error } = f.id ? await supabase.from("vendas_organicas").update(registro).eq("id", f.id) : await supabase.from("vendas_organicas").insert(registro);
+    setSalvando(false);
+    if (error) return onToast?.(/vendas_organicas/i.test(error.message) ? "Rode o supabase/schema_v52.sql no Supabase pra registrar venda orgânica" : `Não foi possível salvar: ${error.message}`);
+    recarregarVendasOrganicas();
+    setVendaOrg(null);
+    onToast?.(f.id ? "Venda orgânica atualizada" : `${unidades} un. registradas${mesDe(f.ate) !== mes ? ` em ${rotuloMes(mesDe(f.ate))}` : ""}`);
+  }
+  async function confirmarExcluirOrg() {
+    const { error } = await supabase.from("vendas_organicas").delete().eq("id", excluirOrg.id);
+    setExcluirOrg(null);
+    if (error) return onToast?.(`Não foi possível excluir: ${error.message}`);
+    recarregarVendasOrganicas();
+    onToast?.("Venda orgânica excluída");
+  }
+  const nomeItem = (itemId) => {
+    const it = itens.find((i) => i.id === itemId);
+    return it ? it.nome : "item excluído";
+  };
 
   return (
     <>
@@ -167,16 +257,26 @@ export default function VendasMes({ mes, onToast }) {
       </div>
 
       <div className="panel">
-        <h3 className="section-title">
+        <h3 className="section-title h3-split">
+          <span>
           Vendas por produto
           <span className="badge info" style={{ marginLeft: 8 }}>estimado</span>
-          <Ajuda texto="Das semanas registradas no Crescimento (Registrar semana): produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Produto fora de rampa sem Ads e sem afiliado ainda não tem onde registrar venda (fica pra próxima fase, com o relatório da Shopee/Olist)." />
+          <Ajuda texto="Das semanas registradas no Crescimento (Registrar semana): produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Produto fora de rampa sem Ads e sem afiliado: use “+ Registrar venda orgânica” (só financeiro — no preço que você digitar, no mês da data Até)." />
+          </span>
+          <button type="button" className="btn btn-mini primary" onClick={novaVendaOrg} disabled={!org.disponivel} title={org.disponivel ? "Venda de produto fora de rampa — só pro fechamento do mês" : "Rode o supabase/schema_v52.sql no Supabase"}>
+            + Registrar venda orgânica
+          </button>
         </h3>
+        {!org.disponivel && (
+          <div className="alerta alerta-warn">
+            <b>Falta rodar o SQL</b> Rode o <b>supabase/schema_v52.sql</b> no SQL Editor do Supabase pra registrar venda orgânica.
+          </div>
+        )}
         {!v.linhas.length ? (
           <div className="empty">
-            Nenhuma venda registrada em {rotuloMes(mes)}.{" "}
+            Nenhuma venda registrada em {rotuloMes(mes)}. Use “+ Registrar venda orgânica” ou{" "}
             <button type="button" className="link-btn" onClick={() => irParaAba("crescimento", { registrar: true })}>
-              Registrar a semana no Crescimento →
+              registre a semana no Crescimento →
             </button>
           </div>
         ) : (
@@ -198,7 +298,8 @@ export default function VendasMes({ mes, onToast }) {
                   <Fragment key={l.chave}>
                     <tr className="linha-clicavel" onClick={() => setVerItem((x) => (x === l.chave ? null : l.chave))}>
                       <td>
-                        {l.item.nomeVariacao ? `${l.item.nome} — ${l.item.nomeVariacao}` : l.item.nome} <CanalTag canal={l.canal} />
+                        {l.item.nome} <CanalTag canal={l.canal} />
+                        {l.aMao > 0 && <span className="muted-cel"> · {l.aMao} orgânica{l.aMao > 1 ? "s" : ""} à mão</span>}
                       </td>
                       <td className="num">{l.unidades} un.</td>
                       <td className="num">{BRL(l.faturamento)}</td>
@@ -222,9 +323,11 @@ export default function VendasMes({ mes, onToast }) {
                                 </span>
                               </div>
                               <div className="kv-cel">
-                                <small>Semanas no mês</small>
-                                <b>{l.semanas}</b>
-                                <span>registros do Crescimento</span>
+                                <small>De onde vem</small>
+                                <b>{l.unidades} un.</b>
+                                <span>
+                                  {[l.semanas > 0 && `${l.semanas} semana${l.semanas > 1 ? "s" : ""} do Crescimento`, l.aMao > 0 && `${l.aMao} un. orgânica${l.aMao > 1 ? "s" : ""} à mão`].filter(Boolean).join(" · ")}
+                                </span>
                               </div>
                               {(l.ads > 0 || l.comissao > 0) && (
                                 <div className="kv-cel">
@@ -256,6 +359,147 @@ export default function VendasMes({ mes, onToast }) {
           </div>
         )}
       </div>
+
+      {organicasMes.length > 0 && (
+        <div className="panel">
+          <h3 className="section-title">
+            Vendas orgânicas registradas à mão — {rotuloMes(mes)}
+            <Ajuda texto="Vendas que você lançou aqui (produto fora de rampa). Entram só no financeiro do mês: vendas, recebe, repor, lucro e reserva. Ads, Afiliados e a Rampa não usam esses números." />
+          </h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Período</th>
+                  <th>Item</th>
+                  <th className="num">Unidades</th>
+                  <th className="num">Preço</th>
+                  <th className="num">Total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {organicasMes.map((o) => {
+                  const itemId = `${PREFIXO[o.item_tipo] || "p"}:${o.item_id}`;
+                  const canal = canais.find((c) => c.id === o.canal_id);
+                  return (
+                    <tr key={o.id}>
+                      <td>{o.periodo_inicio && o.periodo_inicio !== String(o.data).slice(0, 10) ? `${dm(o.periodo_inicio)} a ${dm(o.data)}` : dm(o.data)}</td>
+                      <td>
+                        {nomeItem(itemId)} {canal && <CanalTag canal={canal} />}
+                        {(o.conhecidos > 0 || o.observacao) && (
+                          <div className="muted-cel">{[o.conhecidos > 0 && `${o.conhecidos} de conhecidos`, o.observacao].filter(Boolean).join(" · ")}</div>
+                        )}
+                      </td>
+                      <td className="num">{o.unidades} un.</td>
+                      <td className="num">{BRL(o.preco)}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{BRL(o.unidades * Number(o.preco))}</td>
+                      <td className="num" style={{ whiteSpace: "nowrap" }}>
+                        <span className="acoes-linha">
+                          <button className="del" title="Editar" onClick={() => editarVendaOrg(o)}>✎</button>
+                          <button className="del" title="Excluir" onClick={() => setExcluirOrg(o)}>×</button>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {vendaOrg && (
+        <EditarDialog
+          titulo={vendaOrg.id ? "Editar venda orgânica" : "Registrar venda orgânica"}
+          salvando={salvando}
+          onSalvar={salvarVendaOrg}
+          onCancelar={() => setVendaOrg(null)}
+          salvarLabel={vendaOrg.id ? "Salvar alterações" : "Registrar"}
+        >
+          <p className="hint" style={{ marginTop: 0 }}>
+            Só pro fechamento do mês: entra em vendas, recebe, repor, lucro e reserva. Não mexe em Ads, Afiliados nem na Rampa.
+          </p>
+          <div className="field">
+            <label>Produto, variação ou kit</label>
+            <BuscaItem grupos={gruposBusca} value={vendaOrg.itemId} onChange={escolherItemOrg} vazio="— escolha o item —" />
+          </div>
+          {vendaOrg.itemId && (
+            <div className="field">
+              <label>Canal</label>
+              {canaisComPreco(vendaOrg.itemId).length ? (
+                <select value={vendaOrg.canalId} onChange={(e) => escolherCanalOrg(e.target.value)}>
+                  {canaisComPreco(vendaOrg.itemId).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome} · salvo {BRL(precoSalvo(vendaOrg.itemId, c.id))}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="alerta alerta-warn">Esse item não tem preço salvo em nenhum canal — salve o preço em Precificação antes.</div>
+              )}
+            </div>
+          )}
+          {emRampaNoCanal(vendaOrg.itemId, vendaOrg.canalId) && (
+            <div className="alerta alerta-warn">
+              <b>Produto em rampa nesse canal</b> As vendas dele já entram pelo Registrar semana do Crescimento — registrar aqui contaria duas vezes.{" "}
+              <button type="button" className="link-btn" onClick={() => { setVendaOrg(null); irParaAba("crescimento", { registrar: true }); }}>
+                ir pro Registrar semana →
+              </button>
+            </div>
+          )}
+          {!emRampaNoCanal(vendaOrg.itemId, vendaOrg.canalId) && jaNoRegistrarSemana(vendaOrg.itemId, vendaOrg.canalId) && (
+            <div className="alerta alerta-warn">Esse item já tem vendas deste mês registradas pelo Registrar semana (Ads/afiliado) — confira pra não contar duas vezes.</div>
+          )}
+          <div className="row2">
+            <div className="field">
+              <label>De (opcional)</label>
+              <input type="date" value={vendaOrg.de} onChange={(e) => setVendaOrg((p) => ({ ...p, de: e.target.value }))} />
+            </div>
+            <div className="field">
+              <label>Até (o mês da venda)</label>
+              <input type="date" value={vendaOrg.ate} onChange={(e) => setVendaOrg((p) => ({ ...p, ate: e.target.value }))} />
+            </div>
+          </div>
+          <div className="row2">
+            <div className="field">
+              <label>Unidades vendidas</label>
+              <input type="number" min="1" step="1" value={vendaOrg.unidades} onChange={(e) => setVendaOrg((p) => ({ ...p, unidades: e.target.value }))} />
+            </div>
+            <div className="field">
+              <label>Preço de venda (R$ cada)</label>
+              <input type="number" min="0" step="0.01" value={vendaOrg.preco} onChange={(e) => setVendaOrg((p) => ({ ...p, preco: e.target.value }))} />
+              <span className="campo-nota">vem o preço salvo — mude se vendeu por outro valor</span>
+            </div>
+          </div>
+          <div className="row2">
+            <div className="field">
+              <label>Conhecidos (opcional)</label>
+              <input type="number" min="0" step="1" placeholder="amigos/família" value={vendaOrg.conhecidos} onChange={(e) => setVendaOrg((p) => ({ ...p, conhecidos: e.target.value }))} />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Observação (opcional)</label>
+              <input type="text" value={vendaOrg.observacao} onChange={(e) => setVendaOrg((p) => ({ ...p, observacao: e.target.value }))} />
+            </div>
+          </div>
+          {Number(vendaOrg.unidades) > 0 && Number(String(vendaOrg.preco).replace(",", ".")) > 0 && (
+            <div className="hint" style={{ margin: "8px 0 0" }}>
+              Total: <b>{BRL(Math.round(Number(vendaOrg.unidades)) * Number(String(vendaOrg.preco).replace(",", ".")))}</b>
+              {vendaOrg.ate && mesDe(vendaOrg.ate) !== mes ? ` · entra em ${rotuloMes(mesDe(vendaOrg.ate))}` : ""}
+            </div>
+          )}
+        </EditarDialog>
+      )}
+      {excluirOrg && (
+        <ConfirmDialog
+          titulo="Excluir venda orgânica"
+          mensagem={`Excluir ${excluirOrg.unidades} un. de "${nomeItem(`${PREFIXO[excluirOrg.item_tipo] || "p"}:${excluirOrg.item_id}`)}" (${BRL(excluirOrg.unidades * Number(excluirOrg.preco))})? Sai do fechamento do mês.`}
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={confirmarExcluirOrg}
+          onCancel={() => setExcluirOrg(null)}
+        />
+      )}
 
       {separar != null && (
         <EditarDialog titulo={`Separar na reserva — ${rotuloMes(mes)}`} salvando={salvando} onSalvar={confirmarSeparar} onCancelar={() => setSeparar(null)} salvarLabel="Separar">
