@@ -6,6 +6,7 @@ import BuscaItem from "./BuscaItem.jsx";
 import { SHOPEE_TIERS, ML_CATEGORY_PCT, mlFaixas, ML_PESO_PADRAO_G, TIKTOK_TIERS, resolverTaxasShein, calcCanal, resultadoNoPreco, resolverFaixaShopee, resolverFaixaML, resolverFaixaTikTok, resolverFaixaShein, calcCanalCustom, reservaDoItem } from "../lib/calc.js";
 import { BRL, PCT, arredondarPreco } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { gravarPrecoNovo, alertaPreco, produtosEmRampa } from "../lib/estrategia.js";
 import { freteGratisMin, dicaKitFreteGratis, opcoesKitDoProduto } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
@@ -41,6 +42,7 @@ const DEFAULTS = {
   imposto: 0,
   custosFixos: 0,
   lucratividade: null, // null = margem desejada da loja (useMargemDesejada)
+  markup: null, // canal próprio "por markup": null = do produto (Regras próprias) › do canal › 2,5
   custoProduto: 0,
   frete: 0,
   embalagem: 0,
@@ -223,7 +225,28 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const canalMk = f.canal === "outro" ? canais.find((x) => x.id === canalProprioId) || null : null;
   const emMarkup = canalEmMarkup(canalMk);
   const cfgLojaAtual = lojas.find((l) => l.id === lojaId)?.config_escada;
-  const markupAtual = emMarkup ? markupDoCanal(canalMk, configEscada(cfgLojaAtual, produtoEscolhido?.escada_config)) : null;
+  // Markup padrão (produto › canal › 2,5) e o desejado nesta simulação (campo "Markup desejado").
+  const markupPadrao = emMarkup ? markupDoCanal(canalMk, configEscada(cfgLojaAtual, produtoEscolhido?.escada_config)) : null;
+  const origemMarkup = !emMarkup ? null : Number(produtoEscolhido?.escada_config?.markup) > 0 ? "do produto" : Number(canalMk?.markup) > 0 ? "do canal" : "padrão do app";
+  const markupDigitado = emMarkup && n(f.markup) > 0 ? n(f.markup) : null;
+  const markupAtual = emMarkup ? markupDigitado ?? markupPadrao : null;
+  const [salvandoMarkup, setSalvandoMarkup] = useState(false);
+  // Guarda o markup digitado como markup do produto (escada_config.markup — o
+  // mesmo das Regras próprias do 2º Por quantidade); Produtos precificados e
+  // Por quantidade passam a seguir ele nesse canal.
+  async function guardarMarkupProduto() {
+    if (!supabase || !produtoEscolhido || !markupDigitado) return;
+    setSalvandoMarkup(true);
+    const { error } = await supabase
+      .from("produtos_cadastro")
+      .update({ escada_config: { ...(produtoEscolhido.escada_config || {}), markup: markupDigitado } })
+      .eq("id", produtoEscolhido.id);
+    setSalvandoMarkup(false);
+    if (error) return onToast(/escada_config|column/i.test(error.message) ? "Rode o SQL v27 no Supabase pra salvar" : `Não foi possível salvar: ${error.message}`);
+    recarregarCatalogo();
+    setF((prev) => ({ ...prev, markup: null }));
+    onToast(`${produtoEscolhido.nome}: markup ${String(markupDigitado).replace(".", ",")}× guardado no produto`);
+  }
 
   const resultado = useMemo(() => {
     const r = calcCanal({
@@ -300,7 +323,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           r = calcCanalCustom(canal, b);
           // canal próprio em markup: custo × markup, não a margem desejada
           if (canalEmMarkup(canal)) {
-            const pmk = precoPorMarkup(r.custoTotal, markupDoCanal(canal, configEscada(cfgLojaAtual, produtoEscolhido?.escada_config)));
+            const pmk = precoPorMarkup(r.custoTotal, canal.id === canalMk?.id && markupAtual ? markupAtual : markupDoCanal(canal, configEscada(cfgLojaAtual, produtoEscolhido?.escada_config)));
             if (pmk > 0) r = { ...r, preco: pmk, lucro: r.lucroEm(pmk), margem: r.lucroEm(pmk) / pmk, faixaOk: null };
           }
         }
@@ -315,7 +338,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       })
       .sort((a, b) => (b.confiavel && b.r.lucro != null ? b.r.lucro : -Infinity) - (a.confiavel && a.r.lucro != null ? a.r.lucro : -Infinity));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, lucratividadeEf, f.mlCategoria, f.mlTipoAnuncio, pesoSel, cfgLojaAtual, produtoEscolhido]);
+  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, lucratividadeEf, f.mlCategoria, f.mlTipoAnuncio, pesoSel, cfgLojaAtual, produtoEscolhido, canalMk, markupAtual]);
 
   const canalLabel =
     f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : "Outro canal";
@@ -840,10 +863,40 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               <label>Custos fixos (%)</label>
               <input type="number" step="0.1" value={f.custosFixos} onChange={set("custosFixos")} />
             </div>
-            <div className="field">
-              <label>Margem desejada (%)</label>
-              <input type="number" step="1" value={lucratividadeEf} onChange={set("lucratividade")} />
-            </div>
+            {emMarkup ? (
+              <div className="field">
+                <label title="Venda direta: o preço é custo total × markup (final ,50 ou ,90 mais próximo)">Markup desejado (×)</label>
+                <input type="number" step="0.1" min="1" placeholder={String(markupPadrao).replace(".", ",")} value={f.markup ?? ""} onChange={set("markup")} />
+                <span className="campo-nota">
+                  {markupDigitado ? (
+                    <>
+                      configurado: {String(markupPadrao).replace(".", ",")}× ({origemMarkup}) ·{" "}
+                      <button type="button" className="link-btn" onClick={() => setF((prev) => ({ ...prev, markup: null }))}>voltar ao padrão</button>
+                      {produtoEscolhido && Math.abs(markupDigitado - markupPadrao) > 1e-9 && (
+                        <>
+                          {" "}·{" "}
+                          <button type="button" className="link-btn" disabled={salvandoMarkup} onClick={guardarMarkupProduto} title="Grava nas Regras próprias do produto — Por quantidade e Produtos precificados passam a usar">
+                            {salvandoMarkup ? "guardando…" : "guardar no produto"}
+                          </button>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    `configurado: ${String(markupPadrao).replace(".", ",")}× (${origemMarkup}) — digite outro pra mudar`
+                  )}
+                </span>
+                {markupDigitado && markupDigitado < markupPadrao - 1e-9 && (
+                  <span className="campo-nota aviso">
+                    ⚠ abaixo do markup configurado ({String(markupPadrao).replace(".", ",")}× {origemMarkup}) — pode usar, é só um aviso
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="field">
+                <label>Margem desejada (%)</label>
+                <input type="number" step="1" value={lucratividadeEf} onChange={set("lucratividade")} />
+              </div>
+            )}
           </div>
           <button type="button" className="link-btn" onClick={usarConfigDoCanal}>
             Usar imposto/custos fixos já cadastrados nesse canal
