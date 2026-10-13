@@ -5,6 +5,7 @@ import { useCatalogo } from "../hooks/useCatalogo.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import Ajuda from "./Ajuda.jsx";
+import PlanejarKit from "./PlanejarKit.jsx";
 
 // Campo numérico com salvamento automático ao sair do campo — usado tanto
 // pra config da loja (impressoras, horas disponíveis) quanto pros tempos de
@@ -302,6 +303,7 @@ export default function Otimizacao({ onToast }) {
           <div className="hint" style={{ marginBottom: 0 }}>Informe quantas peças por dia você quer simular.</div>
         )}
       </div>
+      <PlanejarKit loja={loja} onToast={onToast} />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { useRankingData } from "../hooks/useRankingData.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
 import { sugestaoKit, configEscada } from "../lib/escada.js";
+import { infoPeca } from "../lib/planoKit.js";
 
 const VAZIO = { nome: "", sku: "", observacao: "", produtosItens: [], embalagemItens: [] };
 
@@ -315,6 +316,33 @@ export default function Kits({ abrirKitId, onToast }) {
           onChange={(itens) => setForm((prev) => ({ ...prev, produtosItens: itens }))}
           rotuloVazio="Nenhum produto cadastrado ainda — vá em Cadastros → Produtos."
         />
+        {form.produtosItens.some((it) => it.itemId) && (
+          <div className="kit-pecas">
+            {form.produtosItens
+              .filter((it) => it.itemId)
+              .map((it) => {
+                const vivo = produtosVivos.find((p) => p.id === it.itemId);
+                if (!vivo) return null;
+                const pc = infoPeca(vivo);
+                const q = Number(it.quantidade) || 0;
+                return (
+                  <div key={it.itemId} className="kit-peca">
+                    <span>
+                      <b>{vivo.nome}</b>{" "}
+                      <span className="muted-cel">
+                        {BRL(pc.custoPeca)} por peça{pc.manual ? " (custo digitado à mão)" : ` (chapa de ${pc.pecasChapa})`}
+                      </span>
+                    </span>
+                    <span>
+                      {q} × {BRL(pc.custoPeca)} = <b>{BRL(pc.custoPeca * q)}</b>
+                    </span>
+                    {pc.manual && <span className="st st-atencao">⚠ confira se o valor digitado é de UMA peça, não da chapa</span>}
+                  </div>
+                );
+              })}
+            <div className="hint" style={{ margin: "4px 0 0" }}>O kit usa o custo de UMA peça de cada produto (chapa cheia ÷ peças da chapa). Pra comparar com imprimir o kit numa chapa só: Produção → Otimização → Planejar produção de kit.</div>
+          </div>
+        )}
 
         <h3 className="section-title">
           Embalagem do kit

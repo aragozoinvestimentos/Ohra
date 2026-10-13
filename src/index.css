@@ -1588,6 +1588,14 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 @media (max-width: 760px) { .ads-metricas { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ads-metricas > div { border-bottom: 1px solid var(--border); } .ads-chips { margin-left: 0; } .tabela-ads td.num { text-align: left; } }
 @media (max-width: 760px) { .historico-ads-linha { grid-template-columns: 1fr auto; } .kv-ads { grid-template-columns: 1fr; } }
 
+/* Kit: custo por peça + planejar produção */
+.kit-pecas { display: grid; gap: 4px; margin: 8px 0 4px; font-size: 12.5px; }
+.kit-peca { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; }
+.plano-kit { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; padding: 0 14px 14px; }
+.plano-kit-col { display: grid; gap: 8px; align-content: start; }
+.plano-kit-res { display: grid; gap: 4px; font-size: 13px; }
+@media (max-width: 900px) { .plano-kit { grid-template-columns: 1fr; } }
+
 /* Minha farm */
 .farm-barra { height: 6px; border-radius: 99px; background: var(--border); margin: 3px 0 2px; }
 .farm-barra > div { height: 100%; border-radius: 99px; background: var(--accent); }
