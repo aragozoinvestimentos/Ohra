@@ -4,6 +4,7 @@
 // resumoCaixa) e só é agrupada/ordenada aqui. O botão leva pra aba que decide.
 
 import { pendenciasDeTarefas } from "./tarefas.js";
+import { estadoSugestaoAfiliado } from "./estados.js";
 
 const brl = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
@@ -31,6 +32,7 @@ export function montarPendencias({
   tarefas = [], // tarefas manuais (schema v42)
   ads = null, // useCrescimento().linhasAds (lib/ads.js) — só períodos ligados + teto da loja
   farm = null, // { alteracoes (farm_alteracoes não revisadas), desgaste (avisosDesgaste) } — Minha farm (v47)
+  campanha = null, // próxima campanha da plataforma (calendario.js → proximaCampanha)
   temporadas = [], // [{ produto, info }] lembrete da temporada (calendario.js → infoSazonal().lembrete)
   hoje = "",
 }) {
@@ -122,6 +124,47 @@ export function montarPendencias({
     }[sg.chave];
     add({ id: `rampa-${sg.chave}|${l.r.id}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: textos[0], texto: textos[1], ir: { aba: "crescimento", pedido: { sub: "rampa", rampaId: l.r.id } }, rotulo: "Abrir no Crescimento" });
   }
+  // Mais avisos da Rampa (todos decididos em lib/rampa.js; aqui só lê).
+  const irRampa = (l) => ({ aba: "crescimento", pedido: { sub: "rampa", rampaId: l.r.id } });
+  for (const l of rampas) {
+    const e = l.est;
+    const c = e.lucroCheck;
+    if (e.sugestao?.chave === "segurar" && c?.status === "sinaliza" && c.ultima)
+      add({
+        id: `lucro-menos|${l.r.id}`,
+        grupo: "rotina",
+        ordem: 2,
+        tom: "warn",
+        titulo: `${l.produto.nome}: ${c.ultima.ruim ? "semana abaixo depois de subir" : `lucrando ${Math.round((1 - c.ultima.pct) * 100)}% menos que antes`}`,
+        texto: `${l.canal.nome} · ${brl(c.de)} → ${brl(c.para)} — veja o “Vale a pena?”`,
+        ir: irRampa(l),
+        rotulo: "Abrir no Crescimento",
+      });
+    if (e.alertaNota)
+      add({ id: `nota|${l.r.id}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.produto.nome}: nota ${String(e.nota).replace(".", ",")}`, texto: `${l.canal.nome} · abaixo do alerta — revise o produto/entrega antes de subir o preço`, ir: irRampa(l), rotulo: "Abrir no Crescimento" });
+    if (e.teste?.status === "recomendado")
+      add({ id: `teste-rec|${l.r.id}`, grupo: "rotina", ordem: 3, tom: "warn", titulo: `${l.produto.nome}: teste de lançamento recomendado`, texto: `${l.canal.nome} · poucas vendas no orgânico — Ads com orçamento fechado (${brl(e.teste.orcSugerido)}) ou pular`, ir: irRampa(l), rotulo: "Abrir no Crescimento" });
+    const sk = e.sugestao?.chave;
+    if (sk === "testar-acima")
+      add({ id: `acima|${l.r.id}`, grupo: "oportunidade", ordem: 2, tom: "good", titulo: `${l.produto.nome}: dá pra testar acima do alvo`, texto: `${l.canal.nome} · ${brl(e.alvo)} → ${brl(e.acima?.prox)} (teste controlado)`, ir: irRampa(l), rotulo: "Abrir no Crescimento" });
+    if (sk === "acima-aprovado")
+      add({ id: `acima-ok|${l.r.id}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.produto.nome}: teste acima do alvo aprovado`, texto: `${l.canal.nome} · lucrou mais a ${brl(e.preco)} — atualize o preço salvo`, ir: irRampa(l), rotulo: "Abrir no Crescimento" });
+    if (sk === "acima-voltar")
+      add({ id: `acima-volta|${l.r.id}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.produto.nome}: voltar ao alvo`, texto: `${l.canal.nome} · o teste a ${brl(e.preco)} lucrou menos que no alvo (${brl(e.alvo)})`, ir: irRampa(l), rotulo: "Abrir no Crescimento" });
+  }
+  // Campanha da plataforma chegando (7 dias): conferir preços de campanha.
+  if (campanha && campanha.dias >= 0 && campanha.dias <= 7)
+    add({
+      id: `campanha|${campanha.chave}|${campanha.data}`,
+      grupo: "rotina",
+      ordem: 4,
+      tom: "warn",
+      titulo: `Campanha ${campanha.nome} ${campanha.dias === 0 ? "hoje" : `em ${campanha.dias} dia${campanha.dias === 1 ? "" : "s"}`}`,
+      texto: "a plataforma costuma pedir preço abaixo do menor dos últimos 30 dias — confira em Promoções",
+      ir: { aba: "promocoes" },
+      rotulo: "Abrir Promoções",
+    });
+
   // Temporada chegando (60 dias antes da data): revisar anúncio e estoque.
   for (const { produto, info } of temporadas) {
     const lb = info.lembrete;
@@ -265,17 +308,19 @@ export function montarPendencias({
       ir: { aba: "crescimento", pedido: { sub: "rampa", rampaId: l.r.id } },
       rotulo: "Abrir no Crescimento",
     });
-  for (const s of afSugestoes)
+  for (const s of afSugestoes) {
+    const est = estadoSugestaoAfiliado(s);
     add({
       id: `af|${s.chave}`,
-      grupo: "oportunidade",
+      grupo: est === "atencao" ? "rotina" : "oportunidade",
       ordem: s.chave.startsWith("pode|") ? 2 : 3,
-      tom: "good",
+      tom: est === "atencao" ? "warn" : est === "oportunidade" ? "good" : "neu",
       titulo: s.titulo,
       texto: s.texto,
       ir: { aba: "crescimento", pedido: { sub: "afiliados" } },
       rotulo: "Abrir Afiliados",
     });
+  }
   for (const { item, canal } of atracao)
     add({
       id: `atracao|${item.id}|${canal.id}`,

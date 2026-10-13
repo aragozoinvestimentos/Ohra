@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { infoSazonal, quandoVendeDe } from "../lib/calendario.js";
+import { infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
 import { dataSP } from "../lib/datas.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -108,6 +108,7 @@ function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
 export default function Inicio({ onIrPara, onToast }) {
   const { lojaId } = useLoja();
   const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf, linhasAds, calendario } = useCrescimento();
+  const campanhaProx = useMemo(() => proximaCampanha(calendario, hoje), [calendario, hoje]);
   // Lembrete de temporada (Quando vende = pico/época): 60 dias antes da data.
   const temporadas = useMemo(
     () =>
@@ -201,7 +202,7 @@ export default function Inicio({ onIrPara, onToast }) {
   const afSugestoes = useMemo(
     () =>
       afAtivo
-        ? sugestoesAfiliado({ linhas: linhasAf, parceiros: af.parceiros, afRegistros: af.registros, regras, itens, hoje }).filter((s) => s.chave.startsWith("pode|") || s.chave.startsWith("amostra|"))
+        ? sugestoesAfiliado({ linhas: linhasAf, parceiros: af.parceiros, afRegistros: af.registros, regras, itens, hoje }).filter((s) => s.chave !== "pode-mais")
         : [],
     [afAtivo, linhasAf, af.parceiros, af.registros, regras, itens, hoje]
   );
@@ -245,8 +246,8 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- Pra fazer + status ---
   const pendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, hoje }),
-    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, hoje }),
+    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, hoje]
   );
   const status = statusInicio({
     caixa,
