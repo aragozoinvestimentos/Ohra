@@ -15,6 +15,7 @@ import Ajuda from "./Ajuda.jsx";
 import FreteAviso from "./FreteAviso.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import MontarCombinacoes from "./MontarCombinacoes.jsx";
 
 // 3º Ficha do anúncio — modo "Anúncio com vários itens" (schema v46): um
 // anúncio que junta itens diferentes numa variação ("Conjunto", "Tamanho"),
@@ -360,7 +361,7 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
         </>
       )}
 
-      {editar && <GrupoDialog grupo={editar.grupo || null} itens={itens} salvando={salvando} onCancelar={() => setEditar(null)} onSalvar={salvarGrupo} />}
+      {editar && <GrupoDialog grupo={editar.grupo || null} itens={itens} canal={canal} canais={canais} salvando={salvando} onCancelar={() => setEditar(null)} onSalvar={salvarGrupo} onToast={onToast} />}
       {excluir && (
         <ConfirmDialog
           titulo={`Excluir o anúncio “${excluir.nome}”?`}
@@ -375,7 +376,8 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
   );
 }
 
-function GrupoDialog({ grupo, itens, salvando, onCancelar, onSalvar }) {
+function GrupoDialog({ grupo, itens, canal, canais, salvando, onCancelar, onSalvar, onToast }) {
+  const [montando, setMontando] = useState(false);
   const opcoesBusca = useMemo(() => gruposDoSeletor(itens), [itens]);
   const [f, setF] = useState(() => {
     const v2 = variacao2DoGrupo(grupo);
@@ -430,6 +432,32 @@ function GrupoDialog({ grupo, itens, salvando, onCancelar, onSalvar }) {
           </datalist>
         </div>
       </div>
+      {montando ? (
+        <MontarCombinacoes
+          canalInicial={canal}
+          canais={canais || []}
+          nomeVariacao={f.variacao_nome}
+          onCancelar={() => setMontando(false)}
+          onToast={onToast}
+          onUsar={(novas, nomeBase) => {
+            setF((p) => {
+              const mantidas = p.opcoes.filter((o) => o.itemId);
+              const ids = new Set(mantidas.map((o) => o.itemId));
+              return { ...p, nome: p.nome || nomeBase, opcoes: [...mantidas, ...novas.filter((o) => !ids.has(o.itemId))] };
+            });
+            setMontando(false);
+          }}
+        />
+      ) : (
+        <div className="combinacoes-convite">
+          <span>
+            <b>Opções que somam itens?</b> Ex.: só o Letreiro · Letreiro + Suporte · Letreiro + Suporte + 2 Tigelas.
+          </span>
+          <button type="button" className="btn btn-sm" onClick={() => setMontando(true)}>
+            ✦ Montar combinações
+          </button>
+        </div>
+      )}
       <div className="grupo-opcoes">
         <div className="grupo-opcao grupo-opcao-cab">
           <span>Opção (aparece no anúncio)</span>

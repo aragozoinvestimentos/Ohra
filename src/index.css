@@ -1843,3 +1843,26 @@ td { border-bottom-color: color-mix(in oklab, var(--border) 70%, transparent); }
   /* título nunca some atrás dos botões: os botões descem pra linha de baixo */
   .topbar-titulo { min-width: 150px; }
 }
+
+/* Montar combinações (Ficha → Anúncio com vários itens) */
+.combinacoes { border: 1px solid var(--border); border-radius: 12px; background: var(--surface-3); padding: 12px 14px; margin: 10px 0; }
+.combinacoes-cab { display: flex; align-items: center; gap: 6px; font-size: 14px; margin-bottom: 8px; }
+.combinacoes-topo { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px 14px; }
+.combinacoes-adicionais { display: grid; gap: 8px; margin-bottom: 10px; }
+.combinacoes-adicionais > .btn { justify-self: start; }
+.combinacoes-adicional { display: grid; grid-template-columns: minmax(0, 1fr) 96px auto; gap: 8px; align-items: center; }
+.combinacoes-qtd { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+.combinacoes-qtd input { width: 56px; }
+.combinacoes-tabela { margin: 6px 0 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.combinacoes-tabela td { vertical-align: top; }
+.combinacao-rotulo { width: 100%; min-width: 150px; }
+.combinacao-leva { white-space: normal; min-width: 180px; max-width: 280px; font-size: 12.5px; color: var(--ink-soft); }
+tr.combinacao-off td { opacity: 0.45; }
+.combinacoes-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .combinacoes-topo { grid-template-columns: minmax(0, 1fr); }
+  .combinacoes-adicional { grid-template-columns: minmax(0, 1fr) auto; }
+  .combinacoes-adicional > :first-child { grid-column: 1 / -1; }
+}
+.combinacoes-convite { display: flex; align-items: center; justify-content: space-between; gap: 8px 14px; flex-wrap: wrap; margin: 12px 0 2px; padding: 9px 12px; border: 1px dashed var(--border-strong); border-radius: 10px; font-size: 12.5px; color: var(--ink-soft); }
+.combinacoes-convite b { color: var(--ink); }
