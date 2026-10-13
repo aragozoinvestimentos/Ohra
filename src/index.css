@@ -186,7 +186,7 @@ a:hover { color: var(--accent); }
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; color: var(--ink);
 }
 
-.content { flex: 1; width: 100%; max-width: 1760px; padding: 20px 28px 48px; position: relative; }
+.content { flex: 1; width: 100%; max-width: 1760px; padding: 12px 20px 40px; position: relative; }
 
 section.view { display: none; }
 section.view.active { display: block; }
@@ -245,14 +245,14 @@ section.view.active { display: block; }
 /* ---------- Cartões (painéis) ---------- */
 .panel {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 14px 16px; box-shadow: var(--shadow); min-width: 0;
+  padding: 10px 14px; box-shadow: var(--shadow); min-width: 0;
 }
-.panel + .panel, .grid2 + .panel, .grid2 + .grid2, .panel + .grid2 { margin-top: 16px; }
+.panel + .panel, .grid2 + .panel, .grid2 + .grid2, .panel + .grid2 { margin-top: 10px; }
 .panel h3 { font-size: 13px; margin-bottom: 12px; display: flex; align-items: center; gap: 2px; }
 /* Título que abre o cartão vira uma faixa de cabeçalho com linha embaixo */
 .panel > h3:first-child {
-  margin: -14px -16px 14px; padding: 11px 16px; border-bottom: 1px solid var(--border);
-  min-height: 44px; flex-wrap: wrap; row-gap: 6px;
+  margin: -10px -14px 10px; padding: 8px 14px; border-bottom: 1px solid var(--border);
+  min-height: 38px; flex-wrap: wrap; row-gap: 6px;
 }
 .panel h3.section-title { color: var(--ink); }
 /* h3 no meio do cartão = sub-seção, separada por uma linha */
@@ -283,7 +283,7 @@ section.view.active { display: block; }
 }
 
 /* ---------- Formulários ---------- */
-.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; min-width: 0; }
 .field label { font-size: 11.5px; font-weight: 500; color: var(--ink-soft); }
 .field input, .field select, .field textarea { width: 100%; }
 .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
@@ -392,10 +392,10 @@ tr.linha-sel td:first-child { box-shadow: inset 3px 0 var(--accent), inset 0 1px
 .destaque-lucro .v, .destaque-custo .v, .destaque-preco .v { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Linha de indicadores (KPIs) no topo das telas */
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); min-width: 0; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; box-shadow: var(--shadow); min-width: 0; }
 .kpi .l { font-size: 11.5px; color: var(--ink-soft); font-weight: 500; }
-.kpi .v { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi .v { font-size: 20px; font-weight: 650; letter-spacing: -0.02em; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kpi .s { font-size: 11px; color: var(--ink-faint); margin-top: 1px; }
 .kpi.destaque { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: linear-gradient(180deg, var(--accent-soft), var(--surface)); }
 .kpi.destaque .v { color: var(--accent-ink); }
@@ -427,7 +427,7 @@ tr.linha-sel td:first-child { box-shadow: inset 3px 0 var(--accent), inset 0 1px
 
 /* ---------- Tabelas ---------- */
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; vertical-align: middle; }
+th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; vertical-align: middle; }
 th {
   background: var(--surface-2); color: var(--ink-soft); font-weight: 600; font-size: 11px;
   text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; position: sticky; top: 0; z-index: 1;
@@ -443,7 +443,7 @@ th.centro, td.centro { text-align: center; }
 
 /* Sub-abas (Cadastros, Orçamento, Promoções) — controle segmentado */
 .subabas {
-  display: flex; width: fit-content; flex-wrap: wrap; gap: 2px; padding: 3px; margin-bottom: 16px;
+  display: flex; width: fit-content; flex-wrap: wrap; gap: 2px; padding: 3px; margin-bottom: 10px;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; max-width: 100%;
 }
 .subabas .btn { border: none; background: transparent; min-height: 30px; padding: 5px 14px; color: var(--ink-soft); }
@@ -561,7 +561,7 @@ tr.linha-passado td { color: var(--ink-soft); }
 .item-cel-nome { min-width: 0; }
 .item-cel-nome small { display: block; font-size: 11px; color: var(--ink-faint); line-height: 1.2; }
 
-.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .toolbar input[type="text"] { width: 300px; max-width: 100%; }
 .toolbar .subabas-compacta { margin: 0; }
 .toolbar-info { margin-left: auto; font-size: 12px; color: var(--ink-faint); }
@@ -906,7 +906,7 @@ th .canal-tag { font-size: 11px; }
 .kv .v, .base, .promo, .sug-cel-v, .preco-canal-linha, .kit-sep, .refs-linha { font-variant-numeric: tabular-nums; }
 /* hierarquia dos cartões: rótulo discreto, número forte */
 .kpi .l { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 600; }
-.kpi .v { font-size: 23px; font-weight: 700; }
+.kpi .v { font-size: 20px; font-weight: 700; }
 .kpi.destaque .v { color: var(--accent-ink); }
 /* margem boa sem gritar: verde só no ponto; atenção/prejuízo continuam coloridos */
 .preco-canal-linha.boa { color: var(--ink-soft); }
@@ -919,13 +919,13 @@ th .canal-tag { font-size: 11px; }
 .salvo-chip b { color: var(--accent-ink); font-weight: 700; }
 .refs-avulso { display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; }
 /* painel do topo (produto → canal) */
-.painel-topo { padding-top: 12px; padding-bottom: 12px; }
+.painel-topo { padding-top: 10px; padding-bottom: 10px; }
 .topo-campos { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: end; }
 .topo-campos .field { margin-bottom: 0; }
 .topo-campos label { font-weight: 600; color: var(--ink); }
 @media (max-width: 860px) { .topo-campos { grid-template-columns: minmax(0, 1fr); } }
 .painel-topo + .resumo-sentinela + .resumo-fixo, .painel-topo + .resumo-sentinela { margin-top: 0; }
-.painel-topo { margin-bottom: 16px; }
+.painel-topo { margin-bottom: 10px; }
 /* transições curtas */
 @keyframes surgir { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
 tr.linha-variacao, .tabela-pub tr.linha-cad { animation: surgir 0.18s ease-out; }
@@ -1321,7 +1321,7 @@ input.campo-importado { border-color: var(--st-info, var(--border-strong)); back
 .leg-ponto.ruim, .leg-ponto.st-bad { background: var(--bad); }
 .leg-ponto.st-acc { background: var(--st-oportunidade); }
 .leg-ponto.st-neu { background: var(--ink-faint); }
-.cel-preco { display: inline-grid; gap: 1px; justify-items: end; min-width: 100%; padding: 4px 6px; margin: -4px -6px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: right; cursor: pointer; }
+.cel-preco { display: inline-grid; gap: 1px; justify-items: end; min-width: 100%; padding: 3px 6px; margin: -3px -6px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: right; cursor: pointer; }
 .cel-preco:hover { border-color: var(--border-strong); background: var(--surface); }
 .cel-preco.sel { border-color: var(--accent); background: var(--accent-soft); }
 .cel-preco:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -1334,7 +1334,7 @@ input.campo-importado { border-color: var(--st-info, var(--border-strong)); back
 .ponto-st.warn { background: var(--warn); }
 .ponto-st.bad { background: var(--bad); }
 .cel-vazia { color: var(--ink-faint); display: inline-flex; align-items: center; gap: 4px; }
-.chip-cel { display: inline-block; margin-top: 2px; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; background: var(--surface-2); color: var(--ink-soft); }
+.chip-cel { display: inline-block; margin-top: 1px; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; background: var(--surface-2); color: var(--ink-soft); }
 .chip-cel.ruim { background: var(--bad-soft); color: var(--bad); }
 .chip-cel.ruim.discreto { background: transparent; border: 1px solid var(--bad-soft); }
 .chip-cel.atencao { background: var(--warn-soft); color: var(--warn); }
@@ -1385,7 +1385,7 @@ button.ficha-anuncio-cab:hover { background: var(--surface-2); }
 .bolinha-status.good { display: none; }
 .bolinha-status.warn { background: var(--warn); }
 .bolinha-status.bad { background: var(--bad); }
-.inicio-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.inicio-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
 .inicio-card { text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; transition: border-color .15s; }
 .inicio-card:hover { border-color: var(--border-strong); }
 .inicio-card.bad { border-left: 3px solid var(--bad); }
@@ -1726,7 +1726,7 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .linha-agora { display: block; font-size: 11px; color: var(--st-decisao); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Fluxo de Caixa (out/2026): sub-abas, seletor de mês, pendências numa linha, lançamentos por dia */
-.caixa-cabecalho { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 14px; }
+.caixa-cabecalho { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; }
 .caixa-cabecalho .subabas { margin-bottom: 0; }
 .seletor-mes { display: flex; align-items: center; gap: 6px; }
 .seletor-mes select { width: auto; min-width: 150px; font-weight: 600; }
