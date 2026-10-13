@@ -63,7 +63,7 @@ export default function CustoFilamentosDialog({ itemId, base: baseExterna, canal
     if (!supabase || !produto) return;
     setSalvando(true);
     // eslint-disable-next-line no-unused-vars
-    const { id, criado_em, atualizado_em, sku, ...resto } = produto;
+    const { id, criado_em, atualizado_em, sku, _maquina, ...resto } = produto;
     const detalhe = { ...(produto.producao_detalhe || {}), materialNome: fil.nome };
     const novo = {
       ...resto,

@@ -108,6 +108,12 @@ const PATHS = {
       <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01" />
     </>
   ),
+  farm: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M4 8h16M9 14h6M12 11v6M8 21v-2h8v2" />
+    </>
+  ),
   caixa: (
     <>
       <rect x="2" y="6" width="20" height="13" rx="2" />

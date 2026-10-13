@@ -8,6 +8,10 @@ import { hojeISO, loadEstimativas, mesDe, resumoCaixa, rotuloMes } from "../lib/
 import { linhasAnunciar } from "../lib/anunciar.js";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { gruposPorItem } from "../lib/anunciosGrupo.js";
+import { useCatalogo } from "../hooks/useCatalogo.js";
+import { useFarmAlteracoes } from "../hooks/useFarmAlteracoes.js";
+import { avisosDesgaste } from "../lib/farm.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { sugestoesAfiliado, vendasPorOrigem } from "../lib/afiliados.js";
 import { calcTaxaFalhaAtual, TAXA_FALHA_PRIOR_PCT } from "../lib/registroImpressao.js";
 import { reservaDoItem } from "../lib/calc.js";
@@ -106,6 +110,15 @@ export default function Inicio({ onIrPara, onToast }) {
   const { grupos: gruposAnuncio } = useAnunciosGrupo();
   const mapaGrupos = useMemo(() => gruposPorItem(gruposAnuncio), [gruposAnuncio]);
   const semana = useSemanaPendente();
+  // Minha farm (v47): custo que subiu (farm_alteracoes) e desgaste das impressoras.
+  const { impressoras, farmConfig } = useCatalogo();
+  const { alteracoes: farmAlteracoes } = useFarmAlteracoes();
+  const farm = useMemo(() => ({ alteracoes: farmAlteracoes, desgaste: avisosDesgaste(impressoras, farmConfig, hoje) }), [farmAlteracoes, impressoras, farmConfig, hoje]);
+  async function ciente(c) {
+    const { error } = await supabase.from("impressoras").update({ [c.campo]: true }).eq("id", c.impressoraId);
+    if (error) onToast?.(`Não foi possível marcar: ${error.message}`);
+    else recarregarCatalogo();
+  }
   const gestao = useDadosGestao();
   const [verTodos, setVerTodos] = useState(false);
   const [abertas, setAbertas] = useState({}); // área → aberta (sobrepõe o padrão)
@@ -212,8 +225,8 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- Pra fazer + status ---
   const pendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, hoje }),
-    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, hoje }),
+    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, hoje]
   );
   const status = statusInicio({
     caixa,
@@ -291,6 +304,13 @@ export default function Inicio({ onIrPara, onToast }) {
             </button>
             <button type="button" className="link-btn" onClick={() => semana.adiar(p.semana, "amanha")}>
               lembrar amanhã
+            </button>
+          </span>
+        )}
+        {p.ciente && (
+          <span className="inicio-item-sec">
+            <button type="button" className="link-btn" onClick={() => ciente(p.ciente)} title="Esse aviso não volta mais pra esta impressora.">
+              ok, ciente
             </button>
           </span>
         )}

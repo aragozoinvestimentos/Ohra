@@ -75,7 +75,7 @@ export function producaoPorPeca(variacao, produto, materiais) {
       tempo: num(d.tempo),
       ...(d.materialNome ? { materialNome: d.materialNome } : {}),
     };
-    const r = custoProdutoPorPeca({ producao_detalhe: detalhe, pecas_por_impressao: num(d.pecas) || 1 }, materiais);
+    const r = custoProdutoPorPeca({ producao_detalhe: detalhe, pecas_por_impressao: num(d.pecas) || 1, _maquina: produto._maquina }, materiais);
     if (r) return { porPeca: r.total, modoEfetivo: "fatiador" };
   }
   return { porPeca: base, modoEfetivo: "multiplicar" };

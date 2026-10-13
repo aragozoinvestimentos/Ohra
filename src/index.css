@@ -1585,6 +1585,12 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 @media (max-width: 760px) { .ads-metricas { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ads-metricas > div { border-bottom: 1px solid var(--border); } .ads-chips { margin-left: 0; } .tabela-ads td.num { text-align: left; } }
 @media (max-width: 760px) { .historico-ads-linha { grid-template-columns: 1fr auto; } .kv-ads { grid-template-columns: 1fr; } }
 
+/* Minha farm */
+.farm-barra { height: 6px; border-radius: 99px; background: var(--border); margin: 3px 0 2px; }
+.farm-barra > div { height: 100%; border-radius: 99px; background: var(--accent); }
+.farm-barra > div.alerta { background: var(--st-atencao); }
+.farm-barra > div.fim { background: var(--st-resolver); }
+
 /* Ficha do anúncio — etapa 2 (anúncio com vários itens) */
 .ficha-modo { margin: 0 0 12px; }
 .ficha-grupos { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -55,6 +55,7 @@ const Tutorial = lazyAba(() => import("./components/Tutorial.jsx"));
 const Configuracao = lazyAba(() => import("./components/Configuracao.jsx"));
 const Crescimento = lazyAba(() => import("./components/Crescimento.jsx"));
 const FluxoCaixa = lazyAba(() => import("./components/FluxoCaixa.jsx"));
+const MinhaFarm = lazyAba(() => import("./components/MinhaFarm.jsx"));
 const Inicio = lazyAba(() => import("./components/Inicio.jsx"));
 
 const THEME_KEY = "ohra:theme";
@@ -113,6 +114,7 @@ const GRUPOS = [
     tabs: [
       { key: "caixa", label: "Fluxo de Caixa", sub: "Entradas, saídas e projeção de até 12 meses" },
       { key: "metas", label: "Metas", sub: "Faturamento e lucro do mês" },
+      { key: "farm", label: "Minha farm", sub: "Impressoras, custo por hora e desgaste" },
       { key: "ranking", label: "Ranking por Retorno", sub: "Quais itens dão mais lucro por hora" },
       { key: "importarVendas", label: "Importar vendas", sub: "Relatório de vendas da Olist (em construção)" },
     ],
@@ -448,6 +450,14 @@ export default function App() {
           {visitadas.has("caixa") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
               <FluxoCaixa key={lojaId || "sem-loja"} onToast={showToast} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "farm" ? "active" : ""}`}>
+          {visitadas.has("farm") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <MinhaFarm key={lojaId || "sem-loja"} onToast={showToast} />
             </Suspense>
           )}
         </section>

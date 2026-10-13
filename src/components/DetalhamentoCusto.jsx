@@ -34,6 +34,10 @@ export default function DetalhamentoCusto({
   pecasPorImpressao,
   pecasPorImpressaoSalvo,
   onChangePecasPorImpressao,
+  impressoras = null, // com a farm configurada (v47): máquina vem da impressora
+  impressoraId = null,
+  maquina = null,
+  onChangeImpressora,
 }) {
   if (!detalhe) {
     return (
@@ -47,6 +51,9 @@ export default function DetalhamentoCusto({
   }
 
   const set = (campo) => (v) => onChange({ ...detalhe, [campo]: v });
+  const ativas = (impressoras || []).filter((i) => i.ativa !== false);
+  const usaFarm = ativas.length > 0;
+  const padrao = ativas.find((i) => i.padrao) || ativas[0] || null;
 
   const pecasPorPlaca = Number(pecasPorImpressao) || 1;
 
@@ -80,10 +87,29 @@ export default function DetalhamentoCusto({
         </select>
       </div>
 
-      <div className="row2">
-        <CampoNum label="Preço do kWh (R$)" valor={detalhe.kwh} anterior={salvo?.kwh} onChange={set("kwh")} step="0.01" />
-        <CampoNum label="Consumo da máquina (W)" valor={detalhe.consumo} anterior={salvo?.consumo} onChange={set("consumo")} />
-      </div>
+      {usaFarm ? (
+        <div className="field">
+          <label>Impressora</label>
+          <select value={impressoraId || padrao?.id || ""} onChange={(e) => onChangeImpressora?.(e.target.value)}>
+            {ativas.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.nome}
+                {i.padrao ? " (padrão)" : ""}
+              </option>
+            ))}
+          </select>
+          {maquina && (
+            <div className="hint" style={{ marginTop: 4 }}>
+              {BRL(maquina.custoHora)}/h de impressão (máquina, energia e manutenção) — valores em Gestão → Minha farm.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="row2">
+          <CampoNum label="Preço do kWh (R$)" valor={detalhe.kwh} anterior={salvo?.kwh} onChange={set("kwh")} step="0.01" />
+          <CampoNum label="Consumo da máquina (W)" valor={detalhe.consumo} anterior={salvo?.consumo} onChange={set("consumo")} />
+        </div>
+      )}
       <div className="row3">
         <CampoNum label="Falhas (%)" valor={detalhe.falhasPct} anterior={salvo?.falhasPct} onChange={set("falhasPct")} />
         <CampoNum label="Manutenção (%)" valor={detalhe.manutencaoPct} anterior={salvo?.manutencaoPct} onChange={set("manutencaoPct")} />
@@ -107,15 +133,23 @@ export default function DetalhamentoCusto({
         rotuloVazio="Nenhum consumível nessa peça."
       />
 
-      <div className="row2">
-        <CampoNum label="Valor da máquina (R$)" valor={detalhe.maquina} anterior={salvo?.maquina} onChange={set("maquina")} />
-        <CampoNum label="Prazo desejado (meses)" valor={detalhe.prazoMeses} anterior={salvo?.prazoMeses} onChange={set("prazoMeses")} />
-      </div>
-      <div className="row3">
-        <CampoNum label="Horas de uso/dia" valor={detalhe.horasDia} anterior={salvo?.horasDia} onChange={set("horasDia")} step="0.5" />
-        <CampoNum label="Dias de uso/mês" valor={detalhe.diasMes} anterior={salvo?.diasMes} onChange={set("diasMes")} />
-        <CampoNum label="Modelagem 3D (R$)" valor={detalhe.modelagem} anterior={salvo?.modelagem} onChange={set("modelagem")} step="0.01" />
-      </div>
+      {usaFarm ? (
+        <div className="row3">
+          <CampoNum label="Modelagem 3D (R$)" valor={detalhe.modelagem} anterior={salvo?.modelagem} onChange={set("modelagem")} step="0.01" />
+        </div>
+      ) : (
+        <>
+          <div className="row2">
+            <CampoNum label="Valor da máquina (R$)" valor={detalhe.maquina} anterior={salvo?.maquina} onChange={set("maquina")} />
+            <CampoNum label="Prazo desejado (meses)" valor={detalhe.prazoMeses} anterior={salvo?.prazoMeses} onChange={set("prazoMeses")} />
+          </div>
+          <div className="row3">
+            <CampoNum label="Horas de uso/dia" valor={detalhe.horasDia} anterior={salvo?.horasDia} onChange={set("horasDia")} step="0.5" />
+            <CampoNum label="Dias de uso/mês" valor={detalhe.diasMes} anterior={salvo?.diasMes} onChange={set("diasMes")} />
+            <CampoNum label="Modelagem 3D (R$)" valor={detalhe.modelagem} anterior={salvo?.modelagem} onChange={set("modelagem")} step="0.01" />
+          </div>
+        </>
+      )}
 
       {resultado && (
         <div className="detalhe-resultado">
@@ -126,7 +160,7 @@ export default function DetalhamentoCusto({
           <div className="kv"><span className="k">Falhas</span><span className="v">{BRL(resultado.falhas)}</span></div>
           <div className="kv"><span className="k">Acabamento</span><span className="v">{BRL(resultado.acabamento)}</span></div>
           <div className="kv"><span className="k">Consumíveis</span><span className="v">{BRL(custoConsumiveis)}</span></div>
-          <div className="kv"><span className="k">ROI da máquina</span><span className="v">{BRL(resultado.roiPeca)}</span></div>
+          <div className="kv"><span className="k">{usaFarm ? "Máquina (desgaste + manutenção/h)" : "ROI da máquina"}</span><span className="v">{BRL(resultado.roiPeca)}</span></div>
           <div className="kv"><span className="k">Modelagem</span><span className="v">{BRL(detalhe.modelagem)}</span></div>
           <div className="kv total"><span className="k">Total (bate com "Custo de produção" acima)</span><span className="v">{BRL(resultado.total)}</span></div>
         </div>

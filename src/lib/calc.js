@@ -140,7 +140,9 @@ export function calcProducao(i) {
   const manutencaoChapa = materialChapa * (i.manutencaoPct ?? 0.15);
   const falhasChapa = materialChapa * i.falhasPct;
   const acabamentoChapa = materialChapa * (i.acabamentoPct ?? 0.1);
-  const roiHora = i.maquina / ((i.horasDia * i.diasMes * i.prazoMeses) || 1);
+  // Máquina: com a farm configurada (v47) vem pronta da impressora (valor
+  // pago ÷ vida útil + manutenção/h); sem ela, a conta antiga por prazo.
+  const roiHora = i.custoHoraMaquina != null ? i.custoHoraMaquina : i.maquina / ((i.horasDia * i.diasMes * i.prazoMeses) || 1);
   const roiPecaChapa = (roiHora / 60) * i.tempo;
   const peso = pesoChapa / pecas;
   const material = materialChapa / pecas;
@@ -152,6 +154,38 @@ export function calcProducao(i) {
   const total = material + energia + manutencao + falhas + acabamento + i.consumiveis + roiPeca + i.modelagem;
   const precoRapido = total * (1 + i.markupRapido);
   return { peso, material, energia, manutencao, falhas, acabamento, roiPeca, total, precoRapido };
+}
+
+// Entrada do calcProducao a partir do detalhamento salvo (producao_detalhe).
+// `maquina` = produto._maquina (lib/farm.js): energia e máquina vêm da
+// impressora/farm; sem ela, dos campos antigos do detalhamento.
+export function entradaDoDetalhe(detalhe, { precoKg = 0, consumiveis = 0, pecasPorPlaca = 1, maquina = null, markupRapido = 0 } = {}) {
+  const n = (v) => {
+    const x = Number(v);
+    return isFinite(x) ? x : 0;
+  };
+  const d = detalhe || {};
+  return {
+    comprimento: n(d.comprimento),
+    diametro: n(d.diametro),
+    densidade: n(d.densidade),
+    tempo: n(d.tempo),
+    precoKg,
+    kwh: maquina ? maquina.tarifa : n(d.kwh),
+    consumo: maquina ? maquina.potencia : n(d.consumo),
+    falhasPct: n(d.falhasPct) / 100,
+    manutencaoPct: n(d.manutencaoPct) / 100,
+    acabamentoPct: n(d.acabamentoPct) / 100,
+    consumiveis,
+    maquina: n(d.maquina),
+    prazoMeses: n(d.prazoMeses),
+    horasDia: n(d.horasDia),
+    diasMes: n(d.diasMes),
+    custoHoraMaquina: maquina ? maquina.custoHoraMaquina : null,
+    modelagem: n(d.modelagem),
+    markupRapido,
+    pecasPorPlaca: n(pecasPorPlaca) || 1,
+  };
 }
 
 // Custo de produção por peça de um produto JÁ CADASTRADO (com detalhamento
@@ -172,26 +206,12 @@ export function custoProdutoPorPeca(produto, materiais) {
     .filter((m) => m.tipo === "consumivel")
     .map((m) => ({ id: m.id, nome: m.nome, preco: m.preco, unidade: m.unidade }));
   const custoConsumiveis = totalItens(consumiveisCatalogo, detalhe.consumiveisItens || []);
-  return calcProducao({
-    comprimento: n(detalhe.comprimento),
-    diametro: n(detalhe.diametro),
-    densidade: n(detalhe.densidade),
-    tempo: n(detalhe.tempo),
+  return calcProducao(entradaDoDetalhe(detalhe, {
     precoKg: material?.preco ?? 0,
-    kwh: n(detalhe.kwh),
-    consumo: n(detalhe.consumo),
-    falhasPct: n(detalhe.falhasPct) / 100,
-    manutencaoPct: n(detalhe.manutencaoPct) / 100,
-    acabamentoPct: n(detalhe.acabamentoPct) / 100,
     consumiveis: custoConsumiveis,
-    maquina: n(detalhe.maquina),
-    prazoMeses: n(detalhe.prazoMeses),
-    horasDia: n(detalhe.horasDia),
-    diasMes: n(detalhe.diasMes),
-    modelagem: n(detalhe.modelagem),
-    markupRapido: 0,
     pecasPorPlaca: n(produto.pecas_por_impressao) || 1,
-  });
+    maquina: produto._maquina,
+  }));
 }
 
 // comissao/fixo já resolvidos (pct 0-1, fixo em R$); min/max só existem quando a faixa é conhecida (Shopee/ML)

@@ -21,7 +21,7 @@ const PREFIXO = { produto: "p", variacao: "v", kit: "k" };
 // a estratégia do item (crescimento/atração/rampa silenciam o mínimo) e o
 // lucro NOVO — se a mudança derrubar o lucro abaixo do lucro de referência
 // da decisão, a estratégia vence e o aviso volta.
-function montarLinhas(afetados, { canais, precos, cfgDoProduto, itens = [], rampas = [] }) {
+export function montarLinhas(afetados, { canais, precos, cfgDoProduto, itens = [], rampas = [] }) {
   const linhas = [];
   const emRampa = produtosEmRampa(rampas, precos);
   for (const a of afetados) {

@@ -29,10 +29,31 @@ export function montarPendencias({
   atracao = [], // [{ item, canal }] pareceAtracaoDe
   tarefas = [], // tarefas manuais (schema v42)
   ads = null, // useCrescimento().linhasAds (lib/ads.js) — só períodos ligados + teto da loja
+  farm = null, // { alteracoes (farm_alteracoes não revisadas), desgaste (avisosDesgaste) } — Minha farm (v47)
   hoje = "",
 }) {
   const out = [];
   const add = (p) => out.push(p);
+
+  // ---- Minha farm: UM item pro custo que subiu (vermelho se algo ficou abaixo do mínimo) ----
+  const altFarm = (farm?.alteracoes || []).filter((a) => !a.revisado);
+  if (altFarm.length) {
+    const prods = new Map();
+    for (const a of altFarm) for (const x of Array.isArray(a.produtos) ? a.produtos : []) prods.set(`${x.id}|${x.canal_id}`, x);
+    const lista = [...prods.values()];
+    const grave = lista.some((x) => x.motivo === "prejuízo" || x.motivo === "abaixo do mínimo");
+    const nItens = new Set(lista.map((x) => x.id)).size;
+    add({
+      id: "farm|custo",
+      grupo: grave ? "resolver" : "rotina",
+      ordem: 0,
+      tom: grave ? "bad" : "warn",
+      titulo: `Custo da farm subiu — ${plural(nItens, "produto", "produtos")} pra reajustar`,
+      texto: grave ? "algum ficou abaixo do mínimo — ajuste pelo desconto da promoção" : "o lucro caiu bastante — confira e ajuste pela promoção se precisar",
+      ir: { aba: "farm", pedido: { alteracoes: true } },
+      rotulo: "Ver produtos",
+    });
+  }
 
   // ---- Resolver ----
   for (const { item, canal, al } of precosAlerta.filter((a) => a.al?.tipo === "prejuizo"))
@@ -103,6 +124,18 @@ export function montarPendencias({
     add({ id: "ads|teto", grupo: "rotina", ordem: 2, tom: "warn", titulo: "Ads acima do teto da loja", texto: `${Math.round(ads.loja.pct * 100)}% do faturamento da semana em Ads`, ir: irAds, rotulo: "Abrir Ads" });
 
   // ---- Rotina ----
+  for (const w of farm?.desgaste || [])
+    add({
+      id: `farm-desgaste|${w.imp.id}|${w.tipo}`,
+      grupo: "rotina",
+      ordem: 2,
+      tom: "warn",
+      titulo: w.tipo === "fim" ? `${w.imp.nome}: chegou na vida útil` : `${w.imp.nome}: avaliar venda/troca`,
+      texto: w.texto,
+      ir: { aba: "farm" },
+      rotulo: "Abrir Minha farm",
+      ciente: { impressoraId: w.imp.id, campo: w.tipo === "fim" ? "aviso_fim_visto" : "aviso_desgaste_visto" },
+    });
   for (const x of semana)
     add({
       id: `semana|${x.chave}`,

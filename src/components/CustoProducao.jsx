@@ -14,6 +14,8 @@ import ResumoFixo from "./ResumoFixo.jsx";
 import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
 import ImpactoCusto from "./ImpactoCusto.jsx";
 import { useEscada } from "../hooks/useEscada.js";
+import { useCatalogo } from "../hooks/useCatalogo.js";
+import { maquinaDoProduto } from "../lib/farm.js";
 import { impactoProduto } from "../lib/impactoCusto.js";
 import { configEscada, precoParaMargem, r90up } from "../lib/escada.js";
 
@@ -41,6 +43,9 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   // Materiais vêm do store único do catálogo (mesma lista ao vivo do app todo).
   const dadosEscada = useEscada();
   const { canais: canaisVivos, itens: itensVivos, produtos: produtosVivos, materiais, carregando: materiaisCarregando } = dadosEscada;
+  const { impressoras, farmConfig } = useCatalogo();
+  const impressorasAtivas = farmConfig ? impressoras.filter((i) => i.ativa !== false) : [];
+  const usaFarm = impressorasAtivas.length > 0;
   const [f, setF] = useState(loadInitial);
   // Produtos cadastrados (pra carregar o detalhamento salvo de um deles e
   // reajustar em vez de simular do zero) — do catálogo compartilhado.
@@ -76,12 +81,13 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       Number(produtoSelecionado.pecas_por_impressao) ||
       Number(produtoSelecionado.producao_detalhe?.pecasPorPlaca) ||
       1;
+    const impressoraId = produtoSelecionado.impressora_id || "";
     if (produtoSelecionado.producao_detalhe) {
-      setF((prev) => ({ ...DEFAULTS, ...produtoSelecionado.producao_detalhe, markupRapido: prev.markupRapido, pecasPorPlaca }));
+      setF((prev) => ({ ...DEFAULTS, ...produtoSelecionado.producao_detalhe, markupRapido: prev.markupRapido, pecasPorPlaca, impressoraId }));
     } else if (produtoSelecionado.material_nome) {
-      setF((prev) => ({ ...prev, materialNome: produtoSelecionado.material_nome, pecasPorPlaca }));
+      setF((prev) => ({ ...prev, materialNome: produtoSelecionado.material_nome, pecasPorPlaca, impressoraId }));
     } else {
-      setF((prev) => ({ ...prev, pecasPorPlaca }));
+      setF((prev) => ({ ...prev, pecasPorPlaca, impressoraId }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtoId]);
@@ -121,6 +127,8 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
 
   const custoConsumiveis = totalItens(consumiveisCatalogo, f.consumiveisItens);
 
+  // Máquina da impressora escolhida (Minha farm); sem farm → campos antigos.
+  const maquinaSel = usaFarm ? maquinaDoProduto({ impressora_id: f.impressoraId || null }, impressoras, farmConfig) : null;
   // Entradas do cálculo com um preço/kg qualquer — o ⇄ Filamentos troca só ele.
   const entradaCalc = (precoKg) => ({
       comprimento: n(f.comprimento),
@@ -141,11 +149,12 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       modelagem: n(f.modelagem),
       markupRapido: n(f.markupRapido) / 100,
       pecasPorPlaca: n(f.pecasPorPlaca) || 1,
+      ...(maquinaSel ? { kwh: maquinaSel.tarifa, consumo: maquinaSel.potencia, custoHoraMaquina: maquinaSel.custoHoraMaquina } : {}),
     });
   const resultado = useMemo(
     () => calcProducao(entradaCalc(materialSelecionado?.preco ?? 0)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [f, materialSelecionado, custoConsumiveis]
+    [f, materialSelecionado, custoConsumiveis, maquinaSel?.custoHora, maquinaSel?.tarifa, maquinaSel?.potencia]
   );
 
   // Preço de venda de referência no canal principal (Shopee, ou o 1º canal):
@@ -190,6 +199,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         modelagem: n(f.modelagem),
       },
       pecas_por_impressao: Math.max(1, n(f.pecasPorPlaca) || 1),
+      ...(maquinaSel ? { impressora_id: maquinaSel.impressoraId, _maquina: maquinaSel } : {}),
       material_nome: materialSelecionado?.nome || atual.material_nome,
       peso_g: isFinite(Number(resultado.peso)) && Number(resultado.peso) > 0 ? Math.round(Number(resultado.peso)) : atual.peso_g,
     };
@@ -231,6 +241,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       peso: isFinite(Number(resultado.peso)) ? Number(resultado.peso) : null,
       materialNome: materialSelecionado?.nome || "",
       pecasPorImpressao: Math.max(1, n(f.pecasPorPlaca) || 1),
+      impressoraId: maquinaSel?.impressoraId || null,
       detalhe: {
         comprimento: n(f.comprimento),
         diametro: n(f.diametro),
@@ -272,7 +283,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       itens={[
         { label: "Custo por peça", valor: BRL(resultado.total), tom: "destaque", sub: n(f.pecasPorPlaca) > 1 ? `chapa com ${n(f.pecasPorPlaca)} peças` : "custo de produção total" },
         { label: "Material", valor: BRL(resultado.material), sub: `${pesoTxt} de ${materialSelecionado?.nome || "filamento"}` },
-        { label: "Máquina e energia", valor: BRL(resultado.energia + resultado.manutencao + resultado.roiPeca), sub: "energia + manutenção + ROI" },
+        { label: "Máquina e energia", valor: BRL(resultado.energia + resultado.manutencao + resultado.roiPeca), sub: usaFarm ? "energia + manutenção + desgaste da máquina" : "energia + manutenção + ROI" },
         { label: canalRef ? `Sugerido na ${canalRef.nome || "Shopee"}` : "Preço sugerido", valor: sugeridoCanal != null ? BRL(sugeridoCanal) : "—", sub: sugeridoCanal != null ? `margem ${Math.round(cfgLoja.margemDesejada * 100)}% · já com as taxas` : "cadastre um canal" },
       ]}
     />
@@ -360,14 +371,31 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
             <Ajuda texto="Preço do kWh e consumo da máquina (em Watts) calculam o custo de energia da impressão. Falhas é a % de peças que costuma dar problema e ser perdida — esse custo é diluído nas que dão certo. Consumíveis é o gasto com cola, spray, lixa etc. (cadastrados em Materiais). Manutenção e acabamento são % aplicados sobre o custo do material, cobrindo desgaste da máquina e pós-processamento." />
           </h3>
           <div className="row3">
-            <div className="field">
-              <label>Preço do kWh (R$)</label>
-              <input type="number" step="0.01" value={f.kwh} onChange={set("kwh")} />
-            </div>
-            <div className="field">
-              <label>Consumo (W)</label>
-              <input type="number" step="1" value={f.consumo} onChange={set("consumo")} />
-            </div>
+            {usaFarm ? (
+              <div className="field" style={{ gridColumn: "span 2" }}>
+                <label>Impressora</label>
+                <select value={f.impressoraId || maquinaSel?.impressoraId || ""} onChange={setStr("impressoraId")}>
+                  {impressorasAtivas.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.nome}
+                      {i.padrao ? " (padrão)" : ""}
+                    </option>
+                  ))}
+                </select>
+                {maquinaSel && <div className="hint" style={{ marginTop: 4 }}>{BRL(maquinaSel.custoHora)}/h (máquina, energia e manutenção) — valores em Gestão → Minha farm.</div>}
+              </div>
+            ) : (
+              <>
+                <div className="field">
+                  <label>Preço do kWh (R$)</label>
+                  <input type="number" step="0.01" value={f.kwh} onChange={set("kwh")} />
+                </div>
+                <div className="field">
+                  <label>Consumo (W)</label>
+                  <input type="number" step="1" value={f.consumo} onChange={set("consumo")} />
+                </div>
+              </>
+            )}
             <div className="field">
               <label>Média de falhas (%)</label>
               <input type="number" step="1" value={f.falhasPct} onChange={set("falhasPct")} />
@@ -401,9 +429,11 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
 
         <div className="panel">
           <h3 className="section-title">
-            Retorno de investimento na máquina
-            <Ajuda texto="Rateia o valor da impressora entre as peças que ela vai produzir até você 'reaver' o investimento no prazo desejado. Quanto mais horas por dia/dias por mês a máquina roda, menor esse custo por peça — e quanto mais rápido você quer pagar a máquina, maior. Modelagem é só se você pagou por um modelo 3D pronto." />
+            {usaFarm ? "Modelagem" : "Retorno de investimento na máquina"}
+            <Ajuda texto={usaFarm ? "O custo da máquina (valor pago ÷ vida útil), energia e manutenção por hora vêm da impressora escolhida, em Gestão → Minha farm. Modelagem é só se você pagou por um modelo 3D pronto." : "Rateia o valor da impressora entre as peças que ela vai produzir até você 'reaver' o investimento no prazo desejado. Quanto mais horas por dia/dias por mês a máquina roda, menor esse custo por peça — e quanto mais rápido você quer pagar a máquina, maior. Modelagem é só se você pagou por um modelo 3D pronto."} />
           </h3>
+          {!usaFarm && (
+            <>
           <div className="row2">
             <div className="field">
               <label>Valor da máquina (R$)</label>
@@ -424,6 +454,8 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
               <input type="number" step="1" value={f.diasMes} onChange={set("diasMes")} />
             </div>
           </div>
+            </>
+          )}
           <div className="field">
             <label>Modelagem 3D — se pagou por um modelo (R$)</label>
             <input type="number" step="0.01" value={f.modelagem} onChange={set("modelagem")} />
@@ -444,7 +476,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           <div className="kv"><span className="k">Falhas</span><span className="v">{BRL(resultado.falhas)}</span></div>
           <div className="kv"><span className="k">Acabamento</span><span className="v">{BRL(resultado.acabamento)}</span></div>
           <div className="kv"><span className="k">Consumíveis</span><span className="v">{BRL(custoConsumiveis)}</span></div>
-          <div className="kv"><span className="k">ROI da máquina nesta peça</span><span className="v">{BRL(resultado.roiPeca)}</span></div>
+          <div className="kv"><span className="k">{usaFarm ? "Máquina nesta peça (desgaste + manutenção/h)" : "ROI da máquina nesta peça"}</span><span className="v">{BRL(resultado.roiPeca)}</span></div>
           <div className="kv"><span className="k">Administrativo</span><span className="v">{BRL(n(f.modelagem))}</span></div>
           <div className="kv total"><span className="k">Custo de produção total</span><span className="v">{BRL(resultado.total)}</span></div>
         </div>

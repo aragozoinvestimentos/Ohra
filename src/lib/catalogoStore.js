@@ -5,6 +5,7 @@
 // UMA inscrição, e qualquer mudança em qualquer tabela envolvida (inclusive
 // feita em outro aparelho) recarrega o catálogo pra todas as telas juntas.
 import { supabase } from "./supabaseClient.js";
+import { comMaquina } from "./farm.js";
 
 const VAZIO = {
   produtos: [],
@@ -20,6 +21,8 @@ const VAZIO = {
   variacoes: [],
   concorrentes: [],
   publicacoesCanal: [],
+  impressoras: [],
+  farmConfig: null, // null = farm não configurada (v47) → custo pela conta antiga
   carregando: true,
 };
 
@@ -36,6 +39,8 @@ const TABELAS = [
   "materiais",
   "precos_concorrente",
   "publicacoes_canal",
+  "impressoras",
+  "farm_config",
 ];
 
 let estado = { ...VAZIO, carregando: !!supabase };
@@ -60,7 +65,7 @@ async function carregar() {
   const lojaId = lojaAtual;
   const porLoja = (q) => (lojaId ? q.eq("loja_id", lojaId) : q);
   try {
-    const [rp, rc, rk, re, rpc, rm, rv, rcc, rpcn] = await Promise.all([
+    const [rp, rc, rk, re, rpc, rm, rv, rcc, rpcn, rimp, rfc] = await Promise.all([
       porLoja(supabase.from("produtos_cadastro").select("*").order("nome", { ascending: true })),
       // Todos os canais (inclusive desativados — Configuração → Canais e o
       // Fluxo de Caixa precisam deles); `canais` = só os ativos.
@@ -75,9 +80,16 @@ async function carregar() {
       porLoja(supabase.from("precos_concorrente").select("*")),
       // Só existe depois do schema v30 — sem ela, nada marcado como atualizado.
       porLoja(supabase.from("publicacoes_canal").select("*")),
+      // "Minha farm" — só existe depois do schema v47.
+      porLoja(supabase.from("impressoras").select("*").order("criado_em")),
+      porLoja(supabase.from("farm_config").select("*")),
     ]);
     if (minhaGeracao !== geracao) return;
-    const produtos = rp.error ? estado.produtos : rp.data || [];
+    const impressoras = rimp.error ? [] : rimp.data || [];
+    const farmConfig = rfc.error ? null : (rfc.data || [])[0] || null;
+    // Cada produto já sai com a máquina da impressora dele (lib/farm.js) —
+    // todo cálculo de custo (ao vivo, variações, cadastro) lê produto._maquina.
+    const produtos = comMaquina(rp.error ? estado.produtos : rp.data || [], impressoras, farmConfig);
     const kits = rk.error ? estado.kits : rk.data || [];
     const produtoIds = produtos.map((x) => x.id);
     const kitIds = kits.map((k) => k.id);
@@ -99,6 +111,8 @@ async function carregar() {
       variacoes: rv.error ? [] : rv.data || [],
       concorrentes: rcc.error ? [] : rcc.data || [],
       publicacoesCanal: rpcn.error ? [] : rpcn.data || [],
+      impressoras,
+      farmConfig,
       produtoEmbalagens: rpe.error ? [] : rpe.data || [],
       kitProdutos: rkp.error ? estado.kitProdutos : rkp.data || [],
       kitEmbalagens: rke.error ? estado.kitEmbalagens : rke.data || [],

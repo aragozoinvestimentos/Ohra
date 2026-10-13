@@ -4,7 +4,8 @@ import ImpactoCusto from "./ImpactoCusto.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { impactoProduto } from "../lib/impactoCusto.js";
 import { arredondarPreco } from "../lib/format.js";
-import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
+import { calcProducao, DEFAULTS_PRODUCAO, entradaDoDetalhe } from "../lib/calc.js";
+import { impressoraPadrao, maquinaDoProduto } from "../lib/farm.js";
 import { lerUltimosPercentuais, salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -29,6 +30,7 @@ const VAZIO = {
   producao_detalhe: null,
   pecas_por_impressao: 1,
   peso_g: "",
+  impressora_id: null,
 };
 
 export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onProdutoCriado }) {
@@ -36,7 +38,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   // Produtos (crus, como estão no banco — o formulário edita os valores
   // gravados), embalagens e materiais (receita e detalhamento) e kits (SKU
   // duplicado) vêm do catálogo compartilhado: uma busca + um realtime.
-  const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, carregando } = useCatalogo();
+  const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, impressoras, farmConfig, carregando } = useCatalogo();
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [detalheSalvo, setDetalheSalvo] = useState(null); // snapshot carregado do banco, só pra comparar "valor anterior"
@@ -122,6 +124,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           producao_detalhe: produtoRecebido.detalhe || null,
           pecas_por_impressao: produtoRecebido.pecasPorImpressao ?? pExistente?.pecas_por_impressao ?? 1,
           peso_g: produtoRecebido.peso ? String(Math.round(produtoRecebido.peso)) : pExistente?.peso_g != null ? String(pExistente.peso_g) : "",
+          impressora_id: produtoRecebido.impressoraId || pExistente?.impressora_id || null,
         });
         setDetalheSalvo(produtoRecebido.detalhe || null);
         setPecasPorImpressaoSalvo(produtoRecebido.pecasPorImpressao ?? pExistente?.pecas_por_impressao ?? 1);
@@ -137,6 +140,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       producao_detalhe: produtoRecebido.detalhe || null,
       pecas_por_impressao: produtoRecebido.pecasPorImpressao ?? 1,
       peso_g: produtoRecebido.peso ? String(Math.round(produtoRecebido.peso)) : "",
+      impressora_id: produtoRecebido.impressoraId || null,
     });
     // Nada aparece como "alterado" logo depois de trazer da Simular Custo de
     // Produção — o snapshot de referência começa igual ao que acabou de vir.
@@ -162,36 +166,18 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
 
   // Mesma fórmula da aba Custo de Produção — recalcula ao vivo com o preço
   // ATUAL do material selecionado, não um valor congelado do dia do cadastro.
+  // Máquina da impressora escolhida (Minha farm, lib/farm.js); sem farm
+  // configurada, null → conta antiga pelos campos do detalhamento.
+  const maquinaForm = useMemo(() => maquinaDoProduto({ impressora_id: form.impressora_id }, impressoras, farmConfig), [form.impressora_id, impressoras, farmConfig]);
   const resultadoDetalhe = useMemo(() => {
     if (!form.producao_detalhe) return null;
     const d = form.producao_detalhe;
     const material = filamentos.find((m) => m.nome === d.materialNome) || filamentos[0] || null;
-    const n = (v) => {
-      const x = Number(v);
-      return isFinite(x) ? x : 0;
-    };
-    return calcProducao({
-      comprimento: n(d.comprimento),
-      diametro: n(d.diametro),
-      densidade: n(d.densidade),
-      tempo: n(d.tempo),
-      precoKg: material?.preco ?? 0,
-      kwh: n(d.kwh),
-      consumo: n(d.consumo),
-      falhasPct: n(d.falhasPct) / 100,
-      manutencaoPct: n(d.manutencaoPct) / 100,
-      acabamentoPct: n(d.acabamentoPct) / 100,
-      consumiveis: custoConsumiveisDetalhe,
-      maquina: n(d.maquina),
-      prazoMeses: n(d.prazoMeses),
-      horasDia: n(d.horasDia),
-      diasMes: n(d.diasMes),
-      modelagem: n(d.modelagem),
-      markupRapido: 0,
-      pecasPorPlaca: n(form.pecas_por_impressao) || 1,
-    });
+    return calcProducao(
+      entradaDoDetalhe(d, { precoKg: material?.preco ?? 0, consumiveis: custoConsumiveisDetalhe, pecasPorPlaca: form.pecas_por_impressao, maquina: maquinaForm })
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.producao_detalhe, form.pecas_por_impressao, filamentos, custoConsumiveisDetalhe]);
+  }, [form.producao_detalhe, form.pecas_por_impressao, filamentos, custoConsumiveisDetalhe, maquinaForm]);
 
   // Impacto da edição no lucro do produto, das variações e dos kits (ao vivo).
   const dadosVivos = useEscada();
@@ -208,10 +194,12 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       producao_detalhe: form.producao_detalhe || null,
       pecas_por_impressao: Math.max(1, parseInt(form.pecas_por_impressao, 10) || 1),
       peso_g: form.peso_g === "" || form.peso_g == null ? null : Number(String(form.peso_g).replace(",", ".")) || null,
+      impressora_id: form.impressora_id || null,
+      _maquina: maquinaForm,
     };
     return impactoProduto({ produtoId: editandoId, produtoNovoRaw: novoRaw, receitaNova: receita, dados: dadosVivos, cfgDoProduto: dadosVivos.cfgDoProduto });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editandoId, form, resultadoDetalhe, usaReceitaEmbalagem, custoEmbalagemReceita, dadosVivos.produtos, dadosVivos.itens, dadosVivos.precos, dadosVivos.canais]);
+  }, [editandoId, form, resultadoDetalhe, usaReceitaEmbalagem, custoEmbalagemReceita, dadosVivos.produtos, dadosVivos.itens, dadosVivos.precos, dadosVivos.canais, maquinaForm]);
 
   function limpar() {
     setForm(VAZIO);
@@ -253,6 +241,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       producao_detalhe: form.producao_detalhe || null,
       pecas_por_impressao: Math.max(1, parseInt(form.pecas_por_impressao, 10) || 1),
       peso_g: form.peso_g === "" || form.peso_g == null ? null : Number(String(form.peso_g).replace(",", ".")) || null,
+      ...(impressoras.length ? { impressora_id: form.impressora_id || impressoraPadrao(impressoras)?.id || null } : {}),
       atualizado_em: new Date().toISOString(),
     };
     setSalvando(true);
@@ -340,6 +329,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       producao_detalhe: p.producao_detalhe || null,
       pecas_por_impressao: p.pecas_por_impressao ?? 1,
       peso_g: p.peso_g != null ? String(p.peso_g) : "",
+      impressora_id: p.impressora_id || null,
     });
     setDetalheSalvo(p.producao_detalhe || null);
     setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
@@ -369,6 +359,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       producao_detalhe: p.producao_detalhe || null,
       pecas_por_impressao: p.pecas_por_impressao ?? 1,
       peso_g: p.peso_g != null ? String(p.peso_g) : "",
+      impressora_id: p.impressora_id || null,
     }));
     setDetalheSalvo(p.producao_detalhe || null);
     setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
@@ -560,6 +551,10 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           pecasPorImpressao={form.pecas_por_impressao}
           pecasPorImpressaoSalvo={pecasPorImpressaoSalvo}
           onChangePecasPorImpressao={(v) => setForm((prev) => ({ ...prev, pecas_por_impressao: v }))}
+          impressoras={farmConfig ? impressoras : null}
+          impressoraId={form.impressora_id}
+          maquina={maquinaForm}
+          onChangeImpressora={(id) => setForm((prev) => ({ ...prev, impressora_id: id || null }))}
         />
 
         {editandoId ? (
@@ -574,6 +569,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
               peso_g: form.peso_g === "" ? null : Number(form.peso_g) || 0,
               producao_detalhe: form.producao_detalhe,
               pecas_por_impressao: Math.max(1, parseInt(form.pecas_por_impressao, 10) || 1),
+              _maquina: maquinaForm,
             }}
             produtoEmbalagens={(form.embalagemItens || [])
               .filter((it) => it.itemId)
