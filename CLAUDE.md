@@ -24,7 +24,7 @@ PWA de precificação/produção pra produtos impressos em 3D (Gustavo vende via
 
 ## Tema Ohra (out/2026)
 
-Menu lateral CLARO (tokens `--side-*`; no escuro grafite), terracota mais vivo (`--accent` #d2622b / escuro #f08a52, `--side-ativo` no item ativo), letra **Manrope** (index.html + `body`; o logo OHRA continua em Jost), `--radius` 12px (painéis/KPIs 14px), botão principal terracota, título 21px com o grupo em terracota em cima, cartões do Início com fundo suave na cor do estado. Seção "Tema Ohra" no fim do `index.css`. As cores de estado (resolver/atenção/oportunidade/decisão/info) não mudaram.
+Menu lateral CLARO (tokens `--side-*`; no escuro grafite), terracota mais vivo (`--accent` #d2622b / escuro #f08a52, `--side-ativo` no item ativo), letra **Manrope** (index.html + `body`; o logo OHRA continua em Jost), `--radius` 12px (painéis/KPIs 14px), botão principal terracota, título 21px com o grupo em terracota em cima, cartões do Início com fundo suave na cor do estado. Seção "Tema Ohra" no fim do `index.css`. **Janelas suspensas** (out/2026, "estavam espremidas"): confirmação 440px, `modal-box-larga` (padrão do EditarDialog) 580px, `modal-box-md` 740px, `modal-box-xl` 940px; título 17px, campos com mais respiro; "Novo anúncio com vários itens" usa xl e, no celular, cada opção vira um cartão empilhado. As cores de estado (resolver/atenção/oportunidade/decisão/info) não mudaram.
 
 ## Preço ALVO × preço AGORA e "recebe − repor = lucro" (out/2026, sem SQL)
 

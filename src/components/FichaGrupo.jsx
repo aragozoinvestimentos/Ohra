@@ -417,7 +417,7 @@ function GrupoDialog({ grupo, itens, salvando, onCancelar, onSalvar }) {
   const repetidas = validas.length !== new Set(validas.map((o) => `${o.itemId}|${o.sufixo}`)).size;
   const ok = f.nome.trim() && validas.length >= 2 && !repetidas;
   return (
-    <EditarDialog titulo={grupo ? `Editar anúncio — ${grupo.nome}` : "Novo anúncio com vários itens"} salvando={salvando} onCancelar={onCancelar} onSalvar={() => ok && onSalvar(f)} salvarLabel="Salvar anúncio" classe="modal-box-md">
+    <EditarDialog titulo={grupo ? `Editar anúncio — ${grupo.nome}` : "Novo anúncio com vários itens"} salvando={salvando} onCancelar={onCancelar} onSalvar={() => ok && onSalvar(f)} salvarLabel="Salvar anúncio" classe="modal-box-xl">
       <div className="grid-auto">
         <div className="field"><label>Nome do anúncio</label><input value={f.nome} onChange={(e) => setF((p) => ({ ...p, nome: e.target.value }))} placeholder="ex.: Kit de Natal" /></div>
         <div className="field">
@@ -439,9 +439,9 @@ function GrupoDialog({ grupo, itens, salvando, onCancelar, onSalvar }) {
         </div>
         {f.opcoes.map((o, i) => (
           <div className="grupo-opcao" key={i}>
-            <input value={o.rotulo} maxLength={LIMITE_NOME_OPCAO} placeholder="ex.: Kit Básico" onChange={(e) => setOp(i, "rotulo", e.target.value)} />
+            <input value={o.rotulo} maxLength={LIMITE_NOME_OPCAO} placeholder="nome, ex.: Kit Básico" onChange={(e) => setOp(i, "rotulo", e.target.value)} />
             <BuscaItem grupos={opcoesBusca} value={o.itemId} onChange={(id) => escolherItem(i, id)} vazio="— produto, variação ou kit —" />
-            <input value={o.sufixo} maxLength={12} placeholder="opcional" onChange={(e) => setOp(i, "sufixo", e.target.value)} />
+            <input value={o.sufixo} maxLength={12} placeholder="sufixo (opcional)" onChange={(e) => setOp(i, "sufixo", e.target.value)} />
             <span className="grupo-opcao-acoes">
               <button type="button" className="btn-icone" title="Subir" disabled={i === 0} onClick={() => mover(i, -1)}>↑</button>
               <button type="button" className="btn-icone" title="Descer" disabled={i === f.opcoes.length - 1} onClick={() => mover(i, 1)}>↓</button>
