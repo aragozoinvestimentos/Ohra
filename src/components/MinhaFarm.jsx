@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useManutencoes } from "../hooks/useManutencoes.js";
+import { itensDaImpressora, textoPrazo } from "../lib/manutencao.js";
+import ManutencaoImpressora from "./ManutencaoImpressora.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useCatalogo } from "../hooks/useCatalogo.js";
@@ -43,10 +46,19 @@ export default function MinhaFarm({ onToast }) {
   const [confirmar, setConfirmar] = useState(null); // { titulo, mensagem, acao }
   const [salvando, setSalvando] = useState(false);
   const refAlt = useRef(null);
+  const manutH = useManutencoes();
+  const [aberta, setAberta] = useState(null); // impressora com a manutenção aberta
 
   // "Ver produtos" vindo do Início → rola até a lista do custo que subiu.
   useEffect(() => {
-    const aplicar = (p) => p?.alteracoes && setTimeout(() => refAlt.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+    const aplicar = (p) => {
+      if (p?.alteracoes) setTimeout(() => refAlt.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+      // "Abrir lista" da manutenção vindo do Início → abre a impressora.
+      if (p?.manutencao) {
+        setAberta(p.manutencao);
+        setTimeout(() => document.getElementById(`manut-${p.manutencao}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+      }
+    };
     aplicar(pegarPedido("farm"));
     const ouvir = (e) => e.detail.aba === "farm" && aplicar(pegarPedido("farm"));
     window.addEventListener("ohra:ir-para", ouvir);
@@ -100,6 +112,8 @@ export default function MinhaFarm({ onToast }) {
   // ---- Config da farm ----
   async function salvarCfg() {
     const novo = { loja_id: lojaId, horas_dia_operacao: num(cfgForm.horas), tarifa_kwh: num(cfgForm.tarifa), atualizado_em: new Date().toISOString() };
+    // Espalhar a manutenção de várias impressoras (v50) — só manda se mudou.
+    if (cfgForm.espaco !== "" && Math.round(num(cfgForm.espaco)) !== (cfg?.manutencao_espaco_dias ?? 3)) novo.manutencao_espaco_dias = Math.max(1, Math.round(num(cfgForm.espaco)));
     const ok = await aplicarMudanca({
       impressorasNovas: impressoras,
       cfgNovo: novo,
@@ -273,8 +287,11 @@ export default function MinhaFarm({ onToast }) {
                   const h = cfg ? custoHora(i, cfg) : null;
                   const d = cfg ? desgaste(i, cfg, hoje) : null;
                   const inativa = i.ativa === false;
+                  const manut = cfg && manutH.disponivel && !inativa ? itensDaImpressora(i, manutH.registros, { impressoras, cfg, hoje }) : null;
+                  const prox = manut?.length ? Math.min(...manut.map((x) => x.faltam)) : null;
                   return (
-                    <tr key={i.id} style={inativa ? { opacity: 0.55 } : undefined}>
+                    <Fragment key={i.id}>
+                    <tr className="linha-clicavel" style={inativa ? { opacity: 0.55 } : undefined} onClick={() => setAberta(aberta === i.id ? null : i.id)} title="Clique pra ver a manutenção">
                       <td>
                         <b>{i.nome}</b>
                         {i.padrao && !inativa && <span className="chip-ads ligado">padrão</span>}
@@ -282,6 +299,11 @@ export default function MinhaFarm({ onToast }) {
                         <div className="muted-cel">
                           {BRL(i.valor_pago)} · {horas(i.vida_util_horas)} h · {virg(i.potencia_w)} W
                         </div>
+                        {prox != null && (
+                          <div className={prox <= 3 ? "st st-atencao" : "muted-cel"} style={{ marginTop: 3 }}>
+                            {prox <= 3 ? "⚠ " : "▸ "}manutenção {textoPrazo(prox)}
+                          </div>
+                        )}
                       </td>
                       <td className="num">
                         <b>{h ? BRL(h.total) : "—"}</b>
@@ -301,7 +323,7 @@ export default function MinhaFarm({ onToast }) {
                         {d ? (d.pct >= 1 ? <span className="muted-cel">já passou — custo/hora vai pro fundo da próxima</span> : <>≈ {mesAno(d.fimVida)}<div className="muted-cel">aí o valor pago já voltou</div></>) : "—"}
                       </td>
                       <td className="num">{usoPorImpressora.get(i.id) || 0}</td>
-                      <td className="num" style={{ whiteSpace: "nowrap" }}>
+                      <td className="num" style={{ whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
                         <button type="button" className="btn btn-mini" onClick={() => abrirEditar(i)}>✎ editar</button>{" "}
                         {!i.padrao && !inativa && <button type="button" className="btn btn-mini" disabled={salvando} onClick={() => tornarPadrao(i)}>tornar padrão</button>}{" "}
                         {!i.padrao && (
@@ -324,6 +346,14 @@ export default function MinhaFarm({ onToast }) {
                         )}
                       </td>
                     </tr>
+                    {aberta === i.id && (
+                      <tr className="linha-detalhe" id={`manut-${i.id}`}>
+                        <td colSpan={6}>
+                          <ManutencaoImpressora imp={i} impressoras={impressoras} cfg={cfg} hoje={hoje} manutH={manutH} lojaId={lojaId} onToast={onToast} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -342,6 +372,7 @@ export default function MinhaFarm({ onToast }) {
             <div className="grid-auto">
               <div className="field"><label>Horas de operação por dia</label><input type="text" inputMode="decimal" value={cfgForm.horas} onChange={(e) => setCfgForm((p) => ({ ...p, horas: e.target.value }))} /></div>
               <div className="field"><label>Tarifa do kWh (R$)</label><input type="text" inputMode="decimal" value={cfgForm.tarifa} onChange={(e) => setCfgForm((p) => ({ ...p, tarifa: e.target.value }))} /></div>
+              <div className="field"><label>Manutenção: espalhar as impressoras de quantos em quantos dias</label><input type="text" inputMode="numeric" value={cfgForm.espaco} onChange={(e) => setCfgForm((p) => ({ ...p, espaco: e.target.value }))} /></div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button type="button" className="btn primary" disabled={salvando} onClick={salvarCfg}>{salvando ? "Salvando…" : "Salvar"}</button>
@@ -352,7 +383,8 @@ export default function MinhaFarm({ onToast }) {
           <div className="pad-painel" style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
             <span>Operação: <b>{cfg ? `${virg(cfg.horas_dia_operacao)} h/dia` : "—"}</b></span>
             <span>Tarifa: <b>{cfg ? `${BRL(cfg.tarifa_kwh)}/kWh` : "—"}</b></span>
-            <button type="button" className="btn btn-mini" onClick={() => setCfgForm({ horas: virg(cfg?.horas_dia_operacao ?? 6), tarifa: virg(cfg?.tarifa_kwh ?? 1.05) })}>✎ editar</button>
+            {ativas.length > 1 && <span>Manutenção espalhada de <b>{cfg?.manutencao_espaco_dias ?? 3}</b> em {cfg?.manutencao_espaco_dias ?? 3} dias</span>}
+            <button type="button" className="btn btn-mini" onClick={() => setCfgForm({ horas: virg(cfg?.horas_dia_operacao ?? 6), tarifa: virg(cfg?.tarifa_kwh ?? 1.05), espaco: String(cfg?.manutencao_espaco_dias ?? 3) })}>✎ editar</button>
           </div>
         )}
         {!altDisponivel && <div className="alerta alerta-warn" style={{ margin: 12 }}><b>Falta o SQL</b>Rode o schema_v47.sql no Supabase.</div>}

@@ -7,6 +7,7 @@ import { pendenciasDeTarefas } from "./tarefas.js";
 
 const brl = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
+import { textoPrazo } from "./manutencao.js";
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 
 export const GRUPOS_PENDENCIA = [
@@ -124,6 +125,17 @@ export function montarPendencias({
     add({ id: "ads|teto", grupo: "rotina", ordem: 2, tom: "warn", titulo: "Ads acima do teto da loja", texto: `${Math.round(ads.loja.pct * 100)}% do faturamento da semana em Ads`, ir: irAds, rotulo: "Abrir Ads" });
 
   // ---- Rotina ----
+  for (const m of farm?.manutencao || [])
+    add({
+      id: `farm-manut|${m.imp.id}`,
+      grupo: "rotina",
+      ordem: 1,
+      tom: "warn",
+      titulo: `${m.imp.nome}: manutenção ${textoPrazo(m.faltam)}`,
+      texto: `${plural(m.itens.length, "item", "itens")}: ${m.itens.slice(0, 3).map((x) => x.nome.split(/[:(]/)[0].trim().toLowerCase()).join(", ")}${m.itens.length > 3 ? "…" : ""}`,
+      ir: { aba: "farm", pedido: { manutencao: m.imp.id } },
+      rotulo: "Abrir lista",
+    });
   for (const w of farm?.desgaste || [])
     add({
       id: `farm-desgaste|${w.imp.id}|${w.tipo}`,

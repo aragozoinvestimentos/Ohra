@@ -3,8 +3,10 @@ import Materiais from "./Materiais.jsx";
 import Embalagens from "./Embalagens.jsx";
 import Produtos from "./Produtos.jsx";
 import Kits from "./Kits.jsx";
+import CatalogoLista from "./CatalogoLista.jsx";
 
 const SUBABAS = [
+  { key: "catalogo", label: "Catálogo" },
   { key: "materiais", label: "Materiais (Fabricação)" },
   { key: "embalagens", label: "Embalagens" },
   { key: "produtos", label: "Produtos" },
@@ -12,7 +14,9 @@ const SUBABAS = [
 ];
 
 export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdutoCriado }) {
-  const [sub, setSub] = useState("materiais");
+  const [sub, setSub] = useState("catalogo");
+  // "✎ editar cadastro" vindo do Catálogo (mesmo caminho do "Editar completo").
+  const [abrirLocal, setAbrirLocal] = useState(null);
 
   // Veio de "Salvar como Produto" (Custo de Produção) — troca pra
   // sub-aba Produtos automaticamente, mesmo se Cadastros já estava aberto
@@ -29,13 +33,21 @@ export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdu
   // Kits conforme o tipo do item.
   useEffect(() => {
     (() => {
-      if (abrirItem?.seq) setSub(abrirItem.tipo === "kit" ? "kits" : "produtos");
+      if (abrirItem?.seq) {
+        setAbrirLocal(null);
+        setSub(abrirItem.tipo === "kit" ? "kits" : "produtos");
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirItem?.seq]);
 
-  const abrirProdutoId = abrirItem?.id && abrirItem.tipo !== "kit" ? { id: abrirItem.id, seq: abrirItem.seq } : null;
-  const abrirKitId = abrirItem?.id && abrirItem.tipo === "kit" ? { id: abrirItem.id, seq: abrirItem.seq } : null;
+  const abrir = abrirLocal || abrirItem;
+  const abrirProdutoId = abrir?.id && abrir.tipo !== "kit" ? { id: abrir.id, seq: abrir.seq } : null;
+  const abrirKitId = abrir?.id && abrir.tipo === "kit" ? { id: abrir.id, seq: abrir.seq } : null;
+  const editarDoCatalogo = (alvo) => {
+    setAbrirLocal({ ...alvo, seq: `c${Date.now()}` });
+    setSub(alvo.tipo === "kit" ? "kits" : "produtos");
+  };
 
   return (
     <div>
@@ -52,6 +64,7 @@ export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdu
         ))}
       </div>
 
+      {sub === "catalogo" && <CatalogoLista onEditar={editarDoCatalogo} />}
       {sub === "materiais" && <Materiais onToast={onToast} />}
       {sub === "embalagens" && <Embalagens onToast={onToast} />}
       {sub === "produtos" && (

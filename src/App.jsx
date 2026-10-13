@@ -83,7 +83,7 @@ const GRUPOS = [
   {
     titulo: "1 · Produto",
     tabs: [
-      { key: "cadastros", label: "Cadastros", sub: "Materiais, embalagens, produtos e kits" },
+      { key: "cadastros", label: "Cadastros", sub: "Catálogo, materiais, embalagens, produtos e kits" },
       { key: "producao", label: "Custo de Produção", sub: "Custo da peça a partir do fatiador" },
     ],
   },

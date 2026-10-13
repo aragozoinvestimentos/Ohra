@@ -11,6 +11,8 @@ import { gruposPorItem } from "../lib/anunciosGrupo.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { useFarmAlteracoes } from "../hooks/useFarmAlteracoes.js";
 import { avisosDesgaste } from "../lib/farm.js";
+import { avisosManutencao } from "../lib/manutencao.js";
+import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { sugestoesAfiliado, vendasPorOrigem } from "../lib/afiliados.js";
 import { calcTaxaFalhaAtual, TAXA_FALHA_PRIOR_PCT } from "../lib/registroImpressao.js";
@@ -113,7 +115,16 @@ export default function Inicio({ onIrPara, onToast }) {
   // Minha farm (v47): custo que subiu (farm_alteracoes) e desgaste das impressoras.
   const { impressoras, farmConfig } = useCatalogo();
   const { alteracoes: farmAlteracoes } = useFarmAlteracoes();
-  const farm = useMemo(() => ({ alteracoes: farmAlteracoes, desgaste: avisosDesgaste(impressoras, farmConfig, hoje) }), [farmAlteracoes, impressoras, farmConfig, hoje]);
+  const manutH = useManutencoes();
+  const farm = useMemo(
+    () => ({
+      alteracoes: farmAlteracoes,
+      desgaste: avisosDesgaste(impressoras, farmConfig, hoje),
+      // Manutenção (v50): só depois da tabela existir.
+      manutencao: manutH.disponivel && !manutH.carregando ? avisosManutencao(impressoras, manutH.registros, farmConfig, hoje) : [],
+    }),
+    [farmAlteracoes, impressoras, farmConfig, hoje, manutH.disponivel, manutH.carregando, manutH.registros]
+  );
   async function ciente(c) {
     const { error } = await supabase.from("impressoras").update({ [c.campo]: true }).eq("id", c.impressoraId);
     if (error) onToast?.(`Não foi possível marcar: ${error.message}`);
