@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLembretes } from "../hooks/useLembretes.js";
 import { infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
 import { dataSP } from "../lib/datas.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -262,10 +263,34 @@ export default function Inicio({ onIrPara, onToast }) {
   }, [rampasH.registros, rampasH.rampas, af.registros, itens, produtos, materiais, hoje]);
 
   // --- Pra fazer + status ---
-  const pendencias = useMemo(
+  const todasPendencias = useMemo(
     () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, hoje }),
     [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, hoje]
   );
+  // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
+  // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.
+  const { lembretes, disponivel: lembretesOk } = useLembretes();
+  const adiadoAte = useMemo(() => new Map(lembretes.filter((l) => String(l.chave).startsWith("inicio|")).map((l) => [l.chave.slice(7), l.adiado_ate])), [lembretes]);
+  const podeAdiar = (p) => !p.tarefa && !p.semana && p.grupo !== "resolver";
+  const pendencias = todasPendencias.filter((p) => !(podeAdiar(p) && adiadoAte.get(p.id) > hoje));
+  const adiados = todasPendencias.filter((p) => podeAdiar(p) && adiadoAte.get(p.id) > hoje);
+  const [verAdiados, setVerAdiados] = useState(false);
+  async function adiar30(p) {
+    if (!lembretesOk) return onToast?.("Falta rodar o supabase/schema_v40.sql no Supabase");
+    const d = new Date(`${hoje}T12:00:00`);
+    d.setDate(d.getDate() + 30);
+    const { error } = await supabase.from("lembretes").upsert({ loja_id: lojaId || null, chave: `inicio|${p.id}`, adiado_ate: d.toISOString().slice(0, 10), tipo: "adiar30" }, { onConflict: "loja_id,chave" });
+    if (error) return onToast?.(`Não foi possível adiar: ${error.message}`);
+    window.dispatchEvent(new Event("ohra:lembretes"));
+    onToast?.(`Ok — “${p.titulo}” volta em 30 dias (se ainda valer)`);
+  }
+  async function voltarAviso(p) {
+    let q = supabase.from("lembretes").delete().eq("chave", `inicio|${p.id}`);
+    q = lojaId ? q.eq("loja_id", lojaId) : q.is("loja_id", null);
+    const { error } = await q;
+    if (error) return onToast?.(`Não foi possível desfazer: ${error.message}`);
+    window.dispatchEvent(new Event("ohra:lembretes"));
+  }
   const status = statusInicio({
     caixa,
     rampas: linhas,
@@ -352,6 +377,13 @@ export default function Inicio({ onIrPara, onToast }) {
             </button>
             <button type="button" className="link-btn" onClick={() => semana.adiar(p.semana, "amanha")}>
               lembrar amanhã
+            </button>
+          </span>
+        )}
+        {podeAdiar(p) && (
+          <span className="inicio-item-sec">
+            <button type="button" className="link-btn" onClick={() => adiar30(p)} title="Some do Pra fazer por 30 dias e volta sozinho se ainda valer. Nada mais muda.">
+              lembrar em 30 dias
             </button>
           </span>
         )}
@@ -476,6 +508,28 @@ export default function Inicio({ onIrPara, onToast }) {
               </button>
             )}
           </>
+        )}
+        {adiados.length > 0 && (
+          <div className="tarefas-concluidas">
+            <button type="button" className={`variacoes-toggle${verAdiados ? " aberto" : ""}`} onClick={() => setVerAdiados((v) => !v)} aria-expanded={verAdiados}>
+              <span className="seta">▸</span> Adiados por 30 dias ({adiados.length})
+            </button>
+            {verAdiados && (
+              <ul className="inicio-mini">
+                {adiados.map((p) => (
+                  <li key={p.id}>
+                    <span>
+                      {p.titulo}
+                      <span className="sub-num-inline"> · volta em {diaMes(adiadoAte.get(p.id))}</span>
+                    </span>
+                    <button type="button" className="link-btn" onClick={() => voltarAviso(p)}>
+                      mostrar agora
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
         {concluidas.length > 0 && (
           <div className="tarefas-concluidas">
