@@ -55,8 +55,9 @@ export function configEscada(configLoja, configProduto) {
 
 // ===== Venda direta: canal próprio em "modo markup" (schema v43) =====
 // Conta ÚNICA. No canal próprio (tipo custom) com canais.modo_preco = 'markup'
-// o preço parte do CUSTO, não da margem/taxas de marketplace: avulso = custo
-// total × markup (final ,50/,90 mais próximo); kits SEM curva = N × avulso já
+// o preço parte do CUSTO, não da margem/taxas de marketplace: avulso sugerido =
+// custo total × markup (final ,50/,90 mais próximo) — com avulso SALVO no canal,
+// a base é o salvo (out/2026); kits SEM curva = N × avulso já
 // arredondado (por peça = avulso) — sem "não vale oferecer" nem "escada
 // invertida"; continuam as travas de mínimo
 // aceitável. Desconto por volume só no atacado. Markup: o do produto
@@ -537,18 +538,20 @@ export function escadaDoProduto({ produtoId, canal, itens, precos, concorrentes,
   const conc1 = concorrenteOverrides[1] ?? concDe("produto", produtoId)?.preco ?? null;
   let p1 = num(p1Override) > 0 ? num(p1Override) : salvo1 ? num(salvo1.preco) : null;
   let p1Origem = num(p1Override) > 0 ? "manual" : salvo1 ? "salvo" : "margem";
-  // Canal próprio em markup: a base é o avulso pelo custo × markup (não o salvo).
+  // Canal próprio em markup: a base é o avulso SALVO (o que o Gustavo decidiu
+  // no 1º Avulso, com o markup que quiser); sem salvo, custo × markup.
+  // Kits sem curva: N × avulso JÁ ARREDONDADO, sem novo arredondamento
+  // (por peça = avulso; decisão do Gustavo, out/2026).
   let cfgKits = cfg;
-  if (canalEmMarkup(canal) && !(num(p1Override) > 0)) {
-    const mk = markupDoCanal(canal, cfg);
-    const pmk = precoPorMarkup(custo1, mk);
-    if (pmk > 0) {
-      p1 = pmk;
-      p1Origem = "markup";
-      // kits sem curva: N × avulso JÁ ARREDONDADO, sem novo arredondamento
-      // (por peça = avulso; decisão do Gustavo, out/2026)
-      cfgKits = { ...cfg, precoUnitBruto: pmk, precoAvulso: pmk };
+  if (canalEmMarkup(canal)) {
+    if (!(p1 > 0)) {
+      const pmk = precoPorMarkup(custo1, markupDoCanal(canal, cfg));
+      if (pmk > 0) {
+        p1 = pmk;
+        p1Origem = "markup";
+      }
     }
+    if (p1 > 0) cfgKits = { ...cfg, precoUnitBruto: p1, precoAvulso: p1 };
   }
   if (!(p1 > 0)) {
     const pm = precoParaMargem(canal, cfg.margemDesejada, custo1, peso1, cfg);
@@ -632,12 +635,13 @@ export function sugestaoKit({ canal, kitItem, itens, precos, cfg: cfgBase }) {
     const p1peso = num(it.peso);
     const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === c.produtoId && p.canal_id === canal.id);
     const pRef = mk ? precoPorMarkup(c1, mk) : precoParaMargem(canal, cfg.margemDesejada, c1, p1peso, cfg);
-    // Canal em markup: cada peça pelo custo × markup (o salvo não manda).
-    const preco = mk ? pRef || 0 : salvo && num(salvo.preco) > 0 ? num(salvo.preco) : pRef != null ? r90up(pRef) : 0;
+    // Peça pelo preço SALVO no canal; sem salvo, custo × markup (canal em
+    // markup) ou a margem desejada (,90).
+    const preco = salvo && num(salvo.preco) > 0 ? num(salvo.preco) : mk ? pRef || 0 : pRef != null ? r90up(pRef) : 0;
     if (!(preco > 0)) return null;
     const l = lucroNoPreco(canal, preco, c1, p1peso, cfg) ?? 0;
     const lRef = pRef != null ? lucroNoPreco(canal, pRef, c1, p1peso, cfg) ?? l : l;
-    componentes.push({ produtoId: c.produtoId, nome: it.nome, quantidade: q, preco, origem: mk ? "markup" : salvo ? "salvo" : "margem", lucro: l });
+    componentes.push({ produtoId: c.produtoId, nome: it.nome, quantidade: q, preco, origem: salvo && num(salvo.preco) > 0 ? "salvo" : mk ? "markup" : "margem", lucro: l });
     separado += q * preco;
     lucroSeparado += q * l;
     // Normal escolhido de propósito → lucro da própria peça; senão o maior.

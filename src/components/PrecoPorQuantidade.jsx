@@ -18,7 +18,7 @@ import EstrategiaDialog from "./EstrategiaDialog.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { BRL, PCT } from "../lib/format.js";
-import { canalEmMarkup, markupDoCanal } from "../lib/escada.js";
+import { canalEmMarkup, markupDoCanal, precoPorMarkup } from "../lib/escada.js";
 import { configAtacado } from "../lib/vendaDireta.js";
 import { referenciasAvulso, alertasAvulso, statusPrecoSalvo, ESCADA_PADRAO, gruposRegra4x, fatorOriginal, descontoDoItem, rotuloMinimo, escadaDoProduto, configEscada, lucroNoPreco, precoMinimoAceitavel } from "../lib/escada.js";
 import Ajuda from "./Ajuda.jsx";
@@ -480,7 +480,9 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
     dados?.p1Origem === "markup"
       ? `Canal próprio por markup: custo ${BRL(dados.custo1)} × ${String(markupDoCanal(canal, cfgDoProduto(pid))).replace(".", ",")}${dados.salvo1 != null ? ` — salvo: ${BRL(dados.salvo1)}` : ""}`
       : dados?.p1Origem === "salvo"
-      ? "Preço salvo em Produtos precificados"
+      ? canalEmMarkup(canal)
+        ? `Preço salvo em Produtos precificados · pelo markup ${String(markupDoCanal(canal, cfgDoProduto(pid))).replace(".", ",")}× seria ${BRL(precoPorMarkup(dados.custo1, markupDoCanal(canal, cfgDoProduto(pid))))}`
+        : "Preço salvo em Produtos precificados"
       : dados?.p1Origem === "manual"
         ? dados.salvo1 != null
           ? `Editado aqui — salvo: ${BRL(dados.salvo1)}`
