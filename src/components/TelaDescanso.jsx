@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import logo from "../assets/logo.png";
 import { BRL } from "../lib/format.js";
 import { versiculoDoDia } from "../data/versiculosDoDia.js";
-import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
+import { calcularRanking } from "../hooks/useRankingData.js";
+import { useEscada } from "../hooks/useEscada.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 
@@ -42,7 +43,7 @@ export default function TelaDescanso() {
   const [versiculo] = useState(() => versiculoDoDia());
   const modoRef = useRef(null);
   const ultimaAtividadeRef = useRef(null);
-  const { itens, canais, precos, contagemProdutos, contagemKits } = useRankingData();
+  const { itens, canais, precos, contagemProdutos, contagemKits, agoraDe } = useEscada();
   const { lojas, lojaId } = useLoja();
   const lojaAtual = lojas.find((l) => l.id === lojaId) || null;
   const logoAtual = lojaAtual?.icone_url || logo;
@@ -108,7 +109,7 @@ export default function TelaDescanso() {
     );
   }
 
-  const top3 = calcularRanking(itens, canais, { canalFiltro: "melhor", tipoFiltro: "todos", precos, margemPct: margemLoja }).slice(0, 3);
+  const top3 = calcularRanking(itens, canais, { canalFiltro: "melhor", tipoFiltro: "todos", precos, margemPct: margemLoja, agoraDe }).slice(0, 3);
 
   return (
     <div className="tela-descanso">

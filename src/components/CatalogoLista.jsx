@@ -7,7 +7,6 @@ import { custoProdutoPorPeca } from "../lib/calc.js";
 import { impressoraDoProduto } from "../lib/farm.js";
 import { linhasDoKit } from "../lib/planoKit.js";
 import { estadoDoAlerta } from "../lib/estados.js";
-import { lucroNoPreco } from "../lib/escada.js";
 import { irParaAba } from "../lib/navegar.js";
 import { pedirPasso } from "../lib/passosPreco.js";
 import { BRL, PCT } from "../lib/format.js";
@@ -33,7 +32,7 @@ const g = (v) => (v ? `${Math.round(v)} g` : "—");
 
 export default function CatalogoLista({ onEditar, onToast }) {
   const dados = useEscada();
-  const { itens, produtos, canais, precos, materiais, rampas, alertaDe, mapaRampa, cfgDoProduto, carregando } = dados;
+  const { itens, produtos, canais, precos, materiais, rampas, alertaDe, agoraDe, carregando } = dados;
   const { impressoras } = useCatalogo();
   const { grupos } = useAnunciosGrupo();
   const mapaGrupos = useMemo(() => gruposPorItem(grupos), [grupos]);
@@ -217,7 +216,7 @@ export default function CatalogoLista({ onEditar, onToast }) {
 
             <div className="cat-card">
               <div className="cat-card-cab">
-                <span className="ads-rotulo">Preço salvo por canal</span>
+                <span className="ads-rotulo">Preço alvo e preço agora por canal</span>
                 {rampasDo.map((x) => (
                   <Estado key={x.id} tipo="decisao">em rampa · {canais.find((c) => c.id === x.canal_id)?.nome || "canal"}</Estado>
                 ))}
@@ -228,7 +227,8 @@ export default function CatalogoLista({ onEditar, onToast }) {
                     <tr>
                       <th>Canal</th>
                       <th className="num">Preço</th>
-                      <th className="num">Lucro</th>
+                      <th className="num" title="O que o canal repassa depois das taxas; dele sai o custo pra repor o produto">Recebe</th>
+                      <th className="num" title="Recebe − repor o produto (custo de hoje)">Lucro</th>
                       <th className="num">Margem</th>
                       <th></th>
                     </tr>
@@ -237,17 +237,19 @@ export default function CatalogoLista({ onEditar, onToast }) {
                     {salvosDet.map(({ c, s }) => {
                       const est = estadoDoAlerta(alertaDe(it, c));
                       // Em rampa (ou variação/kit derivado): alvo = preço salvo; agora = preço da Rampa.
-                      const ra = mapaRampa?.get(`${it.id}|${c.id}`) || null;
-                      const agora = ra && Math.abs(num(ra.real) - num(s.preco)) >= 0.005 ? num(ra.real) : null;
-                      const lucroAgora = agora != null ? lucroNoPreco(c, agora, it.custoTotal, it.peso, cfgDoProduto(it.produtoId || (it.id[0] === "p" ? it.id.slice(2) : null))) : null;
+                      const aa = agoraDe(it, c);
+                      const ag = aa?.emRampa && Math.abs(aa.agora.preco - num(s.preco)) >= 0.005 ? aa.agora : null;
+                      const agora = ag ? ag.preco : null;
+                      const lucroAgora = ag ? ag.lucro : null;
                       return (
                         <Fragment key={c.id}>
                           <tr className={agora != null ? "cat-alvo" : undefined}>
                             <td>
                               <CanalTag canal={c} />
-                              {agora != null && <small className="cat-rotulo">alvo (preço salvo)</small>}
+                              <small className="cat-rotulo">{agora != null ? "alvo (preço salvo)" : "alvo = agora"}</small>
                             </td>
                             <td className="num"><b>{BRL(s.preco)}</b></td>
+                            <td className="num muted-cel">{aa?.alvo ? BRL(aa.alvo.recebe) : "—"}</td>
                             <td className="num" style={num(s.lucro) < 0 ? { color: "var(--bad)" } : undefined}>{BRL(s.lucro)}</td>
                             <td className="num">{PCT(s.margem)}</td>
                             <td>{est && <Estado tipo={est.tipo}>{est.motivo}</Estado>}</td>
@@ -255,9 +257,10 @@ export default function CatalogoLista({ onEditar, onToast }) {
                           {agora != null && (
                             <tr className="cat-agora">
                               <td>
-                                <span className="cat-seta">↳</span> <small className="cat-rotulo">agora · {ra.acima ? "testando acima do alvo" : "em rampa"}</small>
+                                <span className="cat-seta">↳</span> <small className="cat-rotulo">agora · {aa.acima ? "testando acima do alvo" : "em rampa"}</small>
                               </td>
                               <td className="num"><b>{BRL(agora)}</b></td>
+                              <td className="num muted-cel">{BRL(ag.recebe)}</td>
                               <td className="num" style={lucroAgora != null && lucroAgora < 0 ? { color: "var(--bad)" } : undefined}>{lucroAgora != null ? BRL(lucroAgora) : "—"}</td>
                               <td className="num">{lucroAgora != null && agora > 0 ? PCT(lucroAgora / agora) : "—"}</td>
                               <td><Estado tipo="decisao">até chegar no alvo</Estado></td>

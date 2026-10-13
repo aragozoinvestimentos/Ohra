@@ -1,0 +1,100 @@
+import { lucroNoPreco } from "./escada.js";
+import { mesDe } from "./fluxoCaixa.js";
+
+// Vendas do mês (Fluxo de Caixa → 3ª sub-aba) — Fase A, ESTIMADA (out/2026).
+// Conta ÚNICA. Fonte = o que já entra pelo Registrar semana (Crescimento):
+//   • rampa_registros tipo "semana" (produto em rampa) — vendas no preço do degrau;
+//   • afiliado_registros com vendas_total (item fora de rampa: afiliado ou só Ads).
+// Cada venda vale o preço da semana (o de AGORA naquela semana) com o custo e as
+// taxas de HOJE: recebe (o canal repassa) − repor o produto (custo) = lucro.
+// Unidades vendidas em kit contam como unidades no preço da semana (estimativa).
+// A semana entra no mês do ÚLTIMO dia dela (o registro cobre até a véspera da data).
+// Fase B (depois): valores reais do relatório da Shopee/Olist, custo congelado.
+
+const num = (v) => {
+  const x = Number(v);
+  return isFinite(x) ? x : 0;
+};
+const cent = (v) => Math.round(v * 100) / 100;
+
+/** Último dia coberto pelo registro (data − 1 dia). */
+export function diaFimRegistro(data) {
+  const d = new Date(`${String(data).slice(0, 10)}T12:00:00`);
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const ID_PREFIXO = { produto: "p", variacao: "v", kit: "k" };
+
+/**
+ * → { linhas: [{ chave, item, canal, unidades, faturamento, recebe, repor, lucro, ads, comissao, semanas }],
+ *     total: { unidades, faturamento, recebe, repor, lucro, ads, comissao, sobra }, semanas }
+ */
+export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros = [], itens = [], canais = [], cfgDoProduto = () => null }) {
+  const porChave = new Map();
+  const itemDe = (tipo, id) => itens.find((i) => i.id === `${ID_PREFIXO[tipo] || "p"}:${id}`) || null;
+  const somar = ({ tipo, id, canalId, unidades, preco, ads, comissao }) => {
+    const item = itemDe(tipo, id);
+    const canal = canais.find((c) => c.id === canalId);
+    if (!item || !canal || !(unidades > 0) || !(preco > 0)) return;
+    const cfg = cfgDoProduto(item.produtoId || (tipo === "produto" ? id : null));
+    const custo = num(item.custoTotal);
+    const lucroUn = lucroNoPreco(canal, preco, custo, num(item.peso), cfg) ?? 0;
+    const chave = `${item.id}|${canal.id}`;
+    const l = porChave.get(chave) || { chave, item, canal, unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, ads: 0, comissao: 0, semanas: 0 };
+    l.unidades += unidades;
+    l.faturamento += unidades * preco;
+    l.recebe += unidades * (lucroUn + custo);
+    l.repor += unidades * custo;
+    l.lucro += unidades * lucroUn;
+    l.ads += num(ads);
+    l.comissao += num(comissao);
+    l.semanas += 1;
+    porChave.set(chave, l);
+  };
+  const doMes = (g) => g.data && mesDe(diaFimRegistro(g.data)) === mes;
+
+  // Comissão de afiliado dos produtos em rampa: linha de afiliado_registros
+  // sem vendas_total, no mesmo produto × canal × data.
+  const comissaoRampa = new Map();
+  for (const g of afRegistros)
+    if (g.vendas_total == null && doMes(g)) {
+      const k = `${g.item_id}|${g.canal_id}|${String(g.data).slice(0, 10)}`;
+      comissaoRampa.set(k, (comissaoRampa.get(k) || 0) + num(g.comissao));
+    }
+
+  for (const g of rampaRegistros) {
+    if (g.tipo !== "semana" || !doMes(g)) continue;
+    const r = rampas.find((x) => x.id === g.rampa_id);
+    if (!r) continue;
+    const k = `${r.produto_id}|${r.canal_id}|${String(g.data).slice(0, 10)}`;
+    somar({ tipo: "produto", id: r.produto_id, canalId: r.canal_id, unidades: num(g.vendas), preco: num(g.preco), ads: g.ads_gasto, comissao: comissaoRampa.get(k) || 0 });
+  }
+  for (const g of afRegistros) {
+    if (g.vendas_total == null || !doMes(g)) continue;
+    somar({ tipo: g.item_tipo, id: g.item_id, canalId: g.canal_id, unidades: num(g.vendas_total), preco: num(g.preco), ads: g.ads_gasto, comissao: g.comissao });
+  }
+
+  const linhas = [...porChave.values()]
+    .map((l) => ({ ...l, faturamento: cent(l.faturamento), recebe: cent(l.recebe), repor: cent(l.repor), lucro: cent(l.lucro), ads: cent(l.ads), comissao: cent(l.comissao) }))
+    .sort((a, b) => b.lucro - a.lucro);
+  const soma = (k) => cent(linhas.reduce((t, l) => t + l[k], 0));
+  const total = { unidades: linhas.reduce((t, l) => t + l.unidades, 0), faturamento: soma("faturamento"), recebe: soma("recebe"), repor: soma("repor"), lucro: soma("lucro"), ads: soma("ads"), comissao: soma("comissao") };
+  total.sobra = cent(total.lucro - total.ads - total.comissao);
+  return { linhas, total };
+}
+
+/** Saldo da reserva de produção (separar − usar) e quanto já foi separado por mês. */
+export function saldoReserva(registros = []) {
+  let saldo = 0;
+  const porMes = new Map();
+  for (const r of registros) {
+    const v = num(r.valor);
+    if (r.tipo === "usar") saldo -= v;
+    else {
+      saldo += v;
+      if (r.mes) porMes.set(r.mes, cent((porMes.get(r.mes) || 0) + v));
+    }
+  }
+  return { saldo: cent(saldo), porMes };
+}

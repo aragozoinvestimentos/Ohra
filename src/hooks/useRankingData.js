@@ -56,7 +56,10 @@ function precoRealDe(precos, item, canalObj) {
 // precificado de verdade.
 // margemPct: margem desejada da loja (useMargemDesejada) pra estimar o que ainda
 // não tem preço salvo.
-export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFiltro = "todos", precos = [], margemPct = LUCRATIVIDADE_PADRAO } = {}) {
+// agoraDe (useEscada): com ele, item com preço salvo usa o preço de AGORA
+// (degrau da Rampa, ou a curva sobre ele nas variações/kits) — o que está
+// vendendo de verdade, não o alvo (origem "agora", com `alvo` pra referência).
+export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFiltro = "todos", precos = [], margemPct = LUCRATIVIDADE_PADRAO, agoraDe = null } = {}) {
   if (canais.length === 0) return [];
   const canaisAlvo = canalFiltro === "melhor" ? canais : canais.filter((c) => c.id === canalFiltro);
   if (canaisAlvo.length === 0) return [];
@@ -67,9 +70,12 @@ export function calcularRanking(itens, canais, { canalFiltro = "melhor", tipoFil
       let melhor = null;
       for (const c of canaisAlvo) {
         const salvo = precos.length ? precoRealDe(precos, item, c) : null;
+        const aa = salvo && agoraDe ? agoraDe(item, c) : null;
         const candidato =
-          salvo && salvo.lucro != null
-            ? { canal: c, lucro: Number(salvo.lucro), margem: salvo.margem != null ? Number(salvo.margem) : null, origem: "salvo" }
+          aa?.emRampa
+            ? { canal: c, preco: aa.agora.preco, lucro: aa.agora.lucro, margem: aa.agora.margem, recebe: aa.agora.recebe, origem: "agora", alvo: aa.alvo }
+            : salvo && salvo.lucro != null
+            ? { canal: c, preco: Number(salvo.preco), lucro: Number(salvo.lucro), margem: salvo.margem != null ? Number(salvo.margem) : null, recebe: Number(salvo.lucro) + Number(item.custoTotal || 0), origem: "salvo" }
             : (() => {
                 const r = lucroPorCanal(item.custoTotal, c, item.peso, margemPct);
                 return r?.lucro != null ? { canal: c, lucro: r.lucro, margem: r.margem, origem: "estimado" } : null;

@@ -62,7 +62,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const [verFilamentos, setVerFilamentos] = useState(false);
   // Personalização (venda direta no canal próprio): só simulação do pedido.
   const [pers, setPers] = useState({ ativa: false, qtd: 1, porPeca: null, arte: null });
-  const { itens: baseItens, canais, produtos, kits: kitsCat, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje, publicacoesCanal } = useEscada();
+  const { itens: baseItens, canais, produtos, kits: kitsCat, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje, agoraDe, publicacoesCanal } = useEscada();
   // Passos (1º→5º): aplica a seleção vinda do "Próximo →".
   if (pedidoPasso && pedidoPasso.para === "avulso" && pedidoPasso.seq !== pedidoVisto) {
     setPedidoVisto(pedidoPasso.seq);
@@ -401,6 +401,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const freteMin = freteGratisMin(canalCadastrado);
   const freteCalc = !semCusto && resultado.preco > 0 ? alertaPreco({ lucro: resultado.lucro, preco: resultado.preco, canal: canalCadastrado }).frete : null;
   // Salvo: o que o cliente PAGA HOJE (degrau da rampa, ou cliente_paga do anúncio).
+  // Preço agora (Rampa) do item escolhido neste canal — só informa.
+  const agoraSel = itemSel && canalCadastrado ? agoraDe(itemSel, canalCadastrado) : null;
   const freteSalvo = precoExistente && itemSel ? alertaPreco({ lucro: precoExistente.lucro, preco: Number(precoExistente.preco), canal: canalCadastrado, valorCliente: clientePagaHoje(itemSel, canalCadastrado) }).frete : null;
   const pidFrete = baseSelecionada.startsWith("p:") ? baseSelecionada.slice(2) : null;
   const dicaFrete = pidFrete && (freteCalc || freteSalvo) ? dicaKitFreteGratis(canalCadastrado, freteCalc ? resultado.preco : freteSalvo.valor, opcoesKitDoProduto(pidFrete, canalCadastrado, baseItens, clientePagaHoje)) : null;
@@ -613,7 +615,10 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           label: qtdSel > 1 ? "Lucro líquido / venda" : "Lucro líquido / un.",
           valor: semCusto ? "—" : BRL(resultado.lucro),
           tom: semCusto ? undefined : resultado.lucro >= 0 ? undefined : "bad",
-          sub: qtdSel > 1 && resultado.lucro != null ? `${BRL(resultado.lucro / qtdSel)} por peça (${qtdSel} peças)` : "depois de todas as taxas",
+          sub:
+            semCusto || resultado.lucro == null
+              ? "depois de todas as taxas"
+              : `recebe ${BRL(resultado.lucro + resultado.custoTotal)} − repor ${BRL(resultado.custoTotal)}${qtdSel > 1 ? ` · ${BRL(resultado.lucro / qtdSel)} por peça` : ""}`,
         },
         {
           label: "Margem líquida",
@@ -632,8 +637,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     {(refs || precoExistente) && (
       <div className="refs-linha refs-avulso">
         {precoExistente && (
-          <span className="salvo-chip" title="Preço já salvo em Produtos precificados — lucro e margem recalculados com o custo e as taxas de hoje">
-            Salvo neste canal: <b>{BRL(precoExistente.preco)}</b>
+          <span className="salvo-chip" title="Preço alvo = o preço já salvo em Produtos precificados — lucro e margem recalculados com o custo e as taxas de hoje">
+            Alvo neste canal: <b>{BRL(precoExistente.preco)}</b>
             {precoExistente.lucro != null && (
               <>
                 {" "}
@@ -642,6 +647,11 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               </>
             )}
             {freteSalvo && <span className="atencao-txt" title={freteSalvo.texto}> · abaixo do frete grátis</span>}
+            {agoraSel?.emRampa && (
+              <span className="linha-agora" style={{ display: "inline" }} title="Preço agora = o que o cliente paga hoje (Crescimento → Rampa)">
+                {" "}· agora {BRL(agoraSel.agora.preco)} · lucro {BRL(agoraSel.agora.lucro)}
+              </span>
+            )}
           </span>
         )}
         {refs && (
@@ -920,6 +930,14 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
             <div className="kv"><span className="k">Custos fixos adicionais</span><span className="v">{PCT(n(f.custosFixos) / 100)} · {BRL(resultado.preco * (n(f.custosFixos) / 100))}</span></div>
             <div className="kv total"><span className="k">Total descontado da venda</span><span className="v">{BRL(resultado.preco - resultado.custoTotal - resultado.lucro)}</span></div>
           </div>
+          {resultado.preco > 0 && resultado.lucro != null && (
+            <div className="detalhe-taxas">
+              <div className="detalhe-taxas-titulo">O que sobra pra você</div>
+              <div className="kv"><span className="k">Você recebe (o canal repassa)</span><span className="v">{BRL(resultado.lucro + resultado.custoTotal)}</span></div>
+              <div className="kv"><span className="k">− Repor o produto (custo)</span><span className="v">{BRL(resultado.custoTotal)}</span></div>
+              <div className="kv total"><span className="k">= Lucro</span><span className="v">{BRL(resultado.lucro)}</span></div>
+            </div>
+          )}
           {reserva && reserva.total > 0 && (
             <div className="kv reserva-linha">
               <span className="k">

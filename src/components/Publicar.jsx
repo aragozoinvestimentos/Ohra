@@ -19,6 +19,8 @@ import ProximoPasso from "./ProximoPasso.jsx";
 import { useSelecaoPasso } from "../lib/passosPreco.js";
 import { irParaAba } from "../lib/navegar.js";
 import { linhasAnunciar } from "../lib/anunciar.js";
+import { quebraNoValor } from "../lib/precoAgora.js";
+import { QuebraLucro } from "./AlvoAgora.jsx";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { gruposPorItem, idDoItemOpcao, opcoesDoGrupo } from "../lib/anunciosGrupo.js";
 
@@ -36,7 +38,9 @@ const agoraIgualAlvo = (x) => Math.abs(Number(x.clientePaga) - Number(x.anSalvo?
 
 export default function Publicar({ onToast, onSub }) {
   const { lojaId } = useLoja();
-  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, cobraNoCanal } = useEscada();
+  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, cobraNoCanal, cfgDoProduto } = useEscada();
+  // Lucro pelo que o cliente paga (lib/precoAgora.js), com a quebra recebe − repor.
+  const lucroPago = (item, c, valor) => quebraNoValor(item, c, valor, cfgDoProduto(item.produtoId || (item.id.startsWith("p:") ? item.id.slice(2) : null)));
   const [verTodos, setVerTodos] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [abertos, setAbertos] = useState(() => new Set());
@@ -293,6 +297,18 @@ export default function Publicar({ onToast, onSub }) {
               </>
             )}
           </div>
+          {(() => {
+            const q = lucroPago(l.item, c, x.clientePaga);
+            const qa = x.rampa && x.anSalvo && !agoraIgualAlvo(x) ? lucroPago(l.item, c, x.anSalvo.clientePaga) : null;
+            return q ? (
+              <div className="kv-cel">
+                <small>{x.rampa ? "Lucro agora" : "Lucro"}</small>
+                <b style={q.lucro < 0 ? { color: "var(--bad)" } : undefined}>{BRL(q.lucro)}</b>
+                <QuebraLucro q={q} />
+                <span>{qa ? `no alvo: ${BRL(qa.lucro)}` : "pelo que o cliente paga"}</span>
+              </div>
+            ) : null;
+          })()}
           <div className="kv-cel">
             <small>Desconto do anúncio</small>
             {descEdit?.chave === chave ? (
@@ -395,6 +411,10 @@ export default function Publicar({ onToast, onSub }) {
                           <span className="cel-preco-v" title="Preço original (riscado) — digite no anúncio">{BRL(x.original)}</span>
                           <span className="preco-canal-linha">
                             promo <b>{x.promo}%</b>
+                            {(() => {
+                              const q = lucroPago(l.item, c, x.clientePaga);
+                              return q ? <> · lucro <b style={q.lucro < 0 ? { color: "var(--bad)" } : undefined}>{BRL(q.lucro)}</b></> : null;
+                            })()}
                           </span>
                           {x.rampa && (
                             <span className="preco-canal-linha agora-alvo" title="Cliente paga agora (preço da Rampa) × no alvo (preço salvo)">

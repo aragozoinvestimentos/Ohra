@@ -22,10 +22,10 @@ import { itemTipoDoId, formatarPeso } from "../lib/variacoes.js";
 import { precoSalvoAoVivo } from "../lib/aoVivo.js";
 import CanalTag from "./CanalTag.jsx";
 import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
-import { useRampas } from "../hooks/useRampas.js";
 import { useLembrado } from "../hooks/useLembrado.js";
 import { pegarPedido } from "../lib/navegar.js";
 import OndeSeDecide from "./OndeSeDecide.jsx";
+import { CartoesAlvoAgora, DiferencaAlvoAgora, LinhaAgora } from "./AlvoAgora.jsx";
 import TirarDoCanalDialog from "./TirarDoCanalDialog.jsx";
 import { excluirVariacaoTodos } from "../lib/tirarDoCanal.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
@@ -43,11 +43,10 @@ import { estadoDoAlerta, estadoDoStatusSalvo, piorEstado } from "../lib/estados.
 // foram simplificadas pra só o formulário.
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, pareceAtracaoDe, clientePagaHoje, anunciadoNoCanal, noCanal } = useEscada();
+  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, pareceAtracaoDe, clientePagaHoje, agoraDe, anunciadoNoCanal, noCanal } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // { alvo, inicial } — diálogo "Manter assim"
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
   const [filamentosAlvo, setFilamentosAlvo] = useState(null);
-  const { rampas } = useRampas(); // id do item com a janela ⇄ Filamentos aberta
   const [excluirVariacao, setExcluirVariacao] = useState(null); // item "v:<id>" // { item, canal, sugerido, linha }
   const [salvandoAplicar, setSalvandoAplicar] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
@@ -232,19 +231,6 @@ export default function Historico({ onEditarCompleto, onToast }) {
     onToast(`${a.item.nomeVariacao || a.item.nome}: ${BRL(a.linha.sugerido)} salvo em ${a.canal.nome}`);
   }
 
-  // Rampa de preço (aba Crescimento): só informa em que degrau o produto está
-  // vendendo — o preço salvo (alvo) e os números da célula não mudam.
-  function rampaDe(item, canalObj) {
-    if (!item.id.startsWith("p:")) return null;
-    const r = rampas.find((x) => x.produto_id === item.id.slice(2) && x.canal_id === canalObj.id);
-    if (!r) return null;
-    const d = r.degraus || [];
-    const atual = Number(d[r.degrau_atual ?? 0]);
-    const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === item.id.slice(2) && p.canal_id === canalObj.id);
-    // só informa quando está vendendo num preço diferente do salvo (abaixo na rampa ou testando acima)
-    return atual > 0 && (!salvo || Math.abs(atual - Number(salvo.preco)) >= 0.005) ? atual : null;
-  }
-
   function precoDe(item, canalObj) {
     const id = item.id.split(":")[1];
     const itemTipo = itemTipoDoId(item.id);
@@ -285,7 +271,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
     if (!p) return null;
     const al = alertaDe(item, canalObj);
     const m = mudancaCusto(item, canalObj);
-    const rampa = rampaDe(item, canalObj);
+    // Preço de agora (Rampa, inclusive variações/kits que dependem dela).
+    const aa = agoraDe(item, canalObj);
+    const rampa = aa?.emRampa ? aa.agora.preco : null;
     const rotEst = al ? rotuloEstrategia(al.estrategia) : null;
     const tom = p.margem == null || !al ? "" : al.tipo === "prejuizo" ? "ruim" : al.tipo === "abaixo-minimo" || al.tipo === "frete-gratis" ? "atencao" : "boa";
     // Etiqueta = um dos 5 estados (lib/estados.js): prejuízo = resolver,
@@ -295,7 +283,6 @@ export default function Historico({ onEditarCompleto, onToast }) {
     else if (al?.tipo === "abaixo-minimo") chip = { tipo: "atencao", txt: al.estrategia?.vencida ? rotEst : "abaixo do mínimo" };
     else if (al?.frete) chip = { tipo: "atencao", txt: al.frete.curto };
     else if (m) chip = { tipo: "info", txt: `custo ${sinal(m.dCusto)}`, icone: null };
-    else if (rampa != null) chip = { tipo: "decisao", txt: `em rampa · ${BRL(rampa)}`, icone: null };
     else if (rotEst) chip = { tipo: al.estrategia.vencida ? "atencao" : "decisao", txt: rotEst, icone: al.estrategia.vencida ? undefined : null };
     // Saúde da célula (bolinha da linha): o pior entre alerta, rampa e estratégia.
     const estado = piorEstado([
@@ -304,7 +291,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
       rampa != null ? { tipo: "decisao", motivo: `em rampa · ${BRL(rampa)}` } : null,
       rotEst && !al?.estrategia?.vencida ? { tipo: "decisao", motivo: rotEst } : null,
     ]);
-    return { p, al, m, rampa, tom, chip, rotEst, estado };
+    return { p, al, m, rampa, aa, tom, chip, rotEst, estado };
   }
 
   // Avulso abaixo do frete grátis: a 1ª variação/kit com o produto que passa.
@@ -336,22 +323,17 @@ export default function Historico({ onEditarCompleto, onToast }) {
           </button>
         </div>
         <div className="detalhe-cel-grade">
-          <div className="kv-cel">
-            <small>Preço salvo</small>
-            <b>{p ? BRL(p.preco) : "—"}</b>
-            <span>{p ? "é o que vale" : "ainda sem preço neste canal"}</span>
-          </div>
-          {p && (
+          {p && info?.aa ? (
+            <CartoesAlvoAgora aa={info.aa} pecas={item.pecas} />
+          ) : (
             <div className="kv-cel">
-              <small>Lucro hoje</small>
-              <b>
-                {p.lucro != null ? BRL(p.lucro) : "—"} · {p.margem != null ? PCT(p.margem) : "—"}
-              </b>
-              <span>custo e taxas de hoje{item.pecas > 1 && p.lucro != null ? ` · ${BRL(p.lucro / item.pecas)}/peça` : ""}</span>
+              <small>Preço alvo</small>
+              <b>{p ? BRL(p.preco) : "—"}</b>
+              <span>{p ? "o preço salvo" : "ainda sem preço neste canal"}</span>
             </div>
           )}
           <div className="kv-cel">
-            <small>Custo hoje</small>
+            <small>Repor o produto</small>
             <b>{BRL(item.custoTotal)}</b>
             <span>{p?.custo_salvo != null ? `no dia do salvar: ${BRL(Number(p.custo_salvo))}` : "fabricação + embalagem + frete"}</span>
           </div>
@@ -371,6 +353,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
           )}
         </div>
         <div className="detalhe-cel-avisos">
+          <DiferencaAlvoAgora aa={info?.aa} />
           {al?.frete && (
             <div className="aviso-cel atencao">
               <b>Cliente paga o frete</b> {al.frete.texto}.{dicaKit(item, canalObj) ? ` Dica: ${dicaKit(item, canalObj)}.` : ""}
@@ -419,7 +402,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
           {est && (est.origem === "rampa" || est.origem === "kit-em-rampa") && (
             <div className="aviso-cel rampa">
               <b>{est.origem === "rampa" ? "Em rampa de preço" : "Peça em rampa"}</b>
-              {info.rampa != null ? ` Vendendo ${BRL(info.rampa)} agora (Vender → Crescimento). ` : " "}O preço salvo é o alvo e não muda; enquanto a rampa sobe, o aviso de mínimo fica de lado (prejuízo continua aparecendo).
+              {" "}O preço agora vem do Crescimento; o preço salvo é o alvo e não muda; enquanto a rampa sobe, o aviso de mínimo fica de lado (prejuízo continua aparecendo).
             </div>
           )}
           {info?.m && (
@@ -930,7 +913,8 @@ export default function Historico({ onEditarCompleto, onToast }) {
           <span className="legenda-tit">Legenda</span>
           {visao === "salvos" ? (
             <>
-              <span><b>R$ 11,90</b> preço salvo (o que vale)</span>
+              <span><b>R$ 11,90</b> preço alvo (salvo)</span>
+              <span className="linha-agora" style={{ display: "inline" }}>agora R$ 9,90 · R$ 1,20</span> <span>preço agora (em rampa) · lucro</span>
               <span>lucro · margem de hoje (custo e taxas atuais)</span>
               <span>sem cor = ok</span>
               <span><Estado tipo="resolver">prejuízo</Estado></span>
@@ -1080,6 +1064,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
                               <span className={`preco-canal-linha ${info.tom}`}>
                                 {info.p.lucro != null ? BRL(info.p.lucro) : "—"} · {info.p.margem != null ? PCT(info.p.margem) : "—"}
                               </span>
+                              <LinhaAgora aa={info.aa} />
                               {info.chip && (
                                 <Estado tipo={info.chip.tipo} discreto={info.chip.discreto} icone={info.chip.icone} className="chip-cel-st">
                                   {info.chip.txt}

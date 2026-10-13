@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { BRL, PCT } from "../lib/format.js";
-import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
+import { calcularRanking } from "../hooks/useRankingData.js";
+import { useEscada } from "../hooks/useEscada.js";
+import Estado from "./Estado.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -16,7 +18,7 @@ import AvisoRampa from "./AvisoRampa.jsx";
 // divulgação" do ponto de vista financeiro.
 export default function Ranking() {
   const margemLoja = useMargemDesejada();
-  const { itens, canais, precos, carregando } = useRankingData();
+  const { itens, canais, precos, carregando, agoraDe } = useEscada();
   const [canalEscolhido, setCanalFiltro] = useState("melhor"); // "melhor" ou o id de um canal específico
   const [tipoFiltro, setTipoFiltro] = useState("todos"); // "todos" | "produtos" | "kits"
   const [busca, setBusca] = useState("");
@@ -26,7 +28,7 @@ export default function Ranking() {
   const canalFiltro = canalEscolhido === "melhor" || canais.some((c) => c.id === canalEscolhido) ? canalEscolhido : "melhor";
 
   const { rampas } = useRampas();
-  const ranking = calcularRanking(itens, canais, { canalFiltro, tipoFiltro, precos, margemPct: margemLoja }).filter((linha) => {
+  const ranking = calcularRanking(itens, canais, { canalFiltro, tipoFiltro, precos, margemPct: margemLoja, agoraDe }).filter((linha) => {
     const alvo = busca.trim().toLowerCase();
     if (!alvo) return true;
     return linha.item.nome.toLowerCase().includes(alvo) || (linha.item.sku || "").toLowerCase().includes(alvo);
@@ -47,7 +49,7 @@ export default function Ranking() {
       <div className="panel">
         <h3 className="section-title">
           Ranking por retorno
-          <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade. Quando o item já tem um preço salvo em Produtos precificados pra aquele canal, usa o lucro/margem REAIS desse preço (marcado "salvo"); quando ainda não tem, estima a ${margemLoja}% (a margem desejada da loja) (marcado "estimado") só pra dar uma referência — não é ranking de venda/popularidade, isso fica pro ERP futuro. Use "Mostrar" pra enxugar a lista só pra Produtos ou só pra Kits, e "Marketplace" pra ver o retorno num canal específico (ou deixe em 'Melhor canal' pra ver o teto de cada item).`} />
+          <Ajuda texto={`Lista produtos e kits cadastrados ordenados pelo lucro líquido por unidade. Quando o item já tem um preço salvo em Produtos precificados pra aquele canal, usa o lucro/margem desse preço (marcado "salvo") — e, se ele está em rampa, o preço de AGORA (o que está vendendo de verdade), com o alvo de referência; quando ainda não tem, estima a ${margemLoja}% (a margem desejada da loja) (marcado "estimado") só pra dar uma referência — não é ranking de venda/popularidade, isso fica pro ERP futuro. Use "Mostrar" pra enxugar a lista só pra Produtos ou só pra Kits, e "Marketplace" pra ver o retorno num canal específico (ou deixe em 'Melhor canal' pra ver o teto de cada item).`} />
         </h3>
         {canais.length > 0 ? (
           <>
@@ -92,7 +94,8 @@ export default function Ranking() {
                     <th>Tipo</th>
                     <th className="num">Custo total</th>
                     <th>{canalFiltro === "melhor" ? "Melhor canal" : "Canal"}</th>
-                    <th className="num">Lucro/un.</th>
+                    <th className="num">Preço</th>
+                    <th className="num" title="Recebe (o canal repassa) − repor o produto (custo)">Lucro/un.</th>
                     <th className="num">Margem</th>
                   </tr>
                 </thead>
@@ -106,7 +109,11 @@ export default function Ranking() {
                       <td className="num">{BRL(linha.item.custoTotal)}</td>
                       <td>
                         <CanalTag canal={linha.canal} />{" "}
-                        {linha.origem === "salvo" ? (
+                        {linha.origem === "agora" ? (
+                          <Estado tipo="decisao" icone={null} title={`Em rampa: preço de agora. No alvo (${BRL(linha.alvo?.preco)}) o lucro seria ${BRL(linha.alvo?.lucro)}.`}>
+                            em rampa · agora
+                          </Estado>
+                        ) : linha.origem === "salvo" ? (
                           <span className="badge neutro" title="Preço realmente salvo em Produtos precificados">✓ salvo</span>
                         ) : (
                           <span className="campo-anterior" title={`Ainda não tem preço salvo pra esse canal — estimativa a ${margemLoja}% de margem (a desejada da loja)`}>
@@ -114,8 +121,15 @@ export default function Ranking() {
                           </span>
                         )}
                       </td>
+                      <td className="num">{linha.preco != null ? BRL(linha.preco) : <span className="campo-anterior">—</span>}</td>
                       <td className="num" style={{ color: linha.lucro >= 0 ? "var(--good)" : "var(--bad)", fontWeight: 600 }}>
                         {BRL(linha.lucro)}
+                        {linha.recebe != null && (
+                          <div className="quebra-lucro">
+                            recebe {BRL(linha.recebe)} − repor {BRL(linha.item.custoTotal)}
+                          </div>
+                        )}
+                        {linha.origem === "agora" && linha.alvo && <div className="muted-cel">no alvo {BRL(linha.alvo.lucro)}</div>}
                       </td>
                       <td className="num">{linha.margem != null ? PCT(linha.margem) : "—"}</td>
                     </tr>

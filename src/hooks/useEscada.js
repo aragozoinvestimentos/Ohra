@@ -6,6 +6,7 @@ import { configEscada, descontoDoItem, escadaDoProduto, pareceAtracao, precoMini
 import { alertaPreco, estrategiaEfetiva, produtosEmRampa } from "../lib/estrategia.js";
 import { anuncioDoItem, mapaAnuncioRampa, valorClientePagaHoje } from "../lib/rampaAnuncio.js";
 import { quantidadeAnunciada } from "../lib/quantidadesAnuncio.js";
+import { alvoEAgora } from "../lib/precoAgora.js";
 
 // Tudo que as telas de preço por quantidade/Anunciar/Produtos precificados
 // precisam, em cima do catálogo AO VIVO (mudou custo, preço salvo, taxa,
@@ -42,6 +43,21 @@ export function useEscada() {
     [mapaRampa, precos, itens, dados.produtos, dados.kits, dados.publicacoesCanal]
   );
 
+  // Preço ALVO (salvo) × preço de AGORA (degrau da Rampa, ou a curva sobre
+  // ele nas variações/kits; fora de rampa = o alvo) com a quebra
+  // recebe → repor → lucro (lib/precoAgora.js). Tudo que mostra resultado
+  // usa o `agora`.
+  const agoraDe = useCallback(
+    (item, canal) => {
+      if (!item || !canal) return null;
+      const tipo = { p: "produto", v: "variacao", k: "kit" }[item.id[0]];
+      const linha = precos.find((p) => p.item_tipo === tipo && p.item_id === item.id.slice(2) && p.canal_id === canal.id) || null;
+      const cfg = cfgDoProduto(item.produtoId || (tipo === "produto" ? item.id.slice(2) : null));
+      return alvoEAgora({ item, canal, linha, rampa: mapaRampa.get(`${item.id}|${canal.id}`) || null, cfg });
+    },
+    [precos, cfgDoProduto, mapaRampa]
+  );
+
   const estrategiaDe = useCallback((item, canal, opcoes = {}) => estrategiaEfetiva(item, canal, { precos, emRampa, ...opcoes }), [precos, emRampa]);
 
   // Alerta do preço SALVO do item no canal (com custo, taxas e estratégia de hoje).
@@ -54,9 +70,14 @@ export function useEscada() {
       const cfg = cfgDoProduto(item.produtoId || (tipo === "produto" ? item.id.slice(2) : null));
       const minimo = precoMinimoAceitavel(canal, Number(item.custoTotal) || 0, Number(item.peso) || 0, cfg);
       const estrategia = estrategiaEfetiva(item, canal, { precos, emRampa });
-      return { linha, minimo, estrategia, ...alertaPreco({ lucro: linha.lucro, preco: Number(linha.preco), minimo, estrategia, canal, valorCliente: clientePagaHoje(item, canal) }) };
+      // Em rampa, o prejuízo é olhado no preço de AGORA (o que está vendendo);
+      // o mínimo fica de lado pela estratégia (crescimento automático).
+      const aa = alvoEAgora({ item, canal, linha, rampa: mapaRampa.get(`${item.id}|${canal.id}`) || null, cfg });
+      const lucro = aa?.emRampa ? aa.agora.lucro : linha.lucro;
+      const preco = aa?.emRampa ? aa.agora.preco : Number(linha.preco);
+      return { linha, minimo, estrategia, agora: aa, ...alertaPreco({ lucro, preco, minimo, estrategia, canal, valorCliente: clientePagaHoje(item, canal) }) };
     },
-    [precos, cfgDoProduto, emRampa, clientePagaHoje]
+    [precos, cfgDoProduto, emRampa, clientePagaHoje, mapaRampa]
   );
 
   // Avulso abaixo do mínimo que "parece atração" (margem abaixo da desejada,
@@ -122,5 +143,5 @@ export function useEscada() {
   // Pra Anunciar/Início/Ficha: anunciado E no canal.
   const cobraNoCanal = useCallback((item, canal) => anunciadoNoCanal(item, canal) && noCanal(item, canal), [anunciadoNoCanal, noCanal]);
 
-  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, pareceAtracaoDe, mapaRampa, clientePagaHoje, anunciadoNoCanal, noCanal, cobraNoCanal };
+  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, pareceAtracaoDe, mapaRampa, clientePagaHoje, agoraDe, anunciadoNoCanal, noCanal, cobraNoCanal };
 }

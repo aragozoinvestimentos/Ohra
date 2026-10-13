@@ -7,6 +7,8 @@ import { alertaPreco } from "../lib/estrategia.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { useEscada } from "../hooks/useEscada.js";
+import { quebraNoValor } from "../lib/precoAgora.js";
+import { TdLucro } from "./AlvoAgora.jsx";
 import { BRL } from "../lib/format.js";
 import { descontoDoItem, descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
@@ -46,7 +48,7 @@ function combinacoes(variacoes) {
 // em anúncios; ML/Shein = um anúncio por quantidade, com as variações. SKU do
 // item editável direto na tabela (✎).
 export default function FichaAnuncio({ onToast, onIrPara }) {
-  const { itens, canais, precos, produtos, kits, mapaRampa, clientePagaHoje, publicacoesCanal, cobraNoCanal } = useEscada();
+  const { itens, canais, precos, produtos, kits, mapaRampa, clientePagaHoje, publicacoesCanal, cobraNoCanal, cfgDoProduto } = useEscada();
   // Itens em rampa (Crescimento) vendendo num preço diferente do salvo: a
   // ficha usa os números da Rampa (riscado fixo no alvo + promo do degrau).
   const rampaMapa = mapaRampa; // useEscada: mesma conta da Rampa (lib/rampaAnuncio.js)
@@ -78,6 +80,8 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
   const [skuEdit, setSkuEdit] = useState(null); // { itemId, valor }
 
   const canal = canais.find((c) => c.id === canalId) || canais[0] || null;
+  // Lucro pelo que o cliente paga (lib/precoAgora.js).
+  const lucroPago = (item, valor) => (item && canal ? quebraNoValor(item, canal, valor, cfgDoProduto(item.produtoId || (item.id.startsWith("p:") ? item.id.slice(2) : null))) : null);
   // O 4º Lançamento usa o produto e o canal escolhidos aqui.
   const selPublicada = modo === "grupo" ? (grupoId ? idGrupo(grupoId) : null) : sel || null;
   useEffect(() => {
@@ -519,6 +523,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                           <th className="num">Preço original</th>
                           <th className="num">Promo</th>
                           <th className="num">Cliente paga</th>
+                          <th className="num" title="Lucro pelo que o cliente paga: recebe − repor o produto">Lucro</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -602,9 +607,10 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                                     </div>
                                   )}
                                 </td>
+                                <TdLucro q={lucroPago(l.item, l.an.clientePaga)} qAlvo={l.an.emRampa && l.anSalvo && Math.abs(l.anSalvo.clientePaga - l.an.clientePaga) > 0.004 ? lucroPago(l.item, l.anSalvo.clientePaga) : null} />
                               </>
                             ) : (
-                              <td className="num" colSpan={3} style={{ color: "var(--warn)" }}>
+                              <td className="num" colSpan={4} style={{ color: "var(--warn)" }}>
                                 sem preço salvo
                               </td>
                             )}

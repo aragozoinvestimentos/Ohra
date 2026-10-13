@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
+import { quebraNoValor } from "../lib/precoAgora.js";
+import { TdLucro } from "./AlvoAgora.jsx";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { BRL } from "../lib/format.js";
 import { nomeCanal } from "../lib/canais.js";
@@ -25,7 +27,9 @@ const PREFIXO_TIPO = { p: "produto", v: "variacao", k: "kit" };
 
 export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, onToast, onIrPara }) {
   const { lojaId } = useLoja();
-  const { itens, precos, produtos, kits, mapaRampa, clientePagaHoje, publicacoesCanal } = useEscada();
+  const { itens, precos, produtos, kits, mapaRampa, clientePagaHoje, publicacoesCanal, cfgDoProduto } = useEscada();
+  // Lucro pelo que o cliente paga (lib/precoAgora.js).
+  const lucroPago = (item, valor) => (item && canal ? quebraNoValor(item, canal, valor, cfgDoProduto(item.produtoId || (item.id.startsWith("p:") ? item.id.slice(2) : null))) : null);
   const { grupos, disponivel } = useAnunciosGrupo();
   const [editar, setEditar] = useState(null); // {} novo | { grupo }
   const [excluir, setExcluir] = useState(null);
@@ -268,6 +272,7 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
                         <th className="num">Preço original</th>
                         <th className="num">Promo</th>
                         <th className="num">Cliente paga</th>
+                          <th className="num" title="Lucro pelo que o cliente paga: recebe − repor o produto">Lucro</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -331,9 +336,10 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
                                   </div>
                                 )}
                               </td>
+                              <TdLucro q={lucroPago(l.item, l.an.clientePaga)} qAlvo={l.an.emRampa && l.anSalvo && Math.abs(l.anSalvo.clientePaga - l.an.clientePaga) > 0.004 ? lucroPago(l.item, l.anSalvo.clientePaga) : null} />
                             </>
                           ) : (
-                            <td className="num" colSpan={3} style={{ color: "var(--warn)" }}>
+                            <td className="num" colSpan={4} style={{ color: "var(--warn)" }}>
                               {l.item ? "sem preço salvo" : "item não encontrado"}
                             </td>
                           )}

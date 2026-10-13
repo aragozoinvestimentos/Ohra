@@ -108,14 +108,14 @@ const GRUPOS = [
     tabs: [
       { key: "registroImpressoes", label: "Registro de Impressões", sub: "Taxa de falha real e lote máximo seguro" },
       { key: "otimizacao", label: "Otimização", sub: "Capacidade de produção da loja" },
+      { key: "farm", label: "Minha farm", sub: "Impressoras, custo por hora e desgaste" },
     ],
   },
   {
     titulo: "5 · Gestão",
     tabs: [
-      { key: "caixa", label: "Fluxo de Caixa", sub: "Entradas, saídas e projeção de até 12 meses" },
+      { key: "caixa", label: "Fluxo de Caixa", sub: "Caixa, contas fixas e parcelas, vendas do mês e reserva de produção" },
       { key: "metas", label: "Metas", sub: "Faturamento e lucro do mês" },
-      { key: "farm", label: "Minha farm", sub: "Impressoras, custo por hora e desgaste" },
       { key: "ranking", label: "Ranking por Retorno", sub: "Quais itens dão mais lucro por hora" },
       { key: "importarVendas", label: "Importar vendas", sub: "Relatório de vendas da Olist (em construção)" },
     ],

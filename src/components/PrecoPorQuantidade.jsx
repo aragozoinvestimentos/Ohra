@@ -8,6 +8,7 @@ import { gravarPrecoNovo, alertaPreco, rotuloEstrategia } from "../lib/estrategi
 import Estado, { PontoSaude } from "./Estado.jsx";
 import { estadoDoAlerta, estadoDoStatusSalvo, piorEstado } from "../lib/estados.js";
 import EditarDialog from "./EditarDialog.jsx";
+import { LinhaAgora, QuebraLucro } from "./AlvoAgora.jsx";
 import FreteAviso from "./FreteAviso.jsx";
 import { anuncioDoItem, anuncioNoRiscado } from "../lib/rampaAnuncio.js";
 import { alternarQuantidade, quantidadeAnunciada, quantidadesGravadas, quantidadesPadrao, temColunaQuantidades } from "../lib/quantidadesAnuncio.js";
@@ -103,7 +104,7 @@ const CAMPOS_MARGEM = [
 
 export default function PrecoPorQuantidade({ onToast, onSub }) {
   const { lojaId, atualizar } = useLoja();
-  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe, clientePagaHoje, publicacoesCanal, mapaRampa, alertaDe } = useEscada();
+  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe, clientePagaHoje, publicacoesCanal, mapaRampa, alertaDe, agoraDe } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // diálogo "Manter assim" do avulso
   const [selPQ, setSelPQ] = useState(null); // linha com o detalhe aberto ("base" ou "n<qtd>")
   const [revisar, setRevisar] = useState(null); // linha de produto_variacoes aberta na tela suspensa (revisar insumos)
@@ -185,6 +186,11 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
     const t = itemId.startsWith("v:") ? "variacao" : itemId.startsWith("k:") ? "kit" : "produto";
     const lp = precosEsc.find((x) => x.item_tipo === t && x.item_id === itemId.slice(2) && x.canal_id === canal.id);
     return lp && lp.lucro != null ? Number(lp.lucro) : null;
+  };
+  // Preço alvo × preço agora (lib/precoAgora.js) do item neste canal.
+  const agoraLinha = (itemId) => {
+    const it = itemId && canal ? itens.find((i) => i.id === itemId) : null;
+    return it ? agoraDe(it, canal) : null;
   };
   // Preço que vale AGORA pro anúncio: o da Rampa (se em rampa), senão o salvo, senão o sugerido.
   // Bolinha de saúde da linha (regra única de cores — lib/estados.js): o pior
@@ -756,7 +762,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                     Lucro<span className="th-sub">no preço sugerido</span>
                   </th>
                   <th className="num">
-                    Preço salvo<span className="th-sub">o cliente paga</span>
+                    Preço alvo<span className="th-sub">salvo · e o de agora, em rampa</span>
                   </th>
                   <th className="num">Cliente economiza</th>
                   <th></th>
@@ -803,6 +809,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                           <td className="num">
                             {dados.salvo1 != null ? <b>{BRL(dados.salvo1)}</b> : "—"}
                             {lucroSalvoDe(`p:${pid}`) != null && <span className="sub">lucro {BRL(lucroSalvoDe(`p:${pid}`))}</span>}
+                            <LinhaAgora aa={agoraLinha(`p:${pid}`)} />
                             <span className="sub">
                               <span className="badge neutro">base</span>
                             </span>
@@ -876,6 +883,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                             <Estado tipo="info" icone={null}>não existe</Estado>
                           )}
                           {l.salvo != null && lucroSalvoDe(l.itemId) != null && <span className="sub">lucro {BRL(lucroSalvoDe(l.itemId))}</span>}
+                          {l.salvo != null && <LinhaAgora aa={agoraLinha(l.itemId)} />}
                           {(() => {
                             const e = estadoDoStatusSalvo(st);
                             return e ? (
@@ -927,8 +935,14 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                               {l.notas.length > 0 && <span>{l.notas.join(" · ")}</span>}
                             </div>
                             <div className="kv-cel">
-                              <small>Preço salvo</small>
+                              <small>Preço alvo (salvo)</small>
                               <b>{l.salvo != null ? BRL(l.salvo) : "—"}</b>
+                              {l.salvo != null && <QuebraLucro q={agoraLinha(l.itemId)?.alvo} />}
+                              {l.salvo != null && agoraLinha(l.itemId)?.emRampa && (
+                                <span className="linha-agora">
+                                  agora {BRL(agoraLinha(l.itemId).agora.preco)} · lucro {BRL(agoraLinha(l.itemId).agora.lucro)}
+                                </span>
+                              )}
                               <span>{l.salvo != null ? `${BRL(l.salvo / l.n)}/peça${st ? ` · ${st.texto.replace(/^[^\wÀ-ú]+\s*/, "")}` : ""}` : l.cadastrada ? "variação sem preço neste canal" : "variação ainda não criada"}</span>
                             </div>
                             <label className="kv-cel" onClick={(ev) => ev.stopPropagation()}>

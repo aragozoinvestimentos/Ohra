@@ -9,7 +9,8 @@ import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
 import { realDoMes, somarMeses } from "../lib/fluxoCaixa.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
-import { useRankingData, calcularRanking } from "../hooks/useRankingData.js";
+import { calcularRanking } from "../hooks/useRankingData.js";
+import { useEscada } from "../hooks/useEscada.js";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
 import { useRampas } from "../hooks/useRampas.js";
 import AvisoRampa from "./AvisoRampa.jsx";
@@ -55,7 +56,7 @@ export default function Metas({ onToast }) {
   // Mesma base de dados do Ranking (produtos+kits com custo total, canais e
   // preços salvos) só pra achar os melhores desempenhos — evita duplicar a
   // lógica de "qual o melhor canal de cada item" aqui.
-  const { itens: itensRanking, canais: canaisRanking, precos: precosRanking } = useRankingData();
+  const { itens: itensRanking, canais: canaisRanking, precos: precosRanking, agoraDe } = useEscada();
 
   // Mês corrente no formato 'YYYY-MM' — cada mês é uma linha própria em
   // metas_mensais, então virar o mês não apaga nada: só passa a ler/gravar
@@ -138,25 +139,28 @@ export default function Metas({ onToast }) {
         const canalObj = canaisRanking.find((c) => c.id === p.canal_id);
         if (!canalObj) return null;
         const nome = item.tipo === "Kit" ? `[Kit] ${item.nome}` : item.nome;
+        // Em rampa: o preço de AGORA (o que está vendendo), não o alvo.
+        const aa = agoraDe(item, canalObj);
+        const ag = aa?.emRampa ? aa.agora : null;
         return {
           id: p.id,
-          nome: `${nome} — ${canalObj.nome}`,
+          nome: `${nome} — ${canalObj.nome}${ag ? " (em rampa · agora)" : ""}`,
           sku: item.sku || "",
-          preco: Number(p.preco) || 0,
-          lucro: Number(p.lucro) || 0,
+          preco: ag ? ag.preco : Number(p.preco) || 0,
+          lucro: ag ? ag.lucro : Number(p.lucro) || 0,
           unidade: "un",
         };
       })
       .filter(Boolean)
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [precosRanking, itensRanking, canaisRanking]);
+  }, [precosRanking, itensRanking, canaisRanking, agoraDe]);
 
   // Top 5 melhores desempenhos (mesmo critério do Ranking: maior lucro,
   // considerando o melhor canal de cada produto/kit) que já têm preço
   // salvo — só esses têm uma linha correspondente em catalogoVendas pra
   // poder entrar no simulador com um clique.
   const topPerformers = useMemo(() => {
-    const ranking = calcularRanking(itensRanking, canaisRanking, { precos: precosRanking, margemPct: margemLoja });
+    const ranking = calcularRanking(itensRanking, canaisRanking, { precos: precosRanking, margemPct: margemLoja, agoraDe });
     return ranking
       .filter((linha) => linha.origem === "salvo")
       .map((linha) => {
@@ -172,7 +176,7 @@ export default function Metas({ onToast }) {
       })
       .filter(Boolean)
       .slice(0, 5);
-  }, [itensRanking, canaisRanking, precosRanking, catalogoVendas, margemLoja]);
+  }, [itensRanking, canaisRanking, precosRanking, catalogoVendas, margemLoja, agoraDe]);
 
   // Adiciona (ou soma +1 unidade, se já estiver no cenário) um item do
   // topPerformers ao simulador — mesmo formato { itemId, quantidade } que o

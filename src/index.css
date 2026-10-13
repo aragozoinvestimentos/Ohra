@@ -319,17 +319,17 @@ section.view.active { display: block; }
 .grafico-legenda span { display: inline-flex; align-items: center; gap: 6px; }
 .grafico-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
 .grafico-legenda .leg-entrada { background: var(--good); }
-.grafico-legenda .leg-saida { background: var(--bad); }
+.grafico-legenda .leg-saida { background: var(--ink-soft); opacity: .7; }
 .grafico-legenda .leg-saldo { height: 2px; width: 14px; border-radius: 1px; background: var(--ink); }
 .grafico-hover { margin-left: auto; color: var(--ink); }
 .grafico-caixa .grade { stroke: var(--border); stroke-width: 1; }
 .grafico-caixa .zero { stroke: var(--ink-faint); stroke-width: 1; }
 .grafico-caixa .eixo { fill: var(--ink-faint); font-size: 11px; font-family: inherit; }
 .grafico-caixa .barra-entrada { fill: var(--good); opacity: 0.85; }
-.grafico-caixa .barra-saida { fill: var(--bad); opacity: 0.8; }
+.grafico-caixa .barra-saida { fill: var(--ink-soft); opacity: 0.55; }
 .grafico-caixa .barra-entrada.estimada, .grafico-caixa .barra-saida.estimada { opacity: 0.28; stroke-dasharray: 3 2; stroke-width: 1; }
 .grafico-caixa .barra-entrada.estimada { stroke: var(--good); }
-.grafico-caixa .barra-saida.estimada { stroke: var(--bad); }
+.grafico-caixa .barra-saida.estimada { stroke: var(--ink-soft); }
 .grafico-caixa .eixo-atual { fill: var(--ink); font-weight: 600; }
 .grafico-legenda .leg-estimado { background: transparent; border: 1px dashed var(--ink-soft); }
 .grafico-caixa .faixa-hover { fill: var(--surface-2); }
@@ -1717,3 +1717,49 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .chk.info { color: var(--ink-soft); background: var(--surface-2); }
 .pub-grupo-cab td { background: var(--surface-2); font-size: 12.5px; }
 @media (max-width: 760px) { .grupo-opcao { grid-template-columns: 1fr 1fr; } }
+
+/* Preço alvo × preço agora (AlvoAgora.jsx) */
+.quebra-lucro { font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.kv-alvo-agora .kv-lucro { font-size: inherit; }
+.kv-alvo-agora.agora { background: var(--st-decisao-soft); border-color: color-mix(in srgb, var(--st-decisao) 35%, var(--border)); }
+.kv-alvo-agora.agora small { color: var(--st-decisao); }
+.linha-agora { display: block; font-size: 11px; color: var(--st-decisao); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Fluxo de Caixa (out/2026): sub-abas, seletor de mês, pendências numa linha, lançamentos por dia */
+.caixa-cabecalho { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 14px; }
+.caixa-cabecalho .subabas { margin-bottom: 0; }
+.seletor-mes { display: flex; align-items: center; gap: 6px; }
+.seletor-mes select { width: auto; min-width: 150px; font-weight: 600; }
+.seletor-mes .link-btn { margin: 0 0 0 4px; }
+.pendencias-caixa { margin: 0 0 14px; border: 1px solid color-mix(in srgb, var(--st-atencao) 30%, var(--border)); background: var(--st-atencao-soft); border-radius: var(--radius); padding: 6px 12px; }
+.pendencias-caixa-cab { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 2px 0; font: inherit; color: inherit; text-align: left; cursor: pointer; flex-wrap: wrap; }
+.pendencias-caixa-cab .link-btn { margin: 0 0 0 auto; }
+.caixa-config { padding-bottom: 6px; margin-bottom: 8px; border-bottom: 1px dashed var(--border); }
+.grafico-cartao-mes { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; font-size: 12.5px; color: var(--ink-soft); padding: 6px 10px; margin-bottom: 6px; background: var(--surface-2); border-radius: 8px; min-height: 30px; font-variant-numeric: tabular-nums; }
+.grafico-cartao-mes > b { color: var(--ink); font-size: 13px; }
+.grafico-legenda .leg-saldo-proj { height: 0; width: 14px; border-radius: 0; background: transparent; border-top: 2px dashed var(--ink); }
+.grafico-caixa .faixa-negativa { fill: var(--st-resolver-soft); opacity: .6; }
+.grafico-caixa .linha-saldo.projetada { stroke-dasharray: 6 4; }
+.grafico-caixa .ponto-saldo.projetado { fill: var(--surface); stroke: var(--ink); stroke-width: 1.8; }
+.grafico-caixa .ponto-saldo.projetado.negativo { stroke: var(--bad); }
+.tabela-lancamentos td { vertical-align: middle; }
+.tabela-lancamentos tr.dia-cab td { background: var(--surface-2); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); padding-top: 6px; padding-bottom: 6px; }
+.tabela-lancamentos tr.dia-cab td.num { text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.tabela-lancamentos .lanc-cat { width: 18px; padding-right: 0; }
+.ponto-cat { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); vertical-align: middle; }
+.ponto-cat.cat-entrada { background: var(--good); }
+.ponto-cat.cat-saida { background: var(--ink-soft); }
+.lanc-desc { font-weight: 500; color: var(--ink); }
+.lanc-sub { font-size: 11.5px; color: var(--ink-faint); margin-top: 1px; }
+.lanc-rec { color: var(--ink-faint); margin-right: 4px; }
+.chip-parcela { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 600; padding: 0 6px; border-radius: 999px; background: var(--surface-3); color: var(--ink-soft); font-variant-numeric: tabular-nums; vertical-align: 1px; }
+.lanc-valor { font-weight: 600; font-variant-numeric: tabular-nums; }
+.reserva-faixa { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; }
+.reserva-saldo { display: grid; }
+.reserva-saldo small, .reserva-mes small { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-faint); font-weight: 600; }
+.reserva-saldo b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.reserva-mes { display: grid; font-size: 13px; color: var(--ink-soft); }
+.reserva-acoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto; }
+.reserva-acoes .link-btn { margin: 0; }
+tr.linha-total td { font-weight: 700; border-top: 2px solid var(--border); background: var(--surface-2); }
+@media (max-width: 760px) { .reserva-acoes { margin-left: 0; } .seletor-mes select { min-width: 0; } }

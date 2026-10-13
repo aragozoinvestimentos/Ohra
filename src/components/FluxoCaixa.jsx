@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useCatalogo } from "../hooks/useCatalogo.js";
@@ -29,8 +29,26 @@ import EditarDialog from "./EditarDialog.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CompraMaterialDialog from "./CompraMaterialDialog.jsx";
 import { dividirParcelas, linhasParceladas } from "../lib/comprasMaterial.js";
+import Estado from "./Estado.jsx";
+import VendasMes from "./VendasMes.jsx";
+import { recarregarReserva, useReservaProducao } from "../hooks/useReservaProducao.js";
+import { saldoReserva } from "../lib/vendasMes.js";
+import { useLembrado } from "../hooks/useLembrado.js";
 
 const IGNORAR_COMPRA_KEY = "ohra:caixa:ignorar-compra";
+
+// Sub-abas (out/2026): o dia a dia, o que repete/parcela, e o resultado das vendas.
+const SUBABAS_CAIXA = [
+  { key: "caixa", label: "1 · Caixa" },
+  { key: "contas", label: "2 · Contas fixas e parcelas" },
+  { key: "vendas", label: "3 · Vendas do mês" },
+];
+const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+function somarDiasISO(iso, n) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function loadIgnorados() {
   try {
@@ -59,6 +77,7 @@ const novoForm = (tipo) => ({
   parcelas: "",
   observacao: "",
   modeloId: null, // confirmando uma ocorrência de recorrente
+  usarReserva: false, // saída paga com a reserva de produção (schema v51)
 });
 
 const STATUS_BADGE = {
@@ -99,6 +118,11 @@ export default function FluxoCaixa({ onToast }) {
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [horizonte, setHorizonte] = useState(12);
   const [estimativas, setEstimativas] = useState(() => loadEstimativas(lojaId));
+  const [subLembrada, setSub] = useLembrado("ohra:caixa:sub", "caixa");
+  const sub = SUBABAS_CAIXA.some((x) => x.key === subLembrada) ? subLembrada : "caixa";
+  const [verConfig, setVerConfig] = useState(false);
+  const reserva = useReservaProducao();
+  const saldoDaReserva = useMemo(() => saldoReserva(reserva.registros).saldo, [reserva.registros]);
 
   useEffect(() => {
     saveEstimativas(lojaId, estimativas);
@@ -159,7 +183,6 @@ export default function FluxoCaixa({ onToast }) {
   const linhaSel = [...projecaoAmpla.passado, ...projecaoAmpla.linhas].find((l) => l.mes === mesFiltro) || mesCorrente;
   const selFase = mesFiltro < mesAtual ? "passado" : mesFiltro > mesAtual ? "futuro" : "atual";
   const mesCorrente = projecao.linhas[0];
-  const ultimo = projecao.linhas[projecao.linhas.length - 1];
   const menor = projecao.linhas.reduce((m, l) => (!m || l.saldoFinal < m.saldoFinal ? l : m), null);
 
   // --- Lista do mês filtrado (inclui ocorrências de recorrentes ainda não confirmadas) ---
@@ -167,7 +190,7 @@ export default function FluxoCaixa({ onToast }) {
     const reais = lancamentosReais(lancamentos).filter((l) => mesDe(l.data_realizada || l.data_prevista) === mesFiltro);
     const virtuais = ocorrenciasRecorrentes(lancamentos, mesFiltro, mesFiltro);
     return [...reais, ...virtuais]
-      .filter((l) => tipoFiltro === "todos" || l.tipo === tipoFiltro)
+      .filter((l) => tipoFiltro === "todos" || (tipoFiltro === "aberto" ? !l.data_realizada : l.tipo === tipoFiltro))
       .sort((a, b) => (a.data_realizada || a.data_prevista).localeCompare(b.data_realizada || b.data_prevista));
   }, [lancamentos, mesFiltro, tipoFiltro]);
   const mostrarCanal = listaMes.some((l) => l.canal_id);
@@ -323,7 +346,7 @@ export default function FluxoCaixa({ onToast }) {
     if (parcelado && !(parcInformadas >= 2 && parcInformadas <= 60)) return onToast?.("Informe o nº de parcelas (2 a 60)");
     const nParc = Math.max(2, Math.min(60, parcInformadas || 2));
     setSalvando(true);
-    const { error } = form.id
+    const r = form.id
       ? await supabase.from("lancamentos_caixa").update(registro).eq("id", form.id)
       : parcelado
         ? await supabase.from("lancamentos_caixa").insert(
@@ -335,12 +358,23 @@ export default function FluxoCaixa({ onToast }) {
               hoje,
             })
           )
-        : await supabase.from("lancamentos_caixa").insert(registro);
+        : form.usarReserva
+          ? await supabase.from("lancamentos_caixa").insert(registro).select("id").single()
+          : await supabase.from("lancamentos_caixa").insert(registro);
     setSalvando(false);
+    const { error } = r;
     if (error)
       return onToast?.(
         parcelado && /parcela_/.test(error.message) ? "Falta rodar o supabase/schema_v32.sql no Supabase pra parcelar." : `Não foi possível salvar: ${error.message}`
       );
+    // Saída paga com a reserva de produção (schema v51): sai também da reserva.
+    if (!form.id && form.usarReserva && form.tipo === "saida" && !form.recorrente) {
+      const rr = await supabase
+        .from("reserva_producao")
+        .insert({ loja_id: lojaId || null, tipo: "usar", valor, data: form.realizado ? form.data_realizada || hoje : form.data_prevista, descricao: form.descricao.trim(), lancamento_id: r.data?.id || null });
+      if (rr.error) onToast?.(/reserva_producao/i.test(rr.error.message) ? "Saída lançada, mas falta rodar o supabase/schema_v51.sql pra usar a reserva" : `Saída lançada, mas a reserva não foi atualizada: ${rr.error.message}`);
+      else recarregarReserva();
+    }
     onToast?.(form.id ? "Lançamento atualizado" : form.recorrente ? "Lançamento recorrente criado" : parcelado ? `Parcelado em ${nParc}× registrado` : "Lançamento registrado");
     setForm(null);
   }
@@ -437,6 +471,45 @@ export default function FluxoCaixa({ onToast }) {
   }
 
   const mesesFiltro = Array.from({ length: 25 }, (_, i) => somarMeses(mesAtual, i - 12));
+  const iMesSel = mesesFiltro.indexOf(mesFiltro);
+  // Reserva de produção (schema v51): parte do saldo que está separada pra repor a produção.
+  const livre = saldoAtual - saldoDaReserva;
+  // Pendências do caixa numa linha só (saldo inicial + compras de material sem dados).
+  const faltaSaldoInicial = !temSaldoInicial && lancamentos.length > 0;
+  const nPendencias = (faltaSaldoInicial ? 1 : 0) + pendentesCompra.length;
+  // Lançamentos do mês agrupados por dia.
+  const porDia = [];
+  for (const l of listaMes) {
+    const d = l.data_realizada || l.data_prevista;
+    const g = porDia[porDia.length - 1];
+    if (g && g.data === d) g.itens.push(l);
+    else porDia.push({ data: d, itens: [l] });
+  }
+  const rotuloDia = (d) => (d === hoje ? "Hoje" : d === somarDiasISO(hoje, -1) ? "Ontem" : d === somarDiasISO(hoje, 1) ? "Amanhã" : `${DIAS_SEMANA[new Date(`${d}T12:00:00`).getDay()]}, ${d.slice(8, 10)}/${d.slice(5, 7)}`);
+
+  const seletorMes = (
+    <div className="seletor-mes">
+      <button type="button" className="btn btn-mini btn-icone" disabled={iMesSel <= 0} onClick={() => setMesFiltro(mesesFiltro[iMesSel - 1])} aria-label="Mês anterior">
+        ‹
+      </button>
+      <select value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} aria-label="Mês">
+        {mesesFiltro.map((m) => (
+          <option key={m} value={m}>
+            {rotuloMes(m)}
+            {m === mesAtual ? " (atual)" : ""}
+          </option>
+        ))}
+      </select>
+      <button type="button" className="btn btn-mini btn-icone" disabled={iMesSel >= mesesFiltro.length - 1} onClick={() => setMesFiltro(mesesFiltro[iMesSel + 1])} aria-label="Próximo mês">
+        ›
+      </button>
+      {mesFiltro !== mesAtual && (
+        <button type="button" className="link-btn" onClick={() => setMesFiltro(mesAtual)}>
+          voltar ao mês atual
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -452,400 +525,444 @@ export default function FluxoCaixa({ onToast }) {
         </button>
       </TopbarAcoes>
 
-      <ResumoFixo>
-      <Kpis
-        itens={[
-          { label: "Saldo atual", valor: BRL(saldoAtual), tom: saldoAtual >= 0 ? "destaque" : "bad", sub: "tudo que já foi recebido − pago" },
-          {
-            label: `Entradas de ${rotuloMes(mesFiltro)}`,
-            valor: BRL(linhaSel?.entradas || 0),
-            sub:
-              selFase === "passado"
-                ? `${BRL(linhaSel?.entradasRealizadas || 0)} recebido`
-                : `${BRL(linhaSel?.entradasRealizadas || 0)} recebido · ${BRL(linhaSel?.entradasPrevistas || 0)} a receber${linhaSel?.entradasEstimadas ? ` · ${BRL(linhaSel.entradasEstimadas)} estimado` : ""}`,
-          },
-          {
-            label: `Saídas de ${rotuloMes(mesFiltro)}`,
-            valor: BRL(linhaSel?.saidas || 0),
-            sub:
-              selFase === "passado"
-                ? `${BRL(linhaSel?.saidasRealizadas || 0)} pago`
-                : `${BRL(linhaSel?.saidasRealizadas || 0)} pago · ${BRL(linhaSel?.saidasPrevistas || 0)} a pagar${linhaSel?.saidasEstimadas ? ` · ${BRL(linhaSel.saidasEstimadas)} estimado` : ""}`,
-          },
-          {
-            label: `Saldo no fim de ${rotuloMes(mesFiltro)}${selFase === "futuro" ? " (projetado)" : ""}`,
-            valor: BRL(linhaSel?.saldoFinal || 0),
-            tom: (linhaSel?.saldoFinal || 0) >= 0 ? undefined : "bad",
-            sub:
-              menor && menor.saldoFinal < 0
-                ? `fica negativo em ${rotuloMes(menor.mes)} (${BRL(menor.saldoFinal)})`
-                : `fim da projeção (${rotuloMes(ultimo?.mes || mesAtual)}): ${BRL(ultimo?.saldoFinal || 0)} · menor: ${BRL(menor?.saldoFinal || 0)} em ${rotuloMes(menor?.mes || mesAtual)}`,
-          },
-        ]}
-      />
-      </ResumoFixo>
-
-      {!temSaldoInicial && lancamentos.length > 0 && (
-        <div className="alerta alerta-warn">
-          <b>Falta o saldo inicial</b>
-          O saldo começa em zero, então as primeiras saídas deixam ele negativo. Lance quanto a loja tinha em caixa antes do primeiro lançamento.{" "}
-          <button type="button" className="btn btn-mini primary" onClick={abrirSaldoInicial}>Lançar saldo inicial</button>
-        </div>
-      )}
-
-      <div className="panel">
-        <h3 className="section-title">
-          Projeção de caixa
-          <Ajuda texto="Os 3 meses antes do atual mostram só o que de fato caiu/saiu (realizado), pra ver como foi o passado. Do mês atual em diante, o saldo mês a mês soma o que já caiu/saiu, os lançamentos previstos (atrasados entram no mês atual), as recorrências mensais e, nos meses futuros, a estimativa de vendas e custos variáveis por mês. Deixe a estimativa em branco pra usar a média dos últimos 3 meses fechados (só os meses desde o 1º lançamento; sem recorrentes, saldo inicial e aportes)." />
-        </h3>
-        <div className="grid-auto">
-          <div className="field">
-            <label>Horizonte</label>
-            <select value={horizonte} onChange={(e) => setHorizonte(Number(e.target.value))}>
-              <option value={3}>3 meses</option>
-              <option value={6}>6 meses</option>
-              <option value={12}>12 meses</option>
-            </select>
-          </div>
-          <div className="field">
-            <label title="Entradas que você espera por mês além dos lançamentos já previstos">Vendas estimadas / mês (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder={`média: ${BRL(mediaVendas)}`}
-              value={estimativas.vendas}
-              onChange={(e) => setEstimativas((p) => ({ ...p, vendas: e.target.value }))}
-            />
-            {usandoMediaVendas && (
-              <span className="campo-nota">
-                usando a média {textoMeses} ·{" "}
-                <button type="button" className="link-btn" onClick={() => setEstimativas((p) => ({ ...p, vendas: "0" }))}>usar 0</button>
-              </span>
-            )}
-          </div>
-          <div className="field">
-            <label title="Saídas variáveis que você espera por mês (material, frete, anúncios…) além das recorrentes">Custos variáveis / mês (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder={`média: ${BRL(mediaCustos)}`}
-              value={estimativas.custos}
-              onChange={(e) => setEstimativas((p) => ({ ...p, custos: e.target.value }))}
-            />
-            {usandoMediaCustos && (
-              <span className="campo-nota aviso">
-                somando {BRL(mediaCustos)}/mês de estimativa (média {textoMeses}) ·{" "}
-                <button type="button" className="link-btn" onClick={() => setEstimativas((p) => ({ ...p, custos: "0" }))}>usar 0</button>
-              </span>
-            )}
-          </div>
-        </div>
-
-        <GraficoProjecao linhas={linhasProjecao} iAtual={iMesAtual} selecionado={mesFiltro} onSelecionar={setMesFiltro} />
-        <div className="grafico-sel">
-          Mostrando <b>{rotuloMes(mesFiltro)}</b> no topo e nos lançamentos — clique num mês do gráfico pra trocar
-          {mesFiltro !== mesAtual && (
-            <>
-              {" · "}
-              <button type="button" className="link-btn" onClick={() => setMesFiltro(mesAtual)}>voltar ao mês atual</button>
-            </>
-          )}
-        </div>
-
-        <div className="tabela-toggle">
-          <button type="button" className={`variacoes-toggle${verTabela ? " aberto" : ""}`} onClick={alternarTabela}>
-            <span className="seta">▸</span> {verTabela ? "Esconder" : "Ver"} mês a mês
-          </button>
-        </div>
-        {verTabela && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Mês</th>
-                <th className="num">Entradas</th>
-                <th className="num">Saídas</th>
-                <th className="num">Resultado</th>
-                <th className="num">Saldo no fim do mês</th>
-              </tr>
-            </thead>
-            <tbody>
-              {linhasProjecao.map((l, i) => (
-                <tr
-                  key={l.mes}
-                  className={`linha-clicavel${i === iMesAtual ? " linha-atual" : l.passado ? " linha-passado" : ""}${l.mes === mesFiltro ? " linha-sel" : ""}`}
-                  onClick={() => setMesFiltro(l.mes)}
-                  title="Mostrar este mês no topo e nos lançamentos"
-                >
-                  <td>
-                    {rotuloMes(l.mes)}
-                    {i === iMesAtual && <span className="h3-contagem">mês atual</span>}
-                    {l.passado && <span className="h3-contagem">realizado</span>}
-                  </td>
-                  <td className="num" title={l.passado ? `Recebido ${BRL(l.entradasRealizadas)}` : `Recebido ${BRL(l.entradasRealizadas)} · previsto ${BRL(l.entradasPrevistas)} · estimado ${BRL(l.entradasEstimadas)}`}>
-                    {BRL(l.entradas)}
-                    {l.entradasEstimadas > 0 && <div className="sub-num">{BRL(l.entradasEstimadas)} estimado</div>}
-                  </td>
-                  <td className="num" title={l.passado ? `Pago ${BRL(l.saidasRealizadas)}` : `Pago ${BRL(l.saidasRealizadas)} · previsto ${BRL(l.saidasPrevistas)} · estimado ${BRL(l.saidasEstimadas)}`}>
-                    {BRL(l.saidas)}
-                    {l.saidasEstimadas > 0 && <div className="sub-num">{BRL(l.saidasEstimadas)} estimado</div>}
-                  </td>
-                  <td className="num" style={{ color: l.resultado >= 0 ? "var(--good)" : "var(--bad)" }}>
-                    {l.resultado >= 0 ? "+" : ""}
-                    {BRL(l.resultado)}
-                  </td>
-                  <td className="num" style={{ fontWeight: 600, color: l.saldoFinal < 0 ? "var(--bad)" : undefined }}>
-                    {BRL(l.saldoFinal)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        )}
-      </div>
-
-      <div className="panel">
-        <h3 className="section-title">
-          Lançamentos
-          <Ajuda texto="Entradas e saídas do mês escolhido. “Previsto” é o que ainda vai cair/sair (ex.: repasse da Shopee que só libera depois da entrega) — marque como recebido/pago quando acontecer. Linhas com ↻ são ocorrências de um lançamento recorrente: “Confirmar” grava o valor real daquele mês." />
-        </h3>
-        {pendentesCompra.length > 0 && (
-          <div className="alerta alerta-warn">
-            <b>
-              {pendentesCompra.length} saída{pendentesCompra.length > 1 ? "s" : ""} de material sem os dados da compra
-            </b>
-            Sem material e quantidade, essas compras não entram na média de preço/kg.{" "}
-            <button type="button" className="btn btn-mini" onClick={() => setVerPendentes((v) => !v)}>
-              {verPendentes ? "Esconder" : "Ver e completar"}
+      <div className="caixa-cabecalho">
+        <div className="subabas">
+          {SUBABAS_CAIXA.map((x) => (
+            <button key={x.key} type="button" className={`btn${sub === x.key ? " primary" : ""}`} onClick={() => setSub(x.key)}>
+              {x.label}
+              {x.key === "contas" && parcelamentos.length + modelos.length > 0 ? <span className="h3-contagem">{parcelamentos.length + modelos.length}</span> : null}
             </button>
-            {verPendentes && (
-              <ul className="lista-pendentes">
-                {pendentesCompra.map((p) => (
-                  <li key={p.chave}>
-                    <span>
-                      {p.lancamento.data_prevista.slice(8, 10)}/{p.lancamento.data_prevista.slice(5, 7)} · {semSufixoParcela(p.lancamento.descricao)} ·{" "}
-                      {BRL(p.grupo ? p.grupo.reduce((s, l) => s + Number(l.valor || 0), 0) : p.lancamento.valor)}
-                      {p.grupo ? ` (${p.grupo.length}×)` : ""}
+          ))}
+        </div>
+        {sub !== "contas" && seletorMes}
+      </div>
+
+      {sub === "caixa" && (
+        <>
+          <ResumoFixo>
+            <Kpis
+              itens={[
+                {
+                  label: "Saldo atual",
+                  valor: BRL(saldoAtual),
+                  tom: saldoAtual >= 0 ? "destaque" : "bad",
+                  sub: reserva.disponivel && saldoDaReserva > 0 ? `livre ${BRL(livre)} · reserva de produção ${BRL(saldoDaReserva)}` : "tudo que já foi recebido − pago",
+                },
+                {
+                  label: `Entradas de ${rotuloMes(mesFiltro)}`,
+                  valor: BRL(linhaSel?.entradas || 0),
+                  sub:
+                    selFase === "passado"
+                      ? `${BRL(linhaSel?.entradasRealizadas || 0)} recebido`
+                      : `${BRL(linhaSel?.entradasRealizadas || 0)} recebido · ${BRL(linhaSel?.entradasPrevistas || 0)} a receber${linhaSel?.entradasEstimadas ? ` · ${BRL(linhaSel.entradasEstimadas)} estimado` : ""}`,
+                },
+                {
+                  label: `Saídas de ${rotuloMes(mesFiltro)}`,
+                  valor: BRL(linhaSel?.saidas || 0),
+                  sub:
+                    selFase === "passado"
+                      ? `${BRL(linhaSel?.saidasRealizadas || 0)} pago`
+                      : `${BRL(linhaSel?.saidasRealizadas || 0)} pago · ${BRL(linhaSel?.saidasPrevistas || 0)} a pagar${linhaSel?.saidasEstimadas ? ` · ${BRL(linhaSel.saidasEstimadas)} estimado` : ""}`,
+                },
+                {
+                  label: `Saldo no fim de ${rotuloMes(mesFiltro)}${selFase === "futuro" ? " (projetado)" : ""}`,
+                  valor: BRL(linhaSel?.saldoFinal || 0),
+                  tom: (linhaSel?.saldoFinal || 0) >= 0 ? undefined : "bad",
+                  sub:
+                    menor && menor.saldoFinal < 0
+                      ? `fica negativo em ${rotuloMes(menor.mes)} (${BRL(menor.saldoFinal)})`
+                      : `menor saldo da projeção: ${BRL(menor?.saldoFinal || 0)} em ${rotuloMes(menor?.mes || mesAtual)}`,
+                },
+              ]}
+            />
+          </ResumoFixo>
+
+          {nPendencias > 0 && (
+            <div className={`pendencias-caixa${verPendentes ? " aberto" : ""}`}>
+              <button type="button" className="pendencias-caixa-cab" onClick={() => setVerPendentes((v) => !v)}>
+                <Estado tipo="atencao">{nPendencias === 1 ? "1 pendência" : `${nPendencias} pendências`}</Estado>
+                <span className="muted-cel">
+                  {[faltaSaldoInicial && "falta o saldo inicial", pendentesCompra.length > 0 && `${pendentesCompra.length} compra${pendentesCompra.length > 1 ? "s" : ""} de material sem dados`].filter(Boolean).join(" · ")}
+                </span>
+                <span className="link-btn">{verPendentes ? "esconder" : "ver"}</span>
+              </button>
+              {verPendentes && (
+                <ul className="lista-pendentes">
+                  {faltaSaldoInicial && (
+                    <li>
+                      <span>
+                        <b>Falta o saldo inicial</b> — o saldo começa em zero, então as primeiras saídas deixam ele negativo. Lance quanto a loja tinha em caixa antes do primeiro lançamento.
+                      </span>
+                      <span>
+                        <button type="button" className="btn btn-mini primary" onClick={abrirSaldoInicial}>Lançar saldo inicial</button>
+                      </span>
+                    </li>
+                  )}
+                  {pendentesCompra.map((p) => (
+                    <li key={p.chave}>
+                      <span>
+                        <b>Compra sem dados</b> {p.lancamento.data_prevista.slice(8, 10)}/{p.lancamento.data_prevista.slice(5, 7)} · {semSufixoParcela(p.lancamento.descricao)} ·{" "}
+                        {BRL(p.grupo ? p.grupo.reduce((t, l) => t + Number(l.valor || 0), 0) : p.lancamento.valor)}
+                        {p.grupo ? ` (${p.grupo.length}×)` : ""} — sem material e quantidade, não entra na média de preço/kg
+                      </span>
+                      <span style={{ whiteSpace: "nowrap" }}>
+                        <button type="button" className="btn btn-mini primary" onClick={() => setCompraDialog({ lancamento: p.lancamento, grupo: p.grupo })}>
+                          Completar
+                        </button>{" "}
+                        <button type="button" className="btn btn-mini" title="Não é compra de material (ex.: frete, ferramenta) — não avisar mais" onClick={() => ignorarPendente(p.chave)}>
+                          Ignorar
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <div className="panel">
+            <h3 className="section-title h3-split">
+              <span>
+                Projeção de caixa
+                <Ajuda texto="Os 3 meses antes do atual mostram só o que de fato caiu/saiu (realizado). Do mês atual em diante, o saldo soma o que já caiu/saiu, os lançamentos previstos (atrasados entram no mês atual), as contas fixas e parcelas e, nos meses futuros, a estimativa de vendas e custos por mês (⚙ Projeção). Clique num mês pra ver ele no topo e nos lançamentos." />
+              </span>
+              <button type="button" className={`btn btn-mini${verConfig ? " primary" : ""}`} onClick={() => setVerConfig((x) => !x)}>
+                ⚙ Projeção
+              </button>
+            </h3>
+            {verConfig && (
+              <div className="grid-auto caixa-config">
+                <div className="field">
+                  <label>Horizonte</label>
+                  <select value={horizonte} onChange={(e) => setHorizonte(Number(e.target.value))}>
+                    <option value={3}>3 meses</option>
+                    <option value={6}>6 meses</option>
+                    <option value={12}>12 meses</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label title="Entradas que você espera por mês além dos lançamentos já previstos">Vendas estimadas / mês (R$)</label>
+                  <input type="number" step="0.01" min="0" placeholder={`média: ${BRL(mediaVendas)}`} value={estimativas.vendas} onChange={(e) => setEstimativas((p) => ({ ...p, vendas: e.target.value }))} />
+                  {usandoMediaVendas && (
+                    <span className="campo-nota">
+                      usando a média {textoMeses} ·{" "}
+                      <button type="button" className="link-btn" onClick={() => setEstimativas((p) => ({ ...p, vendas: "0" }))}>usar 0</button>
                     </span>
-                    <span style={{ whiteSpace: "nowrap" }}>
-                      <button type="button" className="btn btn-mini primary" onClick={() => setCompraDialog({ lancamento: p.lancamento, grupo: p.grupo })}>
-                        Completar
-                      </button>{" "}
-                      <button type="button" className="btn btn-mini" title="Não é compra de material (ex.: frete, ferramenta) — não avisar mais" onClick={() => ignorarPendente(p.chave)}>
-                        Ignorar
-                      </button>
+                  )}
+                </div>
+                <div className="field">
+                  <label title="Saídas variáveis que você espera por mês (material, frete, anúncios…) além das recorrentes">Custos variáveis / mês (R$)</label>
+                  <input type="number" step="0.01" min="0" placeholder={`média: ${BRL(mediaCustos)}`} value={estimativas.custos} onChange={(e) => setEstimativas((p) => ({ ...p, custos: e.target.value }))} />
+                  {usandoMediaCustos && (
+                    <span className="campo-nota aviso">
+                      somando {BRL(mediaCustos)}/mês de estimativa (média {textoMeses}) ·{" "}
+                      <button type="button" className="link-btn" onClick={() => setEstimativas((p) => ({ ...p, custos: "0" }))}>usar 0</button>
                     </span>
-                  </li>
-                ))}
-              </ul>
+                  )}
+                </div>
+              </div>
+            )}
+            {!verConfig && (usandoMediaVendas || usandoMediaCustos) && (
+              <div className="grafico-sel">
+                Meses futuros com estimativa pela média {textoMeses}
+                {usandoMediaVendas ? ` (vendas ${BRL(mediaVendas)}/mês)` : ""}
+                {usandoMediaCustos ? ` (custos ${BRL(mediaCustos)}/mês)` : ""} ·{" "}
+                <button type="button" className="link-btn" onClick={() => setVerConfig(true)}>ajustar</button>
+              </div>
+            )}
+
+            <GraficoProjecao linhas={linhasProjecao} iAtual={iMesAtual} selecionado={mesFiltro} onSelecionar={setMesFiltro} />
+
+            <div className="tabela-toggle">
+              <button type="button" className={`variacoes-toggle${verTabela ? " aberto" : ""}`} onClick={alternarTabela}>
+                <span className="seta">▸</span> {verTabela ? "Esconder" : "Ver"} mês a mês
+              </button>
+            </div>
+            {verTabela && (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Mês</th>
+                      <th className="num">Entradas</th>
+                      <th className="num">Saídas</th>
+                      <th className="num">Resultado</th>
+                      <th className="num">Saldo no fim do mês</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {linhasProjecao.map((l, i) => (
+                      <tr
+                        key={l.mes}
+                        className={`linha-clicavel${i === iMesAtual ? " linha-atual" : l.passado ? " linha-passado" : ""}${l.mes === mesFiltro ? " linha-sel" : ""}`}
+                        onClick={() => setMesFiltro(l.mes)}
+                        title="Mostrar este mês no topo e nos lançamentos"
+                      >
+                        <td>
+                          {rotuloMes(l.mes)}
+                          {i === iMesAtual && <span className="h3-contagem">mês atual</span>}
+                          {l.passado && <span className="h3-contagem">realizado</span>}
+                        </td>
+                        <td className="num" title={l.passado ? `Recebido ${BRL(l.entradasRealizadas)}` : `Recebido ${BRL(l.entradasRealizadas)} · previsto ${BRL(l.entradasPrevistas)} · estimado ${BRL(l.entradasEstimadas)}`}>
+                          {BRL(l.entradas)}
+                          {l.entradasEstimadas > 0 && <div className="sub-num">{BRL(l.entradasEstimadas)} estimado</div>}
+                        </td>
+                        <td className="num" title={l.passado ? `Pago ${BRL(l.saidasRealizadas)}` : `Pago ${BRL(l.saidasRealizadas)} · previsto ${BRL(l.saidasPrevistas)} · estimado ${BRL(l.saidasEstimadas)}`}>
+                          {BRL(l.saidas)}
+                          {l.saidasEstimadas > 0 && <div className="sub-num">{BRL(l.saidasEstimadas)} estimado</div>}
+                        </td>
+                        <td className="num" style={{ color: l.resultado >= 0 ? "var(--good)" : "var(--bad)" }}>
+                          {l.resultado >= 0 ? "+" : ""}
+                          {BRL(l.resultado)}
+                        </td>
+                        <td className="num" style={{ fontWeight: 600, color: l.saldoFinal < 0 ? "var(--bad)" : undefined }}>
+                          {BRL(l.saldoFinal)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
-        )}
-        <div className="toolbar">
-          <select value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} aria-label="Mês" style={{ width: "auto" }}>
-            {mesesFiltro.map((m) => (
-              <option key={m} value={m}>
-                {rotuloMes(m)}
-                {m === mesAtual ? " (atual)" : ""}
-              </option>
-            ))}
-          </select>
-          <div className="subabas subabas-compacta">
-            {[
-              ["todos", "Todos"],
-              ["entrada", "Entradas"],
-              ["saida", "Saídas"],
-            ].map(([k, label]) => (
-              <button key={k} className={`btn${tipoFiltro === k ? " primary" : ""}`} onClick={() => setTipoFiltro(k)}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <span className="toolbar-info">
-            <span style={{ color: "var(--good)" }}>+{BRL(totalMesEntradas)}</span> · <span style={{ color: "var(--bad)" }}>−{BRL(totalMesSaidas)}</span>
-          </span>
-        </div>
-        {listaMes.length === 0 ? (
-          <div className="empty">Nenhum lançamento em {rotuloMes(mesFiltro)}. Use “+ Entrada” ou “− Saída” no topo.</div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Descrição</th>
-                  <th>Categoria</th>
-                  {mostrarCanal && <th>Canal</th>}
-                  <th>Status</th>
-                  <th className="num">Valor</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {listaMes.map((l) => {
-                  const st = statusLancamento(l, hoje);
-                  const [tom0, texto0] = STATUS_BADGE[st];
-                  const vencida = st === "atrasado" && l.tipo === "saida";
-                  const tom = vencida ? "bad" : tom0;
-                  const texto = vencida ? "! Vencida" : texto0;
-                  const data = l.data_realizada || l.data_prevista;
-                  return (
-                    <tr key={l.id}>
-                      <td>{data.slice(8, 10)}/{data.slice(5, 7)}</td>
-                      <td>
-                        {(l.virtual || l.recorrencia_origem_id) && <span title="Recorrente" style={{ color: "var(--ink-faint)", marginRight: 4 }}>↻</span>}
-                        {l.descricao}
-                        {l.parcela_grupo && grupos.get(l.parcela_grupo) && (() => {
-                          const g = grupos.get(l.parcela_grupo);
-                          const pagas = g.filter((x) => x.data_realizada).length;
-                          return (
-                            <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>
-                              Parcelado {l.parcela_total || g.length}× · total {BRL(g.reduce((s, x) => s + Number(x.valor || 0), 0))} · {pagas} de {l.parcela_total || g.length}{" "}
-                              {l.tipo === "entrada" ? "recebida" : "paga"}{pagas !== 1 ? "s" : ""}
-                            </div>
-                          );
-                        })()}
-                        {l.observacao && <div className="hint" style={{ margin: "2px 0 0", fontSize: "0.85em" }}>{l.observacao}</div>}
-                      </td>
-                      <td className="muted-cel">{rotuloCategoria(l.tipo, l.categoria)}</td>
-                      {mostrarCanal && <td className="muted-cel">{canalNome(l.canal_id) || "—"}</td>}
-                      <td>
-                        <span className={`badge${tom ? ` ${tom}` : " neutro"}`}>{texto}</span>
-                      </td>
-                      <td className="num" style={{ fontWeight: 600, color: l.tipo === "entrada" ? "var(--good)" : "var(--ink)" }}>
-                        {l.tipo === "entrada" ? "+" : "−"}
-                        {BRL(l.valor)}
-                      </td>
-                      <td className="num" style={{ whiteSpace: "nowrap" }}>
-                        {l.virtual ? (
-                          <button className="btn btn-mini" onClick={() => abrirConfirmacaoOcorrencia(l)}>
-                            Confirmar
-                          </button>
-                        ) : (
-                          <>
-                            <button className="btn btn-mini" onClick={() => alternarRealizado(l)} title={l.data_realizada ? "Voltar pra previsto" : "Marcar como feito hoje"}>
-                              {l.data_realizada ? "Desfazer" : l.tipo === "entrada" ? "Recebido" : "Pago"}
-                            </button>
-                            <span className="acoes-linha">
-                              <button className="del" title="Editar" onClick={() => abrirEdicao(l)}>✎</button>
-                              <button className="del" title="Excluir" onClick={() => setExcluirAlvo(l)}>×</button>
-                            </span>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
 
-      {parcelamentos.length > 0 && (
-        <div className="panel">
-          <h3 className="section-title">
-            Parcelados em aberto
-            <Ajuda texto="Compras e recebimentos parcelados (uma linha por parcela, todo mês). Marque cada parcela como paga/recebida na lista do mês. “Excluir em aberto” apaga só as parcelas que ainda não foram pagas — as pagas continuam registradas." />
-          </h3>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Descrição</th>
-                  <th>Categoria</th>
-                  <th>Parcelas</th>
-                  <th>Próxima</th>
-                  <th className="num">Total</th>
-                  <th className="num">Em aberto</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {parcelamentos.map((g) => (
-                  <tr key={g.id}>
-                    <td>{g.descricao}</td>
-                    <td className="muted-cel">{rotuloCategoria(g.tipo, g.categoria)}</td>
-                    <td>
-                      {g.n}× · {g.pagas} de {g.n} {g.tipo === "entrada" ? "recebida" : "paga"}
-                      {g.pagas !== 1 ? "s" : ""}
-                      <div className="barra-progresso" title={`${Math.round((g.pagas / g.n) * 100)}% ${g.tipo === "entrada" ? "recebido" : "pago"}`}>
-                        <i style={{ width: `${(g.pagas / g.n) * 100}%` }} />
-                      </div>
-                    </td>
-                    <td>
-                      {g.proxima.data_prevista.slice(8, 10)}/{g.proxima.data_prevista.slice(5, 7)}/{g.proxima.data_prevista.slice(0, 4)} · {BRL(g.proxima.valor)}
-                    </td>
-                    <td className="num">{BRL(g.total)}</td>
-                    <td className="num" style={{ fontWeight: 600, color: g.tipo === "entrada" ? "var(--good)" : "var(--ink)" }}>
-                      {g.tipo === "entrada" ? "+" : "−"}
-                      {BRL(g.abertas.reduce((s, l) => s + Number(l.valor || 0), 0))}
-                    </td>
-                    <td className="num" style={{ whiteSpace: "nowrap" }}>
-                      <button className="btn btn-mini" title="Editar descrição, categoria e a data da 1ª parcela (as outras acompanham, uma por mês)" onClick={() => abrirEdicaoGrupo(g)}>
-                        Editar
-                      </button>
-                      <span className="acoes-linha">
-                        <button className="del" title="Excluir as parcelas em aberto" onClick={() => setExcluirAlvo({ grupoParcelas: g })}>×</button>
-                      </span>
-                    </td>
-                  </tr>
+          <div className="panel">
+            <h3 className="section-title h3-split">
+              <span>
+                Lançamentos de {rotuloMes(mesFiltro)}
+                <Ajuda texto="Entradas e saídas do mês escolhido, por dia. “Previsto” é o que ainda vai cair/sair (ex.: repasse da Shopee que só libera depois da entrega) — marque como recebido/pago quando acontecer. Linhas com ↻ são contas fixas: “Confirmar” grava o valor real daquele mês. Contas fixas e parcelas ficam na 2ª sub-aba." />
+              </span>
+              <span className="toolbar-info">
+                <span style={{ color: "var(--good)" }}>+{BRL(totalMesEntradas)}</span> · <span>−{BRL(totalMesSaidas)}</span>
+              </span>
+            </h3>
+            <div className="toolbar">
+              <div className="subabas subabas-compacta">
+                {[
+                  ["todos", "Tudo"],
+                  ["entrada", "Entradas"],
+                  ["saida", "Saídas"],
+                  ["aberto", "A pagar / receber"],
+                ].map(([k, label]) => (
+                  <button key={k} className={`btn${tipoFiltro === k ? " primary" : ""}`} onClick={() => setTipoFiltro(k)}>
+                    {label}
+                  </button>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
+            {listaMes.length === 0 ? (
+              <div className="empty">
+                {tipoFiltro === "todos" ? `Nenhum lançamento em ${rotuloMes(mesFiltro)}. Use “+ Entrada” ou “− Saída” no topo.` : "Nada com esse filtro neste mês."}
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="tabela-lancamentos">
+                  <tbody>
+                    {porDia.map((g) => {
+                      const somaDia = g.itens.reduce((t, l) => t + (l.tipo === "entrada" ? 1 : -1) * Number(l.valor || 0), 0);
+                      return (
+                        <Fragment key={g.data}>
+                          <tr className="dia-cab">
+                            <td colSpan={3}>{rotuloDia(g.data)}</td>
+                            <td className="num">
+                              {somaDia >= 0 ? "+" : "−"}
+                              {BRL(Math.abs(somaDia))}
+                            </td>
+                            <td></td>
+                          </tr>
+                          {g.itens.map((l) => {
+                            const st = statusLancamento(l, hoje);
+                            const [tom0, texto0] = STATUS_BADGE[st];
+                            const vencida = st === "atrasado" && l.tipo === "saida";
+                            const tom = vencida ? "bad" : tom0;
+                            const texto = vencida ? "! Vencida" : texto0;
+                            const gp = l.parcela_grupo ? grupos.get(l.parcela_grupo) : null;
+                            return (
+                              <tr key={l.id} className="lanc-linha">
+                                <td className="lanc-cat">
+                                  <i className={`ponto-cat cat-${l.tipo}`} />
+                                </td>
+                                <td>
+                                  <div className="lanc-desc">
+                                    {(l.virtual || l.recorrencia_origem_id) && <span title="Conta fixa (repete todo mês)" className="lanc-rec">↻</span>}
+                                    {gp ? semSufixoParcela(l.descricao) : l.descricao}
+                                    {gp && (
+                                      <span
+                                        className="chip-parcela"
+                                        title={`Parcelado ${l.parcela_total || gp.length}× · total ${BRL(gp.reduce((t, x) => t + Number(x.valor || 0), 0))} · ${gp.filter((x) => x.data_realizada).length} ${l.tipo === "entrada" ? "recebidas" : "pagas"}`}
+                                      >
+                                        {l.parcela_num || "?"}/{l.parcela_total || gp.length}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="lanc-sub">
+                                    {rotuloCategoria(l.tipo, l.categoria)}
+                                    {mostrarCanal && l.canal_id ? ` · ${canalNome(l.canal_id)}` : ""}
+                                    {l.observacao ? ` · ${l.observacao}` : ""}
+                                  </div>
+                                </td>
+                                <td>
+                                  <span className={`badge${tom ? ` ${tom}` : " neutro"}`}>{texto}</span>
+                                </td>
+                                <td className="num lanc-valor" style={{ color: l.tipo === "entrada" ? "var(--good)" : "var(--ink)" }}>
+                                  {l.tipo === "entrada" ? "+" : "−"}
+                                  {BRL(l.valor)}
+                                </td>
+                                <td className="num" style={{ whiteSpace: "nowrap" }}>
+                                  {l.virtual ? (
+                                    <button className="btn btn-mini" onClick={() => abrirConfirmacaoOcorrencia(l)}>
+                                      Confirmar
+                                    </button>
+                                  ) : (
+                                    <>
+                                      <button className="btn btn-mini" onClick={() => alternarRealizado(l)} title={l.data_realizada ? "Voltar pra previsto" : "Marcar como feito hoje"}>
+                                        {l.data_realizada ? "Desfazer" : l.tipo === "entrada" ? "Recebido" : "Pago"}
+                                      </button>
+                                      <span className="acoes-linha">
+                                        <button className="del" title="Editar" onClick={() => abrirEdicao(l)}>✎</button>
+                                        <button className="del" title="Excluir" onClick={() => setExcluirAlvo(l)}>×</button>
+                                      </span>
+                                    </>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        </div>
+        </>
       )}
 
-      <div className="panel">
-        <h3 className="section-title">
-          Recorrentes
-          <Ajuda texto="Contas e receitas que se repetem todo mês (energia, internet, assinatura, parcela da impressora, mensalidade…). Elas entram sozinhas na projeção, uma vez por mês, até a data final (ou sem fim). Pra criar, marque “Repete todo mês” no lançamento." />
-        </h3>
-        {modelos.length === 0 ? (
-          <p className="hint" style={{ margin: "4px 0 2px" }}>Nenhum ainda — marque “Repete todo mês” em + Entrada / − Saída (energia, internet, assinatura…).</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Descrição</th>
-                  <th>Categoria</th>
-                  <th>Dia</th>
-                  <th>Desde</th>
-                  <th>Até</th>
-                  <th className="num">Valor / mês</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {modelos.map((m) => (
-                  <tr key={m.id}>
-                    <td>{m.descricao}</td>
-                    <td className="muted-cel">{rotuloCategoria(m.tipo, m.categoria)}</td>
-                    <td>dia {Number(m.data_prevista.slice(8, 10))}</td>
-                    <td>{rotuloMes(mesDe(m.data_prevista))}</td>
-                    <td>{m.recorrencia_ate ? rotuloMes(mesDe(m.recorrencia_ate)) : "sem fim"}</td>
-                    <td className="num" style={{ fontWeight: 600, color: m.tipo === "entrada" ? "var(--good)" : "var(--ink)" }}>
-                      {m.tipo === "entrada" ? "+" : "−"}
-                      {BRL(m.valor)}
-                    </td>
-                    <td className="num" style={{ whiteSpace: "nowrap" }}>
-                      <span className="acoes-linha">
-                        <button className="del" title="Editar" onClick={() => abrirEdicao(m)}>✎</button>
-                        <button className="del" title="Excluir" onClick={() => setExcluirAlvo(m)}>×</button>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {sub === "contas" && (
+        <>
+          <Kpis
+            itens={[
+              { label: "Contas fixas / mês", valor: BRL(modelos.filter((m) => m.tipo === "saida" && (!m.recorrencia_ate || mesDe(m.recorrencia_ate) >= mesAtual)).reduce((t, m) => t + Number(m.valor || 0), 0)), sub: `${modelos.filter((m) => m.tipo === "saida").length} saída(s) que repetem todo mês` },
+              { label: "Receitas fixas / mês", valor: BRL(modelos.filter((m) => m.tipo === "entrada" && (!m.recorrencia_ate || mesDe(m.recorrencia_ate) >= mesAtual)).reduce((t, m) => t + Number(m.valor || 0), 0)), sub: `${modelos.filter((m) => m.tipo === "entrada").length} entrada(s) que repetem todo mês` },
+              {
+                label: "Parcelas em aberto",
+                valor: BRL(parcelamentos.filter((g) => g.tipo === "saida").reduce((t, g) => t + g.abertas.reduce((u, l) => u + Number(l.valor || 0), 0), 0)),
+                sub: `${parcelamentos.length} parcelamento(s) em andamento`,
+              },
+            ]}
+          />
+          <div className="panel">
+            <h3 className="section-title">
+              Contas fixas (repetem todo mês)
+              <Ajuda texto="Contas e receitas que se repetem todo mês (energia, internet, assinatura, parcela da impressora, mensalidade…). Elas entram sozinhas na projeção, uma vez por mês, até a data final (ou sem fim). Pra criar, marque “Repete todo mês” no lançamento (+ Entrada / − Saída)." />
+            </h3>
+            {modelos.length === 0 ? (
+              <div className="empty">Nenhuma ainda — marque “Repete todo mês” em + Entrada / − Saída (energia, internet, assinatura…).</div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Descrição</th>
+                      <th>Categoria</th>
+                      <th>Dia</th>
+                      <th>Desde</th>
+                      <th>Até</th>
+                      <th className="num">Valor / mês</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modelos.map((m) => (
+                      <tr key={m.id}>
+                        <td>
+                          <i className={`ponto-cat cat-${m.tipo}`} /> {m.descricao}
+                        </td>
+                        <td className="muted-cel">{rotuloCategoria(m.tipo, m.categoria)}</td>
+                        <td>dia {Number(m.data_prevista.slice(8, 10))}</td>
+                        <td>{rotuloMes(mesDe(m.data_prevista))}</td>
+                        <td>{m.recorrencia_ate ? rotuloMes(mesDe(m.recorrencia_ate)) : "sem fim"}</td>
+                        <td className="num" style={{ fontWeight: 600, color: m.tipo === "entrada" ? "var(--good)" : "var(--ink)" }}>
+                          {m.tipo === "entrada" ? "+" : "−"}
+                          {BRL(m.valor)}
+                        </td>
+                        <td className="num" style={{ whiteSpace: "nowrap" }}>
+                          <span className="acoes-linha">
+                            <button className="del" title="Editar" onClick={() => abrirEdicao(m)}>✎</button>
+                            <button className="del" title="Excluir" onClick={() => setExcluirAlvo(m)}>×</button>
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+
+          <div className="panel">
+            <h3 className="section-title">
+              Parcelados em aberto
+              <Ajuda texto="Compras e recebimentos parcelados (uma linha por parcela, todo mês). Marque cada parcela como paga/recebida nos lançamentos do mês (sub-aba Caixa). “Excluir em aberto” apaga só as parcelas que ainda não foram pagas — as pagas continuam registradas." />
+            </h3>
+            {parcelamentos.length === 0 ? (
+              <div className="empty">Nenhum parcelamento em aberto — marque “Parcelado” ao lançar uma entrada ou saída.</div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Descrição</th>
+                      <th>Categoria</th>
+                      <th>Parcelas</th>
+                      <th>Próxima</th>
+                      <th className="num">Total</th>
+                      <th className="num">Em aberto</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parcelamentos.map((g) => (
+                      <tr key={g.id}>
+                        <td>
+                          <i className={`ponto-cat cat-${g.tipo}`} /> {g.descricao}
+                        </td>
+                        <td className="muted-cel">{rotuloCategoria(g.tipo, g.categoria)}</td>
+                        <td>
+                          {g.pagas} de {g.n} {g.tipo === "entrada" ? "recebida" : "paga"}
+                          {g.pagas !== 1 ? "s" : ""}
+                          <div className="barra-progresso" title={`${Math.round((g.pagas / g.n) * 100)}% ${g.tipo === "entrada" ? "recebido" : "pago"}`}>
+                            <i style={{ width: `${(g.pagas / g.n) * 100}%` }} />
+                          </div>
+                        </td>
+                        <td>
+                          {g.proxima.data_prevista.slice(8, 10)}/{g.proxima.data_prevista.slice(5, 7)}/{g.proxima.data_prevista.slice(0, 4)} · {BRL(g.proxima.valor)}
+                        </td>
+                        <td className="num">{BRL(g.total)}</td>
+                        <td className="num" style={{ fontWeight: 600, color: g.tipo === "entrada" ? "var(--good)" : "var(--ink)" }}>
+                          {g.tipo === "entrada" ? "+" : "−"}
+                          {BRL(g.abertas.reduce((t, l) => t + Number(l.valor || 0), 0))}
+                        </td>
+                        <td className="num" style={{ whiteSpace: "nowrap" }}>
+                          <button className="btn btn-mini" title="Editar descrição, categoria e a data da 1ª parcela (as outras acompanham, uma por mês)" onClick={() => abrirEdicaoGrupo(g)}>
+                            Editar
+                          </button>
+                          <span className="acoes-linha">
+                            <button className="del" title="Excluir as parcelas em aberto" onClick={() => setExcluirAlvo({ grupoParcelas: g })}>×</button>
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {sub === "vendas" && <VendasMes mes={mesFiltro} onToast={onToast} />}
 
       {form && (
         <EditarDialog
@@ -927,6 +1044,12 @@ export default function FluxoCaixa({ onToast }) {
               </button>{" "}
               — informa material e quantidade, atualiza o preço/kg pela média e cria a saída (à vista ou parcelada).
             </div>
+          )}
+          {!form.id && !form.modeloId && form.tipo === "saida" && !form.recorrente && reserva.disponivel && (
+            <label className="check-linha" title="Material, embalagem, peça ou manutenção: sai também da reserva de produção (Vendas do mês)">
+              <input type="checkbox" checked={form.usarReserva} onChange={(e) => setForm((p) => ({ ...p, usarReserva: e.target.checked }))} />
+              Pago com a reserva de produção {saldoDaReserva > 0 ? `(saldo ${BRL(saldoDaReserva)})` : ""}
+            </label>
           )}
           {!form.modeloId && !form.parcelado && (
             <label className="check-linha">
@@ -1073,11 +1196,13 @@ export default function FluxoCaixa({ onToast }) {
   );
 }
 
-// Gráfico da projeção: entradas sobem (verde) e saídas descem (vermelho) a
-// partir do zero, com a parte ESTIMADA (campos de estimativa) mais clara e
-// tracejada — assim dá pra ver o que é conta de verdade (realizado/previsto/
-// parcelas) e o que é chute. A linha é o saldo no fim de cada mês. Eixo com
-// números "redondos". Passar o mouse/tocar num mês mostra os valores.
+// Gráfico da projeção (out/2026): por mês, entradas (verde) e saídas (cinza)
+// em barras LADO A LADO a partir do zero, com a parte ESTIMADA (campos de
+// estimativa) clara e tracejada; por cima, a LINHA do saldo no fim do mês —
+// contínua no que já aconteceu, tracejada na projeção — e uma faixa vermelha
+// clara abaixo de zero (mês que fica negativo salta aos olhos). Eixo com
+// números "redondos". Passar o mouse/tocar num mês mostra os valores; clicar
+// escolhe o mês da tela.
 const MESES_PASSADOS = 3;
 
 function passoBonito(bruto) {
@@ -1090,15 +1215,15 @@ function GraficoProjecao({ linhas, iAtual = 0, selecionado, onSelecionar }) {
   const [hover, setHover] = useState(null);
   if (!linhas.length) return null;
   const W = 960;
-  const H = 260;
+  const H = 270;
   const padL = 58;
   const padR = 12;
-  const padT = 12;
+  const padT = 22;
   const padB = 26;
   const reaisE = (l) => l.entradas - l.entradasEstimadas;
   const reaisS = (l) => l.saidas - l.saidasEstimadas;
-  let max = Math.max(0, ...linhas.flatMap((l) => [l.entradas, l.saldoFinal]));
-  let min = Math.min(0, ...linhas.flatMap((l) => [-l.saidas, l.saldoFinal]));
+  let max = Math.max(0, ...linhas.flatMap((l) => [l.entradas, l.saidas, l.saldoFinal]));
+  let min = Math.min(0, ...linhas.map((l) => l.saldoFinal));
   if (max === min) max = min + 100;
   const passo = passoBonito((max - min) / 4);
   max = Math.ceil(max / passo) * passo;
@@ -1107,10 +1232,9 @@ function GraficoProjecao({ linhas, iAtual = 0, selecionado, onSelecionar }) {
   for (let t = min; t <= max + 1e-6; t += passo) ticks.push(t);
   const y = (v) => padT + ((max - v) / (max - min)) * (H - padT - padB);
   const larguraMes = (W - padL - padR) / linhas.length;
-  const barra = Math.min(26, larguraMes * 0.42);
+  const barra = Math.max(4, Math.min(18, larguraMes * 0.26));
   const cx = (i) => padL + larguraMes * i + larguraMes / 2;
   const fmtCurto = (v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k` : Math.round(v).toLocaleString("pt-BR"));
-  const pontos = linhas.map((l, i) => `${cx(i)},${y(l.saldoFinal)}`).join(" ");
   const iSel = linhas.findIndex((l) => l.mes === selecionado);
   const h = hover != null ? linhas[hover] : iSel >= 0 ? linhas[iSel] : null;
   const temEstimado = linhas.some((l) => l.entradasEstimadas || l.saidasEstimadas);
@@ -1122,6 +1246,10 @@ function GraficoProjecao({ linhas, iAtual = 0, selecionado, onSelecionar }) {
     const alt = Math.abs(b - a);
     return alt > 0.3 ? <rect x={x} y={top} width={barra} height={alt} rx="2" className={cls} /> : null;
   };
+  // Saldo: contínuo até o mês atual (o que já aconteceu), tracejado depois.
+  const pts = linhas.map((l, i) => `${cx(i)},${y(l.saldoFinal)}`);
+  const feito = pts.slice(0, iAtual + 1).join(" ");
+  const projetado = pts.slice(iAtual).join(" ");
 
   return (
     <div className="grafico-caixa">
@@ -1130,18 +1258,33 @@ function GraficoProjecao({ linhas, iAtual = 0, selecionado, onSelecionar }) {
         <span><i className="leg-saida" />Saídas</span>
         {temEstimado && <span><i className="leg-estimado" />Estimativa</span>}
         <span><i className="leg-saldo" />Saldo no fim do mês</span>
-        <span className="grafico-hover">
-          {h ? (
-            <>
-              <strong>{rotuloMes(h.mes)}</strong>{h.passado ? " (realizado)" : ""} · entradas {BRL(h.entradas)} · saídas {BRL(h.saidas)}
-              {h.saidasEstimadas || h.entradasEstimadas ? " (com estimativa)" : ""} · saldo <b style={{ color: h.saldoFinal < 0 ? "var(--bad)" : undefined }}>{BRL(h.saldoFinal)}</b>
-            </>
-          ) : (
-            <span className="muted-cel">passe o mouse ou clique num mês</span>
-          )}
-        </span>
+        <span><i className="leg-saldo-proj" />projetado</span>
+      </div>
+      <div className="grafico-cartao-mes">
+        {h ? (
+          <>
+            <b>{rotuloMes(h.mes)}</b>
+            <span className="muted-cel">{h.passado ? "realizado" : linhas.indexOf(h) === iAtual ? "mês atual" : "projeção"}</span>
+            <span>
+              entradas <b style={{ color: "var(--good)" }}>{BRL(h.entradas)}</b>
+            </span>
+            <span>
+              saídas <b>{BRL(h.saidas)}</b>
+            </span>
+            <span>
+              resultado <b style={{ color: h.resultado >= 0 ? "var(--good)" : "var(--bad)" }}>{h.resultado >= 0 ? "+" : ""}{BRL(h.resultado)}</b>
+            </span>
+            <span>
+              saldo <b style={{ color: h.saldoFinal < 0 ? "var(--bad)" : undefined }}>{BRL(h.saldoFinal)}</b>
+            </span>
+            {h.saidasEstimadas || h.entradasEstimadas ? <span className="muted-cel">com estimativa</span> : null}
+          </>
+        ) : (
+          <span className="muted-cel">passe o mouse ou clique num mês</span>
+        )}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Projeção de entradas, saídas e saldo por mês" onMouseLeave={() => setHover(null)}>
+        {min < 0 && <rect x={padL} y={y0} width={W - padL - padR} height={H - padB - y0} className="faixa-negativa" />}
         {ticks.map((t) => (
           <g key={t}>
             <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} className={t === 0 ? "zero" : "grade"} />
@@ -1149,16 +1292,17 @@ function GraficoProjecao({ linhas, iAtual = 0, selecionado, onSelecionar }) {
           </g>
         ))}
         {linhas.map((l, i) => {
-          const x = cx(i) - barra / 2;
+          const xE = cx(i) - barra - 1;
+          const xS = cx(i) + 1;
           return (
             <g key={l.mes}>
               {i < iAtual && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-passado" />}
               {iSel === i && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-sel" />}
               {hover === i && iSel !== i && <rect x={padL + larguraMes * i} y={padT} width={larguraMes} height={H - padT - padB} className="faixa-hover" />}
-              {ret(x, 0, reaisE(l), "barra-entrada")}
-              {ret(x, reaisE(l), l.entradas, "barra-entrada estimada")}
-              {ret(x, 0, -reaisS(l), "barra-saida")}
-              {ret(x, -reaisS(l), -l.saidas, "barra-saida estimada")}
+              {ret(xE, 0, reaisE(l), "barra-entrada")}
+              {ret(xE, reaisE(l), l.entradas, "barra-entrada estimada")}
+              {ret(xS, 0, reaisS(l), "barra-saida")}
+              {ret(xS, reaisS(l), l.saidas, "barra-saida estimada")}
               <text x={cx(i)} y={H - 8} textAnchor="middle" className={`eixo${i === iAtual ? " eixo-atual" : ""}${i === iSel ? " eixo-sel" : ""}`}>{rotuloMes(l.mes, i === 0 || i === iAtual || l.mes.endsWith("-01"))}</text>
             </g>
           );
@@ -1166,20 +1310,15 @@ function GraficoProjecao({ linhas, iAtual = 0, selecionado, onSelecionar }) {
         <line x1={padL} x2={W - padR} y1={y0} y2={y0} className="zero" />
         {iAtual > 0 && (
           <g>
-            <line x1={padL + larguraMes * iAtual} x2={padL + larguraMes * iAtual} y1={padT} y2={H - padB} className="divisa-passado" />
-            <text x={padL + larguraMes * iAtual - 6} y={padT + 11} textAnchor="end" className="eixo">realizado</text>
-            <text x={padL + larguraMes * iAtual + 6} y={padT + 11} textAnchor="start" className="eixo">projeção</text>
+            <line x1={padL + larguraMes * iAtual} x2={padL + larguraMes * iAtual} y1={padT - 12} y2={H - padB} className="divisa-passado" />
+            <text x={padL + larguraMes * iAtual - 6} y={padT - 4} textAnchor="end" className="eixo">realizado</text>
+            <text x={padL + larguraMes * iAtual + 6} y={padT - 4} textAnchor="start" className="eixo">projeção</text>
           </g>
         )}
-        <defs>
-          <clipPath id="fc-acima"><rect x="0" y="0" width={W} height={y0} /></clipPath>
-          <clipPath id="fc-abaixo"><rect x="0" y={y0} width={W} height={H - y0} /></clipPath>
-        </defs>
-        <polygon points={`${cx(0)},${y0} ${pontos} ${cx(linhas.length - 1)},${y0}`} className="area-saldo positivo" clipPath="url(#fc-acima)" />
-        <polygon points={`${cx(0)},${y0} ${pontos} ${cx(linhas.length - 1)},${y0}`} className="area-saldo negativo" clipPath="url(#fc-abaixo)" />
-        <polyline points={pontos} className="linha-saldo" />
+        <polyline points={feito} className="linha-saldo" />
+        {pts.length > iAtual + 1 && <polyline points={projetado} className="linha-saldo projetada" />}
         {linhas.map((l, i) => (
-          <circle key={l.mes} cx={cx(i)} cy={y(l.saldoFinal)} r={hover === i || iSel === i ? 5 : 3.5} className={l.saldoFinal < 0 ? "ponto-saldo negativo" : "ponto-saldo"} />
+          <circle key={l.mes} cx={cx(i)} cy={y(l.saldoFinal)} r={hover === i || iSel === i ? 5 : 3.5} className={`ponto-saldo${l.saldoFinal < 0 ? " negativo" : ""}${i > iAtual ? " projetado" : ""}`} />
         ))}
         {linhas.map((l, i) => (
           <rect key={l.mes} x={padL + larguraMes * i} y={0} width={larguraMes} height={H} fill="transparent" style={{ cursor: "pointer" }} onMouseEnter={() => setHover(i)} onClick={() => onSelecionar?.(l.mes)}>
