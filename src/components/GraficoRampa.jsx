@@ -69,25 +69,28 @@ export default function GraficoRampa({ est, ajustes = [], regras = REGRAS_PADRAO
   }
 
   const W = 960;
-  const H = 240;
+  const H = 262;
   const padL = 52;
   const temFunil = pontos.some((p) => p.ctr != null || p.conv != null);
   const padR = temFunil ? 92 : 44;
   const padT = 18;
   const padB = 26;
   const baseVendas = H - padB;
-  const altVendas = 52;
+  const altVendas = 64;
   const topoPreco = padT;
   const fundoPreco = baseVendas - altVendas - 14;
   const precos = [...est.degraus, ...pontos.map((p) => p.preco).filter((v) => v != null)];
-  let pMin = Math.min(...precos);
-  let pMax = Math.max(...precos, est.alvo || 0);
-  const folga = Math.max(0.5, (pMax - pMin) * 0.12);
-  pMin = Math.max(0, pMin - folga);
-  pMax += folga;
+  // Eixo do preço em números redondos (passo 0,50 / 1 / 2 / 5 / 10…).
+  const pBruto0 = Math.min(...precos);
+  const pBruto1 = Math.max(...precos, est.alvo || 0);
+  const passoP = [0.5, 1, 2, 5, 10, 20, 50].find((x) => (pBruto1 - pBruto0) / x <= 4) || 100;
+  let pMin = Math.max(0, Math.floor((pBruto0 - passoP * 0.3) / passoP) * passoP);
+  let pMax = Math.ceil((pBruto1 + passoP * 0.3) / passoP) * passoP;
+  if (pMax - pMin < passoP) pMax = pMin + passoP;
   const yP = (v) => fundoPreco - ((v - pMin) / (pMax - pMin)) * (fundoPreco - topoPreco);
   const maxV = Math.max(1, ...pontos.map((p) => p.vendas));
-  const hV = (v) => (v / maxV) * altVendas;
+  // Barras até 70% da faixa: a linha do lucro da semana passa por cima delas.
+  const hV = (v) => (v / maxV) * altVendas * 0.7;
   const avals = pontos.map((p) => p.aval).filter((v) => v != null);
   const aMin = avals.length ? Math.min(...avals) : 0;
   const aMax = avals.length ? Math.max(...avals, aMin + 1) : 1;
@@ -148,7 +151,13 @@ export default function GraficoRampa({ est, ajustes = [], regras = REGRAS_PADRAO
       .join(" ");
   const fmtPct = (v) => `${(v * 100).toFixed(v * 100 < 10 ? 1 : 0).replace(".", ",")}%`;
 
-  const ticksP = [pMin, (pMin + pMax) / 2, pMax].map((v) => Math.round(v * 2) / 2);
+  const ticksP = [];
+  for (let v = pMin; v <= pMax + 1e-9; v += passoP) ticksP.push(Math.round(v * 100) / 100);
+  // Lucro da semana: linha na faixa das vendas (escala própria).
+  const comLucro = est.lucroEm ? pontos.map((p, i) => (p.temSemana ? [cx(i), p.lucro] : null)).filter(Boolean) : [];
+  const maxL = Math.max(1, ...comLucro.map((x) => x[1]));
+  const yL = (v) => baseVendas - (Math.max(0, v) / maxL) * altVendas;
+  const linhaLucro = comLucro.map((x, k) => `${k ? "L" : "M"}${x[0]},${yL(x[1])}`).join(" ");
   const h = hover != null ? pontos[hover] : null;
 
   return (
@@ -156,29 +165,37 @@ export default function GraficoRampa({ est, ajustes = [], regras = REGRAS_PADRAO
       <div className="grafico-legenda">
         <span><i className="leg-preco" />Preço vendido</span>
         <span><i className="leg-vendas" />Vendas/semana</span>
+        {comLucro.length > 0 && <span><i className="leg-lucro" />Lucro/semana</span>}
         {pontos.some((p) => p.conhecidos > 0) && <span><i className="leg-conhecidos" />Conhecidos</span>}
         <span><i className="leg-aval" />Avaliações</span>
         <span><i className="leg-alvo" />Alvo</span>
         {temFunil && <span><i className="leg-ctr" />CTR</span>}
         {temFunil && <span><i className="leg-conv" />Conversão</span>}
-        <span className="grafico-hover">
-          {h ? (
-            <>
-              <strong>{dataBR(h.data)}</strong>
-              {h.preco != null ? ` · ${BRL(h.preco)}` : ""}
-              {h.temSemana ? ` · ${fmtSemana(h.vendas)} venda${h.vendas === 1 ? "" : "s"}${h.diasPer ? `/semana (registro de ${h.diasPer} dias)` : ""}` : ""}
-              {h.conhecidos > 0 ? ` (${fmtSemana(h.conhecidos)} de conhecidos)` : ""}
-              {h.temSemana && est.lucroEm ? ` · lucro ${BRL(h.lucro)}/semana` : ""}
-              {h.aval != null ? ` · ${h.aval} avaliações` : ""}
-              {h.ctr != null ? ` · CTR ${fmtPct(h.ctr)}` : ""}
-              {h.conv != null ? ` · conversão ${fmtPct(h.conv)}` : ""}
-              {h.mudanca ? ` · ${h.mudanca.tipo === "subida" ? "subiu" : "voltou"} de degrau` : ""}
-            </>
-          ) : (
-            <span className="muted-cel">passe o mouse numa data</span>
-          )}
-        </span>
+        <span className="grafico-hover muted-cel">passe o mouse numa data</span>
       </div>
+      <div className="grafico-area">
+      {h && (
+        <div className={`grafico-tip${hover > pontos.length / 2 ? " esq" : ""}`} style={{ left: `${(cx(hover) / W) * 100}%` }}>
+          <strong>{dataBR(h.data)}</strong>
+          {h.preco != null && <div>Preço {BRL(h.preco)}</div>}
+          {h.temSemana && (
+            <div>
+              {fmtSemana(h.vendas)} venda{h.vendas === 1 ? "" : "s"}/semana{h.diasPer ? ` (registro de ${h.diasPer} dias)` : ""}
+              {h.conhecidos > 0 ? ` · ${fmtSemana(h.conhecidos)} de conhecidos` : ""}
+            </div>
+          )}
+          {h.temSemana && est.lucroEm && <div>Lucro {BRL(h.lucro)}/semana</div>}
+          {h.aval != null && <div>{h.aval} avaliações</div>}
+          {(h.ctr != null || h.conv != null) && (
+            <div>
+              {h.ctr != null ? `CTR ${fmtPct(h.ctr)}` : ""}
+              {h.ctr != null && h.conv != null ? " · " : ""}
+              {h.conv != null ? `conversão ${fmtPct(h.conv)}` : ""}
+            </div>
+          )}
+          {h.mudanca && <div className="tip-mud">{h.mudanca.tipo === "subida" ? "↑ subiu" : "↓ voltou"} pra {BRL(num(h.mudanca.preco))}</div>}
+        </div>
+      )}
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Evolução do preço, vendas e avaliações" onMouseLeave={() => setHover(null)}>
         <defs>
           <linearGradient id="gr-preco" x1="0" x2="0" y1="0" y2="1">
@@ -226,6 +243,10 @@ export default function GraficoRampa({ est, ajustes = [], regras = REGRAS_PADRAO
             </g>
           ) : null
         )}
+        {linhaLucro && <path d={linhaLucro} className="linha-lucro" />}
+        {comLucro.map((x, k) => (
+          <circle key={`l${k}`} cx={x[0]} cy={yL(x[1])} r="2.5" className="ponto-lucro" />
+        ))}
         {area && <path d={area} fill="url(#gr-preco)" />}
         {degrau && <path d={degrau} className="linha-preco" />}
         {curva && <path d={curva} className="linha-aval" />}
@@ -256,6 +277,7 @@ export default function GraficoRampa({ est, ajustes = [], regras = REGRAS_PADRAO
           <rect key={`h${p.data}`} x={padL + larg * i} y={0} width={larg} height={H} fill="transparent" onMouseEnter={() => setHover(i)} onClick={() => setHover(i)} />
         ))}
       </svg>
+      </div>
       {segs.length > 1 && (
         <div className="vereditos">
           {segs.slice(1).map((g, k) => {

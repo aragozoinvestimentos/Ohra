@@ -1201,6 +1201,14 @@ input.campo-importado { border-color: var(--st-info, var(--border-strong)); back
 .aviso-campanha { margin-top: 10px; }
 .atalho-ritmo.ok { color: var(--st-oportunidade); }
 .busca-rampa { min-width: 240px; }
+.grafico-area { position: relative; }
+.grafico-tip { position: absolute; top: 6px; transform: translateX(10px); min-width: 150px; max-width: 240px; padding: 7px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0,0,0,.12); font-size: 12px; line-height: 1.45; pointer-events: none; z-index: 2; font-variant-numeric: tabular-nums; }
+.grafico-tip.esq { transform: translateX(calc(-100% - 10px)); }
+.grafico-tip strong { display: block; font-size: 12.5px; margin-bottom: 2px; }
+.grafico-tip .tip-mud { color: var(--accent-ink); font-weight: 600; }
+.grafico-rampa .linha-lucro { fill: none; stroke: var(--st-oportunidade); stroke-width: 1.8; stroke-linejoin: round; opacity: .85; }
+.grafico-rampa .ponto-lucro { fill: var(--surface); stroke: var(--st-oportunidade); stroke-width: 1.5; }
+.grafico-legenda .leg-lucro { background: var(--st-oportunidade); height: 2px; width: 14px; border-radius: 2px; }
 .grafico-legenda .leg-preco { background: var(--accent); height: 3px; width: 14px; border-radius: 2px; }
 .grafico-legenda .leg-vendas { background: var(--good); opacity: .4; }
 .grafico-legenda .leg-aval { background: transparent; border: 1.5px solid var(--accent2, #b0503f); border-radius: 50%; }
