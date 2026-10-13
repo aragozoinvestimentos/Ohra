@@ -18,6 +18,10 @@ const num = (v) => {
 };
 const cent = (v) => Math.round(v * 100) / 100;
 export const MAX_ADICIONAIS = 4;
+// Recomendação entre vitrine e desconto (ajustes4x).
+export const VITRINE_SUBIDA_MAX = 0.25; // vitrine sobe o "a partir de" mais que isso → considera o desconto
+export const PROMO_MIN = 0.15; // desconto novo abaixo disso = promo pouco atrativa
+const brl = (v) => `R$ ${num(v).toFixed(2).replace(".", ",")}`;
 
 /** Item do catálogo (p:/v:/k:) → peças { produtoId, quantidade } (kit = as peças dele). */
 export function pecasDoItem(itemId, itens) {
@@ -208,7 +212,24 @@ export function ajustes4x({ combos, canal, cfg }) {
       const an = bloqueio ? null : calcularAnuncio(c.preco, para);
       return { chave: c.chave, rotulo: c.rotulo, de: c.desconto, para: Math.max(0, para), originalDe: c.an.original, originalPara: an?.original ?? null, bloqueio };
     });
+  // Recomendação automática (decisão do Gustavo: prefere a vitrine). Vitrine,
+  // a não ser que ela suba muito o "a partir de" (> VITRINE_SUBIDA_MAX) E o
+  // desconto resolva deixando uma promo que ainda chama atenção (≥ PROMO_MIN).
+  const subida = minPaga > 0 ? aPartirDeVitrine / minPaga - 1 : 0;
+  const descontoPossivel = desconto.length > 0 && desconto.every((d) => !d.bloqueio);
+  const menorPromo = descontoPossivel ? Math.min(...desconto.map((d) => d.para)) : 0;
+  const ganho = vitrine.reduce((t, v) => t + ((v.lucroPara ?? 0) - (v.lucroDe ?? 0)), 0);
+  let recomendado = "vitrine";
+  let motivo = `sobe o “a partir de” só ${Math.round(subida * 100)}% e ganha ${brl(ganho)} de lucro em cada venda da opção mais barata`;
+  if (!descontoPossivel) motivo = `baixar o desconto não resolve aqui; a vitrine ganha ${brl(ganho)} de lucro em cada venda da opção mais barata`;
+  else if (subida > VITRINE_SUBIDA_MAX && menorPromo >= PROMO_MIN) {
+    recomendado = "desconto";
+    motivo = `a vitrine subiria o “a partir de” ${Math.round(subida * 100)}% (${brl(minPaga)} → ${brl(aPartirDeVitrine)}) e afastaria o clique; baixando o desconto o preço de entrada fica e a promo ainda mostra ${Math.round(menorPromo * 100)}%`;
+  } else if (subida > VITRINE_SUBIDA_MAX)
+    motivo = `baixar o desconto deixaria a promo em só ${Math.round(menorPromo * 100)}% (pouco atrativa); a vitrine ganha ${brl(ganho)} de lucro em cada venda da opção mais barata, mas sobe o “a partir de” ${Math.round(subida * 100)}%`;
   return {
+    recomendado,
+    motivo,
     limite,
     aPartirDe: minPaga,
     vitrine: { mudancas: vitrine, aPartirDe: aPartirDeVitrine },

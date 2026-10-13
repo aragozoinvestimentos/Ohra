@@ -1879,3 +1879,7 @@ tr.combinacao-off td { opacity: 0.45; }
 .ajuste-4x-nome { font-weight: 700; font-size: 13px; }
 .ajuste-4x.ativo .ajuste-4x-nome::after { content: " ✓ aplicado na tabela"; color: var(--accent-ink); font-weight: 600; }
 @media (max-width: 760px) { .ajustes-4x-opcoes { grid-template-columns: minmax(0, 1fr); } }
+.ajustes-4x-recomendado { font-size: 12.5px; margin-bottom: 8px; padding: 8px 10px; border-radius: 8px; background: var(--st-oportunidade-soft); color: var(--ink); }
+.ajustes-4x-recomendado b { color: var(--st-oportunidade); }
+.ajustes-4x-recomendado .link-btn { margin-left: 6px; }
+.ajuste-4x-rec { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--st-oportunidade-soft); color: var(--st-oportunidade); font-size: 10.5px; font-weight: 700; vertical-align: 1px; }

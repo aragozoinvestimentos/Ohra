@@ -28,7 +28,7 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
   const [rotulos, setRotulos] = useState({});
   const [salvarPrecos, setSalvarPrecos] = useState(true);
   const [salvando, setSalvando] = useState(false);
-  const [ajuste, setAjuste] = useState(null); // null | "vitrine" | "desconto" (só simulação até o "Usar")
+  const [ajuste, setAjuste] = useState("auto"); // "auto" (a recomendada) | null (nenhuma) | "vitrine" | "desconto" — só simulação até o "Usar"
 
   const adicionaisValidos = adicionais.filter((a) => a.itemId && a.itemId !== base);
   // Chave da montagem: muda a base/adicionais → marcações e rótulos voltam ao padrão.
@@ -38,7 +38,7 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
     setAssinaturaVista(assinatura);
     setDesmarcadas(new Set());
     setRotulos({});
-    setAjuste(null);
+    setAjuste("auto");
   }
 
   const combos = useMemo(
@@ -54,7 +54,8 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
   const marcadasBrutas = combos.filter((c) => !desmarcadas.has(c.chave));
   // Saídas pra regra de 4× (Shopee/TikTok), calculadas sobre o que está marcado SEM ajuste.
   const ajustes = canal && (canal.tipo === "shopee" || canal.tipo === "tiktok") ? ajustes4x({ combos: marcadasBrutas, canal, cfg }) : null;
-  const ajusteAtivo = ajustes && (ajuste !== "desconto" || ajustes.desconto.possivel) ? ajuste : null;
+  const escolhido = ajuste === "auto" ? ajustes?.recomendado || null : ajuste;
+  const ajusteAtivo = ajustes && (escolhido !== "desconto" || ajustes.desconto.possivel) ? escolhido : null;
   const marcadas = aplicarAjuste(marcadasBrutas, ajustes, ajusteAtivo);
   const efetiva = (c) => marcadas.find((m) => m.chave === c.chave) || c;
   const regra = regraDaPlataforma(marcadas, canal, nomeVariacao);
@@ -258,9 +259,17 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
               <div className="ajustes-4x-tit">
                 <b>Pra caber num anúncio só na {canal.nome}</b> — clique pra ver como fica na tabela:
               </div>
+              <div className="ajustes-4x-recomendado">
+                <b>Recomendado: {ajustes.recomendado === "vitrine" ? "1 · Opção vitrine" : "2 · Baixar o desconto"}</b> — {ajustes.motivo}.
+                {ajuste === "auto" ? " Já está aplicado na tabela." : ajusteAtivo !== ajustes.recomendado ? (
+                  <button type="button" className="link-btn" onClick={() => setAjuste("auto")}>
+                    usar a recomendada
+                  </button>
+                ) : null}
+              </div>
               <div className="ajustes-4x-opcoes">
                 <button type="button" className={`ajuste-4x${ajusteAtivo === "vitrine" ? " ativo" : ""}`} onClick={() => setAjuste(ajusteAtivo === "vitrine" ? null : "vitrine")} aria-pressed={ajusteAtivo === "vitrine"}>
-                  <span className="ajuste-4x-nome">1 · Opção vitrine</span>
+                  <span className="ajuste-4x-nome">1 · Opção vitrine{ajustes.recomendado === "vitrine" && <span className="ajuste-4x-rec">recomendado</span>}</span>
                   {ajustes.vitrine.mudancas.map((m) => (
                     <span key={m.chave}>
                       {m.rotulo}: {BRL(m.de)} → <b>{BRL(m.para)}</b> · lucro {BRL(m.lucroDe)} → {BRL(m.lucroPara)}
@@ -277,7 +286,7 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
                   onClick={() => setAjuste(ajusteAtivo === "desconto" ? null : "desconto")}
                   aria-pressed={ajusteAtivo === "desconto"}
                 >
-                  <span className="ajuste-4x-nome">2 · Baixar o desconto do anúncio</span>
+                  <span className="ajuste-4x-nome">2 · Baixar o desconto do anúncio{ajustes.recomendado === "desconto" && <span className="ajuste-4x-rec">recomendado</span>}</span>
                   {!ajustes.desconto.possivel && ajustes.desconto.mudancas.every((m) => m.bloqueio === ajustes.desconto.mudancas[0]?.bloqueio) ? (
                     <span>
                       Não resolve aqui: {ajustes.desconto.mudancas[0]?.bloqueio} ({ajustes.desconto.mudancas.map((m) => m.rotulo).join(", ")}).
