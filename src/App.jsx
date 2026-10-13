@@ -44,7 +44,6 @@ function lazyAba(importar) {
 const CustoProducao = lazyAba(() => import("./components/CustoProducao.jsx"));
 const RegistroImpressoes = lazyAba(() => import("./components/RegistroImpressoes.jsx"));
 const PrecificacaoPagina = lazyAba(() => import("./components/PrecificacaoPagina.jsx"));
-const ImportarVendas = lazyAba(() => import("./components/ImportarVendas.jsx"));
 const Cadastros = lazyAba(() => import("./components/Cadastros.jsx"));
 const Orcamento = lazyAba(() => import("./components/Orcamento.jsx"));
 const Promocoes = lazyAba(() => import("./components/Promocoes.jsx"));
@@ -117,7 +116,6 @@ const GRUPOS = [
       { key: "caixa", label: "Fluxo de Caixa", sub: "Caixa, contas fixas e parcelas, vendas do mês e reserva de produção" },
       { key: "metas", label: "Metas", sub: "Faturamento e lucro do mês" },
       { key: "ranking", label: "Ranking por Retorno", sub: "Quais itens dão mais lucro por hora" },
-      { key: "importarVendas", label: "Importar vendas", sub: "Relatório de vendas da Olist (em construção)" },
     ],
   },
   {
@@ -142,6 +140,8 @@ function loadTab() {
     if (saved === "lojas" || saved === "canais" || saved === "taxas") return "config";
     // "Comparativo" virou a sub-aba "Comparar canais" da Precificação por Canal (set/2026)
     if (saved === "comparativo") return "canal";
+    // "Importar vendas" saiu do menu (out/2026): virou Fluxo de Caixa → Vendas do mês
+    if (saved === "importarVendas") return "caixa";
     if (saved && TABS.some((t) => t.key === saved)) return saved;
   } catch {
     // sem problema, usa o padrão
@@ -259,6 +259,7 @@ export default function App() {
       setCanalSub("comparar");
       key = "canal";
     }
+    if (key === "importarVendas") key = "caixa";
     if (key === "publicar" || key === "lancamento" || key === "ficha" || key === "quantidade" || key === "avulso") {
       setCanalSub(key);
       key = "canal";
@@ -412,14 +413,6 @@ export default function App() {
                 produtoParaSelecionar={produtoParaPrecificar}
                 onToast={showToast}
               />
-            </Suspense>
-          )}
-        </section>
-
-        <section className={`view ${tab === "importarVendas" ? "active" : ""}`}>
-          {visitadas.has("importarVendas") && (
-            <Suspense fallback={<div className="empty">Carregando…</div>}>
-              <ImportarVendas />
             </Suspense>
           )}
         </section>

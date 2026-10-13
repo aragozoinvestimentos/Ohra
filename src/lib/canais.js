@@ -17,11 +17,12 @@ export function tipoDoNome(nome) {
   return "custom";
 }
 
-// Canal de VENDA DIRETA (o "Orgânico", out/2026): canal próprio (custom) por
-// markup ou sem desconto de anúncio. Não tem rampa, Ads nem riscado/promo pra
-// digitar — fica fora do Lançamento (pergunta da rampa), da Anunciar, da Rampa,
-// do Ads e dos avisos de anúncio do Início. Revisão de preço = lib/revisarPreco.js.
+// Canal de VENDA DIRETA (o "Orgânico", out/2026): canal próprio (custom) com
+// preço "por markup" (Configuração → Canais). SÓ o markup decide — um canal
+// próprio "pela margem" (ex.: um marketplace cadastrado como custom) continua
+// com Anunciar, rampa e Ads. Não tem rampa, Ads nem riscado/promo pra digitar —
+// fica fora do Lançamento (pergunta da rampa), da Anunciar, da Rampa, do Ads e
+// dos avisos de anúncio do Início. Revisão de preço = lib/revisarPreco.js.
 export function canalDireto(canal) {
-  if (!canal || canal.tipo !== "custom") return false;
-  return canal.modo_preco === "markup" || !(Number(canal.desconto_anuncio_pct) > 0);
+  return !!canal && canal.tipo === "custom" && canal.modo_preco === "markup";
 }

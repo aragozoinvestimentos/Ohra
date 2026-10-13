@@ -10,6 +10,7 @@ import { adsDaLoja, avaliarAds, faseAdsSazonal, periodoAtivo, periodosDoItem, re
 import { lucroNoPreco } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
 import { canalDireto } from "../lib/canais.js";
+import { useVendasOrganicas } from "./useVendasOrganicas.js";
 import { configCalendario, infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
 
 const num = (v) => {
@@ -30,6 +31,8 @@ export function useCrescimento() {
   // Períodos de Ads (lib/adsAcoes.js grava; ads.js decide): a Rampa só fica
   // sabendo que há Ads ligado no produto (teste "ads-ligado").
   const adsH = useAdsPeriodos();
+  // Vendas orgânicas lançadas à mão (v52): entram no faturamento do teto de Ads.
+  const organicasH = useVendasOrganicas();
 
   // Referência do funil: mediana de CTR e conversão dos produtos da loja
   // (só com 5+ produtos com funil calculável; senão, referência geral).
@@ -124,6 +127,18 @@ export function useCrescimento() {
         lucro30 += num(s.vendas) * (b.lucroEm(p) ?? 0);
         gasto30 += num(s.ads_gasto);
       }
+    // + vendas orgânicas lançadas à mão em Vendas do mês (faturamento TOTAL da loja).
+    const PRE = { produto: "p", variacao: "v", kit: "k" };
+    for (const o of organicasH.registros || []) {
+      if (!(String(o.data).slice(0, 10) > desde30)) continue;
+      const it = itens.find((i) => i.id === `${PRE[o.item_tipo] || "p"}:${o.item_id}`);
+      const canal = canais.find((c) => c.id === o.canal_id);
+      if (!it || !canal) continue;
+      const un = num(o.unidades);
+      const p = num(o.preco);
+      fat30 += un * p;
+      lucro30 += un * (lucroNoPreco(canal, p, it.custoTotal, it.peso, cfgDoProduto(it.produtoId || (o.item_tipo === "produto" ? o.item_id : null))) ?? 0);
+    }
     const teto = tetoDaLoja({ faturamento: fat30, lucro: lucro30, gasto: gasto30, regras: regrasA });
     const linhasA = base.map((b) => ({
       ...b,
@@ -145,7 +160,7 @@ export function useCrescimento() {
       });
     }
     return { loja, teto, sazonal, linhas: linhasA };
-  }, [itens, canais, precos, produtos, linhas, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario]);
+  }, [itens, canais, precos, produtos, linhas, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros]);
 
   return { dados, rampasH, af, regras, hoje, funilLoja, calendario, linhas, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds };
 }

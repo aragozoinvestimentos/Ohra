@@ -679,22 +679,23 @@ function AndamentoDialog({ linhas, hoje, salvando, onCancelar, onSalvar, onToast
 function TabelaTeto({ regrasA, T, salvando, onSalvar }) {
   const faixas = regrasA.faixasTeto || REGRAS_ADS.faixasTeto;
   const [edit, setEdit] = useState(null);
-  const lista = edit ?? faixas.map((x) => ({ ...x, pct: String(Math.round(x.pct * 1000) / 10).replace(".", ",") }));
-  const comoNum = lista.map((x) => ({ ate: x.ate, pct: num(x.pct) / 100 }));
+  const paraEdit = (fs) => fs.map((x) => (x.fixo != null ? { ...x, fixo: String(x.fixo).replace(".", ",") } : { ...x, pct: String(Math.round(x.pct * 1000) / 10).replace(".", ",") }));
+  const lista = edit ?? paraEdit(faixas);
+  const comoNum = lista.map((x) => (x.fixo != null ? { ate: x.ate, fixo: num(x.fixo) } : { ate: x.ate, pct: num(x.pct) / 100 }));
   const tetoTabela = tetoPorFaixas(T.faturamento, comoNum);
   const inicios = lista.map((_, i) => (i === 0 ? 0 : num(lista[i - 1].ate)));
   return (
     <div className="panel">
       <h3 className="section-title">
         Teto de Ads da loja — fase {faseDaLoja(T.faturamento)}
-        <Ajuda texto="O Ads é acelerador, a loja é orgânica. Cada percentual vale só pro pedaço do faturamento dentro da faixa (como imposto de renda), então vender mais nunca diminui a verba. E o teto nunca passa de metade do lucro dos últimos 30 dias (já sem custo de produção e taxas). É teto, não meta: quem decide aumentar é o lucro de cada produto." />
+        <Ajuda texto="O Ads é acelerador, a loja é orgânica. Até R$ 1.000 vale um valor fixo (loja começando). Acima disso, cada percentual vale só pro pedaço do faturamento dentro da faixa (como imposto de renda), então vender mais nunca diminui a verba — e o teto nunca passa de metade do lucro dos últimos 30 dias (já sem custo de produção e taxas), sem cair abaixo do valor fixo. É teto, não meta: quem decide aumentar é o lucro de cada produto." />
       </h3>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
               <th>Faixa do faturamento (30 dias)</th>
-              <th className="num">% desse pedaço</th>
+              <th className="num">Quanto pode</th>
               <th>Fase</th>
             </tr>
           </thead>
@@ -707,7 +708,15 @@ function TabelaTeto({ regrasA, T, salvando, onSalvar }) {
                 <tr key={i} className={atual ? "linha-sel" : undefined}>
                   <td>{fim == null ? `acima de ${BRL(ini)}` : ini === 0 ? `até ${BRL(fim)}` : `${BRL(ini)} a ${BRL(fim)}`}{atual ? " ← você está aqui" : ""}</td>
                   <td className="num">
-                    <input type="text" inputMode="decimal" style={{ width: 70, textAlign: "right" }} value={x.pct} onChange={(e) => setEdit(lista.map((y, j) => (j === i ? { ...y, pct: e.target.value } : y)))} />%
+                    {x.fixo != null ? (
+                      <>
+                        R$ <input type="text" inputMode="decimal" style={{ width: 70, textAlign: "right" }} value={x.fixo} onChange={(e) => setEdit(lista.map((y, j) => (j === i ? { ...y, fixo: e.target.value } : y)))} /> fixo
+                      </>
+                    ) : (
+                      <>
+                        <input type="text" inputMode="decimal" style={{ width: 70, textAlign: "right" }} value={x.pct} onChange={(e) => setEdit(lista.map((y, j) => (j === i ? { ...y, pct: e.target.value } : y)))} />% do pedaço
+                      </>
+                    )}
                   </td>
                   <td className="muted-cel">{faseDaLoja(fim ?? ini + 1)}</td>
                 </tr>
@@ -717,12 +726,12 @@ function TabelaTeto({ regrasA, T, salvando, onSalvar }) {
         </table>
       </div>
       <div className="pad-painel">
-        Últimos 30 dias: faturamento {BRL(T.faturamento)} · pela tabela {BRL(tetoTabela)} · metade do lucro {BRL(T.pelaTrava)} → <b>teto {BRL(Math.min(tetoTabela, T.pelaTrava))}</b> · gasto {BRL(T.gasto)}
+        Últimos 30 dias: faturamento {BRL(T.faturamento)} · pela tabela {BRL(tetoTabela)} · metade do lucro {BRL(T.pelaTrava)} → <b>teto {BRL(T.teto)}</b> · gasto {BRL(T.gasto)}
         {edit && (
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <button type="button" className="btn btn-mini primary" disabled={salvando} onClick={() => onSalvar(comoNum)}>{salvando ? "Salvando…" : "Salvar tabela"}</button>
             <button type="button" className="btn btn-mini" onClick={() => setEdit(null)}>Cancelar</button>
-            <button type="button" className="link-btn" onClick={() => setEdit(REGRAS_ADS.faixasTeto.map((y) => ({ ...y, pct: String(Math.round(y.pct * 1000) / 10).replace(".", ",") })))}>voltar ao padrão</button>
+            <button type="button" className="link-btn" onClick={() => setEdit(paraEdit(REGRAS_ADS.faixasTeto))}>voltar ao padrão</button>
           </div>
         )}
       </div>

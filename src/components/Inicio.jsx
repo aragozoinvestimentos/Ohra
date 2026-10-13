@@ -1,3 +1,6 @@
+import { vendasDoMes, saldoReserva } from "../lib/vendasMes.js";
+import { useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
+import { useReservaProducao } from "../hooks/useReservaProducao.js";
 import { revisoesPrecoDireto } from "../lib/revisarPreco.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLembretes } from "../hooks/useLembretes.js";
@@ -19,7 +22,6 @@ import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { sugestoesAfiliado, vendasPorOrigem } from "../lib/afiliados.js";
 import { calcTaxaFalhaAtual, TAXA_FALHA_PRIOR_PCT } from "../lib/registroImpressao.js";
-import { reservaDoItem } from "../lib/calc.js";
 import { AREAS_PENDENCIA, GRUPOS_PENDENCIA, areaPendencia, montarPendencias, statusInicio } from "../lib/inicio.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -112,6 +114,9 @@ export default function Inicio({ onIrPara, onToast }) {
   const { lojaId } = useLoja();
   const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf, linhasAds, calendario } = useCrescimento();
   const campanhaProx = useMemo(() => proximaCampanha(calendario, hoje), [calendario, hoje]);
+  const organicasH = useVendasOrganicas();
+  const reservaH = useReservaProducao();
+  const cfgDoProduto = dados.cfgDoProduto;
   // Lembrete de temporada (Quando vende = pico/época): 60 dias antes da data.
   const temporadas = useMemo(
     () =>
@@ -120,7 +125,7 @@ export default function Inicio({ onIrPara, onToast }) {
         .filter((x) => x.info?.lembrete),
     [dados.produtos, calendario, hoje]
   );
-  const { itens, canais, precos, produtos, kits, materiais, publicacoesCanal, mapaRampa, clientePagaHoje, alertaDe, pareceAtracaoDe, cobraNoCanal } = dados;
+  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, alertaDe, pareceAtracaoDe, cobraNoCanal } = dados;
   // Itens de anúncio com vários itens (Ficha etapa 2) contam como anunciados.
   const { grupos: gruposAnuncio } = useAnunciosGrupo();
   const mapaGrupos = useMemo(() => gruposPorItem(gruposAnuncio), [gruposAnuncio]);
@@ -237,31 +242,14 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- Produção ---
   const taxa = useMemo(() => (gestao.impressoes.length ? calcTaxaFalhaAtual(gestao.impressoes) : null), [gestao.impressoes]);
-  // Reserva do mês ≈ vendas registradas no Crescimento neste mês × reserva de cada item.
+  // Repor a produção do mês = a MESMA conta da Reserva de produção do Fluxo de
+  // Caixa (Vendas do mês, lib/vendasMes.js) + o saldo da reserva (v51).
   const reservaMes = useMemo(() => {
-    const mes = mesDe(hoje);
-    let total = 0;
-    let pecas = 0;
-    for (const g of rampasH.registros) {
-      if (g.tipo !== "semana" || mesDe(g.data) !== mes) continue;
-      const r = rampasH.rampas.find((x) => x.id === g.rampa_id);
-      const res = r ? reservaDoItem(itens.find((i) => i.id === `p:${r.produto_id}`), produtos, materiais) : null;
-      if (res) {
-        total += res.total * (Number(g.vendas) || 0);
-        pecas += Number(g.vendas) || 0;
-      }
-    }
-    for (const g of af.registros) {
-      if (g.vendas_total == null || mesDe(g.data) !== mes) continue;
-      const pre = { produto: "p", variacao: "v", kit: "k" }[g.item_tipo];
-      const res = reservaDoItem(itens.find((i) => i.id === `${pre}:${g.item_id}`), produtos, materiais);
-      if (res) {
-        total += res.total * (Number(g.vendas_total) || 0);
-        pecas += Number(g.vendas_total) || 0;
-      }
-    }
-    return pecas > 0 ? { total, pecas } : null;
-  }, [rampasH.registros, rampasH.rampas, af.registros, itens, produtos, materiais, hoje]);
+    const v = vendasDoMes({ mes: mesDe(hoje), rampas: rampasH.rampas, rampaRegistros: rampasH.registros, afRegistros: af.registros, organicas: organicasH.registros, itens, canais, cfgDoProduto });
+    if (!v.total.unidades) return null;
+    const res = saldoReserva(reservaH.registros);
+    return { repor: v.total.repor, unidades: v.total.unidades, saldo: res.saldo, separado: res.porMes.get(mesDe(hoje)) || 0, temReserva: reservaH.disponivel };
+  }, [hoje, rampasH.rampas, rampasH.registros, af.registros, organicasH.registros, itens, canais, cfgDoProduto, reservaH.registros, reservaH.disponivel]);
 
   // --- Pra fazer + status ---
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
@@ -667,9 +655,11 @@ export default function Inicio({ onIrPara, onToast }) {
           itens={[
             { label: "Taxa de falha", valor: taxa ? PCT(taxa.taxa) : "—", sub: taxa ? `${taxa.falhas} falhas em ${taxa.total} impressões · referência 12,5%` : "registre impressões" },
             {
-              label: "Reserva do mês",
-              valor: reservaMes ? BRL(reservaMes.total) : "—",
-              sub: reservaMes ? `≈ ${reservaMes.pecas} vendas registradas no Crescimento` : "aparece com as vendas registradas",
+              label: "Repor a produção do mês",
+              valor: reservaMes ? BRL(reservaMes.repor) : "—",
+              sub: reservaMes
+                ? `${reservaMes.unidades} un. vendidas${reservaMes.temReserva ? ` · separado ${BRL(reservaMes.separado)} · reserva ${BRL(reservaMes.saldo)}` : ""}`
+                : "aparece com as vendas do mês (Fluxo de Caixa → Vendas do mês)",
             },
           ]}
         />

@@ -54,7 +54,7 @@ export const REGRAS_ADS = {
   // 30 dias — cada % vale só pro pedaço da faixa (como imposto de renda) — e
   // NUNCA mais que travaLucro × o lucro dos últimos 30 dias.
   faixasTeto: [
-    { ate: 1000, pct: 0.15 },
+    { ate: 1000, fixo: 150 }, // até R$ 1.000: valor FIXO (decisão do Gustavo: loja começando, R$ 150/mês mesmo vendendo pouco)
     { ate: 3000, pct: 0.12 },
     { ate: 5000, pct: 0.1 },
     { ate: 10000, pct: 0.08 },
@@ -71,23 +71,28 @@ export const REGRAS_ADS = {
 export function faseDaLoja(faturamento) {
   return faturamento <= 5000 ? "Alavancado" : faturamento <= 60000 ? "Mediano" : "Conservador";
 }
-// Teto do mês pelas faixas (cada % sobre o pedaço dentro da faixa).
+// Teto do mês pelas faixas (cada % sobre o pedaço dentro da faixa; faixa com
+// `fixo` vale aquele valor em R$ inteiro, mesmo sem faturar).
 export function tetoPorFaixas(faturamento, faixas = REGRAS_ADS.faixasTeto) {
   let total = 0;
   let de = 0;
   for (const f of faixas) {
     const ate = f.ate == null ? Infinity : num(f.ate);
-    if (faturamento <= de) break;
-    total += (Math.min(faturamento, ate) - de) * num(f.pct);
+    if (f.fixo != null) total += num(f.fixo);
+    else if (faturamento > de) total += (Math.min(faturamento, ate) - de) * num(f.pct);
     de = ate;
+    if (faturamento <= de) break;
   }
   return Math.round(total * 100) / 100;
 }
+// Valor fixo mínimo (a faixa com `fixo`, se houver) — a trava do lucro não corta abaixo dele.
+const fixoDasFaixas = (faixas) => (faixas || []).filter((f) => f.fixo != null).reduce((t, f) => t + num(f.fixo), 0);
 // Teto de Ads da loja: { faturamento, lucro, gasto (30 dias), fase, pelaTabela, pelaTrava, teto, pct, acimaTeto, passaria(extraNoMes) }.
 export function tetoDaLoja({ faturamento = 0, lucro = 0, gasto = 0, regras = REGRAS_ADS }) {
   const pelaTabela = tetoPorFaixas(faturamento, regras.faixasTeto || REGRAS_ADS.faixasTeto);
   const pelaTrava = Math.max(0, num(regras.travaLucro) * lucro);
-  const teto = Math.min(pelaTabela, pelaTrava);
+  const fixo = fixoDasFaixas(regras.faixasTeto || REGRAS_ADS.faixasTeto);
+  const teto = Math.max(fixo, Math.min(pelaTabela, pelaTrava));
   return {
     faturamento,
     lucro,
@@ -96,7 +101,7 @@ export function tetoDaLoja({ faturamento = 0, lucro = 0, gasto = 0, regras = REG
     pelaTabela,
     pelaTrava,
     teto,
-    limitadoPelaTrava: pelaTrava < pelaTabela - 0.005,
+    limitadoPelaTrava: pelaTrava < pelaTabela - 0.005 && teto > fixo + 0.005,
     pct: faturamento > 0 ? gasto / faturamento : null,
     acimaTeto: faturamento > 0 && gasto > teto + 0.005,
     passaria: (extraMes) => faturamento > 0 && gasto + extraMes > teto,

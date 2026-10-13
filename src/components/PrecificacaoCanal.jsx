@@ -1000,8 +1000,8 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
           {reserva && reserva.total > 0 && (
             <div className="kv reserva-linha">
               <span className="k">
-                Reserva de produção (já no custo)
-                <Ajuda texto="Falhas + manutenção + acabamento, calculados no Custo de Produção e já incluídos no custo total — não é lucro e não muda o preço. É o valor por venda pra separar num fundo no fechamento do mês (lote perdido, peças da impressora, lixa/tinta). Se sobrar mês após mês, dá pra baixar o % de falhas no Custo de Produção." />
+                Falhas + manutenção + acabamento (já no custo)
+                <Ajuda texto="Parte do “repor o produto”: falhas, manutenção e acabamento, calculados no Custo de Produção e já incluídos no custo total — não é lucro e não muda o preço. Todo o “repor” das vendas vai pra Reserva de produção (Fluxo de Caixa → Vendas do mês). Se sobrar mês após mês, dá pra baixar o % de falhas no Custo de Produção." />
               </span>
               <span className="v">{BRL(reserva.total)}</span>
             </div>

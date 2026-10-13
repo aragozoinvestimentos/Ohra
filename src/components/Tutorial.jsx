@@ -244,8 +244,8 @@ const ETAPAS = [
       },
       {
         icone: "🏆",
-        nome: "Ranking e Importar vendas",
-        texto: "Ranking: itens por lucro (salvo ou estimado). Importar vendas: em construção (relatório da Olist).",
+        nome: "Ranking e Vendas do mês",
+        texto: "Ranking: itens por lucro (no preço de agora, ou estimado). Vendas do mês (Fluxo de Caixa → 3): vendas, quanto recebe, quanto repor e o lucro do mês, com a Reserva de produção.",
       },
     ],
   },
