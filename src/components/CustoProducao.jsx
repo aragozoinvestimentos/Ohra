@@ -382,7 +382,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
                     </option>
                   ))}
                 </select>
-                {maquinaSel && <div className="hint" style={{ marginTop: 4 }}>{BRL(maquinaSel.custoHora)}/h (máquina, energia e manutenção) — valores em Gestão → Minha farm.</div>}
+                {maquinaSel && <div className="hint" style={{ marginTop: 4 }}>{BRL(maquinaSel.custoHora)}/h (máquina, energia e manutenção) — valores em Produção → Minha farm.</div>}
               </div>
             ) : (
               <>
@@ -430,7 +430,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         <div className="panel">
           <h3 className="section-title">
             {usaFarm ? "Modelagem" : "Retorno de investimento na máquina"}
-            <Ajuda texto={usaFarm ? "O custo da máquina (valor pago ÷ vida útil), energia e manutenção por hora vêm da impressora escolhida, em Gestão → Minha farm. Modelagem é só se você pagou por um modelo 3D pronto." : "Rateia o valor da impressora entre as peças que ela vai produzir até você 'reaver' o investimento no prazo desejado. Quanto mais horas por dia/dias por mês a máquina roda, menor esse custo por peça — e quanto mais rápido você quer pagar a máquina, maior. Modelagem é só se você pagou por um modelo 3D pronto."} />
+            <Ajuda texto={usaFarm ? "O custo da máquina (valor pago ÷ vida útil), energia e manutenção por hora vêm da impressora escolhida, em Produção → Minha farm. Modelagem é só se você pagou por um modelo 3D pronto." : "Rateia o valor da impressora entre as peças que ela vai produzir até você 'reaver' o investimento no prazo desejado. Quanto mais horas por dia/dias por mês a máquina roda, menor esse custo por peça — e quanto mais rápido você quer pagar a máquina, maior. Modelagem é só se você pagou por um modelo 3D pronto."} />
           </h3>
           {!usaFarm && (
             <>

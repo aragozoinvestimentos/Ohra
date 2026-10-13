@@ -19,7 +19,7 @@ import CanalTag from "./CanalTag.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 
-// Gestão → Minha farm (schema v47): impressoras + config da farm, num lugar
+// Produção → Minha farm (schema v47): impressoras + config da farm, num lugar
 // só. O custo da máquina em todos os produtos vem daqui (lib/farm.js →
 // produto._maquina). Salvar algo que muda custo NUNCA mexe em preço salvo,
 // riscado ou promo: compara antes × depois (lib/farmImpacto.js) e, se algum

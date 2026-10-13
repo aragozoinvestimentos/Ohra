@@ -1,3 +1,4 @@
+import { useSubAba } from "../lib/subAbas.js";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -33,7 +34,6 @@ import Estado from "./Estado.jsx";
 import VendasMes from "./VendasMes.jsx";
 import { recarregarReserva, useReservaProducao } from "../hooks/useReservaProducao.js";
 import { saldoReserva } from "../lib/vendasMes.js";
-import { useLembrado } from "../hooks/useLembrado.js";
 
 const IGNORAR_COMPRA_KEY = "ohra:caixa:ignorar-compra";
 
@@ -118,8 +118,7 @@ export default function FluxoCaixa({ onToast }) {
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [horizonte, setHorizonte] = useState(12);
   const [estimativas, setEstimativas] = useState(() => loadEstimativas(lojaId));
-  const [subLembrada, setSub] = useLembrado("ohra:caixa:sub", "caixa");
-  const sub = SUBABAS_CAIXA.some((x) => x.key === subLembrada) ? subLembrada : "caixa";
+  const [sub] = useSubAba("ohra:caixa:sub", "caixa", SUBABAS_CAIXA.map((x) => x.key));
   const [verConfig, setVerConfig] = useState(false);
   const reserva = useReservaProducao();
   const saldoDaReserva = useMemo(() => saldoReserva(reserva.registros).saldo, [reserva.registros]);
@@ -526,14 +525,6 @@ export default function FluxoCaixa({ onToast }) {
       </TopbarAcoes>
 
       <div className="caixa-cabecalho">
-        <div className="subabas">
-          {SUBABAS_CAIXA.map((x) => (
-            <button key={x.key} type="button" className={`btn${sub === x.key ? " primary" : ""}`} onClick={() => setSub(x.key)}>
-              {x.label}
-              {x.key === "contas" && parcelamentos.length + modelos.length > 0 ? <span className="h3-contagem">{parcelamentos.length + modelos.length}</span> : null}
-            </button>
-          ))}
-        </div>
         {sub !== "contas" && seletorMes}
       </div>
 

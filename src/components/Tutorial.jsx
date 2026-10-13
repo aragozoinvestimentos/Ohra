@@ -128,7 +128,7 @@ const ETAPAS = [
     ],
   },
   {
-    titulo: "1 · Produto",
+    titulo: "Produtos",
     intro: "Cadastre o que se repete e calcule o custo — o app usa em tudo, sempre com o preço atual (“ao vivo”).",
     passos: [
       {
@@ -162,8 +162,8 @@ const ETAPAS = [
     ],
   },
   {
-    titulo: "2 · Preço e anúncio",
-    intro: "Precificação por Canal tem as sub-abas na ordem de uso (1º a 5º): preço da unidade → por quantidade → ficha → lançamento → anunciar.",
+    titulo: "Preços",
+    intro: "No topo de Preços ficam os Produtos precificados e os passos na ordem de uso (1º a 5º): preço da unidade → por quantidade → ficha → lançamento → anunciar. Depois vêm Comparar canais e Orçamento.",
     passos: [
       {
         icone: "🏷️",
@@ -195,8 +195,8 @@ const ETAPAS = [
     ],
   },
   {
-    titulo: "3 · Vender e crescer",
-    intro: "O crescimento no orgânico, promoções e orçamentos.",
+    titulo: "Crescimento",
+    intro: "Rampa de preço no orgânico, Ads, afiliados e promoções.",
     passos: [
       {
         icone: "📈",
@@ -217,8 +217,8 @@ const ETAPAS = [
     ],
   },
   {
-    titulo: "4 · Produção",
-    intro: "Falhas e capacidade.",
+    titulo: "Produção",
+    intro: "Falhas, capacidade e as impressoras (Minha farm).",
     passos: [
       {
         icone: "🖨️",
@@ -228,8 +228,8 @@ const ETAPAS = [
     ],
   },
   {
-    titulo: "5 · Gestão",
-    intro: "O dinheiro de verdade e onde focar.",
+    titulo: "Dinheiro",
+    intro: "Caixa, contas, vendas do mês, metas e onde focar.",
     passos: [
       {
         icone: "💵",
@@ -286,9 +286,9 @@ export default function Tutorial() {
       <div className="panel">
         <h3>Como usar o Ohra</h3>
         <p style={{ margin: "0 0 4px", fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.6 }}>
-          O menu lateral segue a jornada de um produto: Início, 1 · Produto (cadastros e custo), 2 · Preço e anúncio,
-          3 · Vender e crescer, 4 · Produção e 5 · Gestão. Na primeira vez, comece pela Configuração (loja e canais),
-          depois siga os números do menu. Abaixo vai
+          O menu tem 7 itens: Início, Produtos (cadastros e custo), Preços, Crescimento, Produção, Dinheiro e
+          Configuração — as telas de cada um ficam no topo, embaixo do título. Na primeira vez, comece pela
+          Configuração (loja e canais), depois Produtos e Preços. Abaixo vai
           um passo a passo rápido de cada etapa — o checklist acima já mostra, na prática, onde você está nessa
           cadeia agora.
         </p>

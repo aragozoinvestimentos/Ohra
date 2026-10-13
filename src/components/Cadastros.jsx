@@ -1,20 +1,15 @@
 import { useEffect, useState } from "react";
+import { useSubAba } from "../lib/subAbas.js";
 import Materiais from "./Materiais.jsx";
 import Embalagens from "./Embalagens.jsx";
 import Produtos from "./Produtos.jsx";
 import Kits from "./Kits.jsx";
 import CatalogoLista from "./CatalogoLista.jsx";
 
-const SUBABAS = [
-  { key: "catalogo", label: "Catálogo" },
-  { key: "materiais", label: "Materiais (Fabricação)" },
-  { key: "embalagens", label: "Embalagens" },
-  { key: "produtos", label: "Produtos" },
-  { key: "kits", label: "Kits" },
-];
+// Sub-abas (Catálogo, Produtos, Kits, Materiais, Embalagens) ficam no cabeçalho do App (lib/subAbas.js).
 
 export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdutoCriado }) {
-  const [sub, setSub] = useState("catalogo");
+  const [sub, setSub] = useSubAba("ohra:cadastros-sub", "catalogo", ["catalogo", "materiais", "embalagens", "produtos", "kits"]);
   // "✎ editar cadastro" vindo do Catálogo (mesmo caminho do "Editar completo").
   const [abrirLocal, setAbrirLocal] = useState(null);
 
@@ -51,18 +46,6 @@ export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdu
 
   return (
     <div>
-      <div className="subabas">
-        {SUBABAS.map((s) => (
-          <button
-            key={s.key}
-            className={`btn${sub === s.key ? " primary" : ""}`}
-            onClick={() => setSub(s.key)}
-            style={{ flex: "none" }}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
 
       {sub === "catalogo" && <CatalogoLista onEditar={editarDoCatalogo} onToast={onToast} />}
       {sub === "materiais" && <Materiais onToast={onToast} />}

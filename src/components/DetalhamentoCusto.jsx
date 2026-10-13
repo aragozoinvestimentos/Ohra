@@ -100,7 +100,7 @@ export default function DetalhamentoCusto({
           </select>
           {maquina && (
             <div className="hint" style={{ marginTop: 4 }}>
-              {BRL(maquina.custoHora)}/h de impressão (máquina, energia e manutenção) — valores em Gestão → Minha farm.
+              {BRL(maquina.custoHora)}/h de impressão (máquina, energia e manutenção) — valores em Produção → Minha farm.
             </div>
           )}
         </div>

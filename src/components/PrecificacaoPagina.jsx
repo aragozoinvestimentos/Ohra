@@ -5,7 +5,6 @@ import Comparativo from "./Comparativo.jsx";
 import Publicar from "./Publicar.jsx";
 import FichaAnuncio from "./FichaAnuncio.jsx";
 import Lancamento from "./Lancamento.jsx";
-import { PASSOS } from "../lib/passosPreco.js";
 
 // Precificação por Canal: sub-abas NUMERADAS na ordem de preenchimento
 // (1º preço da unidade → 2º preço por volume → 3º montar o anúncio → 4º
@@ -13,20 +12,12 @@ import { PASSOS } from "../lib/passosPreco.js";
 // canais" separada no fim (consulta, não etapa). Todas ficam montadas (só
 // escondidas) pra não perder o que foi digitado ao trocar de sub-aba. Rodapé
 // "Próximo →" (ProximoPasso) leva produto e canal de um passo pro outro.
-const SUBABAS = [...PASSOS, { key: "comparar", label: "Comparar canais", separada: true }];
+// As sub-abas ficam no cabeçalho do App (menu Preços, out/2026).
 
 export default function PrecificacaoPagina({ sub, onSub, ativo, custoRecebido, produtoParaSelecionar, onToast }) {
   const { lojaId } = useLoja();
   return (
     <div>
-      <div className="subabas">
-        {SUBABAS.map((s) => (
-          <button key={s.key} type="button" data-sub={s.key} className={`btn${sub === s.key ? " primary" : ""}${s.separada ? " subaba-separada" : ""}`} onClick={() => onSub(s.key)}>
-            {s.ordem && <span className="subaba-ordem">{s.ordem}</span>}
-            {s.label}
-          </button>
-        ))}
-      </div>
       <div hidden={sub !== "avulso"} data-subview="avulso">
         <PrecificacaoCanal ativo={ativo && sub === "avulso"} custoRecebido={custoRecebido} produtoParaSelecionar={produtoParaSelecionar} onToast={onToast} onSub={onSub} />
       </div>

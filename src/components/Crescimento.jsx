@@ -1,3 +1,4 @@
+import { trocarSubAba, useSubAba } from "../lib/subAbas.js";
 import { canalDireto } from "../lib/canais.js";
 import { useEffect, useMemo, useState } from "react";
 import { alertaPreco } from "../lib/estrategia.js";
@@ -77,23 +78,11 @@ function Copiavel({ valor, texto }) {
   );
 }
 
-const SUBABAS_CRESC = [
-  { key: "rampa", label: "Rampa de preço" },
-  { key: "ads", label: "Ads" },
-  { key: "afiliados", label: "Afiliados" },
-];
-const lerSub = () => {
-  try {
-    const v = localStorage.getItem("ohra:crescimento-sub");
-    return v === "afiliados" || v === "ads" ? v : "rampa";
-  } catch {
-    return "rampa";
-  }
-};
+// Sub-aba (Rampa de preço / Ads / Afiliados) fica no cabeçalho do App (lib/subAbas.js).
 
 export default function Crescimento({ onToast }) {
   const { dados, rampasH, af, regras, hoje, linhas, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds } = useCrescimento();
-  const [sub, setSub] = useState(lerSub);
+  const [sub, setSub] = useSubAba("ohra:crescimento-sub", "rampa", ["rampa", "ads", "afiliados"]);
   const [semanaAberta, setSemanaAberta] = useState(false);
   const [selId, setSelId] = useState(null); // rampa aberta no Detalhe
 
@@ -101,7 +90,7 @@ export default function Crescimento({ onToast }) {
   useEffect(() => {
     const aplicar = (p) => {
       if (!p) return;
-      if (p.sub) trocarSub(p.sub);
+      if (p.sub) trocarSubAba("ohra:crescimento-sub", p.sub);
       if (p.rampaId) setSelId(p.rampaId);
       if (p.registrar) setSemanaAberta(true);
     };
@@ -111,14 +100,6 @@ export default function Crescimento({ onToast }) {
     return () => window.removeEventListener("ohra:ir-para", ouvir);
   }, []);
 
-  function trocarSub(k) {
-    setSub(k);
-    try {
-      localStorage.setItem("ohra:crescimento-sub", k);
-    } catch {
-      // sem localStorage — só não lembra
-    }
-  }
 
   const podeRegistrar = linhas.length > 0 || linhasAf.some((l) => l.conf.ativo) || linhasAds.linhas.some((l) => l.av.ativo);
 
@@ -126,18 +107,11 @@ export default function Crescimento({ onToast }) {
     <>
       <OndeSeDecide />
       <SemanaPendenteFaixa onRegistrar={() => podeRegistrar && setSemanaAberta(true)} />
-      <div className="subabas">
-        {SUBABAS_CRESC.map((s) => (
-          <button key={s.key} type="button" data-sub={s.key} className={`btn${sub === s.key ? " primary" : ""}`} onClick={() => trocarSub(s.key)}>
-            {s.label}
-          </button>
-        ))}
-      </div>
       {sub === "rampa" ? (
         <RampaPreco
           dados={dados}
           linhasAds={linhasAds}
-          onVerAds={() => trocarSub("ads")}
+          onVerAds={() => setSub("ads")}
           rampasH={rampasH}
           regras={regras}
           linhas={linhas}

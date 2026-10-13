@@ -5,18 +5,18 @@
    viram 1 coluna, tabelas rolam de lado).
    ========================================================================== */
 :root {
-  --bg: #f6f5f2;
+  --bg: #f4f4f2;
   --surface: #ffffff;
-  --surface-2: #f2f0eb;
-  --surface-3: #faf9f6;
-  --border: #e8e5de;
-  --border-strong: #d8d4ca;
-  --ink: #1b1a17;
-  --ink-soft: #5d5a53;
-  --ink-faint: #99958c;
-  --accent: #b8743f;
-  --accent-soft: #f6ebe1;
-  --accent-ink: #7a4520;
+  --surface-2: #f2f1ee;
+  --surface-3: #fafaf8;
+  --border: #e6e4df;
+  --border-strong: #d4d1ca;
+  --ink: #18171a;
+  --ink-soft: #5b5a5e;
+  --ink-faint: #8f8e93;
+  --accent: #d2622b;
+  --accent-soft: #fdeee5;
+  --accent-ink: #a8431a;
   --accent2: #b0503f;
   --accent2-soft: #f7e6e2;
   /* Cinco estados com regra única (lib/estados.js, <Estado>): a cor do texto
@@ -38,33 +38,34 @@
   --bad-soft: var(--st-resolver-soft);
   --warn: var(--st-atencao);
   --warn-soft: var(--st-atencao-soft);
-  --side: #15140f;
-  --side-2: #201e19;
-  --side-3: #2a2721;
-  --side-line: #2b2923;
-  --side-ink: #cfcac0;
-  --side-ink-2: #7f7a70;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(20, 18, 12, 0.04), 0 4px 14px rgba(20, 18, 12, 0.04);
+  --side: #ffffff;
+  --side-2: #f4f3f0;
+  --side-3: #fdeee5;
+  --side-line: #ecebe7;
+  --side-ink: #3d3c40;
+  --side-ink-2: #9b9a9e;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(24, 23, 26, 0.04);
   --shadow-pop: 0 4px 10px rgba(20, 18, 12, 0.08), 0 16px 40px rgba(20, 18, 12, 0.12);
   --logo-filter: none;
+  --side-ativo: #a8431a;
   color-scheme: light;
 }
 /* O tema não muda sozinho pelo sistema — só pelo botão da barra lateral,
    que aplica data-theme="dark" na tag <html>. Padrão é sempre claro. */
 :root[data-theme="dark"] {
-  --bg: #0f0e0c;
-  --surface: #171613;
-  --surface-2: #1f1d19;
-  --surface-3: #1b1a16;
-  --border: #2a2823;
-  --border-strong: #3a372f;
-  --ink: #f1ede6;
-  --ink-soft: #b3aea4;
-  --ink-faint: #7c776d;
-  --accent: #d69361;
-  --accent-soft: #2e2219;
-  --accent-ink: #efb98f;
+  --bg: #111113;
+  --surface: #19191c;
+  --surface-2: #222226;
+  --surface-3: #1d1d20;
+  --border: #2a2a2f;
+  --border-strong: #3a3a40;
+  --ink: #f2f1ee;
+  --ink-soft: #b1b0b5;
+  --ink-faint: #7f7e84;
+  --accent: #f08a52;
+  --accent-soft: #33221a;
+  --accent-ink: #f6a97c;
   --accent2: #d9806f;
   --accent2-soft: #2f1c18;
   --st-resolver: #f08a7e;
@@ -76,14 +77,17 @@
   --st-decisao: #e5a675;
   --st-decisao-soft: #2e2219;
   --st-info: #a7a298;
-  --st-info-soft: #24221d;
-  --side: #0a0908;
-  --side-2: #161512;
-  --side-3: #211f1a;
-  --side-line: #222019;
+  --st-info-soft: #26241f;
+  --side: #0c0c0e;
+  --side-2: #1a1a1d;
+  --side-3: #2b1d16;
+  --side-line: #1f1f23;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
   --shadow-pop: 0 4px 10px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5);
   --logo-filter: invert(1);
+  --side-ink: #cfced3;
+  --side-ink-2: #6c6b71;
+  --side-ativo: #f6a97c;
   color-scheme: dark;
 }
 
@@ -92,7 +96,7 @@ html, body, #root { margin: 0; padding: 0; }
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 13.5px;
   line-height: 1.45;
   font-feature-settings: "tnum" 1, "cv11" 1;
@@ -884,7 +888,7 @@ th .canal-tag { font-size: 11px; }
 :root { --topbar-h: 61px; }
 .resumo-sentinela { height: 0; }
 @media (min-width: 1101px) {
-  .resumo-fixo { position: sticky; top: var(--topbar-h); z-index: 12; margin: 0 -28px; padding: 0 28px; background: var(--bg); transition: box-shadow 0.15s; }
+  .resumo-fixo { position: sticky; top: var(--topbar-h); z-index: 12; margin: 0 -20px; padding: 0 20px; background: var(--bg); transition: box-shadow 0.15s; }
   .resumo-fixo.grudado { padding-top: 8px; padding-bottom: 8px; margin-bottom: 12px; box-shadow: 0 6px 12px -8px rgba(20, 18, 12, 0.18); border-bottom: 1px solid var(--border); }
   .resumo-fixo.grudado .kpis { margin-bottom: 0; }
   .resumo-fixo.grudado .kpi { padding: 7px 12px; box-shadow: none; }
@@ -1763,3 +1767,71 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .reserva-acoes .link-btn { margin: 0; }
 tr.linha-total td { font-weight: 700; border-top: 2px solid var(--border); background: var(--surface-2); }
 @media (max-width: 760px) { .reserva-acoes { margin-left: 0; } .seletor-mes select { min-width: 0; } }
+
+/* ==========================================================================
+   Tema Ohra (out/2026, aprovado pelo protótipo): menu lateral claro com o
+   item ativo em terracota, letra Manrope, títulos e números mais firmes,
+   sub-abas de cada item do menu no cabeçalho (.topbar-abas). No escuro a
+   barra lateral fica grafite (tokens --side-* do [data-theme="dark"]).
+   ========================================================================== */
+.sidebar { border-right: 1px solid var(--side-line); width: 232px; padding: 18px 12px 12px; }
+.sidebar-brand .brand-logo { filter: var(--logo-filter); }
+.sidebar-brand .word { color: var(--ink); font-weight: 600; }
+.sidebar .loja-icone-letra { background: var(--accent); color: #fff; }
+.loja-atual { background: var(--surface); border-color: var(--border); color: var(--ink); border-radius: 10px; padding: 7px 9px; }
+.loja-atual-nome { font-weight: 650; }
+.loja-dropdown { background: var(--surface); border-color: var(--border); }
+.loja-opcao { color: var(--ink-soft); }
+.loja-opcao:hover, .loja-opcao.ativa { background: var(--accent-soft); color: var(--side-ativo); }
+.side-nav-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; padding: 14px 10px 6px; }
+.side-nav-espaco { height: 14px; }
+.side-nav button { padding: 8px 10px; border-radius: 9px; font-weight: 550; font-size: 13.5px; }
+.side-nav button:hover { background: var(--side-2); color: var(--ink); }
+.side-nav button.active { background: var(--side-3); color: var(--side-ativo); box-shadow: none; font-weight: 700; }
+.side-nav button.active .icone { color: var(--accent); }
+.sidebar-foot-link:hover, .sidebar-foot-link.active { color: var(--ink); background: var(--side-2); }
+.sidebar-foot-btn:hover { color: var(--ink); }
+.bolinha-menu.bolinha-urgente { background: var(--st-resolver); }
+
+.topbar { flex-wrap: wrap; row-gap: 0; padding: 12px 24px 0; background: color-mix(in oklab, var(--bg) 86%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+.topbar-titulo, .topbar-sub, .topbar-legenda, .topbar-acoes, .menu-toggle { margin-bottom: 10px; }
+.topbar h1 { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+.topbar-crumb { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: var(--accent); }
+.topbar-abas { flex: 1 0 100%; display: flex; align-items: center; gap: 2px; padding: 0 0 8px; overflow-x: auto; scrollbar-width: none; }
+.topbar-abas::-webkit-scrollbar { display: none; }
+.topbar-abas button { flex: none; border: 0; background: none; padding: 5px 11px; border-radius: 8px; font-weight: 600; font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
+.topbar-abas button:hover { background: var(--surface-2); color: var(--ink); }
+.topbar-abas button.ativo { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(0, 0, 0, 0.05); }
+.topbar-abas-ordem { color: var(--ink-faint); margin-right: 4px; font-weight: 700; }
+.topbar-abas button.ativo .topbar-abas-ordem { color: var(--accent); }
+.topbar-abas-sep { flex: none; width: 1px; height: 18px; background: var(--border); margin: 0 6px; }
+
+.panel { box-shadow: var(--shadow); border-radius: 14px; }
+.panel > h3:first-child { border-bottom: 0; font-size: 14.5px; font-weight: 700; letter-spacing: -0.01em; padding-top: 11px; min-height: 0; }
+.kpi { border-radius: 14px; padding: 10px 14px; }
+.kpi .v { font-size: 23px; font-weight: 750; letter-spacing: -0.03em; }
+th { background: var(--surface); color: var(--ink-faint); font-size: 10.5px; font-weight: 700; border-bottom: 1px solid var(--border); }
+td { border-bottom-color: color-mix(in oklab, var(--border) 70%, transparent); }
+.btn { border-radius: 9px; font-weight: 600; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); color: #fff; }
+:root[data-theme="dark"] .btn.primary { color: #1a0f08; }
+:root[data-theme="dark"] .btn.primary:hover { color: #1a0f08; }
+.subabas { border-radius: 11px; border-color: transparent; }
+.subabas .btn { border-radius: 8px; }
+.inicio-card { border-radius: 14px; padding: 12px 16px; }
+.inicio-card.bad, .inicio-card.warn { border-left: 1px solid var(--border); }
+.inicio-card.bad { background: linear-gradient(180deg, var(--st-resolver-soft), var(--surface) 75%); }
+.inicio-card.warn { background: linear-gradient(180deg, var(--st-atencao-soft), var(--surface) 75%); }
+.inicio-card-frase { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.inicio-item { border-radius: 11px; }
+.chip-cel { border-radius: 999px; }
+
+@media (max-width: 760px) {
+  .topbar { padding: 10px 14px 0; }
+  .topbar h1 { font-size: 19px; }
+}
+@media (max-width: 760px) {
+  /* título nunca some atrás dos botões: os botões descem pra linha de baixo */
+  .topbar-titulo { min-width: 150px; }
+}

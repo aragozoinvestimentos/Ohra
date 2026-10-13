@@ -1,3 +1,5 @@
+import { PASSOS } from "./lib/passosPreco.js";
+import { trocarSubAba, useSubAba } from "./lib/subAbas.js";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { assinarUrgentes, lerUrgentes } from "./lib/urgentes.js";
 import logo from "./assets/logo.png";
@@ -70,65 +72,122 @@ function loadTheme() {
   return "light";
 }
 
-// A barra lateral segue a JORNADA (out/2026): Início, 1 Produto, 2 Preço e
-// anúncio, 3 Vender e crescer, 4 Produção, 5 Gestão; a configuração da loja
-// (feita uma vez só) fica por último. As chaves das abas não mudam. Cada
-// aba tem um ícone de traço (Icone.jsx) e um subtítulo curto mostrado no
-// cabeçalho da tela.
-const GRUPOS = [
+// Menu de 7 itens (out/2026, aprovado pelo Gustavo pelo protótipo): cada item
+// junta telas que já existiam; as telas (e as chaves das abas) são as mesmas —
+// só a navegação mudou. As sub-abas de cada item ficam no cabeçalho
+// (`abas`: tab = chave da aba, s = sub-aba dentro dela). Links antigos,
+// irPara e aba lembrada continuam funcionando pelas chaves das abas.
+const SEP = { sep: true };
+const MENU = [
   {
-    titulo: "Início",
-    tabs: [{ key: "inicio", label: "Início", sub: "O que pede atenção hoje e como a loja está" }],
+    grupo: null,
+    itens: [{ key: "m-inicio", label: "Início", icone: "inicio", sub: "O que pede atenção hoje e como a loja está", abas: [{ tab: "inicio", label: "Início" }] }],
   },
   {
-    titulo: "1 · Produto",
-    tabs: [
-      { key: "cadastros", label: "Cadastros", sub: "Catálogo, materiais, embalagens, produtos e kits" },
-      { key: "producao", label: "Custo de Produção", sub: "Custo da peça a partir do fatiador" },
+    grupo: "Loja",
+    itens: [
+      {
+        key: "m-produtos",
+        label: "Produtos",
+        icone: "cadastros",
+        sub: "Catálogo, cadastros e custo de cada peça",
+        abas: [
+          { tab: "cadastros", s: "catalogo", label: "Catálogo" },
+          { tab: "cadastros", s: "produtos", label: "Produtos" },
+          { tab: "cadastros", s: "kits", label: "Kits" },
+          { tab: "cadastros", s: "materiais", label: "Materiais" },
+          { tab: "cadastros", s: "embalagens", label: "Embalagens" },
+          SEP,
+          { tab: "producao", label: "Custo de produção" },
+        ],
+      },
+      {
+        key: "m-precos",
+        label: "Preços",
+        icone: "historico",
+        sub: "Preço alvo de cada item em cada canal e o anúncio",
+        abas: [
+          { tab: "historico", label: "Produtos precificados" },
+          SEP,
+          ...PASSOS.map((p) => ({ tab: "canal", s: p.key, label: p.label, ordem: p.ordem })),
+          SEP,
+          { tab: "canal", s: "comparar", label: "Comparar canais" },
+          { tab: "orcamento", label: "Orçamento" },
+        ],
+      },
+      {
+        key: "m-crescer",
+        label: "Crescimento",
+        icone: "crescimento",
+        sub: "Rampa de preço, Ads, afiliados e promoções",
+        abas: [
+          { tab: "crescimento", s: "rampa", label: "Rampa de preço" },
+          { tab: "crescimento", s: "ads", label: "Ads" },
+          { tab: "crescimento", s: "afiliados", label: "Afiliados" },
+          SEP,
+          { tab: "promocoes", label: "Promoções" },
+        ],
+      },
     ],
   },
   {
-    titulo: "2 · Preço e anúncio",
-    tabs: [
-      { key: "canal", label: "Precificação por Canal", sub: "Avulso, por quantidade, ficha, lançamento e anunciar" },
-      { key: "historico", label: "Produtos precificados", sub: "Preços salvos por produto/kit e canal" },
+    grupo: "Operação",
+    itens: [
+      {
+        key: "m-producao",
+        label: "Produção",
+        icone: "registroImpressoes",
+        sub: "Impressões, planejamento e as impressoras",
+        abas: [
+          { tab: "registroImpressoes", label: "Registro de impressões" },
+          { tab: "otimizacao", label: "Otimização" },
+          { tab: "farm", label: "Minha farm" },
+        ],
+      },
+      {
+        key: "m-dinheiro",
+        label: "Dinheiro",
+        icone: "caixa",
+        sub: "Caixa, contas, vendas do mês, metas e retorno por item",
+        abas: [
+          { tab: "caixa", s: "caixa", label: "Caixa", ordem: "1" },
+          { tab: "caixa", s: "contas", label: "Contas fixas e parcelas", ordem: "2" },
+          { tab: "caixa", s: "vendas", label: "Vendas do mês", ordem: "3" },
+          SEP,
+          { tab: "metas", label: "Metas" },
+          { tab: "ranking", label: "Ranking por retorno" },
+        ],
+      },
     ],
   },
   {
-    titulo: "3 · Vender e crescer",
-    tabs: [
-      { key: "crescimento", label: "Crescimento", sub: "Rampa de preço no orgânico, Ads e afiliados" },
-      { key: "promocoes", label: "Promoções", sub: "Simule descontos antes de publicar" },
-      { key: "orcamento", label: "Orçamento", sub: "Encomendas avulsas e em volume" },
+    grupo: "",
+    itens: [
+      {
+        key: "m-config",
+        label: "Configuração",
+        icone: "config",
+        sub: "Lojas, canais e taxas dos marketplaces",
+        abas: [
+          { tab: "config", s: "lojas", label: "Lojas" },
+          { tab: "config", s: "canais", label: "Canais" },
+          { tab: "config", s: "taxas", label: "Taxas dos marketplaces" },
+        ],
+      },
     ],
-  },
-  {
-    titulo: "4 · Produção",
-    tabs: [
-      { key: "registroImpressoes", label: "Registro de Impressões", sub: "Taxa de falha real e lote máximo seguro" },
-      { key: "otimizacao", label: "Otimização", sub: "Capacidade de produção da loja" },
-      { key: "farm", label: "Minha farm", sub: "Impressoras, custo por hora e desgaste" },
-    ],
-  },
-  {
-    titulo: "5 · Gestão",
-    tabs: [
-      { key: "caixa", label: "Fluxo de Caixa", sub: "Caixa, contas fixas e parcelas, vendas do mês e reserva de produção" },
-      { key: "metas", label: "Metas", sub: "Faturamento e lucro do mês" },
-      { key: "ranking", label: "Ranking por Retorno", sub: "Quais itens dão mais lucro por hora" },
-    ],
-  },
-  {
-    titulo: "Configuração",
-    tabs: [{ key: "config", label: "Lojas, canais e taxas", sub: "Configurações da loja e dos marketplaces" }],
   },
 ];
+const ITENS_MENU = MENU.flatMap((g) => g.itens.map((i) => ({ ...i, grupo: g.grupo })));
+const menuDaAba = (tab) => ITENS_MENU.find((i) => i.abas.some((a) => a.tab === tab)) || null;
 
 const TUTORIAL = { key: "tutorial", label: "Tutorial", sub: "Checklist de primeiros passos" };
 
-const TABS = [...GRUPOS.flatMap((g) => g.tabs), TUTORIAL];
+// Todas as abas (chaves) que existem — as do menu + o Tutorial.
+const TABS = [...new Set(ITENS_MENU.flatMap((i) => i.abas.filter((a) => a.tab).map((a) => a.tab)))].map((key) => ({ key })).concat(TUTORIAL);
 
 const TAB_KEY = "ohra:ultima-aba";
+// Chaves das sub-abas lembradas das telas (as mesmas que as telas já usavam).
+const SUB_CHAVE = { cadastros: "ohra:cadastros-sub", crescimento: "ohra:crescimento-sub", caixa: "ohra:caixa:sub" };
 
 // O app abre no Início (sessão nova do navegador). Recarregar a página na
 // mesma sessão continua na aba em que estava — só aceita uma chave que ainda
@@ -157,6 +216,13 @@ export default function App() {
   const [visitadas, setVisitadas] = useState(() => new Set([tab]));
   if (!visitadas.has(tab)) setVisitadas(new Set(visitadas).add(tab));
   const [configSub, setConfigSub] = useState("lojas");
+  const [cadastrosSub] = useSubAba(SUB_CHAVE.cadastros, "catalogo");
+  const [crescimentoSub] = useSubAba(SUB_CHAVE.crescimento, "rampa");
+  const [caixaSub] = useSubAba(SUB_CHAVE.caixa, "caixa");
+  // Última tela aberta dentro de cada item do menu (estado derivado da aba atual).
+  const [ultimaDoMenu, setUltimaDoMenu] = useState({});
+  const menuDaTab = menuDaAba(tab);
+  if (menuDaTab && ultimaDoMenu[menuDaTab.key] !== tab) setUltimaDoMenu({ ...ultimaDoMenu, [menuDaTab.key]: tab });
   const [canalSub, setCanalSub] = useState(() => {
     try {
       if (sessionStorage.getItem(TAB_KEY) === "comparativo" || localStorage.getItem(TAB_KEY) === "comparativo") return "comparar";
@@ -175,6 +241,16 @@ export default function App() {
   const [tema, setTema] = useState(loadTheme);
   const [menuAberto, setMenuAberto] = useState(false);
   const toastTimer = useRef(null);
+  // Altura real do cabeçalho (muda com a linha de sub-abas) → --topbar-h,
+  // usada pelo que gruda embaixo dele (ResumoFixo, cabeçalho das tabelas).
+  const topbarRef = useRef(null);
+  useEffect(() => {
+    const el = topbarRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => document.documentElement.style.setProperty("--topbar-h", `${Math.round(el.getBoundingClientRect().height)}px`));
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", tema);
@@ -279,8 +355,29 @@ export default function App() {
     setTab("cadastros");
   }
 
-  const tabAtual = TABS.find((t) => t.key === tab);
-  const grupoAtual = GRUPOS.find((g) => g.tabs.some((t) => t.key === tab))?.titulo || "Ajuda";
+  const menuAtual = menuDaAba(tab);
+  const grupoAtual = tab === "tutorial" ? "Ajuda" : menuAtual?.grupo || "Ohra";
+  const tituloAtual = tab === "tutorial" ? TUTORIAL.label : menuAtual?.label;
+  const subtituloAtual = tab === "tutorial" ? TUTORIAL.sub : menuAtual?.sub;
+  const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub };
+  const abaAtiva = (a) => a.tab === tab && (!a.s || a.s === subDaAba[a.tab]);
+  // Vai pra uma sub-aba do cabeçalho: troca a aba e a sub-aba dela.
+  function irParaEntrada(a) {
+    if (a.tab === "canal") setCanalSub(a.s);
+    else if (a.tab === "config") setConfigSub(a.s);
+    else if (a.s) trocarSubAba(SUB_CHAVE[a.tab], a.s);
+    setTab(a.tab);
+    setMenuAberto(false);
+  }
+  // Item do menu: volta pra última tela usada dentro dele (senão a 1ª).
+  function irParaMenu(item) {
+    const ultima = ultimaDoMenu[item.key];
+    const entrada = (ultima && item.abas.find((a) => !a.sep && a.tab === ultima)) || item.abas[0];
+    if (entrada.tab === ultima) {
+      setTab(entrada.tab);
+      setMenuAberto(false);
+    } else irParaEntrada(entrada);
+  }
   const lojaAtual = lojas.find((l) => l.id === lojaId) || null;
 
   // Nenhuma aba pode montar (e nenhum dado pode ser buscado) enquanto a
@@ -311,15 +408,15 @@ export default function App() {
         <LojaSwitcher onGerenciar={() => irPara("lojas")} />
 
         <nav className="side-nav">
-          {GRUPOS.map((g) => (
-            <div className="side-nav-grupo" key={g.titulo}>
-              <div className="side-nav-label">{g.titulo}</div>
-              {g.tabs.map((t) => (
-                <button key={t.key} data-tab={t.key} className={tab === t.key ? "active" : ""} onClick={() => irPara(t.key)} title={t.label}>
-                  <Icone nome={t.key} />
-                  <span>{t.label}</span>
-                  {t.key === "crescimento" && <BolinhaSemana />}
-                  {t.key === "inicio" && <BolinhaUrgentes />}
+          {MENU.map((g, gi) => (
+            <div className="side-nav-grupo" key={gi}>
+              {g.grupo ? <div className="side-nav-label">{g.grupo}</div> : g.grupo === "" ? <div className="side-nav-espaco" /> : null}
+              {g.itens.map((item) => (
+                <button key={item.key} data-menu={item.key} className={menuAtual?.key === item.key ? "active" : ""} onClick={() => irParaMenu(item)} title={item.label}>
+                  <Icone nome={item.icone} />
+                  <span>{item.label}</span>
+                  {item.key === "m-crescer" && <BolinhaSemana />}
+                  {item.key === "m-inicio" && <BolinhaUrgentes />}
                 </button>
               ))}
             </div>
@@ -342,15 +439,15 @@ export default function App() {
       <div className="main">
         <TelaDescanso />
 
-        <header className="topbar">
+        <header className="topbar" ref={topbarRef}>
           <button className="menu-toggle" onClick={() => setMenuAberto((v) => !v)} aria-label="Abrir menu">
             <Icone nome="menu" size={18} />
           </button>
           <div className="topbar-titulo">
             <div className="topbar-crumb">{grupoAtual}</div>
-            <h1>{tabAtual?.label}</h1>
+            <h1>{tituloAtual}</h1>
           </div>
-          {tabAtual?.sub && <div className="topbar-sub">{tabAtual.sub}</div>}
+          {subtituloAtual && <div className="topbar-sub">{subtituloAtual}</div>}
           <span className="topbar-legenda">
             <Ajuda texto={<LegendaEstados />} />
           </span>
@@ -359,6 +456,20 @@ export default function App() {
               <div key={t.key} id={`acoes-${t.key}`} className="topbar-acoes-slot" hidden={t.key !== tab} />
             ))}
           </div>
+          {menuAtual && menuAtual.abas.length > 1 && (
+            <nav className="topbar-abas" aria-label={`Telas de ${menuAtual.label}`}>
+              {menuAtual.abas.map((a, i) =>
+                a.sep ? (
+                  <span key={`sep${i}`} className="topbar-abas-sep" />
+                ) : (
+                  <button key={`${a.tab}:${a.s || ""}`} type="button" data-tab={a.tab} data-sub={a.s} className={abaAtiva(a) ? "ativo" : ""} aria-current={abaAtiva(a) ? "page" : undefined} onClick={() => irParaEntrada(a)}>
+                    {a.ordem && <span className="topbar-abas-ordem">{a.tab === "canal" ? a.ordem : `${a.ordem} ·`}</span>}
+                    {a.label}
+                  </button>
+                ),
+              )}
+            </nav>
+          )}
         </header>
 
         <div className="content">
@@ -503,7 +614,7 @@ export default function App() {
         </div>
       </div>
 
-      <NavCelular tab={tab} irPara={irPara} menuAberto={menuAberto} abrirMenu={() => setMenuAberto(true)} />
+      <NavCelular menuAtual={menuAtual} irParaMenu={irParaMenu} menuAberto={menuAberto} abrirMenu={() => setMenuAberto(true)} />
 
       <div className={`toast ${toast.show ? "show" : ""}`}>{toast.msg}</div>
     </div>
@@ -512,25 +623,29 @@ export default function App() {
 }
 
 // Barra de navegação no celular (≤ 760px, só CSS decide quando aparece):
-// 4 atalhos + "Mais" (abre o menu lateral). No PC fica escondida.
+// 4 itens do menu + "Mais" (abre o menu lateral). No PC fica escondida.
 const NAV_CELULAR = [
-  { key: "inicio", rot: "Início" },
-  { key: "crescimento", rot: "Crescimento" },
-  { key: "historico", rot: "Precificados" },
-  { key: "caixa", rot: "Caixa" },
+  { key: "m-inicio", rot: "Início" },
+  { key: "m-precos", rot: "Preços" },
+  { key: "m-crescer", rot: "Crescer" },
+  { key: "m-dinheiro", rot: "Dinheiro" },
 ];
-function NavCelular({ tab, irPara, menuAberto, abrirMenu }) {
-  const naBarra = NAV_CELULAR.some((n) => n.key === tab);
+function NavCelular({ menuAtual, irParaMenu, menuAberto, abrirMenu }) {
+  const naBarra = NAV_CELULAR.some((n) => n.key === menuAtual?.key);
   return (
     <nav className="nav-celular" aria-label="Navegação rápida">
-      {NAV_CELULAR.map((n) => (
-        <button key={n.key} type="button" className={tab === n.key && !menuAberto ? "ativo" : ""} onClick={() => irPara(n.key)} aria-current={tab === n.key ? "page" : undefined}>
-          <Icone nome={n.key} size={19} />
-          <span className="rot">{n.rot}</span>
-          {n.key === "crescimento" && <BolinhaSemana />}
-          {n.key === "inicio" && <BolinhaUrgentes />}
-        </button>
-      ))}
+      {NAV_CELULAR.map((n) => {
+        const item = ITENS_MENU.find((i) => i.key === n.key);
+        const ativo = menuAtual?.key === n.key;
+        return (
+          <button key={n.key} type="button" className={ativo && !menuAberto ? "ativo" : ""} onClick={() => irParaMenu(item)} aria-current={ativo ? "page" : undefined}>
+            <Icone nome={item.icone} size={19} />
+            <span className="rot">{n.rot}</span>
+            {n.key === "m-crescer" && <BolinhaSemana />}
+            {n.key === "m-inicio" && <BolinhaUrgentes />}
+          </button>
+        );
+      })}
       <button type="button" className={menuAberto || !naBarra ? "ativo" : ""} onClick={abrirMenu} aria-label="Mais — abre o menu">
         <Icone nome="menu" size={19} />
         <span className="rot">Mais</span>
