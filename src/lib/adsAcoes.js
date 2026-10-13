@@ -87,3 +87,11 @@ export async function excluirPeriodoAds(periodo, { rampa = null, hoje } = {}) {
     await supabase.from("rampas_preco").update({ teste_status: null, teste_inicio: null, teste_fim: null, atualizado_em: new Date().toISOString() }).eq("id", rampa.id);
   return { ok: true };
 }
+
+// Andamento do período (v48): substitui o anterior (nunca soma).
+export async function salvarAndamentoAds(periodo, { ate, gasto, cliques, vendas }) {
+  const parcial = { ate, gasto, cliques, vendas, em: new Date().toISOString() };
+  const { error } = await supabase.from("ads_periodos").update({ parcial }).eq("id", periodo.id);
+  if (!error) return { ok: true };
+  return { ok: false, msg: /parcial/.test(error.message) ? "Falta rodar o supabase/schema_v48.sql no Supabase" : msgErro(error) };
+}

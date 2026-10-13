@@ -86,6 +86,34 @@ export function semanasNoPeriodo(semanas, periodo) {
   return semanas.filter((s) => s.data > periodo.inicio && (!fimLim || s.data <= fimLim));
 }
 
+// Andamento do período (v48, `ads_periodos.parcial`): números ACUMULADOS
+// desde o início, até `ate`, informados no meio do período (à mão ou pelo CSV
+// do Shopee Ads). Cada envio substitui o anterior. Só vale enquanto nenhuma
+// semana registrada cobrir essas datas — a semana registrada prevalece.
+// Só informa: nenhuma decisão (avaliarAds) usa o andamento.
+export function andamentoValido(periodo, semanas) {
+  const par = periodo?.parcial;
+  if (!par || !par.ate) return null;
+  const cobertoAte = semanasNoPeriodo(semanas || [], periodo).reduce((m, s) => {
+    const fim = somarDiasIso(String(s.data).slice(0, 10), -1);
+    return fim > m ? fim : m;
+  }, "");
+  if (cobertoAte && cobertoAte >= par.ate) return null;
+  const gasto = num(par.gasto);
+  const vendas = num(par.vendas);
+  return { ate: par.ate, em: par.em || null, gasto, cliques: num(par.cliques), vendas, custoPorVenda: vendas > 0 ? gasto / vendas : null };
+}
+
+// O que falta registrar na semana: andamento − o que já está nas semanas do período.
+export function andamentoParaSemana(periodo, semanas) {
+  const a = andamentoValido(periodo, semanas);
+  if (!a) return null;
+  const ss = semanasNoPeriodo(semanas || [], periodo);
+  const soma = (k) => ss.reduce((t, s) => t + num(s[k]), 0);
+  const r = (v) => Math.max(0, Math.round(v * 100) / 100);
+  return { ate: a.ate, gasto: r(a.gasto - soma("ads_gasto")), cliques: r(a.cliques - soma("ads_cliques")), adsVendas: r(a.vendas - soma("ads_vendas")) };
+}
+
 // Resumo de um período (pra histórico e resultado).
 export function resumoPeriodo(periodo, semanas, preco, empate, regras = REGRAS_ADS) {
   const ss = semanasNoPeriodo(semanas, periodo);

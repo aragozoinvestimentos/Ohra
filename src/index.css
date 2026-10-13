@@ -1576,6 +1576,9 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .ads-metricas b { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .ads-roas.bom { color: var(--good); }
 .ads-roas.ruim { color: var(--warn); }
+.modal-box.modal-andamento { max-width: 760px; width: 100%; }
+.modal-andamento td { white-space: normal; }
+.ads-andamento { padding: 8px 14px; border-top: 1px dashed var(--border); display: grid; gap: 2px; font-size: 12.5px; background: var(--st-decisao-soft); }
 .ads-semana { padding: 8px 14px; font-size: 12.5px; border-top: 1px solid var(--border); color: var(--ink-soft); }
 .ads-semana b { color: var(--ink); }
 .tabela-ads { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px; }

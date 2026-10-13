@@ -40,7 +40,8 @@ import { chaveSemanaRampa, periodoEmAberto, somarDiasIso, ultimoRegistroAf, ulti
 import Estado, { PontoSaude } from "./Estado.jsx";
 import { estadoSugestaoRampa, saudeRampa } from "../lib/estados.js";
 import { useRankingData } from "../hooks/useRankingData.js";
-import { cruzarRelatorios, lerRelatorio, normSku, textoMistura } from "../lib/relatorioShopee.js";
+import { cruzarRelatorios, lembrarIdsShopee, lerRelatorio, normSku, textoMistura } from "../lib/relatorioShopee.js";
+import { andamentoParaSemana } from "../lib/ads.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -1690,11 +1691,37 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
   const foraRampa = linhasAf.filter((x) => x.conf.ativo && !x.rampa);
   // Itens só com Ads ligado (Crescimento → Ads), fora de rampa e sem afiliado.
   const soAds = (linhasAds?.linhas || []).filter((x) => x.av.ativo && !x.rampa && !foraRampa.some((y) => y.chave === x.chave));
+  // Andamento do Ads (v48): o que foi informado no meio do período e ainda não
+  // está em semana registrada já vem nos campos de Ads (acumulado − registrado).
+  const [andamentos] = useState(() => {
+    const m = {};
+    const de = (chaveAds, id) => {
+      const la = (linhasAds?.linhas || []).find((x) => x.chave === chaveAds);
+      const a = la?.av.ativo ? andamentoParaSemana(la.av.ativo, la.semanas) : null;
+      if (a) m[id] = a;
+    };
+    for (const l of linhas) de(`produto|${l.r.produto_id}|${l.r.canal_id}`, l.r.id);
+    for (const x of foraRampa) de(x.chave, x.chave);
+    for (const x of soAds) de(x.chave, x.chave);
+    return m;
+  });
+  const comAndamento = (id, base) => {
+    const a = andamentos[id];
+    if (!a) return base;
+    const t = (v) => String(v).replace(".", ",");
+    return { ...base, gasto: t(a.gasto), cliques: t(a.cliques), adsVendas: t(a.adsVendas) };
+  };
   const [f, setF] = useState(() => ({
-    ...Object.fromEntries(soAds.map((x) => [x.chave, { ...VAZIO_RAMPA }])),
-    ...Object.fromEntries(linhas.map((l) => [l.r.id, { ...VAZIO_RAMPA, ...VAZIO_FUNIL, ...VAZIO_AF }])),
-    ...Object.fromEntries(foraRampa.map((x) => [x.chave, { ...VAZIO_RAMPA, ...VAZIO_AF }])),
+    ...Object.fromEntries(soAds.map((x) => [x.chave, comAndamento(x.chave, { ...VAZIO_RAMPA })])),
+    ...Object.fromEntries(linhas.map((l) => [l.r.id, comAndamento(l.r.id, { ...VAZIO_RAMPA, ...VAZIO_FUNIL, ...VAZIO_AF })])),
+    ...Object.fromEntries(foraRampa.map((x) => [x.chave, comAndamento(x.chave, { ...VAZIO_RAMPA, ...VAZIO_AF })])),
   }));
+  const notaAndamento = (id) =>
+    andamentos[id] && !importado?.porChave[id] ? (
+      <div className="importar-linha">
+        📈 Ads do andamento até {diaMes(andamentos[id].ate)}: {BRL(andamentos[id].gasto)} · {andamentos[id].cliques} cliques · {andamentos[id].adsVendas} venda{andamentos[id].adsVendas === 1 ? "" : "s"} via Ads (o que ainda não estava em semana registrada) — confira com o relatório
+      </div>
+    ) : null;
   const [salvando, setSalvando] = useState(false);
   const [funilAberto, setFunilAberto] = useState(() => new Set());
   // Importar relatórios da Shopee (lib/relatorioShopee.js): só PREENCHE os
@@ -1713,7 +1740,8 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
   // agora" vindo do Início) começa em branco.
   const fv = (id) => f[id] || VAZIO_TODOS;
   const set = (id, k) => (e) => setF((p) => ({ ...p, [id]: { ...VAZIO_TODOS, ...p[id], [k]: e.target.value } }));
-  const doRelatorio = (id, k) => (importado?.marcados.has(`${id}|${k}`) ? "campo-importado" : undefined);
+  const doRelatorio = (id, k) =>
+    importado?.marcados.has(`${id}|${k}`) || (andamentos[id] && !importado?.porChave[id] && ["gasto", "cliques", "adsVendas"].includes(k)) ? "campo-importado" : undefined;
 
   async function importarRelatorios(e) {
     const arquivos = Array.from(e.target.files || []);
@@ -1723,6 +1751,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
     try {
       const lidos = [];
       for (const a of arquivos) lidos.push(await lerRelatorio(a));
+      lembrarIdsShopee(lidos); // o andamento do Ads usa essa ligação ID do item → SKU
       const ehShopee = (canal) => canal?.tipo === "shopee";
       const skuDoProduto = (id) => catProdutos.find((p) => p.id === id)?.sku || "";
       const itensApp = [
@@ -2047,6 +2076,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
             <div className="bloco-semana-titulo">
               <b>{l.produto.nome}</b> <CanalTag canal={l.canal} /> <span className="muted-cel">em rampa · vendendo {BRL(l.est.preco)} · {l.est.avaliacoesTotal} avaliações até agora</span>
             </div>
+            {notaAndamento(l.r.id)}
             {importado?.porChave[l.r.id] && (
               <div className="importar-linha">
                 📄 do relatório: {importado.porChave[l.r.id].vendas ?? 0} venda{importado.porChave[l.r.id].vendas === 1 ? "" : "s"}
@@ -2109,6 +2139,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
           <div className="bloco-semana-titulo">
             <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">fora de rampa · vendendo {BRL(x.preco)}</span>
           </div>
+          {notaAndamento(x.chave)}
           {importado?.porChave[x.chave] && (
             <div className="importar-linha">
               📄 do relatório: {importado.porChave[x.chave].vendas ?? 0} venda{importado.porChave[x.chave].vendas === 1 ? "" : "s"}
@@ -2140,6 +2171,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
           <div className="bloco-semana-titulo">
             <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">só Ads · vendendo {BRL(x.preco)}</span>
           </div>
+          {notaAndamento(x.chave)}
           {importado?.porChave[x.chave] && (
             <div className="importar-linha">
               📄 do relatório: {importado.porChave[x.chave].vendas ?? 0} venda{importado.porChave[x.chave].vendas === 1 ? "" : "s"}

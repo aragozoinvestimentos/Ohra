@@ -329,3 +329,63 @@ export function textoMistura(m) {
     .map(([q, n]) => `${n} × ${Number(q) === 1 ? "1 un." : `kit ${q}`}`)
     .join(" · ");
 }
+
+// ---- Andamento do Ads (v48) ----
+// O CSV do Ads só traz o ID do Item da Shopee; quem liga ID → SKU é o
+// relatório de desempenho. O app LEMBRA essa ligação (localStorage) toda vez
+// que um desempenho é importado — depois, o CSV do Ads sozinho já basta.
+const CHAVE_IDS = "ohra:shopee:id-sku";
+export function idsShopeeLembrados() {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_IDS) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+export function lembrarIdsShopee(relatorios) {
+  const desemp = (relatorios || []).find((r) => r?.tipo === "desempenho");
+  if (!desemp) return;
+  const m = idsShopeeLembrados();
+  for (const i of desemp.itens) if (i.itemId && i.sku) m[i.itemId] = i.sku;
+  try {
+    localStorage.setItem(CHAVE_IDS, JSON.stringify(m));
+  } catch {
+    // sem problema: na próxima vez importa o desempenho junto
+  }
+}
+
+// Ads por item do app: itensApp = [{ chave, sku }]. Números do período do CSV
+// (o andamento é ACUMULADO: exporte do início do período de Ads até ontem).
+export function adsPorItemApp(relatorios, itensApp) {
+  const ads = (relatorios || []).find((r) => r?.tipo === "ads") || null;
+  if (!ads) return { periodo: null, porChave: {}, adsSemPar: [], avisos: ["Escolha o CSV do Shopee Ads (Marketing → Shopee Ads → Exportar dados)."] };
+  lembrarIdsShopee(relatorios);
+  const idSku = idsShopeeLembrados();
+  const porSku = new Map();
+  for (const [id, a] of ads.porItem) {
+    const sku = normSku(idSku[id]);
+    if (!sku) continue;
+    const t = porSku.get(sku) || { gasto: 0, cliques: 0, vendas: 0, ids: [] };
+    t.gasto += a.gasto;
+    t.cliques += a.cliques;
+    t.vendas += a.vendas;
+    t.ids.push(id);
+    porSku.set(sku, t);
+  }
+  const porChave = {};
+  const usados = new Set();
+  for (const it of itensApp) {
+    const t = porSku.get(normSku(it.sku));
+    if (!t) continue;
+    t.ids.forEach((id) => usados.add(id));
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas };
+  }
+  const adsSemPar = [...ads.porItem.entries()].filter(([id, a]) => !usados.has(id) && a.gasto > 0).map(([id, a]) => ({ itemId: id, ...a, conhecido: !!idSku[id] }));
+  const avisos = [];
+  if (adsSemPar.some((a) => !a.conhecido)) avisos.push("Alguns anúncios do Ads ainda não estão ligados a um SKU: importe junto, uma vez, o relatório de desempenho do produto (Informações Gerenciais → Produto → Performance do produto).");
+  // Produto com SKU já ligado a algum anúncio e sem linha no CSV = sem gasto (0);
+  // SKU que o app ainda não conhece fica em branco.
+  const skusConhecidos = new Set(Object.values(idSku).map(normSku));
+  const zerados = itensApp.filter((it) => !porChave[it.chave] && skusConhecidos.has(normSku(it.sku))).map((it) => it.chave);
+  return { periodo: ads.periodo, porChave, zerados, adsSemPar, avisos };
+}
