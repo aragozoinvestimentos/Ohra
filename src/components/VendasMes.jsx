@@ -9,6 +9,7 @@ import { recarregarVendasOrganicas, useVendasOrganicas } from "../hooks/useVenda
 import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
 import BuscaItem from "./BuscaItem.jsx";
 import { saldoReserva, vendasDoMes } from "../lib/vendasMes.js";
+import { regrasAds, tetoDaLoja } from "../lib/ads.js";
 import { hojeISO, mesDe, rotuloMes } from "../lib/fluxoCaixa.js";
 import { BRL, PCT } from "../lib/format.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -32,7 +33,7 @@ const fimDoMes = (mes) => {
 // num envelope (não é saída — o dinheiro fica na conta, só deixa de estar livre).
 export default function VendasMes({ mes, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, precos, cfgDoProduto } = useEscada();
+  const { itens, canais, precos, cfgDoProduto, cfgLoja } = useEscada();
   const { rampas, registros } = useRampas({ comRegistros: true });
   const af = useAfiliados();
   const reserva = useReservaProducao();
@@ -176,6 +177,16 @@ export default function VendasMes({ mes, onToast }) {
           },
         ]}
       />
+      {t.unidades > 0 && (() => {
+        // Teto de Ads da loja (mesma conta da aba Ads) com os números deste mês.
+        const tt = tetoDaLoja({ faturamento: t.faturamento, lucro: t.lucro, gasto: t.ads, regras: regrasAds(cfgLoja) });
+        return (
+          <div className={`linha-info${tt.acimaTeto ? " atencao-txt" : ""}`}>
+            Ads do mês: <b>{BRL(t.ads)}</b> de {BRL(tt.teto)} (teto da fase {tt.fase}
+            {tt.limitadoPelaTrava ? ", limitado pela metade do lucro" : ""}){tt.acimaTeto ? " — acima do teto" : ""}
+          </div>
+        );
+      })()}
 
       <div className="panel">
         <h3 className="section-title">

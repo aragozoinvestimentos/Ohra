@@ -1,3 +1,4 @@
+import { canalDireto } from "../lib/canais.js";
 import { useEffect, useState } from "react";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
@@ -71,7 +72,7 @@ export default function Lancamento({ onToast, onSub }) {
 
   const emRampa = !!rampaDoProduto;
   const derivado = (tipo === "variacao" && emRampa) || pecasEmRampa.length > 0;
-  const estado = !item || !canal ? "vazio" : !alvo ? "sem-preco" : emRampa || derivado ? "rampa" : publicado || noAlvo[chave] ? "alvo" : tipo === "produto" ? "pergunta" : "alvo";
+  const estado = !item || !canal ? "vazio" : !alvo ? "sem-preco" : canalDireto(canal) ? "direto" : emRampa || derivado ? "rampa" : publicado || noAlvo[chave] ? "alvo" : tipo === "produto" ? "pergunta" : "alvo";
 
   const quadroAnuncio = ({ titulo, a, nota }) =>
     a ? (
@@ -217,6 +218,15 @@ export default function Lancamento({ onToast, onSub }) {
               {tipo === "variacao" ? "2º Por quantidade" : "1º Avulso"}
             </button>{" "}
             primeiro.
+          </div>
+        )}
+
+        {estado === "direto" && (
+          <div className="lanc-pergunta">
+            <b>Venda direta: preço fixo {BRL(alvo)}</b>
+            <p className="hint" style={{ margin: "4px 0 0" }}>
+              Canal próprio não tem rampa, Ads nem preço original/promo pra digitar — é só vender no preço salvo. Quando o preço ficar velho (12 meses) ou o custo subir 10%, o Início avisa pra revisar.
+            </p>
           </div>
         )}
 

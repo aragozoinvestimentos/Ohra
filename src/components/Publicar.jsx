@@ -9,7 +9,7 @@ import { dicaKitFreteGratis } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { BRL } from "../lib/format.js";
 import { descontoPadraoCanal, gruposRegra4x } from "../lib/escada.js";
-import { nomeCanal } from "../lib/canais.js";
+import { canalDireto, nomeCanal } from "../lib/canais.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
@@ -38,7 +38,9 @@ const agoraIgualAlvo = (x) => Math.abs(Number(x.clientePaga) - Number(x.anSalvo?
 
 export default function Publicar({ onToast, onSub }) {
   const { lojaId } = useLoja();
-  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, cobraNoCanal, cfgDoProduto } = useEscada();
+  const { itens, canais: canaisLoja, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, cobraNoCanal, cfgDoProduto } = useEscada();
+  // Venda direta (canal próprio) não tem o que digitar: fica fora da Anunciar.
+  const canais = useMemo(() => canaisLoja.filter((c) => !canalDireto(c)), [canaisLoja]);
   // Lucro pelo que o cliente paga (lib/precoAgora.js), com a quebra recebe − repor.
   const lucroPago = (item, c, valor) => quebraNoValor(item, c, valor, cfgDoProduto(item.produtoId || (item.id.startsWith("p:") ? item.id.slice(2) : null)));
   const [verTodos, setVerTodos] = useState(false);

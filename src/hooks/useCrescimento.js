@@ -6,9 +6,10 @@ import { estadoRampa, metricasFunil, referenciaFunilLoja, regrasDaLoja } from ".
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
-import { adsDaLoja, avaliarAds, periodoAtivo, periodosDoItem, regrasAds } from "../lib/ads.js";
+import { adsDaLoja, avaliarAds, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, tetoDaLoja } from "../lib/ads.js";
 import { lucroNoPreco } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
+import { canalDireto } from "../lib/canais.js";
 import { configCalendario, infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
 
 const num = (v) => {
@@ -91,24 +92,60 @@ export function useCrescimento() {
       if (tipo === "variacao") continue; // o Ads é por anúncio (produto pai ou kit)
       const id = it.id.slice(2);
       for (const canal of canais) {
+        if (canalDireto(canal)) continue; // venda direta: sem Ads
         const salvo = precos.find((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === canal.id);
         if (!salvo || !(num(salvo.preco) > 0)) continue;
         const rampa = tipo === "produto" ? linhas.find((l) => l.r.produto_id === id && l.r.canal_id === canal.id) || null : null;
         const cfg = cfgDoProduto(tipo === "produto" ? id : null);
         const preco = rampa ? num(rampa.est.preco) : num(salvo.preco);
         const lucroEm = (p) => lucroNoPreco(canal, p, it.custoTotal, it.peso, cfg);
-        base.push({ chave: `${tipo}|${id}|${canal.id}`, item: it, tipo, id, canal, rampa, preco, lucroEm, lucro: lucroEm(preco), semanas: semanasDe(tipo, id, canal.id, rampa), periodos: periodosDoItem(adsH.periodos, tipo, id, canal.id) });
+        // Produto "só na época de…": fase do Ads sazonal (Aquecer/Ajustar/Alavancar/Corte).
+        const produto = tipo === "produto" ? produtos.find((p) => p.id === id) : null;
+        const sazonal = produto ? faseAdsSazonal(infoSazonal(quandoVendeDe(produto), calendario, hoje), hoje, regrasA) : null;
+        base.push({ chave: `${tipo}|${id}|${canal.id}`, item: it, tipo, id, canal, rampa, preco, lucroEm, lucro: lucroEm(preco), semanas: semanasDe(tipo, id, canal.id, rampa), periodos: periodosDoItem(adsH.periodos, tipo, id, canal.id), sazonal });
       }
     }
     const loja = adsDaLoja(base.flatMap((b) => b.semanas.map((s) => ({ ...s, preco: num(s.preco) || b.preco }))), hoje, regrasA);
-    return {
-      loja,
-      linhas: base.map((b) => ({
-        ...b,
-        av: avaliarAds({ preco: b.preco, lucro: b.lucro, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: b.rampa?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: loja }),
-      })),
-    };
-  }, [itens, canais, precos, linhas, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje]);
+    // Teto de Ads da loja (30 dias): faturamento, lucro (antes do Ads) e gasto
+    // dos registros cujo período termina nos últimos 30 dias.
+    const desde30 = (() => {
+      const d = new Date(`${hoje}T12:00:00`);
+      d.setDate(d.getDate() - 30);
+      return d.toISOString().slice(0, 10);
+    })();
+    let fat30 = 0;
+    let lucro30 = 0;
+    let gasto30 = 0;
+    for (const b of base)
+      for (const s of b.semanas) {
+        if (!(String(s.data).slice(0, 10) > desde30)) continue;
+        const p = num(s.preco) || b.preco;
+        fat30 += num(s.vendas) * p;
+        lucro30 += num(s.vendas) * (b.lucroEm(p) ?? 0);
+        gasto30 += num(s.ads_gasto);
+      }
+    const teto = tetoDaLoja({ faturamento: fat30, lucro: lucro30, gasto: gasto30, regras: regrasA });
+    const linhasA = base.map((b) => ({
+      ...b,
+      av: avaliarAds({ preco: b.preco, lucro: b.lucro, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: b.rampa?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: teto, sazonal: b.sazonal }),
+    }));
+    // Lembretes de virada de fase do Ads sazonal (Início): na 1ª semana de cada fase.
+    const sazonal = [];
+    for (const l of linhasA) {
+      const z = l.sazonal;
+      if (!z || !z.inicio || !["aquecer", "ajustar", "alavancar", "corte"].includes(z.fase)) continue;
+      const d = (new Date(`${hoje}T12:00:00`) - new Date(`${z.inicio}T12:00:00`)) / 86400000;
+      if (d < 0 || d > 6) continue;
+      const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
+      sazonal.push({
+        chave: l.chave,
+        item: l.item,
+        canal: l.canal,
+        aviso: { id: z.fase, grupo: z.fase === "aquecer" ? "oportunidade" : "rotina", titulo: `Ads ${z.nome} — ${z.titulo}`, texto: `${z.texto}${z.fim ? ` (até ${dm(z.fim)})` : ""}` },
+      });
+    }
+    return { loja, teto, sazonal, linhas: linhasA };
+  }, [itens, canais, precos, produtos, linhas, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario]);
 
   return { dados, rampasH, af, regras, hoje, funilLoja, calendario, linhas, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds };
 }

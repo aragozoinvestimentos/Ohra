@@ -58,6 +58,8 @@ export function montarPendencias({
   farm = null, // { alteracoes (farm_alteracoes não revisadas), desgaste (avisosDesgaste) } — Minha farm (v47)
   campanha = null, // próxima campanha da plataforma (calendario.js → proximaCampanha)
   temporadas = [], // [{ produto, info }] lembrete da temporada (calendario.js → infoSazonal().lembrete)
+  revisoes = [], // [{ item, canal, motivos }] venda direta: preço velho ou custo subiu (revisarPreco.js)
+  adsSazonal = [], // [{ chave, item, canal, aviso }] fases do Ads sazonal (ads.js → avisoAdsSazonal)
   hoje = "",
 }) {
   const out = [];
@@ -82,6 +84,32 @@ export function montarPendencias({
       rotulo: "Ver produtos",
     });
   }
+
+  // ---- Venda direta (Orgânico): vale revisar o preço? (tempo ou custo) ----
+  for (const { item, canal, motivos } of revisoes)
+    add({
+      id: `revisar|${item.id}|${canal.id}`,
+      grupo: "rotina",
+      ordem: 4,
+      tom: "warn",
+      titulo: `${item.nome}: vale revisar o preço?`,
+      texto: `${canal.nome} · ${motivos.map((m) => m.texto).join(" · ")}`,
+      ir: { aba: "historico", pedido: { busca: item.nome } },
+      rotulo: "Ver em Produtos precificados",
+    });
+
+  // ---- Ads sazonal: virada de fase (Aquecer/Ajustar/Alavancar/Corte) e andamento ----
+  for (const x of adsSazonal)
+    add({
+      id: `ads-saz|${x.chave}|${x.aviso.id}`,
+      grupo: x.aviso.grupo || "rotina",
+      ordem: 2,
+      tom: x.aviso.grupo === "oportunidade" ? "good" : "warn",
+      titulo: `${x.item.nome}: ${x.aviso.titulo}`,
+      texto: `${x.canal.nome} · ${x.aviso.texto}`,
+      ir: { aba: "crescimento", pedido: { sub: "ads" } },
+      rotulo: "Ver em Ads",
+    });
 
   // ---- Resolver ----
   for (const { item, canal, al } of precosAlerta.filter((a) => a.al?.tipo === "prejuizo"))
@@ -213,12 +241,14 @@ export function montarPendencias({
     if (av.chave === "pausar-revisar")
       add({ id: `ads|${l.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads com cliques sem venda`, texto: `${l.canal.nome} · ${av.titulo}`, ir: irAds, rotulo: "Abrir Ads" });
     else if (["pausar", "reduzir", "inviavel-ativo"].includes(av.chave))
-      add({ id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo do empate (ROAS ${av.empate ? av.empate.toFixed(1).replace(".", ",") : "—"})`, ir: irAds, rotulo: "Abrir Ads" });
+      add({ id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo ${av.sazonal && av.minimo !== av.empate ? "do mínimo da temporada" : "do empate"} (ROAS ${(av.minimo ?? av.empate) ? (av.minimo ?? av.empate).toFixed(1).replace(".", ",") : "—"})`, ir: irAds, rotulo: "Abrir Ads" });
+    else if (["pausar-corte", "atualizar-andamento"].includes(av.chave))
+      add({ id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · ${av.chave === "pausar-corte" ? "último dia de entrega passou" : "fase Alavancar decide a cada 3–4 dias"}`, ir: irAds, rotulo: "Abrir Ads" });
     else if (["aumentar", "meta-alta"].includes(av.chave))
       add({ id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? "ROAS acima da meta" : "a Shopee gastou pouco do orçamento"}`, ir: irAds, rotulo: "Abrir Ads" });
   }
-  if (ads?.loja?.acimaTeto)
-    add({ id: "ads|teto", grupo: "rotina", ordem: 2, tom: "warn", titulo: "Ads acima do teto da loja", texto: `${Math.round(ads.loja.pct * 100)}% do faturamento da semana em Ads`, ir: irAds, rotulo: "Abrir Ads" });
+  if (ads?.teto?.acimaTeto)
+    add({ id: "ads|teto", grupo: "rotina", ordem: 2, tom: "warn", titulo: "Ads acima do teto da loja", texto: `${brl(ads.teto.gasto)} em 30 dias · teto ${brl(ads.teto.teto)} (fase ${ads.teto.fase})`, ir: irAds, rotulo: "Abrir Ads" });
 
   // ---- Rotina ----
   for (const m of farm?.manutencao || [])

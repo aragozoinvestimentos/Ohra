@@ -1,3 +1,4 @@
+import { revisoesPrecoDireto } from "../lib/revisarPreco.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLembretes } from "../hooks/useLembretes.js";
 import { infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
@@ -263,9 +264,11 @@ export default function Inicio({ onIrPara, onToast }) {
   }, [rampasH.registros, rampasH.rampas, af.registros, itens, produtos, materiais, hoje]);
 
   // --- Pra fazer + status ---
+  // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
+  const revisoes = useMemo(() => revisoesPrecoDireto({ itens, canais, precos, hoje }), [itens, canais, precos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, hoje }),
-    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], hoje }),
+    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.

@@ -1,3 +1,4 @@
+import { canalDireto } from "./canais.js";
 // 4º Anunciar — conta ÚNICA do que digitar em cada plataforma por item × canal
 // e se o anúncio está "↻ atualizar" (preço original/promo diferente do que foi
 // marcado "feito" em publicacoes_canal). Usada pela aba Anunciar e pelo Início.
@@ -20,6 +21,7 @@ export function linhasAnunciar({ itens, canais, precos, produtos, kits, publicac
       const id = item.id.slice(2);
       const porCanal = {};
       for (const c of canais) {
+        if (canalDireto(c)) continue; // venda direta: sem anúncio/promo pra digitar
         const s = precos.find((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === c.id);
         if (!s || !(Number(s.preco) > 0)) continue;
         if (anunciadoNoCanal && !anunciadoNoCanal(item, c)) continue;

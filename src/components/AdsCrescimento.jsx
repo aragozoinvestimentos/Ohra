@@ -1,7 +1,9 @@
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { andamentoValido, periodoLigado, resumoPeriodo, valoresAtuais } from "../lib/ads.js";
+import { andamentoValido, faseDaLoja, periodoLigado, resumoPeriodo, tetoPorFaixas, valoresAtuais, REGRAS_ADS } from "../lib/ads.js";
+import { porSemana } from "../lib/rampa.js";
+import { useCatalogo } from "../hooks/useCatalogo.js";
 import { adsPorItemApp, lerRelatorio } from "../lib/relatorioShopee.js";
 import { hojeSP } from "../lib/datas.js";
 import Kpis from "./Kpis.jsx";
@@ -57,6 +59,8 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   );
   const ligados = linhasAds.linhas.filter((l) => l.av.ativo).length;
   const L = linhasAds.loja;
+  const T = linhasAds.teto; // teto de Ads da loja (30 dias, tabela progressiva + metade do lucro)
+  const [verTabela, setVerTabela] = useState(false);
 
   if (!adsH.disponivel)
     return (
@@ -147,7 +151,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
 
   async function salvarRegras(f) {
     if (!loja) return;
-    const novo = { ...(loja.config_escada?.ads || {}), aumento: num(f.aumento) / 100, tetoLoja: num(f.teto) / 100 };
+    const novo = { ...(loja.config_escada?.ads || {}), ...(f.aumento != null ? { aumento: num(f.aumento) / 100 } : {}), ...(f.faixasTeto ? { faixasTeto: f.faixasTeto } : {}) };
     setSalvando(true);
     const r = await atualizar(loja.id, { configEscada: { ...(loja.config_escada || {}), ads: novo } });
     setSalvando(false);
@@ -161,20 +165,26 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
         itens={[
           { label: "Ads na semana (loja)", valor: BRL(L.gasto), sub: "últimos 7 dias registrados" },
           {
-            label: "Ads ÷ faturamento",
-            valor: pct(L.pct),
-            tom: L.acimaTeto ? "bad" : undefined,
-            sub: `teto ${Math.round(regrasA.tetoLoja * 100)}%${L.faturamento ? ` · faturamento ${BRL(L.faturamento)}` : ""}`,
+            label: "Teto de Ads (30 dias)",
+            valor: T ? `${BRL(T.gasto)} de ${BRL(T.teto)}` : "—",
+            tom: T?.acimaTeto ? "bad" : undefined,
+            sub: T ? `fase ${T.fase} · faturamento ${BRL(T.faturamento)}${T.limitadoPelaTrava ? " · limitado pela metade do lucro" : ""}` : "",
+            extra: (
+              <button type="button" className="btn btn-mini kpi-acao" onClick={() => setVerTabela((v) => !v)}>
+                {verTabela ? "esconder tabela" : "ver tabela"}
+              </button>
+            ),
           },
           { label: "Vendas via Ads", valor: pct(L.pctVendasAds), tom: L.dependente ? "bad" : undefined, sub: L.dependente ? "mais da metade das vendas — dependência" : "das vendas da semana" },
           { label: "Com Ads ligado", valor: String(ligados), sub: `de ${linhasAds.linhas.length} produto${linhasAds.linhas.length === 1 ? "" : "s"} × canal` },
         ]}
       />
-      {L.acimaTeto && (
+      {T?.acimaTeto && (
         <div className="alerta alerta-warn">
-          <b>Ads acima do teto da loja</b>A semana gastou {pct(L.pct)} do faturamento em Ads (teto {Math.round(regrasA.tetoLoja * 100)}%). Antes de aumentar algum produto, reduza os que estão abaixo do empate.
+          <b>Ads acima do teto da loja</b>Nos últimos 30 dias o Ads gastou {BRL(T.gasto)}; o teto é {BRL(T.teto)} (fase {T.fase}). Antes de aumentar algum produto, reduza os que estão abaixo do mínimo.
         </div>
       )}
+      {verTabela && T && <TabelaTeto regrasA={regrasA} T={T} salvando={salvando} onSalvar={(faixasTeto) => salvarRegras({ faixasTeto })} />}
 
       <div className="panel">
         <h3 className="section-title">
@@ -187,6 +197,8 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                 <br />• Depois: ROAS ≥ meta e gastou quase tudo → <b>aumentar {Math.round(regrasA.aumento * 100)}%</b> (1× por semana); entre o empate e a meta → manter; abaixo do empate → reduzir ou subir a meta; 2 semanas abaixo → pausar; {regrasA.cliquesSemVenda} cliques sem venda → pausar e revisar o anúncio.
                 <br />• <b>Empate</b> = preço ÷ lucro por venda: abaixo dele, o Ads tira lucro.
                 <br />• Sem Ads: o app diz se vale impulsionar, se o anúncio precisa ser arrumado antes ou se o Ads não se paga neste preço.
+                <br />• <b>Produto “só na época de…”</b>: Aquecer (45 dias antes da data-limite, R$ 10/dia) → Ajustar (21 dias antes, 1 decisão por semana) → Alavancar (da data-limite em diante: a cada 3–4 dias pelo andamento, aumento até 30%, só com lucro) → Corte (7 dias antes da data: pausar). Na temporada o Ads tem que deixar pelo menos metade do lucro de cada venda (mínimo = 2× o empate).
+                <br />• <b>Teto da loja</b>: tabela progressiva pelo faturamento dos últimos 30 dias (cada % vale só pro pedaço da faixa) e nunca mais que metade do lucro do período.
               </>
             }
           />
@@ -239,6 +251,12 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                         <td>
                           <b>{l.item.nome}</b> <CanalTag canal={l.canal} />
                           {l.rampa && <span className="muted-cel"> · em rampa</span>}
+                          {l.sazonal && l.sazonal.fase !== "fora" && (
+                            <span className="chip-cel decisao" title={l.sazonal.texto}>
+                              {l.sazonal.nome}: {l.sazonal.titulo}
+                              {l.sazonal.fim ? ` até ${dm(l.sazonal.fim)}` : ""}
+                            </span>
+                          )}
                           <div className="muted-cel">{BRL(l.preco)} · lucro {l.lucro != null ? BRL(l.lucro) : "—"}</div>
                         </td>
                         <td><Situacao av={av} compacto /></td>
@@ -282,7 +300,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
           onToast={onToast}
         />
       )}
-      {ajusteDlg && <AjusteDialog d={ajusteDlg} hoje={hoje} salvando={salvando} onCancelar={() => setAjusteDlg(null)} onSalvar={salvarAjuste} />}
+      {ajusteDlg && <AjusteDialog d={ajusteDlg} hoje={hoje} salvando={salvando} onCancelar={() => setAjusteDlg(null)} onSalvar={salvarAjuste} onToast={onToast} />}
       {encerrarDlg && <EncerrarAdsDialog nome={encerrarDlg.linha.item.nome} teste={encerrarDlg.linha.av.ativo?.tipo === "teste"} hoje={hoje} salvando={salvando} onCancelar={() => setEncerrarDlg(null)} onSalvar={encerrar} />}
       {excluirDlg && (
         <ConfirmDialog
@@ -430,31 +448,96 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
   );
 }
 
-function AjusteDialog({ d, hoje, salvando, onCancelar, onSalvar }) {
+// Produção (Minha farm): peças por dia que a farm faz de UM produto (todas as
+// impressoras ativas × horas/dia ÷ tempo por peça). Só informa — a decisão de
+// aumentar o Ads é do Gustavo ("consegue produzir?").
+function pecasPorDia(produto, impressoras, farmConfig) {
+  if (!produto) return null;
+  const min = num(produto.tempo_impressao_horas) > 0 ? num(produto.tempo_impressao_horas) * 60 : num(produto.producao_detalhe?.tempo);
+  const porPeca = min > 0 ? min / Math.max(1, num(produto.pecas_por_impressao) || 1) : 0;
+  const ativas = (impressoras || []).filter((i) => i.ativa !== false).length || 1;
+  const horas = num(farmConfig?.horas_dia_operacao) || 8;
+  return porPeca > 0 ? Math.floor((ativas * horas * 60) / porPeca) : null;
+}
+function capacidadeDoItem(item, produtos, impressoras, farmConfig) {
+  if (item.id.startsWith("k:")) {
+    const caps = (item.componentes || []).map((c) => {
+      const cap = pecasPorDia(produtos.find((p) => p.id === c.produtoId), impressoras, farmConfig);
+      return cap != null ? cap / Math.max(1, num(c.quantidade) || 1) : null;
+    });
+    return caps.length && caps.every((c) => c != null) ? Math.floor(Math.min(...caps)) : null;
+  }
+  const pid = item.id.startsWith("p:") ? item.id.slice(2) : item.produtoId;
+  const cap = pecasPorDia(produtos.find((p) => p.id === pid), impressoras, farmConfig);
+  const pecas = Math.max(1, num(item.pecas) || 1);
+  return cap != null ? Math.floor(cap / pecas) : null;
+}
+
+function AjusteDialog({ d, hoje, salvando, onCancelar, onSalvar, onToast }) {
   const [f, setF] = useState({ data: hoje, orcamento: virg(d.orcamento ?? ""), meta: virg(d.meta ?? ""), motivo: d.motivo || "" });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const empate = d.linha.av.empate;
+  const minimo = d.linha.av.minimo ?? empate;
+  const { produtos, impressoras, farmConfig } = useCatalogo();
+  // Aumentando o orçamento? Pergunta se a produção dá conta (decisão sua).
+  const orcAtual = valoresAtuais(d.linha.av.ativo).orcamento || 0;
+  const aumentando = num(f.orcamento) > orcAtual + 0.004;
+  const [prodOk, setProdOk] = useState(false);
+  const ult = (d.linha.semanas || []).length ? porSemana(d.linha.semanas[d.linha.semanas.length - 1]) : null;
+  const vendasDia = ult ? num(ult.vendas) / 7 : null;
+  const extraDia = ult && orcAtual > 0 ? (num(ult.ads_vendas) / 7) * (num(f.orcamento) / orcAtual - 1) : 0;
+  const previsto = vendasDia != null ? vendasDia + Math.max(0, extraDia) : null;
+  const cap = capacidadeDoItem(d.linha.item, produtos || [], impressoras, farmConfig);
+  const passa = previsto != null && cap != null && previsto > cap;
+  const fmt = (v) => (v == null ? "—" : String(Math.round(v * 10) / 10).replace(".", ","));
   return (
-    <EditarDialog titulo={`Ajuste de Ads — ${d.linha.item.nome}`} salvando={salvando} onCancelar={onCancelar} onSalvar={() => onSalvar(f)} salvarLabel="Registrar ajuste" classe="modal-box-md">
+    <EditarDialog titulo={`Ajuste de Ads — ${d.linha.item.nome}`} salvando={salvando} onCancelar={onCancelar} onSalvar={() => (aumentando && !prodOk ? onToast?.("Responda antes: consegue produzir o que vai vender?") : onSalvar(f))} salvarLabel="Registrar ajuste" classe="modal-box-md">
       <p className="hint" style={{ marginTop: 0 }}>Registre a mudança que você fez na plataforma. Depois dela, o app volta a esperar uns dias de aprendizado antes de sugerir outra.</p>
       <div className="grid-auto">
         <div className="field"><label>Data</label><input type="date" value={f.data} onChange={set("data")} /></div>
         <div className="field"><label>Orçamento diário (R$)</label><input type="text" inputMode="decimal" value={f.orcamento} onChange={set("orcamento")} /></div>
         <div className="field"><label>Meta de ROAS</label><input type="text" inputMode="decimal" value={f.meta} onChange={set("meta")} /></div>
       </div>
-      {empate && f.meta !== "" && num(f.meta) < empate && <div className="alerta alerta-warn"><b>Meta abaixo do empate ({um(empate)})</b>Com essa meta, a Shopee pode vender com prejuízo pra você.</div>}
+      {minimo && f.meta !== "" && num(f.meta) < minimo && (
+        <div className="alerta alerta-warn">
+          <b>Meta abaixo {minimo !== empate ? `do mínimo da temporada (${um(minimo)})` : `do empate (${um(empate)})`}</b>
+          {minimo !== empate ? "Na temporada o Ads tem que deixar pelo menos metade do lucro de cada venda." : "Com essa meta, a plataforma pode vender com prejuízo pra você."}
+        </div>
+      )}
+      {aumentando && (
+        <div className={`alerta ${passa ? "alerta-warn" : "alerta-neutro"}`}>
+          <b>Consegue produzir?</b>
+          {previsto != null ? `Com o orçamento novo você deve vender ~${fmt(previsto)} por dia (hoje ~${fmt(vendasDia)}). ` : "Ainda sem semana registrada pra estimar as vendas. "}
+          {cap != null ? `Sua farm faz ~${cap} por dia deste item.` : "Sem tempo de impressão cadastrado pra calcular a capacidade da farm."}
+          {passa ? " ⚠ Passa do que a farm produz hoje — considere outra impressora ou mantenha o orçamento." : ""}
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <button type="button" className={`btn btn-mini${prodOk ? " primary" : ""}`} onClick={() => setProdOk(true)}>
+              {prodOk ? "✓ Sim, consigo produzir" : "Sim, consigo produzir"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-mini"
+              onClick={() => {
+                onToast?.("Ok — orçamento mantido. Veja a capacidade em Produção → Minha farm.");
+                onCancelar();
+              }}
+            >
+              Não — manter o orçamento
+            </button>
+          </div>
+        </div>
+      )}
       <div className="field"><label>Motivo (opcional)</label><input type="text" value={f.motivo} onChange={set("motivo")} /></div>
     </EditarDialog>
   );
 }
 
 function RegrasAds({ regrasA, salvando, onSalvar }) {
-  const [f, setF] = useState({ aumento: String(Math.round(regrasA.aumento * 100)), teto: String(Math.round(regrasA.tetoLoja * 100)) });
+  const [f, setF] = useState({ aumento: String(Math.round(regrasA.aumento * 100)) });
   return (
     <div className="pad-painel">
       <div className="grid-auto">
         <div className="field"><label>Aumento por semana (%)</label><input type="number" min="1" max="100" value={f.aumento} onChange={(e) => setF((p) => ({ ...p, aumento: e.target.value }))} /></div>
-        <div className="field"><label>Teto de Ads da loja (% do faturamento)</label><input type="number" min="1" max="100" value={f.teto} onChange={(e) => setF((p) => ({ ...p, teto: e.target.value }))} /></div>
       </div>
       <button type="button" className="btn primary" disabled={salvando} onClick={() => onSalvar(f)}>{salvando ? "Salvando…" : "Salvar regras"}</button>
     </div>
@@ -587,5 +670,62 @@ function AndamentoDialog({ linhas, hoje, salvando, onCancelar, onSalvar, onToast
         </table>
       </div>
     </EditarDialog>
+  );
+}
+
+// Teto de Ads da loja (out/2026): tabela progressiva — cada % vale só pro
+// pedaço do faturamento (últimos 30 dias) dentro da faixa — e nunca mais que
+// metade do lucro do período. Percentuais editáveis (lojas.config_escada.ads.faixasTeto).
+function TabelaTeto({ regrasA, T, salvando, onSalvar }) {
+  const faixas = regrasA.faixasTeto || REGRAS_ADS.faixasTeto;
+  const [edit, setEdit] = useState(null);
+  const lista = edit ?? faixas.map((x) => ({ ...x, pct: String(Math.round(x.pct * 1000) / 10).replace(".", ",") }));
+  const comoNum = lista.map((x) => ({ ate: x.ate, pct: num(x.pct) / 100 }));
+  const tetoTabela = tetoPorFaixas(T.faturamento, comoNum);
+  const inicios = lista.map((_, i) => (i === 0 ? 0 : num(lista[i - 1].ate)));
+  return (
+    <div className="panel">
+      <h3 className="section-title">
+        Teto de Ads da loja — fase {faseDaLoja(T.faturamento)}
+        <Ajuda texto="O Ads é acelerador, a loja é orgânica. Cada percentual vale só pro pedaço do faturamento dentro da faixa (como imposto de renda), então vender mais nunca diminui a verba. E o teto nunca passa de metade do lucro dos últimos 30 dias (já sem custo de produção e taxas). É teto, não meta: quem decide aumentar é o lucro de cada produto." />
+      </h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Faixa do faturamento (30 dias)</th>
+              <th className="num">% desse pedaço</th>
+              <th>Fase</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map((x, i) => {
+              const ini = inicios[i];
+              const fim = x.ate == null ? null : num(x.ate);
+              const atual = T.faturamento > ini && (fim == null || T.faturamento <= fim) ? true : T.faturamento === 0 && i === 0;
+              return (
+                <tr key={i} className={atual ? "linha-sel" : undefined}>
+                  <td>{fim == null ? `acima de ${BRL(ini)}` : ini === 0 ? `até ${BRL(fim)}` : `${BRL(ini)} a ${BRL(fim)}`}{atual ? " ← você está aqui" : ""}</td>
+                  <td className="num">
+                    <input type="text" inputMode="decimal" style={{ width: 70, textAlign: "right" }} value={x.pct} onChange={(e) => setEdit(lista.map((y, j) => (j === i ? { ...y, pct: e.target.value } : y)))} />%
+                  </td>
+                  <td className="muted-cel">{faseDaLoja(fim ?? ini + 1)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="pad-painel">
+        Últimos 30 dias: faturamento {BRL(T.faturamento)} · pela tabela {BRL(tetoTabela)} · metade do lucro {BRL(T.pelaTrava)} → <b>teto {BRL(Math.min(tetoTabela, T.pelaTrava))}</b> · gasto {BRL(T.gasto)}
+        {edit && (
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button type="button" className="btn btn-mini primary" disabled={salvando} onClick={() => onSalvar(comoNum)}>{salvando ? "Salvando…" : "Salvar tabela"}</button>
+            <button type="button" className="btn btn-mini" onClick={() => setEdit(null)}>Cancelar</button>
+            <button type="button" className="link-btn" onClick={() => setEdit(REGRAS_ADS.faixasTeto.map((y) => ({ ...y, pct: String(Math.round(y.pct * 1000) / 10).replace(".", ",") })))}>voltar ao padrão</button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

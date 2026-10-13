@@ -341,7 +341,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, lucratividadeEf, f.mlCategoria, f.mlTipoAnuncio, pesoSel, cfgLojaAtual, produtoEscolhido, canalMk, markupAtual]);
 
   const canalLabel =
-    f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : "Outro canal";
+    f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : canaisProprios.find((c) => c.id === canalProprioId)?.nome || "Outro canal";
 
   // Acha o canal cadastrado de verdade correspondente ao que está selecionado
   // aqui — pelos tipos oficiais dá pra achar sozinho; "outro" depende do
@@ -570,25 +570,31 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         </div>
         <div className="field">
           <label>2. Canal de venda</label>
-          <select value={f.canal} onChange={setStr("canal")}>
+          {/* Canais próprios cadastrados entram direto na lista (out/2026):
+              "cp:<id>" = canal "outro" já com o canal próprio escolhido. */}
+          <select
+            value={f.canal === "outro" ? (canalProprioId ? `cp:${canalProprioId}` : "outro") : f.canal}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v.startsWith("cp:")) {
+                setF((prev) => ({ ...prev, canal: "outro" }));
+                setCanalProprioId(v.slice(3));
+              } else {
+                setF((prev) => ({ ...prev, canal: v }));
+                setCanalProprioId("");
+              }
+            }}
+          >
             <option value="shopee">Shopee</option>
             <option value="ml">Mercado Livre</option>
             <option value="tiktok">TikTok Shop</option>
             <option value="shein">Shein</option>
-            <option value="outro">Outro canal</option>
+            {canaisProprios.map((c) => (
+              <option key={c.id} value={`cp:${c.id}`}>{c.nome}</option>
+            ))}
+            <option value="outro">Outro canal (simular taxas)</option>
           </select>
         </div>
-        {f.canal === "outro" && canaisProprios.length > 0 && (
-          <div className="field">
-            <label>Qual canal próprio?</label>
-            <select value={canalProprioId} onChange={(e) => setCanalProprioId(e.target.value)}>
-              <option value="">— preencher manualmente —</option>
-              {canaisProprios.map((c) => (
-                <option key={c.id} value={c.id}>{c.nome}</option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
     </div>
     <ResumoFixo>

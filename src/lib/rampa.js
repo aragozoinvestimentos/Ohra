@@ -40,6 +40,8 @@ export const REGRAS_PADRAO = {
   sazonalPassoMax: 0.1, // passo máximo quando o tempo é curto
   sazonalRitmoMin: 1, // pedidos por dia pra seguir o cronograma
   sazonalQuedaVolta: 0.5, // ritmo caiu mais que isso vs o degrau anterior = voltar
+  sazonalAcimaDias: 7, // no alvo, vendendo muito: teste de +5% por 7 dias
+  sazonalCorteDias: 7, // corte da entrega: dias antes da data (Ads pausa; teste acima tem que acabar antes)
   entressafraEspera: 3, // dias depois da data antes de começar a descer
   entressafraPasso: 0.08, // cada descida
   entressafraQueda: 0.5, // desce com lucro/semana < 50% do patamar da temporada por 2 semanas
@@ -695,6 +697,9 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   // ---- Acima do alvo (teste controlado, até +acimaMax) ----
   let acima = null;
   const bloqueadoAte = rampa.checklist?.acimaBloqueadoAte || null;
+  // Rampa sazonal no alvo (out/2026): "vendendo muito — suba +5%" com teste
+  // curto (sazonalAcimaDias, 7) e só enquanto faltar tempo até o corte da entrega.
+  const diasAcima = S ? num(regras.sazonalAcimaDias) || 7 : regras.acimaDias;
   if ((noAlvo || acimaAtivo) && alvo > 0) {
     const tetoAcima = finalAbaixo(alvo * (1 + num(regras.acimaMax)));
     const semNoPreco = semanasN.filter((s) => s.data >= desde);
@@ -707,14 +712,14 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
       const media = (arr) => (arr.length ? arr.reduce((t, s) => t + lucroSem(s), 0) / arr.length : null);
       const lAntes = media(antesSem);
       const lDepois = media(semNoPreco);
-      const pronto = dias >= regras.acimaDias && semNoPreco.length > 0 && lAntes != null;
+      const pronto = dias >= diasAcima && semNoPreco.length > 0 && lAntes != null;
       acima = {
         ativo: true,
         preco,
         anterior: degraus[i - 1] ?? alvo,
         lucroAntes: lAntes,
         lucroDepois: lDepois,
-        diasFaltam: Math.max(0, regras.acimaDias - dias),
+        diasFaltam: Math.max(0, diasAcima - dias),
         aprovado: pronto && lDepois >= lAntes - 0.005,
         reprovado: pronto && lDepois < lAntes - 0.005,
         proximo: (() => {
@@ -736,6 +741,24 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
       ];
       if (bloqueado) criterios.push({ rotulo: "Teste anterior falhou", ok: false, valor: `liberado em ${bloqueadoAte.slice(8, 10)}/${bloqueadoAte.slice(5, 7)}` });
       acima = { ativo: false, prox: prox <= tetoAcima ? prox : null, teto: tetoAcima, lucroAgora: lAgora, lucroProx: lProx, podePerder, criterios, pronto: criterios.every((c) => c.ok) && prox <= tetoAcima };
+      // Sazonal: na temporada, no alvo e vendendo 2× o ritmo do cronograma por
+      // alguns dias → sugere +5% já (sem esperar 14 dias / 3 semanas), desde que
+      // o teste de 7 dias termine antes do corte da entrega.
+      if (sazonal && (sazonal.fase === "subindo" || sazonal.fase === "pico")) {
+        const r = num(sazonal.ritmo);
+        const folga = num(sazonal.diasAteEvento) - num(regras.sazonalCorteDias || 7) - diasAcima;
+        const vendendoMuito = r >= 2 * num(regras.sazonalRitmoMin) && dias >= num(regras.ritmoDiasSazonal) && ruins7 === 0;
+        acima = {
+          ...acima,
+          sazonal: true,
+          criterios: [
+            { rotulo: `Vendendo ${2 * num(regras.sazonalRitmoMin)}+ pedidos/dia há ${regras.ritmoDiasSazonal}+ dias`, ok: vendendoMuito, valor: `${String(Math.round(r * 10) / 10).replace(".", ",")}/dia · ${dias} dia${dias === 1 ? "" : "s"}` },
+            { rotulo: `Teste de ${diasAcima} dias acaba antes do corte da entrega`, ok: folga >= 0, valor: `${sazonal.diasAteEvento} dias até ${sazonal.nome}` },
+            { rotulo: "Nenhuma 1–2★ recente", ok: ruins7 === 0, valor: ruins7 ? `${ruins7}` : "ok" },
+          ],
+          pronto: vendendoMuito && folga >= 0 && !!acima.prox && !(bloqueadoAte && bloqueadoAte > hoje),
+        };
+      }
     }
   }
 
@@ -784,7 +807,8 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
         ? { chave: "descer", tom: "warn", rotulo: `Descer pra ${moeda(z.precoNovo)}`, preco: z.precoNovo }
         : { chave: "segurar", tom: "neu", rotulo: z.espera ? "Depois da data: aguarde" : z.noPiso ? "No piso da entressafra" : z.naoAjudou ? "Estacionado" : "Entressafra" };
     else if (z.fase === "aguardando") sugestao = { chave: "segurar", tom: "neu", rotulo: `Aguardando a temporada (${dm(z.inicioTemporada)})` };
-    else if (noAlvo) sugestao = { chave: "alvo", tom: "good", rotulo: `No alvo · ${z.nome}` };
+    else if (noAlvo)
+      sugestao = acima?.sazonal && acima.pronto ? { chave: "testar-acima", tom: "good", rotulo: "Vendendo muito — testar +5%" } : { chave: "alvo", tom: "good", rotulo: `No alvo · ${z.nome}` };
     else if (z.voltar) sugestao = { chave: "voltar", tom: "bad", rotulo: "Voltar degrau" };
     else if (revisar) sugestao = { chave: "revisar", tom: "bad", rotulo: "Revisar anúncio" };
     else if (z.subir && !alertaNota) sugestao = { chave: "subir", tom: "good", rotulo: z.pelaPressa ? "Subir degrau (vendendo rápido)" : "Subir degrau (cronograma)", saltos: 1 };

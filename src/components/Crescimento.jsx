@@ -1,3 +1,4 @@
+import { canalDireto } from "../lib/canais.js";
 import { useEffect, useMemo, useState } from "react";
 import { alertaPreco } from "../lib/estrategia.js";
 import { menorFinalComFreteGratis } from "../lib/freteGratis.js";
@@ -1716,7 +1717,7 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
   const salvoDe = (pid, cid) => precos.find((p) => p.item_tipo === "produto" && p.item_id === pid && p.canal_id === cid) || null;
   const [produtoId, setProdutoId] = useState(editar?.produto_id || base?.produto_id || produtoInicial || "");
   const fixo = editar || base;
-  const canaisDoProduto = produtoId ? canais.filter((c) => salvoDe(produtoId, c.id) && (fixo ? c.id === fixo.canal_id : !rampas.some((r) => r.produto_id === produtoId && r.canal_id === c.id))) : [];
+  const canaisDoProduto = produtoId ? canais.filter((c) => !canalDireto(c) && salvoDe(produtoId, c.id) && (fixo ? c.id === fixo.canal_id : !rampas.some((r) => r.produto_id === produtoId && r.canal_id === c.id))) : [];
   const [canalId, setCanalId] = useState(editar?.canal_id || base?.canal_id || canalInicial || "");
   const canal = canais.find((c) => c.id === (canalId || canaisDoProduto[0]?.id)) || null;
   const item = itens.find((i) => i.id === `p:${produtoId}`);
