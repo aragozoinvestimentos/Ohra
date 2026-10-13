@@ -8,8 +8,8 @@
 // Ao usar, cada combinação com mais de uma peça vira um KIT cadastrado
 // (kits + kit_produtos + kit_embalagens) — reaproveita um kit que já tenha a
 // mesma composição. Funções puras; quem grava é o MontarCombinacoes.jsx.
-import { descontoDoItem, sugestaoKit, lucroNoPreco } from "./escada.js";
-import { anuncioDoItem } from "./rampaAnuncio.js";
+import { calcularAnuncio, descontoDoItem, sugestaoKit, lucroNoPreco, r90up } from "./escada.js";
+import { anuncioDoItem, riscadoFixoDe } from "./rampaAnuncio.js";
 import { RAZAO_MAX_SHOPEE } from "./anunciosGrupo.js";
 
 const num = (v) => {
@@ -122,6 +122,7 @@ export function montarCombinacoes({ base, adicionais, canal, itens, produtos, ki
     const lucro = preco ? lucroNoPreco(canal, preco, custo, peso, cfg) : null;
     const { desconto } = descontoDoItem(existente?.id || "k:novo", canal, { itens, produtos, kits });
     const an = preco ? anuncioDoItem({ itemId: existente?.id || null, canal, real: preco, desconto, publicacoes }) : null;
+    const fixo = !!(existente && riscadoFixoDe(existente.id, canal.id, publicacoes));
     return {
       chave: indices.join(",") || "base",
       indices,
@@ -143,6 +144,8 @@ export function montarCombinacoes({ base, adicionais, canal, itens, produtos, ki
       economiaPct: sug?.economiaPct ?? null,
       naoVale: !!sug?.naoVale,
       an,
+      desconto,
+      fixo,
     };
   });
 }
@@ -166,4 +169,67 @@ export function regraDaPlataforma(combos, canal, nomeVariacao = "Conjunto") {
   if ((tipo === "ml" || tipo === "shein") && !["cor", "tamanho"].includes(String(nomeVariacao).trim().toLowerCase()))
     res.nomeVariacao = "No Mercado Livre e na Shein a variação precisa se chamar Cor ou Tamanho — use “Tamanho” no nome da variação.";
   return res;
+}
+
+// ---------------------------------------------------------------------------
+// Quando a regra de 4× não fecha, duas saídas — NADA é cadastrado:
+// 1) VITRINE: a(s) opção(ões) abaixo do limite passam a um preço só deste
+//    anúncio (o menor ,90 ≥ original da mais cara ÷ 4). O preço salvo do item,
+//    o anúncio dele sozinho e a rampa não mudam; o preço fica guardado na
+//    opção do anúncio (anuncios_grupo.opcoes[].vitrine = { canal_id, preco }).
+// 2) DESCONTO: baixar o desconto do anúncio (riscado) das opções que passam,
+//    até o original caber em 4× o que o cliente paga na mais barata. Só pra
+//    opção ainda não anunciada (riscado fixo não muda) e que não seja
+//    variação (o desconto dela é o do produto pai).
+export function ajustes4x({ combos, canal, cfg }) {
+  const comPreco = combos.filter((c) => c.an);
+  if (comPreco.length < 2 || !canal) return null;
+  const maxOriginal = Math.max(...comPreco.map((c) => c.an.original));
+  const minPaga = Math.min(...comPreco.map((c) => c.an.clientePaga));
+  if (maxOriginal <= minPaga * 4 + 1e-9) return null;
+  // 1) vitrine
+  const limite = maxOriginal / 4;
+  const vitrine = comPreco
+    .filter((c) => c.an.clientePaga < limite - 1e-9)
+    .map((c) => {
+      const para = r90up(limite);
+      const lucroPara = lucroNoPreco(canal, para, c.custo, c.peso, cfg);
+      return { chave: c.chave, rotulo: c.rotulo, de: c.preco, para, lucroDe: c.lucro, lucroPara };
+    });
+  const aPartirDeVitrine = Math.min(...comPreco.map((c) => vitrine.find((v) => v.chave === c.chave)?.para ?? c.an.clientePaga));
+  // 2) desconto: novo desconto (% inteiro pra baixo) que faz o original ≤ 4 × minPaga
+  const teto = minPaga * 4;
+  const desconto = comPreco
+    .filter((c) => c.an.original > teto + 1e-9)
+    .map((c) => {
+      const dMax = 1 - c.preco / teto;
+      const para = Math.floor(dMax * 100 + 1e-9) / 100;
+      const bloqueio = c.fixo ? "já anunciado — o preço original fica fixo" : c.item?.id.startsWith("v:") ? "variação usa o desconto do produto" : para < 0 ? "mesmo sem desconto passa de 4×" : null;
+      const an = bloqueio ? null : calcularAnuncio(c.preco, para);
+      return { chave: c.chave, rotulo: c.rotulo, de: c.desconto, para: Math.max(0, para), originalDe: c.an.original, originalPara: an?.original ?? null, bloqueio };
+    });
+  return {
+    limite,
+    aPartirDe: minPaga,
+    vitrine: { mudancas: vitrine, aPartirDe: aPartirDeVitrine },
+    desconto: { mudancas: desconto, possivel: desconto.length > 0 && desconto.every((d) => !d.bloqueio) },
+  };
+}
+
+/** Combinações com o ajuste escolhido aplicado (só simulação na tela). */
+export function aplicarAjuste(combos, ajustes, tipo) {
+  if (!ajustes || !tipo) return combos;
+  return combos.map((c) => {
+    if (tipo === "vitrine") {
+      const m = ajustes.vitrine.mudancas.find((x) => x.chave === c.chave);
+      if (!m) return c;
+      return { ...c, preco: m.para, origemPreco: "vitrine", lucro: m.lucroPara, margem: m.lucroPara != null ? m.lucroPara / m.para : null, an: calcularAnuncio(m.para, c.desconto), vitrine: m.para };
+    }
+    if (tipo === "desconto") {
+      const m = ajustes.desconto.mudancas.find((x) => x.chave === c.chave && !x.bloqueio);
+      if (!m) return c;
+      return { ...c, an: calcularAnuncio(c.preco, m.para), desconto: m.para, descontoNovo: m.para };
+    }
+    return c;
+  });
 }

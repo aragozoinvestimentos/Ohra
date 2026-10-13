@@ -581,6 +581,11 @@ export default function Publicar({ onToast, onSub }) {
                               {l.item.nome}
                               {l.item.sku ? ` · ${l.item.sku}${o.sufixo_sku || ""}` : ""}
                             </span>
+                            {o.vitrine && (
+                              <span className="sub" style={{ color: "var(--st-decisao)" }}>
+                                vitrine em {canais.find((c) => c.id === o.vitrine.canal_id)?.nome || "canal"}: neste anúncio o cliente paga {BRL(o.vitrine.preco)} (veja original e promo na 3º Ficha) — o ✓/↻ ao lado segue o preço salvo do item
+                              </span>
+                            )}
                           </td>
                           {celulas(l, base)}
                           <td>

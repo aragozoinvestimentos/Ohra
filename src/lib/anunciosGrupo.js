@@ -5,7 +5,7 @@
 // variação ou kit); o preço de cada linha vem do PREÇO SALVO desse item no
 // canal (riscado fixo se já anunciado; Rampa = preço de agora) — nada aqui
 // grava preço. Funções puras: a Ficha, a Anunciar e o Lançamento usam estas.
-import { descontoDoItem } from "./escada.js";
+import { calcularAnuncio, descontoDoItem } from "./escada.js";
 import { anuncioDoItem } from "./rampaAnuncio.js";
 import { alertaPreco } from "./estrategia.js";
 
@@ -21,8 +21,20 @@ export const idDoItemOpcao = (o) => (o?.item_tipo && o?.item_id ? `${PREFIXO[o.i
 export function opcoesDoGrupo(grupo) {
   return (Array.isArray(grupo?.opcoes) ? grupo.opcoes : [])
     .filter((o) => o && o.item_id)
-    .map((o) => ({ rotulo: String(o.rotulo || "").trim(), item_tipo: o.item_tipo || "produto", item_id: o.item_id, sufixo_sku: String(o.sufixo_sku || "").trim() }));
+    .map((o) => ({
+      rotulo: String(o.rotulo || "").trim(),
+      item_tipo: o.item_tipo || "produto",
+      item_id: o.item_id,
+      sufixo_sku: String(o.sufixo_sku || "").trim(),
+      vitrine: o.vitrine && o.vitrine.canal_id && Number(o.vitrine.preco) > 0 ? { canal_id: o.vitrine.canal_id, preco: Number(o.vitrine.preco) } : null,
+    }));
 }
+// Preço VITRINE (Montar combinações): preço só desta opção neste anúncio e
+// canal — o preço salvo do item, o anúncio dele sozinho e a rampa não mudam.
+export function vitrineDaOpcao(o, canal) {
+  return o?.vitrine && canal && o.vitrine.canal_id === canal.id && Number(o.vitrine.preco) > 0 ? Number(o.vitrine.preco) : null;
+}
+
 // Variação própria que combina com todas as opções (ex.: Cor).
 export function variacao2DoGrupo(grupo) {
   const v = grupo?.variacao2;
@@ -57,8 +69,13 @@ export function fichaDoGrupo({ grupo, canal, itens, precos, produtos, kits, mapa
   for (const o of opcoes) {
     const item = itens.find((i) => i.id === idDoItemOpcao(o)) || null;
     const rotulo = o.rotulo || item?.nome || "—";
-    const { an, anSalvo } = anuncioNoCanal({ item, canal, precos, itens, produtos, kits, mapaRampa, publicacoes });
-    const valorCliente = item && an ? clientePagaHoje?.(item, canal) ?? an.clientePaga : null;
+    const vitrine = vitrineDaOpcao(o, canal);
+    let { an, anSalvo } = anuncioNoCanal({ item, canal, precos, itens, produtos, kits, mapaRampa, publicacoes });
+    if (vitrine && item) {
+      an = { ...calcularAnuncio(vitrine, descontoDoItem(item.id, canal, { itens, produtos, kits }).desconto), vitrine: true };
+      anSalvo = an;
+    }
+    const valorCliente = item && an ? (vitrine ? an.clientePaga : clientePagaHoje?.(item, canal) ?? an.clientePaga) : null;
     const frete = item && an ? alertaPreco({ preco: an.real, canal, valorCliente }).frete : null;
     for (const c of combos2) {
       const sufixos = `${o.sufixo_sku || ""}${c?.sufixo || ""}`;
@@ -73,6 +90,7 @@ export function fichaDoGrupo({ grupo, canal, itens, precos, produtos, kits, mapa
         semSku: !item?.sku,
         an: item ? an : null,
         anSalvo: item ? anSalvo : null,
+        vitrine,
         frete,
       });
     }

@@ -6,7 +6,7 @@ import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
 import { LIMITE_NOME_OPCAO } from "../lib/anunciosGrupo.js";
-import { MAX_ADICIONAIS, montarCombinacoes, regraDaPlataforma } from "../lib/combinacoes.js";
+import { MAX_ADICIONAIS, ajustes4x, aplicarAjuste, montarCombinacoes, regraDaPlataforma } from "../lib/combinacoes.js";
 import { BRL, PCT } from "../lib/format.js";
 import BuscaItem from "./BuscaItem.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -28,6 +28,7 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
   const [rotulos, setRotulos] = useState({});
   const [salvarPrecos, setSalvarPrecos] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [ajuste, setAjuste] = useState(null); // null | "vitrine" | "desconto" (só simulação até o "Usar")
 
   const adicionaisValidos = adicionais.filter((a) => a.itemId && a.itemId !== base);
   // Chave da montagem: muda a base/adicionais → marcações e rótulos voltam ao padrão.
@@ -37,6 +38,7 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
     setAssinaturaVista(assinatura);
     setDesmarcadas(new Set());
     setRotulos({});
+    setAjuste(null);
   }
 
   const combos = useMemo(
@@ -47,7 +49,14 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [assinatura, canal, itens, produtos, kits, embalagens, produtoEmbalagens, precos, publicacoesCanal, cfgDoProduto]
   );
-  const marcadas = combos.filter((c) => !desmarcadas.has(c.chave));
+  const itemBase = itens.find((i) => i.id === base) || null;
+  const cfg = cfgDoProduto(itemBase ? itemBase.produtoId || (itemBase.id.startsWith("p:") ? itemBase.id.slice(2) : null) : null);
+  const marcadasBrutas = combos.filter((c) => !desmarcadas.has(c.chave));
+  // Saídas pra regra de 4× (Shopee/TikTok), calculadas sobre o que está marcado SEM ajuste.
+  const ajustes = canal && (canal.tipo === "shopee" || canal.tipo === "tiktok") ? ajustes4x({ combos: marcadasBrutas, canal, cfg }) : null;
+  const ajusteAtivo = ajustes && (ajuste !== "desconto" || ajustes.desconto.possivel) ? ajuste : null;
+  const marcadas = aplicarAjuste(marcadasBrutas, ajustes, ajusteAtivo);
+  const efetiva = (c) => marcadas.find((m) => m.chave === c.chave) || c;
   const regra = regraDaPlataforma(marcadas, canal, nomeVariacao);
   const rotuloDe = (c) => rotulos[c.chave] ?? c.rotulo;
   const alternar = (chave) =>
@@ -57,7 +66,10 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
       else n.add(chave);
       return n;
     });
-  const desmarcarFora = () => setDesmarcadas((s) => new Set([...s, ...(regra.quatroX?.fora || [])]));
+  const desmarcarFora = () => {
+    setAjuste(null);
+    setDesmarcadas((s) => new Set([...s, ...(regra.quatroX?.fora || [])]));
+  };
   const novos = marcadas.filter((c) => c.novo);
   const precosASalvar = marcadas.filter((c) => c.origemPreco === "sugerido" && c.sugerido > 0);
 
@@ -67,12 +79,20 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
     const opcoes = [];
     let criados = 0;
     let precosSalvos = 0;
+    let descontos = 0;
     for (const c of marcadas) {
       let itemId = c.item?.id || null;
       if (!itemId) {
         const r = await supabase
           .from("kits")
-          .insert({ nome: c.nomeKit, sku: c.sku || null, observacao: "Criado em Montar combinações (Ficha do anúncio)", atualizado_em: new Date().toISOString(), ...(lojaId ? { loja_id: lojaId } : {}) })
+          .insert({
+            nome: c.nomeKit,
+            sku: c.sku || null,
+            observacao: "Criado em Montar combinações (Ficha do anúncio)",
+            atualizado_em: new Date().toISOString(),
+            ...(c.descontoNovo != null ? { desconto_anuncio: { [canal.id]: c.descontoNovo } } : {}),
+            ...(lojaId ? { loja_id: lojaId } : {}),
+          })
           .select()
           .single();
         if (r.error || !r.data?.id) {
@@ -90,6 +110,16 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
         if (c.receita.length) await supabase.from("kit_embalagens").insert(c.receita.map((e) => ({ kit_id: kitId, embalagem_id: e.embalagem_id, quantidade: Number(e.quantidade) || 0 })));
         itemId = `k:${kitId}`;
         criados += 1;
+        if (c.descontoNovo != null) descontos += 1;
+      } else if (c.descontoNovo != null && (itemId.startsWith("k:") || itemId.startsWith("p:"))) {
+        // Desconto do anúncio só deste item × canal (o mesmo "desconto X%" da Anunciar).
+        const ehKit = itemId.startsWith("k:");
+        const dono = (ehKit ? kits : produtos).find((x) => x.id === itemId.slice(2));
+        const { error } = await supabase
+          .from(ehKit ? "kits" : "produtos_cadastro")
+          .update({ desconto_anuncio: { ...(dono?.desconto_anuncio || {}), [canal.id]: c.descontoNovo } })
+          .eq("id", itemId.slice(2));
+        if (!error) descontos += 1;
       }
       if (salvarPrecos && c.origemPreco === "sugerido" && c.sugerido > 0 && itemId.startsWith("k:")) {
         const { error } = await gravarPrecoNovo((extra) =>
@@ -111,12 +141,14 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
         );
         if (!error) precosSalvos += 1;
       }
-      opcoes.push({ rotulo: rotuloDe(c).slice(0, 60), itemId, sufixo: "" });
+      opcoes.push({ rotulo: rotuloDe(c).slice(0, 60), itemId, sufixo: "", vitrine: c.vitrine ? { canal_id: canal.id, preco: c.vitrine } : null });
     }
     recarregarCatalogo();
     setSalvando(false);
     const partes = [`${opcoes.length} opções no anúncio`];
     if (criados) partes.push(`${criados} ${criados === 1 ? "kit criado" : "kits criados"} em Produtos → Kits`);
+    if (descontos) partes.push(`desconto do anúncio ajustado em ${descontos} ${descontos === 1 ? "item" : "itens"}`);
+    if (marcadas.some((c) => c.vitrine)) partes.push("preço vitrine só neste anúncio");
     if (precosSalvos) partes.push(`${precosSalvos} ${precosSalvos === 1 ? "preço salvo" : "preços salvos"} em ${canal.nome}`);
     onToast?.(partes.join(" · "));
     onUsar(opcoes, itens.find((i) => i.id === base)?.nome || "");
@@ -184,8 +216,9 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
                 </tr>
               </thead>
               <tbody>
-                {combos.map((c) => {
-                  const marcada = !desmarcadas.has(c.chave);
+                {combos.map((c0) => {
+                  const marcada = !desmarcadas.has(c0.chave);
+                  const c = marcada ? efetiva(c0) : c0;
                   const fora = regra.quatroX?.fora.includes(c.chave);
                   const rot = rotuloDe(c);
                   return (
@@ -204,7 +237,8 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
                       <td className="num">{BRL(c.custo)}</td>
                       <td className="num">
                         {c.preco ? <b>{BRL(c.preco)}</b> : <span className="muted-cel">sem preço</span>}
-                        <div className="muted-cel">{c.origemPreco === "salvo" ? "salvo" : c.origemPreco === "sugerido" ? "sugerido (kit)" : !c.item ? "" : "salve no 1º Avulso"}</div>
+                        <div className="muted-cel">{c.origemPreco === "vitrine" ? `vitrine (só neste anúncio; salvo ${BRL(c0.preco)})` : c.origemPreco === "salvo" ? "salvo" : c.origemPreco === "sugerido" ? "sugerido (kit)" : !c.item ? "" : "salve no 1º Avulso"}</div>
+                        {c.an && <div className="muted-cel">original {BRL(c.an.original)} · promo {c.an.promo}%{c.descontoNovo != null ? " (desconto novo)" : ""}</div>}
                         {fora && marcada && <span className="st st-atencao">⚠ passa de 4×</span>}
                       </td>
                       <td className="num">
@@ -218,6 +252,47 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
               </tbody>
             </table>
           </div>
+
+          {ajustes && (
+            <div className="ajustes-4x">
+              <div className="ajustes-4x-tit">
+                <b>Pra caber num anúncio só na {canal.nome}</b> — clique pra ver como fica na tabela:
+              </div>
+              <div className="ajustes-4x-opcoes">
+                <button type="button" className={`ajuste-4x${ajusteAtivo === "vitrine" ? " ativo" : ""}`} onClick={() => setAjuste(ajusteAtivo === "vitrine" ? null : "vitrine")} aria-pressed={ajusteAtivo === "vitrine"}>
+                  <span className="ajuste-4x-nome">1 · Opção vitrine</span>
+                  {ajustes.vitrine.mudancas.map((m) => (
+                    <span key={m.chave}>
+                      {m.rotulo}: {BRL(m.de)} → <b>{BRL(m.para)}</b> · lucro {BRL(m.lucroDe)} → {BRL(m.lucroPara)}
+                    </span>
+                  ))}
+                  <span className="muted-cel">
+                    “a partir de” {BRL(ajustes.aPartirDe)} → {BRL(ajustes.vitrine.aPartirDe)} · só neste anúncio, nenhum item é cadastrado e o preço salvo não muda
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={`ajuste-4x${ajusteAtivo === "desconto" ? " ativo" : ""}`}
+                  disabled={!ajustes.desconto.possivel}
+                  onClick={() => setAjuste(ajusteAtivo === "desconto" ? null : "desconto")}
+                  aria-pressed={ajusteAtivo === "desconto"}
+                >
+                  <span className="ajuste-4x-nome">2 · Baixar o desconto do anúncio</span>
+                  {!ajustes.desconto.possivel && ajustes.desconto.mudancas.every((m) => m.bloqueio === ajustes.desconto.mudancas[0]?.bloqueio) ? (
+                    <span>
+                      Não resolve aqui: {ajustes.desconto.mudancas[0]?.bloqueio} ({ajustes.desconto.mudancas.map((m) => m.rotulo).join(", ")}).
+                    </span>
+                  ) : ajustes.desconto.mudancas.map((m) => (
+                    <span key={m.chave}>
+                      {m.rotulo}: desconto {Math.round(m.de * 100)}% → {m.bloqueio ? <i>{m.bloqueio}</i> : <b>{Math.round(m.para * 100)}%</b>}
+                      {!m.bloqueio && ` · original ${BRL(m.originalDe)} → ${BRL(m.originalPara)}`}
+                    </span>
+                  ))}
+                  <span className="muted-cel">“a partir de” continua {BRL(ajustes.aPartirDe)} · preços e lucro não mudam, só a promo exibida fica menor</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {regra.quatroX &&
             (regra.quatroX.ok ? (

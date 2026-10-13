@@ -1854,7 +1854,8 @@ td { border-bottom-color: color-mix(in oklab, var(--border) 70%, transparent); }
 .combinacoes-qtd { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
 .combinacoes-qtd input { width: 56px; }
 .combinacoes-tabela { margin: 6px 0 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
-.combinacoes-tabela td { vertical-align: top; }
+.combinacoes-tabela td { vertical-align: top; white-space: normal; }
+.combinacoes-tabela td.num { min-width: 92px; max-width: 190px; }
 .combinacao-rotulo { width: 100%; min-width: 150px; }
 .combinacao-leva { white-space: normal; min-width: 180px; max-width: 280px; font-size: 12.5px; color: var(--ink-soft); }
 tr.combinacao-off td { opacity: 0.45; }
@@ -1866,3 +1867,15 @@ tr.combinacao-off td { opacity: 0.45; }
 }
 .combinacoes-convite { display: flex; align-items: center; justify-content: space-between; gap: 8px 14px; flex-wrap: wrap; margin: 12px 0 2px; padding: 9px 12px; border: 1px dashed var(--border-strong); border-radius: 10px; font-size: 12.5px; color: var(--ink-soft); }
 .combinacoes-convite b { color: var(--ink); }
+.grupo-opcao-vitrine { grid-column: 1 / -1; font-size: 12px; color: var(--st-decisao); display: flex; gap: 8px; align-items: baseline; margin-top: -2px; }
+.ajustes-4x { margin: 8px 0; }
+.ajustes-4x-tit { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 6px; }
+.ajustes-4x-tit b { color: var(--ink); }
+.ajustes-4x-opcoes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ajuste-4x { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); font-size: 12.5px; color: var(--ink); cursor: pointer; }
+.ajuste-4x:hover:not(:disabled) { border-color: var(--accent); }
+.ajuste-4x.ativo { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background: color-mix(in oklab, var(--accent-soft) 45%, var(--surface)); }
+.ajuste-4x:disabled { opacity: 0.6; cursor: not-allowed; }
+.ajuste-4x-nome { font-weight: 700; font-size: 13px; }
+.ajuste-4x.ativo .ajuste-4x-nome::after { content: " ✓ aplicado na tabela"; color: var(--accent-ink); font-weight: 600; }
+@media (max-width: 760px) { .ajustes-4x-opcoes { grid-template-columns: minmax(0, 1fr); } }

@@ -51,7 +51,7 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
       variacao_nome: f.variacao_nome.trim() || "Conjunto",
       opcoes: f.opcoes
         .filter((o) => o.itemId)
-        .map((o) => ({ rotulo: o.rotulo.trim(), item_tipo: PREFIXO_TIPO[o.itemId.slice(0, 1)] || "produto", item_id: o.itemId.slice(2), sufixo_sku: o.sufixo.trim().toUpperCase() })),
+        .map((o) => ({ rotulo: o.rotulo.trim(), item_tipo: PREFIXO_TIPO[o.itemId.slice(0, 1)] || "produto", item_id: o.itemId.slice(2), sufixo_sku: o.sufixo.trim().toUpperCase(), ...(o.vitrine ? { vitrine: o.vitrine } : {}) })),
       variacao2: f.v2ativo && f.v2nome.trim() && f.v2opcoes.length ? { nome: f.v2nome.trim(), opcoes: f.v2opcoes } : null,
       atualizado_em: new Date().toISOString(),
     };
@@ -324,6 +324,13 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
                                     <FreteAviso frete={l.frete} compacto />
                                   </div>
                                 )}
+                                {l.vitrine && (
+                                  <div>
+                                    <span className="chip-cel decisao" title="Preço só desta opção neste anúncio (Montar combinações) — o preço salvo do item, o anúncio dele sozinho e a rampa não mudam">
+                                      vitrine · só neste anúncio
+                                    </span>
+                                  </div>
+                                )}
                                 {l.an.acimaDoRiscado && (
                                   <div>
                                     <span className="chip-cel atencao" title="O preço desejado passou do preço original já anunciado — considere manter">⚠ acima do riscado</span>
@@ -384,7 +391,7 @@ function GrupoDialog({ grupo, itens, canal, canais, salvando, onCancelar, onSalv
     return {
       nome: grupo?.nome || "",
       variacao_nome: grupo?.variacao_nome || "Conjunto",
-      opcoes: grupo ? opcoesDoGrupo(grupo).map((o) => ({ rotulo: o.rotulo, itemId: idDoItemOpcao(o), sufixo: o.sufixo_sku })) : [{ rotulo: "", itemId: "", sufixo: "" }],
+      opcoes: grupo ? opcoesDoGrupo(grupo).map((o) => ({ rotulo: o.rotulo, itemId: idDoItemOpcao(o), sufixo: o.sufixo_sku, vitrine: o.vitrine })) : [{ rotulo: "", itemId: "", sufixo: "" }],
       v2ativo: !!v2,
       v2nome: v2?.nome || "Cor",
       v2opcoes: v2?.opcoes || [],
@@ -395,7 +402,7 @@ function GrupoDialog({ grupo, itens, canal, canais, salvando, onCancelar, onSalv
   const escolherItem = (i, id) =>
     setF((p) => ({
       ...p,
-      opcoes: p.opcoes.map((o, k) => (k === i ? { ...o, itemId: id, rotulo: o.rotulo || itens.find((x) => x.id === id)?.nome?.slice(0, LIMITE_NOME_OPCAO) || "" } : o)),
+      opcoes: p.opcoes.map((o, k) => (k === i ? { ...o, itemId: id, vitrine: null, rotulo: o.rotulo || itens.find((x) => x.id === id)?.nome?.slice(0, LIMITE_NOME_OPCAO) || "" } : o)),
     }));
   const mover = (i, d) =>
     setF((p) => {
@@ -475,6 +482,14 @@ function GrupoDialog({ grupo, itens, canal, canais, salvando, onCancelar, onSalv
               <button type="button" className="btn-icone" title="Descer" disabled={i === f.opcoes.length - 1} onClick={() => mover(i, 1)}>↓</button>
               <button type="button" className="btn-icone" title="Tirar esta opção" onClick={() => tirar(i)}>×</button>
             </span>
+            {o.vitrine && (
+              <span className="grupo-opcao-vitrine">
+                vitrine em {(canais || []).find((c) => c.id === o.vitrine.canal_id)?.nome || "canal"}: <b>{BRL(o.vitrine.preco)}</b> (só neste anúncio)
+                <button type="button" className="link-btn" onClick={() => setOp(i, "vitrine", null)}>
+                  tirar
+                </button>
+              </span>
+            )}
           </div>
         ))}
         <button type="button" className="btn btn-mini" onClick={() => setF((p) => ({ ...p, opcoes: [...p.opcoes, { rotulo: "", itemId: "", sufixo: "" }] }))}>
