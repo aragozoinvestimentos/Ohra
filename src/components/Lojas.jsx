@@ -7,6 +7,7 @@ import TopbarAcoes from "./TopbarAcoes.jsx";
 import Ajuda from "./Ajuda.jsx";
 import PinPrompt from "./PinPrompt.jsx";
 import MetasPrecoLoja from "./MetasPrecoLoja.jsx";
+import CalendarioLoja from "./CalendarioLoja.jsx";
 
 const BUCKET = "loja-icones";
 const TAMANHO_MAX_MB = 3;
@@ -336,6 +337,7 @@ export default function Lojas({ onToast }) {
         </button>
       </TopbarAcoes>
       <MetasPrecoLoja onToast={onToast} />
+      <CalendarioLoja onToast={onToast} />
       <div className="panel">
         <h3 className="section-title">
           Suas lojas

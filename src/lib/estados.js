@@ -82,8 +82,8 @@ export function estadoSugestaoRampa(e) {
   if (!s) return null;
   if (s.chave === "subir" || s.chave === "testar-acima" || s.chave === "acima-aprovado") return "oportunidade";
   if (s.chave === "revisar") return e.anuncio?.motivo === "teste" ? "resolver" : "atencao";
-  if (s.chave === "voltar" || s.chave === "acima-voltar") return "atencao";
-  if (s.chave === "segurar") return e.check && !e.check.pendente && e.check.falhasSeguidas === 1 ? "atencao" : "info";
+  if (s.chave === "voltar" || s.chave === "acima-voltar" || s.chave === "descer" || s.chave === "atrasado") return "atencao";
+  if (s.chave === "segurar") return s.tom === "warn" && e.lucroCheck?.status === "sinaliza" ? "atencao" : "info";
   if (s.chave === "acima-testando") return "decisao";
   return null;
 }

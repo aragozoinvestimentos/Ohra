@@ -18,7 +18,8 @@ const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slic
 import { anuncioDaRampa, anuncioFixo, anuncioNoRiscado, riscadoFixoDe } from "../lib/rampaAnuncio.js";
 import { descontoDoItem } from "../lib/escada.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
-import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, ajustarDegrausAoAlvo, conhecidosDe, fmtSemana, finalAcima, normalizarDegraus, sugerirDegraus, zeroAZero } from "../lib/rampa.js";
+import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, ajustarDegrausAoAlvo, conhecidosDe, fmtSemana, finalAcima, normalizarDegraus, sugerirDegraus, sugerirDegrausSazonal, zeroAZero } from "../lib/rampa.js";
+import { configCalendario, infoSazonal, quandoVendeDe } from "../lib/calendario.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -189,12 +190,20 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
   const [mudar, setMudar] = useState(null); // { linha, dir: 1 | -1 }
   const [ajusteDeg, setAjusteDeg] = useState(null); // linha: ajustar o preço do degrau atual
   const [encerrar, setEncerrar] = useState(null);
+  const [descer, setDescer] = useState(null); // entressafra: descer um degrau
+  const [busca, setBusca] = useState("");
   const [verRegras, setVerRegras] = useState(false);
   const [acimaConfirma, setAcimaConfirma] = useState(null);
   const [alvoAjuste, setAlvoAjuste] = useState(null); // linha com "alvo mudou" esperando confirmação // { tipo: "testar"|"voltar"|"aprovar", linha, preco }
   const [salvando, setSalvando] = useState(false);
 
   const sel = linhas.find((l) => l.r.id === selId) || linhas[0] || null;
+  // Busca por nome ou SKU na lista "Produtos em rampa".
+  const linhasVis = useMemo(() => {
+    const t = busca.trim().toLowerCase();
+    if (!t) return linhas;
+    return linhas.filter((l) => `${l.produto.nome} ${l.produto.sku || ""}`.toLowerCase().includes(t));
+  }, [linhas, busca]);
   // Semana pendente (estado único com o Início): adiada não mostra etiqueta.
   const semanaPend = useSemanaPendente();
   const pendDe = (l) => {
@@ -271,6 +280,25 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
     setAjusteDeg(null);
     window.dispatchEvent(new Event("focus"));
     onToast?.(`${ajusteDeg.produto.nome}: degrau ajustado pra ${BRL(novo)} (não conta como subida) — atualize a promo no anúncio`);
+  }
+
+  // Entressafra (rampa sazonal): desce ~8% (nunca abaixo do piso). O preço
+  // novo entra na escada; o anúncio continua ativo, só a promo muda.
+  async function descerEntressafra() {
+    const l = descer;
+    const preco = l.est.sazonal?.precoNovo;
+    if (!(preco > 0)) return setDescer(null);
+    const lista = normalizarDegraus([...l.est.degraus, preco]);
+    const idx = lista.findIndex((d) => Math.abs(d - preco) < 0.005);
+    setSalvando(true);
+    const ok = await atualizarRampa(l, { degraus: lista, degrau_atual: idx, desde: hoje, base_avaliacoes: l.est.avaliacoesTotal });
+    if (ok) await supabase.from("rampa_registros").insert({ loja_id: lojaId || null, rampa_id: l.r.id, tipo: "descida", data: hoje, degrau: idx, preco, observacao: "entressafra" });
+    setSalvando(false);
+    setDescer(null);
+    if (ok) {
+      window.dispatchEvent(new Event("focus"));
+      onToast?.(`${l.produto.nome}: agora vendendo ${BRL(preco)} (entressafra) — atualize a promo no anúncio`);
+    }
   }
 
   async function encerrarRampa() {
@@ -491,6 +519,16 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
             Nenhum produto em rampa. Use “+ Iniciar rampa” no topo: escolha o produto, o canal e o preço em que ele já está vendendo.
           </div>
         ) : (
+          <>
+          {linhas.length > 1 || busca ? (
+            <div className="toolbar">
+              <input type="search" className="busca-rampa" placeholder="Buscar por nome ou SKU" value={busca} onChange={(ev) => setBusca(ev.target.value)} />
+              {busca && <span className="muted-cel">{linhasVis.length} de {linhas.length}</span>}
+            </div>
+          ) : null}
+          {!linhasVis.length ? (
+            <div className="empty">Nenhum produto em rampa com “{busca}”.</div>
+          ) : (
           <div className="table-wrap lista-rampa">
             <table>
               <thead>
@@ -506,7 +544,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
                 </tr>
               </thead>
               <tbody>
-                {linhas.map((l) => {
+                {linhasVis.map((l) => {
                   const e = l.est;
                   return (
                     <tr key={l.r.id} className={`linha-clicavel${sel?.r.id === l.r.id ? " linha-atual" : ""}`} onClick={() => setSelId(l.r.id)}>
@@ -536,6 +574,11 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
                             ⚠ alvo mudou
                           </span>
                         )}
+                        {e.sazonal && (
+                          <span className="badge info tag-pronto" title={`Produto sazonal: no alvo até ${dataBR(e.sazonal.limite)} (${e.sazonal.motivoLimite})`}>
+                            {e.sazonal.nome} · {{ subindo: `alvo até ${dataBR(e.sazonal.limite)}`, pico: "temporada", entressafra: "entressafra", aguardando: `temporada em ${dataBR(e.sazonal.inicioTemporada)}` }[e.sazonal.fase]}
+                          </span>
+                        )}
                       </td>
                       <td>
                         {e.fase.rotulo}
@@ -559,6 +602,8 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
                       <td>
                         {e.fase.chave === "alvo" ? (
                           <span className="muted-cel">—</span>
+                        ) : e.sazonal ? (
+                          <span className="muted-cel">{e.sazonal.proximaData ? `cronograma: próximo ${dataBR(e.sazonal.proximaData)}` : e.sazonal.fase === "entressafra" ? `piso ${BRL(e.sazonal.piso)}` : "—"}</span>
                         ) : (
                           <div className="chips-portoes">
                             {e.portoes.map((p) => (
@@ -590,6 +635,8 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
               </tbody>
             </table>
           </div>
+          )}
+          </>
         )}
       </div>
 
@@ -600,6 +647,8 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
           regras={regras}
           onMudar={(dir) => setMudar({ linha: sel, dir })}
           onEditar={() => setIniciar({ rampa: sel.r })}
+          onRefazer={() => setIniciar({ rampa: sel.r, refazer: true, linha: sel })}
+          onDescer={() => setDescer(sel)}
           onAjustarDegrau={() => setAjusteDeg(sel)}
           onEncerrar={() => setEncerrar(sel)}
           onChecklist={marcarChecklist}
@@ -684,6 +733,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
           rampas={rampas}
           regras={regras}
           editar={iniciar.rampa || null}
+          refazer={iniciar.refazer ? iniciar.linha : null}
           onToast={onToast}
           onClose={(id) => {
             setIniciar(null);
@@ -708,10 +758,23 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
                 Os kits e o preço original/promo são recalculados na tela pra você atualizar o anúncio. O preço salvo (alvo) não muda.
                 {mudar.dir > 0 && !e.portoesOk ? " Atenção: nem todos os portões estão ✓." : ""}
                 {e.dias < e.diasMin ? ` Mudança recente: o preço mudou há ${e.dias} dia${e.dias === 1 ? "" : "s"} — o ideal é esperar ${e.diasMin} pra não mexer no preço o tempo todo.` : ""}
-                {mudar.dir > 0 && e.campanhaPerto ? ` Campanha em ${e.diasAteCampanha} dia(s): aumentar agora pode barrar a entrada na campanha ou parecer preço inflado.` : ""}
+                {mudar.dir > 0 && e.campanhaAviso ? ` ${e.campanhaAviso.nome} em ${e.campanhaAviso.dias} dia(s): a campanha costuma pedir preço abaixo do menor dos últimos 30 dias (${BRL(e.campanhaAviso.menor)}).` : ""}
               </p>
             );
           })()}
+        </ConfirmDialog>
+      )}
+      {descer && (
+        <ConfirmDialog
+          titulo="Descer preço (entressafra)"
+          confirmarLabel={salvando ? "Salvando…" : `Descer pra ${BRL(descer.est.sazonal?.precoNovo)}`}
+          onConfirm={descerEntressafra}
+          onCancel={() => setDescer(null)}
+        >
+          <p className="modal-msg">
+            {descer.produto.nome} em {descer.canal.nome}: <b>{BRL(descer.est.preco)}</b> → <b>{BRL(descer.est.sazonal?.precoNovo)}</b> (lucro {BRL(descer.est.lucroAtual)} →{" "}
+            {BRL(descer.est.lucroEm(descer.est.sazonal?.precoNovo))}). O anúncio continua ativo; o preço original fica fixo e só a promo muda. Se a descida não aumentar o lucro da semana, o app para de descer.
+          </p>
         </ConfirmDialog>
       )}
       {encerrar && (
@@ -785,7 +848,178 @@ function TagTeste({ teste }) {
   );
 }
 
-function Detalhe({ l, anuncio, regras, onMudar, onEditar, onAjustarDegrau, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo, adsLinha, onVerAds }) {
+// "Vale a pena?" — depois de subir: o lucro por semana no preço novo vs o
+// nível em que o degrau anterior foi deixado (lib/rampa.js → lucroCheck).
+const pctInt = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+function ValeAPena({ e, regras }) {
+  const c = e.lucroCheck;
+  const u = c.ultima;
+  const ls = e.lucroSubir;
+  const tom = { fica: "good", sinaliza: "warn", voltar: "bad" }[c.status] || "neutro";
+  return (
+    <div className="vale-a-pena">
+      <h4 className="sub-h">
+        Vale a pena? <span className="muted-cel">({BRL(c.de)} → {BRL(c.para)})</span>
+        <Ajuda
+          texto={`Compara o lucro por semana no preço novo (vendas sem conhecidos × lucro por venda, custo e taxas de hoje) com o das 2 últimas semanas no preço anterior. ≥ ${pctInt(regras.lucroFica)} = fica (ganha quase o mesmo com menos trabalho); entre ${pctInt(regras.lucroVolta)} e ${pctInt(regras.lucroFica)} = sinaliza; abaixo de ${pctInt(regras.lucroVolta)} (ou vendas abaixo de ${pctInt(regras.pisoVendas)}) por 2 semanas = voltar. Só sugere subir de novo com lucro ≥ ${pctInt(regras.lucroSobe)} do patamar deste degrau (média das 2 primeiras semanas completas) por 2 semanas — assim o preço não fica subindo e descendo. Os percentuais ficam em Regras dos portões.`}
+        />
+      </h4>
+      {c.status === "sem-ref" ? (
+        <p className="hint" style={{ margin: 0 }}>Não há semana registrada no preço anterior pra comparar. A partir daqui vale o patamar deste degrau.</p>
+      ) : (
+        <ul className="vap-linhas">
+          <li>
+            No preço novo você precisa vender <b>{c.precisaVender != null ? fmtSemana(c.precisaVender) : "—"} por semana</b> pra ganhar o mesmo de antes ({BRL(c.ref)}/semana)
+            {c.precisaPct != null && (
+              <>
+                {" "}— <b>{pctInt(c.precisaPct)}</b> do que vendia ({fmtSemana(c.refVendas)}/semana)
+              </>
+            )}
+            .
+          </li>
+          <li>
+            Hoje:{" "}
+            {u ? (
+              <>
+                {fmtSemana(u.vendas)}/semana{u.pctV != null ? ` (${pctInt(u.pctV)} das vendas)` : ""} → lucro {BRL(u.lucro)}/semana = <b>{pctInt(u.pct)}</b> do de antes
+              </>
+            ) : (
+              "coletando — a 1ª semana completa no preço novo ainda não fechou"
+            )}
+            .
+          </li>
+          {ls && (
+            <li>
+              Pra subir de novo:{" "}
+              {ls.medindo
+                ? `primeiro o app mede o patamar deste degrau (faltam ${ls.faltamPatamar} semana${ls.faltamPatamar === 1 ? "" : "s"} completa${ls.faltamPatamar === 1 ? "" : "s"})`
+                : `lucro de ${BRL(ls.meta)}/semana ou mais (${pctInt(regras.lucroSobe)} do patamar de ${BRL(ls.patamar)}) por 2 semanas`}
+              .
+            </li>
+          )}
+        </ul>
+      )}
+      {c.status !== "sem-ref" && c.status !== "coletando" && (
+        <div className={`alerta alerta-${tom}`} style={{ marginBottom: 0 }}>
+          {c.status === "fica" && (
+            <>
+              <b>✓ Fica neste preço</b>Lucro mantido{u?.pctV != null && u.pctV < 0.995 ? ` vendendo ${pctInt(1 - u.pctV)} menos` : ""} — menos trabalho pra impressora com o mesmo ganho. Não mexa.
+            </>
+          )}
+          {c.status === "sinaliza" && (
+            <>
+              <b>{u?.ruim ? "Semana abaixo: segurar" : `Lucrando ${pctInt(1 - u.pct)} menos que antes`}</b>
+              {u?.ruim ? "Uma semana fraca pode ser só variação — se a próxima também vier abaixo, o app sugere voltar." : "Ainda dentro do aceitável: só observe. Abaixo do limite por 2 semanas, o app sugere voltar."}
+            </>
+          )}
+          {c.status === "voltar" && (
+            <>
+              <b>2 semanas abaixo: voltar um degrau</b>O preço novo derrubou o lucro (ou as vendas) mais do que compensou. Volte pra {BRL(e.degraus[Math.max(0, e.i - 1)])} e tente de novo depois.
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Rampa sazonal: temporada, cronograma até a data-limite e entressafra.
+function CronogramaSazonal({ e, onDescer }) {
+  const z = e.sazonal;
+  const fase = { subindo: "subindo pro alvo", pico: "pico da temporada", entressafra: "entressafra", aguardando: "fora da temporada" }[z.fase];
+  return (
+    <div className="cronograma-sazonal">
+      <h4 className="sub-h">
+        Temporada: {z.nome}{" "}
+        <span className="muted-cel">
+          ({z.fase === "entressafra" && z.anterior ? `a última foi ${dataBR(z.anterior)}/${z.anterior.slice(0, 4)} · a próxima ${dataBR(z.evento)}/${z.evento.slice(0, 4)}` : dataBR(z.evento)}) · {fase}
+        </span>
+        <Ajuda texto="Produto “só na época de…” (Cadastros → Catálogo ou Produtos → Quando vende). A rampa sobe pelo cronograma até a data-limite (30 dias antes da data, ou 7 dias antes da 1ª campanha grande antes dela), no mínimo 3 dias por degrau, se vender pelo menos 1 pedido por dia e sem avaliação 1–2★. Vendendo 2 por dia por 3 dias, pode subir antes. Depois da data, espera 3 dias e desce aos poucos (~8%) quando o lucro da semana fica abaixo da metade do da temporada; para de descer se a descida não ajudou, e nunca passa do piso (metade do lucro do alvo, nunca abaixo do mínimo aceitável). O anúncio continua ativo." />
+      </h4>
+      {(z.fase === "subindo" || z.fase === "pico") && (
+        <>
+          <p className="hint" style={{ margin: "0 0 6px" }}>
+            No alvo até <b>{dataBR(z.limite)}</b> ({z.motivoLimite}){z.diasAteLimite >= 0 ? ` · faltam ${z.diasAteLimite} dia${z.diasAteLimite === 1 ? "" : "s"}` : ""} · ritmo agora {virgula(z.ritmo ?? 0, 1)} pedido/dia
+          </p>
+          {z.cronograma?.length > 0 ? (
+            <div className="previa-degraus">
+              <span className="chip-degrau at">
+                <span className="chip-degrau-valor">{virgula(e.preco)} agora</span>
+              </span>
+              {z.cronograma.map((c, k) => (
+                <span key={k} className={`chip-degrau${k === z.cronograma.length - 1 ? " alvo" : ""}`}>
+                  <span className="chip-degrau-valor">
+                    {virgula(c.preco)} · {dataBR(c.data)}
+                  </span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="hint" style={{ margin: 0 }}>No alvo: segure até a data.</p>
+          )}
+          {e.sugestao.chave === "subir" && (
+            <div className="alerta alerta-good">
+              <b>
+                {z.pelaPressa ? "Vendendo rápido: " : ""}Pronto pra subir para {BRL(e.proximo)}
+              </b>
+              {z.pelaPressa ? "Ritmo de 2 pedidos por dia ou mais — pode adiantar o cronograma." : "Chegou a data do degrau e o ritmo está bom."}
+              {e.podePerder != null ? ` Pode vender até ${Math.floor(e.podePerder * 100)}% menos e ganhar o mesmo.` : ""}
+            </div>
+          )}
+          {e.sugestao.chave === "atrasado" && (
+            <div className="alerta alerta-warn">
+              <b>Atrasado no cronograma</b>A data do próximo degrau ({dataBR(z.proximaData)}) chegou, mas {e.ruins7 > 0 ? "houve avaliação 1–2★ nos últimos 7 dias" : `o ritmo está em ${virgula(z.ritmo ?? 0, 1)} pedido/dia (precisa de 1 por dia)`}. Revise o anúncio ou suba mesmo assim, se a temporada estiver acabando.
+            </div>
+          )}
+          {e.sugestao.chave === "voltar" && (
+            <div className="alerta alerta-bad">
+              <b>As vendas caíram mais da metade</b>Ritmo {virgula(z.ritmo ?? 0, 1)}/dia contra {virgula(z.ritmoAnt ?? 0, 1)}/dia no degrau anterior. Volte um degrau.
+            </div>
+          )}
+        </>
+      )}
+      {z.fase === "entressafra" && (
+        <>
+          <p className="hint" style={{ margin: "0 0 6px" }}>
+            Piso da entressafra: <b>{z.piso ? BRL(z.piso) : "—"}</b> (metade do lucro do alvo, nunca abaixo do mínimo) · a próxima temporada começa em {dataBR(z.proximo?.inicioTemporada)}
+          </p>
+          {z.espera ? (
+            <div className="alerta alerta-neutro">
+              <b>A data passou em {dataBR(z.anterior)}</b>Espere {e.sazonal.diasDesdeEvento <= 3 ? 3 - e.sazonal.diasDesdeEvento + 1 : 0} dia(s) antes de mexer no preço.
+            </div>
+          ) : z.desce ? (
+            <div className="alerta alerta-warn">
+              <b>Lucro da semana abaixo da metade do da temporada há 2 semanas</b>
+              Desça pra {BRL(z.precoNovo)} (lucro {BRL(e.lucroEm(z.precoNovo))} por venda). O anúncio continua ativo.
+              <div style={{ marginTop: 8 }}>
+                <button type="button" className="btn btn-mini primary" onClick={onDescer}>
+                  Descer pra {BRL(z.precoNovo)}
+                </button>
+              </div>
+            </div>
+          ) : z.naoAjudou ? (
+            <div className="alerta alerta-neutro">
+              <b>Estacionado</b>A última descida não aumentou o lucro da semana — baixar mais só queima margem. O preço fica aqui até a próxima temporada.
+            </div>
+          ) : z.noPiso ? (
+            <div className="alerta alerta-neutro">
+              <b>No piso da entressafra</b>O preço fica aqui até a próxima temporada, quando a rampa volta a subir até o alvo.
+            </div>
+          ) : (
+            <p className="hint" style={{ margin: 0 }}>Registre as semanas: com 2 semanas abaixo da metade do lucro da temporada, o app sugere descer.</p>
+          )}
+        </>
+      )}
+      {z.fase === "aguardando" && (
+        <div className="alerta alerta-neutro">
+          <b>Fora da temporada</b>A rampa começa a subir em {dataBR(z.inicioTemporada)} pra chegar no alvo até {dataBR(z.limite)}.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Detalhe({ l, anuncio, regras, onMudar, onEditar, onRefazer, onDescer, onAjustarDegrau, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo, adsLinha, onVerAds }) {
   const e = l.est;
   const noAlvo = e.noAlvo;
   const [orcEdit, setOrcEdit] = useState("");
@@ -814,6 +1048,9 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onAjustarDegrau, onEnc
         </span>
         <span className="acoes-detalhe">
           <button type="button" className="btn btn-mini" onClick={onEditar}>Editar degraus</button>
+          <button type="button" className="btn btn-mini" onClick={onRefazer} title="Configurou errado? Refaz a rampa do zero (preço inicial, degraus) sem precisar encerrar e criar de novo">
+            ↺ Refazer rampa
+          </button>
           {!noAlvo && (
             <button type="button" className="btn btn-mini" onClick={onAjustarDegrau} title="Corrige o preço do degrau em que você está, sem contar como subida">
               ✎ Ajustar preço deste degrau
@@ -879,16 +1116,21 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onAjustarDegrau, onEnc
             0 a 0 hoje: {BRL(e.zero)} (custo e taxas atuais). O lucro de cada degrau acompanha o custo ao vivo.
           </p>
 
-          {!noAlvo && (
+          {e.campanhaAviso && (
+            <div className="alerta alerta-neutro aviso-campanha">
+              <b>
+                {e.campanhaAviso.nome} em {e.campanhaAviso.dias} dia{e.campanhaAviso.dias === 1 ? "" : "s"} ({dataBR(e.campanhaAviso.data)})
+              </b>
+              A plataforma costuma pedir preço abaixo do menor dos últimos 30 dias: abaixo de <b>{BRL(e.campanhaAviso.menor)}</b>
+              {e.campanhaAviso.lucro != null ? <> → lucro menor que {BRL(e.campanhaAviso.lucro)} por venda</> : null}. É só um aviso: subir agora não é bloqueado, mas pode deixar a campanha mais cara pra você.
+            </div>
+          )}
+
+          {e.sazonal && <CronogramaSazonal e={e} onDescer={onDescer} />}
+
+          {!noAlvo && !e.sazonal && (
             <>
               <h4 className="sub-h">Portões para subir <span className="muted-cel">(todos precisam estar ✓)</span></h4>
-              <div className="campanha-linha">
-                <label>
-                  Próxima campanha da plataforma <span className="muted-cel">(opcional)</span>
-                </label>
-                <input type="date" value={l.r.checklist?.campanha || ""} onChange={(ev) => onChecklist(l, "campanha", ev.target.value || null)} />
-                {e.campanhaPerto && <span className="badge warn">não subir até a campanha</span>}
-              </div>
               <ul className="lista-portoes">
                 {e.portoes.map((p) => (
                   <li key={p.chave} className={p.ok ? "ok" : "no"}>
@@ -898,6 +1140,13 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onAjustarDegrau, onEnc
                   </li>
                 ))}
               </ul>
+              {e.atalho && (
+                <p className={`hint atalho-ritmo${e.atalho.ok ? " ok" : ""}`} style={{ margin: "4px 0 0" }}>
+                  {e.atalho.ok ? "✓ " : ""}
+                  <b>Atalho pelo ritmo</b> (só no 1º degrau): {virgula(e.atalho.pedidosDia, 0)} pedidos/dia por {e.atalho.dias} dias + 1 avaliação nova sobe antes dos portões. Hoje:{" "}
+                  {virgula(e.atalho.ritmo, 1)}/dia em {e.dias} dia{e.dias === 1 ? "" : "s"}, +{e.avaliacoesDesde} avaliação{e.avaliacoesDesde === 1 ? "" : "ões"}.
+                </p>
+              )}
               {e.alertaNota && (
                 <div className="alerta alerta-bad">
                   <b>Nota abaixo de {virgula(regras.notaAlerta, 1)}</b>Revise o produto/anúncio antes de subir — avaliação ruim costuma ser sobre o produto ou a entrega, não o preço.
@@ -908,15 +1157,23 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onAjustarDegrau, onEnc
                   {e.sugestao.saltos === 2 ? (
                     <>
                       <b>Vendendo muito: dá pra subir 2 degraus, para {BRL(e.degraus[e.i + 2])}</b>
-                      {e.vendasDesde} vendas desde o degrau (2× o portão). Com essa procura, um aumento maior compensa: vende um pouco menos, mas o lucro total se mantém. Depois do salto, o app pede {regras.diasAposSalto} dias parado. Não mexa no Ads na mesma semana.
+                      {e.vendasDesde} vendas desde o degrau (2× o portão). Com essa procura, um aumento maior compensa. Depois do salto, o app pede {regras.diasAposSalto} dias parado. Não mexa no Ads na mesma semana.
                     </>
                   ) : (
                     <>
-                      <b>Pronto pra subir para {BRL(e.proximo)}</b>Não mexa no Ads na mesma semana — senão não dá pra saber o que mudou as vendas.
+                      <b>
+                        {e.sugestao.peloRitmo ? "Vendendo rápido: " : ""}Pronto pra subir para {BRL(e.proximo)}
+                      </b>
+                      Não mexa no Ads na mesma semana — senão não dá pra saber o que mudou as vendas.
                     </>
                   )}
+                  {e.podePerder != null && (
+                    <div style={{ marginTop: 4 }}>
+                      Lucro por venda {BRL(e.lucroAtual)} → {BRL(e.lucroEm(e.sugestao.saltos === 2 ? e.degraus[e.i + 2] : e.proximo))}: você <b>pode vender até {Math.floor(e.podePerder * 100)}% menos</b> e ganhar o mesmo.
+                    </div>
+                  )}
                 </div>
-              ) : e.sugestao.chave === "segurar" && faltam.length ? (
+              ) : e.sugestao.chave === "segurar" && faltam.length && !e.lucroCheck ? (
                 <div className="alerta alerta-warn">
                   <b>Segurar: {faltam.map((p) => (p.falta ? `faltam ${p.falta} ${p.curto}` : p.curto)).join(" · ")}</b>
                   {faltam.some((p) => p.chave === "avaliacoes") ? "Dica: peça avaliação com foto no pacote (cartãozinho) — avaliação com foto pesa mais na conversão." : "Aguarde os portões fecharem."}
@@ -999,39 +1256,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onAjustarDegrau, onEnc
             </>
           )}
 
-          {e.check && !e.acimaAtivo && (
-            <>
-              <h4 className="sub-h">Check da última subida ({virgula(e.check.de)} → {virgula(e.check.para)})</h4>
-              {e.check.pendente ? (
-                <p className="hint" style={{ margin: 0 }}>Registre a próxima semana pra conferir se a subida segurou as vendas.</p>
-              ) : (
-                <>
-                  <ul className="lista-portoes">
-                    <li className={e.check.lucroOk ? "ok" : "no"}>
-                      <span className="ic">{e.check.lucroOk ? "✓" : "✗"}</span>Lucro da semana ≥ semana antes
-                      <span className="val">{BRL(e.check.lucroDepois)} vs {BRL(e.check.lucroAntes)}</span>
-                    </li>
-                    <li className={e.check.vendasOk ? "ok" : "no"}>
-                      <span className="ic">{e.check.vendasOk ? "✓" : "✗"}</span>Vendas ≥ {Math.round(regras.pisoVendas * 100)}% da semana antes{e.conhecidosTotal > 0 ? " (sem conhecidos)" : ""}
-                      <span className="val">
-                        {fmtSemana(e.check.vendasDepois)} vs {fmtSemana(e.check.vendasAntes)}
-                        {e.check.vendasAntes ? ` (${Math.round((e.check.vendasDepois / e.check.vendasAntes) * 100)}%)` : ""}
-                      </span>
-                    </li>
-                  </ul>
-                  {e.check.falhasSeguidas >= 2 ? (
-                    <div className="alerta alerta-bad">
-                      <b>2 semanas seguidas abaixo: voltar um degrau</b>O preço novo derrubou as vendas. Volte pra {BRL(e.degraus[Math.max(0, e.i - 1)])} e tente de novo depois.
-                    </div>
-                  ) : e.check.falhasSeguidas === 1 ? (
-                    <div className="alerta alerta-warn">
-                      <b>1 semana abaixo: segurar</b>Espere mais 7 dias antes de decidir — uma semana fraca pode ser só variação.
-                    </div>
-                  ) : null}
-                </>
-              )}
-            </>
-          )}
+          {e.lucroCheck && <ValeAPena e={e} regras={regras} />}
         </div>
 
         <div>
@@ -1276,7 +1501,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onAjustarDegrau, onEnc
             </span>
           )}
         </h4>
-        <GraficoRampa est={e} />
+        <GraficoRampa est={e} ajustes={l.r.checklist?.ajustesDegrau} regras={regras} />
       </div>
 
       <div className={`secao-rampa${e.revisar ? " destaque-revisar" : ""}`}>
@@ -1403,7 +1628,7 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
     ["vendas", "Vendas por degrau", 1],
     ["nota", "Nota mínima", 0.1],
     ["dias", "Dias mínimos no degrau", 1],
-    ["pisoVendas", "Vendas após subir (piso, %)", 1, true],
+    ["pisoVendas", "Depois de subir: volta com vendas < (% do anterior)", 1, true],
     ["passo", "Tamanho máximo do degrau (%)", 0.5, true],
     ["lucroEntrada", "Lucro no 1º degrau (R$)", 0.1],
     ["notaAlerta", "Nota que gera alerta", 0.1],
@@ -1412,7 +1637,19 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
     ["maxDegraus", "Máximo de degraus até o alvo", 1],
     ["saltoVendas", "Salto de 2 degraus com vendas ≥ (× o portão)", 0.5],
     ["diasAposSalto", "Dias parado depois de salto ou de voltar", 1],
-    ["diasCampanha", "Não subir nos dias antes de campanha", 1],
+    ["lucroFica", "Depois de subir: fica com lucro ≥ (% do anterior)", 1, true],
+    ["lucroVolta", "Depois de subir: volta com lucro < (% do anterior, 2 semanas)", 1, true],
+    ["lucroSobe", "Subir de novo com lucro ≥ (% do patamar, 2 semanas)", 1, true],
+    ["ritmoPedidosDia", "Atalho pelo ritmo: pedidos por dia", 0.5],
+    ["ritmoDias", "Atalho pelo ritmo: dias no degrau (rampa normal)", 1],
+    ["ritmoDiasSazonal", "Atalho pelo ritmo: dias no degrau (sazonal)", 1],
+    ["sazonalDiasMin", "Sazonal: dias mínimos por degrau", 1],
+    ["sazonalPassoMax", "Sazonal: passo máximo (%)", 0.5, true],
+    ["sazonalRitmoMin", "Sazonal: pedidos por dia pra seguir o cronograma", 0.5],
+    ["sazonalQuedaVolta", "Sazonal: volta se o ritmo cair abaixo de (% do anterior)", 1, true],
+    ["entressafraEspera", "Entressafra: dias depois da data antes de descer", 1],
+    ["entressafraPasso", "Entressafra: cada descida (%)", 0.5, true],
+    ["entressafraQueda", "Entressafra: desce com lucro < (% da temporada, 2 semanas)", 1, true],
     ["testeObservarDias", "Teste: dias só no orgânico antes de recomendar", 1],
     ["testeDispensaVendas", "Teste: vendas que dispensam o teste", 1],
     ["testeMeta", "Teste: meta de vendas", 1],
@@ -1467,14 +1704,20 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
 
 // Exportado: o 4º Lançamento (Precificação por Canal) abre o MESMO diálogo,
 // já com produto e canal (produtoInicial / canalInicial).
-export function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onClose, produtoInicial = "", canalInicial = "" }) {
+// refazer = rampa configurada errada: refaz do zero (produto e canal fixos).
+// Sem semana registrada, sobrescreve tudo; com semanas, elas continuam no
+// histórico e no gráfico, e a contagem (portões, decisões) recomeça hoje.
+export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, refazer = null, onToast, onClose, produtoInicial = "", canalInicial = "" }) {
   const { lojaId } = useLoja();
-  const { itens, produtos, kits, canais, precos, cfgDoProduto, publicacoesCanal } = dados;
+  const { itens, produtos, kits, canais, precos, cfgDoProduto, publicacoesCanal, cfgLoja } = dados;
   const hoje = hojeISO();
+  const editar = refazer ? null : editarProp;
+  const base = refazer?.r || null;
   const salvoDe = (pid, cid) => precos.find((p) => p.item_tipo === "produto" && p.item_id === pid && p.canal_id === cid) || null;
-  const [produtoId, setProdutoId] = useState(editar?.produto_id || produtoInicial || "");
-  const canaisDoProduto = produtoId ? canais.filter((c) => salvoDe(produtoId, c.id) && (editar ? c.id === editar.canal_id : !rampas.some((r) => r.produto_id === produtoId && r.canal_id === c.id))) : [];
-  const [canalId, setCanalId] = useState(editar?.canal_id || canalInicial || "");
+  const [produtoId, setProdutoId] = useState(editar?.produto_id || base?.produto_id || produtoInicial || "");
+  const fixo = editar || base;
+  const canaisDoProduto = produtoId ? canais.filter((c) => salvoDe(produtoId, c.id) && (fixo ? c.id === fixo.canal_id : !rampas.some((r) => r.produto_id === produtoId && r.canal_id === c.id))) : [];
+  const [canalId, setCanalId] = useState(editar?.canal_id || base?.canal_id || canalInicial || "");
   const canal = canais.find((c) => c.id === (canalId || canaisDoProduto[0]?.id)) || null;
   const item = itens.find((i) => i.id === `p:${produtoId}`);
   const cfg = produtoId ? cfgDoProduto(produtoId) : null;
@@ -1483,18 +1726,33 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onC
   const riscadoAnunciado = produtoId && canal ? riscadoFixoDe(`p:${produtoId}`, canal.id, publicacoesCanal) : null;
   const freteChip = (d) => freteDe(pagaNoDegrau(d, alvo, descAnuncio, riscadoAnunciado), canal);
   const zero = item && canal ? zeroAZero(canal, num(item.custoTotal), num(item.peso), cfg) : null;
+  const [precoHoje, setPrecoHoje] = useState(editar ? virgula(num(editar.degraus[editar.degrau_atual])) : "");
+  const [aval, setAval] = useState(refazer ? String(refazer.est.avaliacoesTotal ?? "") : "");
+  const [nota, setNota] = useState(refazer?.est.nota != null ? virgula(refazer.est.nota, 1) : "");
+  const [vendas, setVendas] = useState(refazer ? String(refazer.est.vendasTotal ?? "") : "");
+  const [salvando, setSalvando] = useState(false);
+  // Produto "só na época de…" (Quando vende): rampa sazonal até a data-limite.
+  const sazonal = useMemo(() => {
+    const p = produtos.find((x) => x.id === produtoId);
+    const S = infoSazonal(quandoVendeDe(p), configCalendario(cfgLoja), hoje);
+    return S && S.tipo === "epoca" ? S : null;
+  }, [produtos, produtoId, cfgLoja, hoje]);
+  const jaVende = num(vendas) > 0 || num(aval) > 0;
+  const sugSaz = useMemo(
+    () =>
+      sazonal && item && canal && alvo > 0
+        ? sugerirDegrausSazonal({ canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo, regras, hoje, limite: sazonal.limite, inicioPreco: jaVende ? num(precoHoje) : null })
+        : null,
+    [sazonal, item, canal, alvo, cfg, regras, hoje, jaVende, precoHoje]
+  );
   const sugestao = useMemo(
-    () => (item && canal && alvo > 0 ? sugerirDegraus({ canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo, regras }) : []),
-    [item, canal, alvo, cfg, regras]
+    () => (sugSaz ? sugSaz.degraus : item && canal && alvo > 0 ? sugerirDegraus({ canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo, regras }) : []),
+    [sugSaz, item, canal, alvo, cfg, regras]
   );
   const [degrausEdit, setDegrausEdit] = useState(editar ? editar.degraus.map((d) => virgula(num(d))) : null);
   const degrausTxt = degrausEdit ?? sugestao.map((d) => virgula(d));
   const [novoDegrau, setNovoDegrau] = useState("");
-  const [precoHoje, setPrecoHoje] = useState(editar ? virgula(num(editar.degraus[editar.degrau_atual])) : "");
-  const [aval, setAval] = useState("");
-  const [nota, setNota] = useState("");
-  const [vendas, setVendas] = useState("");
-  const [salvando, setSalvando] = useState(false);
+  const semanasReg = refazer ? (refazer.est.semanas || []).length : 0;
 
   const opcoesProduto = useMemo(() => {
     const comPreco = produtos.filter((p) => canais.some((c) => salvoDe(p.id, c.id) && !rampas.some((r) => r.produto_id === p.id && r.canal_id === c.id)));
@@ -1537,6 +1795,41 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onC
       onToast?.("Degraus atualizados");
       return onClose(editar.id);
     }
+    if (refazer) {
+      const ck = base.checklist || {};
+      const recomecos = [...(Array.isArray(ck.recomecos) ? ck.recomecos : []), { data: hoje, degraus: refazer.est.degraus, preco: refazer.est.preco, semanas: semanasReg }];
+      const campos = {
+        degraus: listaFinal,
+        degrau_atual: idxHoje,
+        desde: hoje,
+        base_avaliacoes: Math.round(num(aval)),
+        checklist: { ...ck, recomecos, ...(semanasReg ? {} : { ajustesDegrau: [] }) },
+        atualizado_em: new Date().toISOString(),
+      };
+      if (!semanasReg) campos.vendas_iniciais = Math.round(num(vendas));
+      const { error: e1 } = await supabase.from("rampas_preco").update(campos).eq("id", base.id);
+      if (e1) {
+        setSalvando(false);
+        return onToast?.(`Não foi possível refazer: ${e1.message}`);
+      }
+      // Sem semana registrada não há histórico: os marcos antigos saem.
+      if (!semanasReg) await supabase.from("rampa_registros").delete().eq("rampa_id", base.id).neq("tipo", "semana");
+      await supabase.from("rampa_registros").insert({
+        loja_id: lojaId || null,
+        rampa_id: base.id,
+        tipo: "inicio",
+        data: hoje,
+        degrau: idxHoje,
+        preco: listaFinal[idxHoje],
+        avaliacoes: Math.round(num(aval)),
+        nota: nota === "" ? null : num(nota),
+        observacao: semanasReg ? "rampa refeita" : null,
+      });
+      setSalvando(false);
+      window.dispatchEvent(new Event("focus"));
+      onToast?.(`Rampa refeita: ${item?.nome} vendendo ${BRL(listaFinal[idxHoje])} em ${canal.nome}${semanasReg ? ` — as ${semanasReg} semanas registradas continuam no histórico` : ""}`);
+      return onClose(base.id);
+    }
     const { data, error } = await supabase
       .from("rampas_preco")
       .insert({
@@ -1572,14 +1865,22 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onC
 
   return (
     <EditarDialog
-      titulo={editar ? "Editar degraus" : "Iniciar rampa de preço"}
+      titulo={editar ? "Editar degraus" : refazer ? `Refazer rampa — ${refazer.produto.nome}` : "Iniciar rampa de preço"}
       salvando={salvando}
       onSalvar={salvar}
       onCancelar={() => onClose(null)}
-      salvarLabel={editar ? "Salvar degraus" : "Iniciar rampa"}
+      salvarLabel={editar ? "Salvar degraus" : refazer ? "Refazer rampa" : "Iniciar rampa"}
       classe="modal-box-md"
     >
-      {!editar && (
+      {refazer && (
+        <div className={`alerta ${semanasReg ? "alerta-warn" : "alerta-neutro"}`} style={{ marginTop: 0 }}>
+          <b>{semanasReg ? `Recomeça a contagem hoje — nada é apagado` : "Sem semana registrada: refaz do zero"}</b>
+          {semanasReg
+            ? `As ${semanasReg} semana${semanasReg === 1 ? "" : "s"} registrada${semanasReg === 1 ? "" : "s"} continuam no histórico, no gráfico, no Ads e no caixa. Os portões e as decisões passam a contar a partir de hoje. Pra corrigir só o preço de agora, use "✎ Ajustar preço deste degrau".`
+            : "O plano antigo é trocado por este. Use pra corrigir uma rampa configurada errada (preço inicial, degraus) sem encerrar e criar de novo."}
+        </div>
+      )}
+      {!editar && !refazer && (
         <>
           <div className="field">
             <label>Produto (só os que têm preço salvo em algum canal)</label>
@@ -1617,6 +1918,19 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar, onToast, onC
           <div className="aviso-fluxo">
             0 a 0: <b>{BRL(zero)}</b> · alvo (preço salvo): <b>{BRL(alvo)}</b> — o salvo não muda.
           </div>
+          {sazonal && !editar && (
+            <div className="alerta alerta-neutro" style={{ margin: "6px 0" }}>
+              <b>
+                Produto sazonal — {sazonal.nome} ({dataBR(sazonal.evento)}): no alvo até {dataBR(sazonal.limite)}
+              </b>
+              {sazonal.motivoLimite}.{" "}
+              {sugSaz?.degraus.length === 1
+                ? sugSaz.aviso || "Começa direto no alvo."
+                : `Começa em ${BRL(sugestao[0])} (${sugSaz?.origem === "preço de hoje" ? "o preço que já vende" : "metade do lucro do alvo"}) e sobe pelo cronograma, no mínimo ${regras.sazonalDiasMin} dias por degrau.`}
+              {sugSaz?.aviso && sugSaz.degraus.length > 1 ? ` ${sugSaz.aviso}` : ""}
+              {sazonal.fase === "aguardando" || sazonal.fase === "entressafra" ? ` Fora da temporada: o preço fica parado até ${dataBR(sazonal.inicioTemporada)}.` : ""}
+            </div>
+          )}
           {!editar && (
             <div className="row2">
               <div className="field">

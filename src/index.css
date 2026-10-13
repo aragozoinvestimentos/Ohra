@@ -1177,6 +1177,30 @@ input.campo-importado { border-color: var(--st-info, var(--border-strong)); back
 .grafico-rampa .ponto-subida { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
 .grafico-rampa .ponto-descida { fill: var(--bad); stroke: var(--surface); stroke-width: 2; }
 .grafico-rampa .rotulo-mudanca { fill: var(--accent-ink); font-size: 11px; font-weight: 700; }
+.grafico-rampa .linha-marco { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 3 3; }
+.grafico-rampa .marco-subida .linha-marco { stroke: var(--accent); }
+.grafico-rampa .marco-descida .linha-marco { stroke: var(--st-resolver); }
+.grafico-rampa .rotulo-marco { font-size: 10.5px; font-weight: 700; fill: var(--ink-soft); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.grafico-rampa .marco-subida .rotulo-marco { fill: var(--accent-ink); }
+.grafico-rampa .marco-descida .rotulo-marco { fill: var(--st-resolver); }
+.vereditos { display: grid; gap: 6px; margin-top: 10px; }
+.veredito { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 12.5px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); border-left-width: 3px; }
+.veredito-tit { font-weight: 600; }
+.veredito-compensou { border-left-color: var(--st-oportunidade); }
+.veredito-compensou b { color: var(--st-oportunidade); }
+.veredito-quase { border-left-color: var(--st-atencao); }
+.veredito-quase b { color: var(--st-atencao); }
+.veredito-nao { border-left-color: var(--st-resolver); }
+.veredito-nao b { color: var(--st-resolver); }
+.vale-a-pena { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px 12px; margin-top: 14px; background: var(--surface-2); }
+.vale-a-pena .sub-h { margin-top: 0; }
+.vap-linhas { margin: 0 0 8px; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; }
+.cronograma-sazonal { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px 12px; margin: 10px 0 4px; background: var(--surface-2); }
+.cronograma-sazonal .sub-h { margin-top: 0; }
+.cronograma-sazonal .alerta { margin-bottom: 0; }
+.aviso-campanha { margin-top: 10px; }
+.atalho-ritmo.ok { color: var(--st-oportunidade); }
+.busca-rampa { min-width: 240px; }
 .grafico-legenda .leg-preco { background: var(--accent); height: 3px; width: 14px; border-radius: 2px; }
 .grafico-legenda .leg-vendas { background: var(--good); opacity: .4; }
 .grafico-legenda .leg-aval { background: transparent; border: 1.5px solid var(--accent2, #b0503f); border-radius: 50%; }
@@ -1626,6 +1650,27 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .cat-seta { color: var(--ink-soft); }
 .catalogo-acoes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
 .manut .acao .btn { white-space: nowrap; }
+.cat-quando { grid-column: 1 / -1; }
+.chip-filtro { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.painel-filtros { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: flex-end; padding: 10px 14px; margin: 0 14px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.painel-filtros .field { margin: 0; min-width: 150px; }
+.painel-filtros .field label { font-size: 11.5px; }
+.check-filtro { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding-bottom: 8px; }
+.quando-vende { display: grid; gap: 8px; }
+.quando-topo { display: flex; align-items: center; gap: 6px; }
+.quando-tipos { display: flex; flex-wrap: wrap; gap: 6px; }
+.quando-tipo { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; background: var(--surface); }
+.quando-tipo.ativo { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.quando-tipo input { margin: 0; }
+.quando-datas { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-quando { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; color: var(--ink); font-family: inherit; }
+.chip-quando.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+.chip-quando input { margin: 0; }
+.quando-limites { display: grid; gap: 4px; font-size: 12.5px; }
+.quando-limite { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.quando-acoes { display: flex; gap: 6px; align-items: center; }
+.calendario-nova { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.calendario-nova input[type="text"] { min-width: 220px; }
 @media (max-width: 900px) { .catalogo-det { grid-template-columns: 1fr; } }
 
 /* Minha farm */

@@ -401,7 +401,12 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
 
   // ---- regras da escada (loja / produto)
   const regrasLoja = { ...ESCADA_PADRAO, ...(cfgLoja || {}) };
-  const escadaPropria = produto?.escada_config || null;
+  // "Quando vende" (calendário) mora no mesmo jsonb, mas não é regra da escada.
+  const quandoVendeGravado = produto?.escada_config?.quandoVende || null;
+  const escadaPropria = (() => {
+    const { quandoVende: _q, ...resto } = produto?.escada_config || {};
+    return Object.keys(resto).length ? resto : null;
+  })();
   function abrirRegras() {
     const fonte = { ...regrasLoja, ...(escadaPropria || {}) };
     const r = {};
@@ -438,7 +443,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
       erro = r.ok ? null : r.error;
     }
     if (!erro && supabase && produto) {
-      const { error } = await supabase.from("produtos_cadastro").update({ escada_config: regrasEdit.propria ? doProduto : null }).eq("id", produto.id);
+      const { error } = await supabase.from("produtos_cadastro").update({ escada_config: regrasEdit.propria ? { ...doProduto, ...(quandoVendeGravado ? { quandoVende: quandoVendeGravado } : {}) } : quandoVendeGravado ? { quandoVende: quandoVendeGravado } : null }).eq("id", produto.id);
       if (error) erro = error.message;
     }
     setSalvando(false);

@@ -31,6 +31,7 @@ export function montarPendencias({
   tarefas = [], // tarefas manuais (schema v42)
   ads = null, // useCrescimento().linhasAds (lib/ads.js) — só períodos ligados + teto da loja
   farm = null, // { alteracoes (farm_alteracoes não revisadas), desgaste (avisosDesgaste) } — Minha farm (v47)
+  temporadas = [], // [{ produto, info }] lembrete da temporada (calendario.js → infoSazonal().lembrete)
   hoje = "",
 }) {
   const out = [];
@@ -105,6 +106,34 @@ export function montarPendencias({
       titulo: `${l.produto.nome}: ${teste ? "teste com cliques sem venda" : "revisar anúncio"}`,
       texto: `${l.canal.nome} · ${a.titulo} — começar por: ${String(a.porOnde || "").toLowerCase()}`,
       ir: { aba: "crescimento", pedido: { sub: "rampa", rampaId: l.r.id } },
+      rotulo: "Abrir no Crescimento",
+    });
+  }
+
+  // Rampa: voltar (lucro caiu), descer na entressafra e atrasado no cronograma
+  // sazonal — decididos em lib/rampa.js (estadoRampa().sugestao).
+  for (const l of rampas) {
+    const sg = l.est.sugestao;
+    if (!sg || !["voltar", "descer", "atrasado"].includes(sg.chave)) continue;
+    const textos = {
+      voltar: [`${l.produto.nome}: voltar degrau`, `${l.canal.nome} · o preço novo derrubou o lucro por 2 semanas`],
+      descer: [`${l.produto.nome}: descer o preço (entressafra)`, `${l.canal.nome} · ${brl(l.est.preco)} → ${brl(sg.preco)} — a temporada passou`],
+      atrasado: [`${l.produto.nome}: atrasado no cronograma`, `${l.canal.nome} · ${l.est.sazonal?.nome || "temporada"}: no alvo até ${String(l.est.sazonal?.limite || "").slice(8, 10)}/${String(l.est.sazonal?.limite || "").slice(5, 7)}`],
+    }[sg.chave];
+    add({ id: `rampa-${sg.chave}|${l.r.id}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: textos[0], texto: textos[1], ir: { aba: "crescimento", pedido: { sub: "rampa", rampaId: l.r.id } }, rotulo: "Abrir no Crescimento" });
+  }
+  // Temporada chegando (60 dias antes da data): revisar anúncio e estoque.
+  for (const { produto, info } of temporadas) {
+    const lb = info.lembrete;
+    const dias = lb.evento && hoje ? Math.round((new Date(`${lb.evento}T12:00:00`) - new Date(`${hoje}T12:00:00`)) / 86400000) : null;
+    add({
+      id: `temporada|${produto.id}|${lb.chave}|${lb.evento}`,
+      grupo: "rotina",
+      ordem: 3,
+      tom: "warn",
+      titulo: `${produto.nome}: ${lb.nome} em ${dias} dias`,
+      texto: info.tipo === "epoca" ? `temporada começando — no alvo até ${lb.limite.slice(8, 10)}/${lb.limite.slice(5, 7)}; revise anúncio e estoque` : "pico de vendas chegando — revise anúncio e estoque",
+      ir: { aba: "crescimento", pedido: { sub: "rampa" } },
       rotulo: "Abrir no Crescimento",
     });
   }
@@ -277,12 +306,12 @@ export function statusInicio({ caixa, rampas = [], semana = [], afAtivo = false,
         ? { tom: "warn", frase: !caixa.temSaldoInicial ? `Falta o saldo inicial · saldo ${brl(caixa.saldoHoje)}` : `A receber atrasado · saldo ${brl(caixa.saldoHoje)}` }
         : { tom: "good", frase: `Saldo ${brl(caixa.saldoHoje)} · menor em 3 meses ${brl(caixa.menor?.saldoFinal)}` };
 
-  const revisar = rampas.filter((l) => l.est.anuncio || l.est.sugestao?.chave === "voltar");
+  const revisar = rampas.filter((l) => l.est.anuncio || ["voltar", "descer", "atrasado"].includes(l.est.sugestao?.chave));
   const vendas = !rampas.length && !afAtivo
     ? { tom: "neu", frase: "Nenhum produto em rampa nem afiliado" }
     : revisar.length
-      ? { tom: revisar.some((l) => l.est.anuncio?.motivo === "teste") ? "bad" : "warn", frase: `${plural(revisar.length, "produto pede", "produtos pedem")} revisão` }
-      : semana.length || rampas.some((l) => l.est.sugestao?.chave === "segurar")
+      ? { tom: revisar.some((l) => l.est.anuncio?.motivo === "teste") ? "bad" : "warn", frase: `${plural(revisar.length, "produto pede", "produtos pedem")} ${revisar.every((l) => !l.est.anuncio) ? "ajuste de preço" : "revisão"}` }
+      : semana.length || rampas.some((l) => l.est.sugestao?.chave === "segurar" && l.est.sugestao.tom === "warn")
         ? { tom: "warn", frase: semana.length ? `${plural(semana.length, "semana pendente", "semanas pendentes")}` : "Rampa segurando" }
         : { tom: "good", frase: lucroSemana != null ? `Lucro da semana ${brl(lucroSemana)}` : `${plural(rampas.length, "produto", "produtos")} em rampa` };
 

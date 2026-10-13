@@ -16,6 +16,7 @@ import SeletorItens, { totalItens } from "./SeletorItens.jsx";
 import DetalhamentoCusto from "./DetalhamentoCusto.jsx";
 import Ajuda from "./Ajuda.jsx";
 import VariacoesProduto from "./VariacoesProduto.jsx";
+import QuandoVende from "./QuandoVende.jsx";
 
 const VAZIO = {
   nome: "",
@@ -582,6 +583,13 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           <>
             <h3 className="section-title">Variações de quantidade</h3>
             <div className="hint">Cadastre o produto primeiro — depois, ao editar, dá pra criar variações (kit 2, kit 3…).</div>
+          </>
+        )}
+
+        {editandoId && (
+          <>
+            <h3 className="section-title">Quando vende</h3>
+            <QuandoVende produtoId={editandoId} onToast={onToast} />
           </>
         )}
 

@@ -8,7 +8,7 @@
 // degrau, sem avaliação ruim recente); depois de subir, confere se o lucro
 // da semana não caiu e se as vendas ficaram ≥ 60% — 1 semana ruim = segurar,
 // 2 seguidas = sugerir voltar um degrau.
-import { lucroNoPreco, precoParaLucro, precoParaMargem } from "./escada.js";
+import { lucroNoPreco, precoMinimoAceitavel, precoParaLucro, precoParaMargem } from "./escada.js";
 import { dataSP } from "./datas.js";
 import { menorFinalComFreteGratis } from "./freteGratis.js";
 
@@ -26,7 +26,23 @@ export const REGRAS_PADRAO = {
   maxDegraus: 8, // máximo de degraus do 1º ao alvo (passo cresce se a distância for grande)
   saltoVendas: 2, // vendas desde o degrau ≥ 2× o portão → sugere subir 2 degraus
   diasAposSalto: 14, // depois de salto duplo ou de voltar: dias mínimos até a próxima mudança
-  diasCampanha: 14, // não subir nos X dias antes de uma campanha marcada
+  // Decisão pelo LUCRO da semana (out/2026): patamar = lucro médio por semana
+  // nas 2 primeiras semanas completas do degrau.
+  lucroFica: 0.9, // depois de subir: lucro ≥ 90% do degrau anterior = fica
+  lucroVolta: 0.75, // < 75% por 2 semanas (ou vendas < pisoVendas) = voltar
+  lucroSobe: 1.2, // lucro ≥ 120% do patamar atual por 2 semanas = pode subir de novo
+  // Atalho pelo ritmo (1º degrau e rampa sazonal)
+  ritmoPedidosDia: 2, // pedidos por dia
+  ritmoDias: 4, // dias no degrau (rampa normal, + 1 avaliação nova)
+  ritmoDiasSazonal: 3, // dias no degrau (rampa sazonal)
+  // Rampa sazonal
+  sazonalDiasMin: 3, // dias mínimos por degrau / entre subidas
+  sazonalPassoMax: 0.1, // passo máximo quando o tempo é curto
+  sazonalRitmoMin: 1, // pedidos por dia pra seguir o cronograma
+  sazonalQuedaVolta: 0.5, // ritmo caiu mais que isso vs o degrau anterior = voltar
+  entressafraEspera: 3, // dias depois da data antes de começar a descer
+  entressafraPasso: 0.08, // cada descida
+  entressafraQueda: 0.5, // desce com lucro/semana < 50% do patamar da temporada por 2 semanas
   // Teste de lançamento com Ads (rampa que começou sem vendas)
   testeObservarDias: 5, // dias observando só o orgânico antes de recomendar
   testeDispensaVendas: 3, // vendas que dispensam o teste (o orgânico pegou)
@@ -129,6 +145,53 @@ export function sugerirDegraus({ canal, custo, peso, cfg, alvo, regras = REGRAS_
   return lim;
 }
 
+// Degraus da rampa SAZONAL (produto "só na época de…"): chegar no alvo até a
+// data-limite. Produto novo começa no preço que dá METADE do lucro do alvo
+// (na temporada a procura já vem sozinha); produto que já vende começa do
+// preço de hoje. Cada degrau fica pelo menos `sazonalDiasMin` dias; o passo
+// se ajusta ao tempo que sobra (5% a 10%). Se nem com 10% der tempo, a
+// largada sobe (aviso). Menos de 2 semanas até a data-limite = direto no alvo.
+export function sugerirDegrausSazonal({ canal, custo, peso, cfg, alvo, regras = REGRAS_PADRAO, hoje, limite, inicioPreco = null }) {
+  const a = cent(num(alvo));
+  if (!(a > 0)) return { degraus: [], aviso: null };
+  const dias = limite && hoje ? diasEntre(hoje, limite) : 0;
+  if (dias < 14) return { degraus: [a], aviso: dias < 0 ? "A data-limite já passou: vende direto no alvo." : "Menos de 2 semanas até a data-limite: vende direto no alvo." };
+  let p0;
+  let origem;
+  if (num(inicioPreco) > 0) {
+    p0 = cent(num(inicioPreco));
+    origem = "preço de hoje";
+  } else {
+    const lA = lucroNoPreco(canal, a, custo, peso, cfg);
+    const pm = lA > 0 ? precoParaLucro(canal, lA / 2, custo, peso, cfg) : null;
+    p0 = pm != null ? finalAcima(pm) : a;
+    origem = "metade do lucro do alvo";
+  }
+  if (p0 >= a - 0.004) return { degraus: [a], aviso: null, origem };
+  const minD = Math.max(1, num(regras.sazonalDiasMin) || 3);
+  const passoMin = num(regras.passo) || 0.05;
+  const passoMax = Math.max(passoMin, num(regras.sazonalPassoMax) || 0.1);
+  const maxSubidas = Math.max(1, Math.min(Math.floor(dias / minD), (Math.round(num(regras.maxDegraus)) || 8) - 1));
+  const precisa = Math.ceil(Math.log(a / p0) / Math.log(1 + passoMin));
+  let k = Math.max(1, Math.min(precisa, maxSubidas));
+  let aviso = null;
+  if (Math.pow(a / p0, 1 / k) - 1 > passoMax + 1e-9) {
+    const novo = finalAcima(a / Math.pow(1 + passoMax, k));
+    aviso = `Não dá tempo de começar em ${moeda(p0)} subindo até ${Math.round(passoMax * 100)}% a cada ${minD} dias: começa em ${moeda(novo)}.`;
+    p0 = novo;
+  }
+  const r = Math.pow(a / p0, 1 / k);
+  const lista = [p0];
+  for (let j = 1; j < k; j++) {
+    let v = finalAbaixo(p0 * Math.pow(r, j));
+    if (v <= lista[lista.length - 1]) v = finalAcima(lista[lista.length - 1] + 0.02);
+    if (v >= a - 0.2) break;
+    lista.push(v);
+  }
+  lista.push(a);
+  return { degraus: lista, aviso, origem, dias };
+}
+
 // Normaliza a lista digitada: números > 0, ordem crescente, sem repetidos.
 export function normalizarDegraus(lista) {
   const vals = [...new Set((lista || []).map((v) => cent(num(v))).filter((v) => v > 0))].sort((x, y) => x - y);
@@ -219,7 +282,7 @@ export function metricasFunil(rampa, registros, regras, hoje) {
   const temFunil = (r) => r.tipo === "semana" && r.visualizacoes != null && r.visitas != null;
   // Registro por período: impressões/cliques/pedidos por semana (× 7 ÷ N).
   const comDados = regs.filter(temFunil).map(porSemana);
-  const inicio = regs.find((r) => r.tipo === "inicio")?.data || (rampa.criado_em ? dataSP(rampa.criado_em) : hoje);
+  const inicio = [...regs].reverse().find((r) => r.tipo === "inicio")?.data || (rampa.criado_em ? dataSP(rampa.criado_em) : hoje);
   const diasRampa = Math.max(0, diasEntre(inicio, hoje));
   const noPreco = comDados.filter((r) => preco != null && Math.abs(num(r.preco) - preco) < 0.005);
   const semAds = noPreco.filter((r) => !(num(r.ads_gasto) > 0));
@@ -310,6 +373,69 @@ export function diagnosticarFunil(m, regras, refLoja) {
   return { ...base, diagnostico: d };
 }
 
+// ---- Segmentos: cada mudança de preço (início, subida, descida) abre um ----
+// Semana COMPLETA num segmento = período inteiro no preço dele (começou no dia
+// da mudança ou depois). Lucro da semana = vendas sem conhecidos × lucro por
+// venda no preço da semana (custo/taxas de hoje), por semana (× 7 ÷ N).
+const MARCOS = ["inicio", "subida", "descida"];
+const ordenarRegs = (registros) =>
+  (registros || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.criado_em || "").localeCompare(String(b.criado_em || "")));
+export const inicioDoPeriodo = (r) => (r?.periodo_inicio ? String(r.periodo_inicio).slice(0, 10) : menosDias(String(r.data).slice(0, 10), 7));
+const media = (xs) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : null);
+
+export function segmentosRampa(registros, lucroEm) {
+  const regs = ordenarRegs(registros);
+  const marcos = regs.filter((r) => MARCOS.includes(r.tipo));
+  const semanas = regs.filter((r) => r.tipo === "semana");
+  return marcos.map((m, k) => {
+    const ini = String(m.data).slice(0, 10);
+    const fim = marcos[k + 1] ? String(marcos[k + 1].data).slice(0, 10) : null;
+    const linha = (s) => {
+      const n = porSemana(s);
+      return { data: s.data, lucro: vendasParaDecisao(n) * (lucroEm(num(s.preco) || num(m.preco)) ?? 0), vendas: vendasParaDecisao(n), vendasReais: vendasParaDecisao(s), dias: diasDoRegistro(s) };
+    };
+    const doSeg = semanas.filter((s) => s.data > ini && (fim == null || s.data <= fim));
+    const completas = doSeg.filter((s) => inicioDoPeriodo(s) >= ini).map(linha);
+    const todas = doSeg.map(linha);
+    const base = completas.length ? completas : todas;
+    return {
+      tipo: m.tipo,
+      observacao: m.observacao || null,
+      inicio: ini,
+      fim,
+      preco: num(m.preco),
+      completas,
+      todas,
+      // Patamar = 2 primeiras semanas completas; saída = 2 últimas (o nível em que o degrau foi deixado).
+      patamar: completas.length >= 2 ? media(completas.slice(0, 2).map((x) => x.lucro)) : null,
+      saida: base.length ? media(base.slice(-2).map((x) => x.lucro)) : null,
+      saidaVendas: base.length ? media(base.slice(-2).map((x) => x.vendas)) : null,
+      mediaLucro: base.length ? media(base.map((x) => x.lucro)) : null,
+      mediaVendas: base.length ? media(base.map((x) => x.vendas)) : null,
+      // Ritmo (pedidos/dia, sem conhecidos) no segmento — rampa sazonal.
+      vendasReais: todas.reduce((t, x) => t + x.vendasReais, 0),
+    };
+  });
+}
+
+// Veredito de um segmento vs o anterior (gráfico e "Vale a pena?"):
+// compara o lucro por semana com o nível em que o degrau anterior foi deixado.
+export function vereditoSegmento(seg, ant, regras = REGRAS_PADRAO) {
+  if (!seg || !ant || ant.saida == null || !(ant.saida > 0)) return null;
+  if (!seg.completas.length) return { chave: "coletando", texto: "coletando (1ª semana completa ainda não fechou)" };
+  const lucro = seg.mediaLucro;
+  const vendas = seg.mediaVendas;
+  const pL = lucro / ant.saida - 1;
+  const pV = ant.saidaVendas > 0 ? vendas / ant.saidaVendas - 1 : null;
+  const pct = (v) => `${Math.abs(Math.round(v * 100))}%`;
+  const parteV = pV == null ? "" : Math.abs(pV) < 0.005 ? "vendeu igual" : `vendeu ${pct(pV)} ${pV < 0 ? "menos" : "mais"}`;
+  const parteL = Math.abs(pL) < 0.005 ? "lucrou igual" : `lucrou ${pct(pL)} ${pL < 0 ? "menos" : "mais"}`;
+  const r = lucro / ant.saida;
+  const chave = r >= num(regras.lucroFica) ? "compensou" : r >= num(regras.lucroVolta) ? "quase" : "nao";
+  const fim = { compensou: "compensou", quase: "quase o mesmo lucro", nao: "não compensou" }[chave];
+  return { chave, texto: `${[parteV, parteL].filter(Boolean).join(" e ")} → ${fim}`, lucro, vendas, ref: ant.saida, refVendas: ant.saidaVendas, semanas: seg.completas.length };
+}
+
 // Estado completo de uma rampa (portões, check da subida, Ads, sugestão).
 // ctx = { canal, custo, peso, cfg } do produto (ao vivo); registros = da rampa.
 export function estadoRampa(rampa, registros, regras, ctx, hoje) {
@@ -359,9 +485,53 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     if (antes) saltoAnterior = Math.abs(num(ultMud.degrau) - num(antes.degrau)) || 1;
   }
   const diasMin = ultMud && (ultMud.tipo === "descida" || saltoAnterior >= 2) ? Math.max(regras.dias, num(regras.diasAposSalto)) : regras.dias;
-  const campanha = rampa.checklist?.campanha || null;
-  const diasAteCampanha = campanha ? diasEntre(hoje, campanha) : null;
-  const campanhaPerto = diasAteCampanha != null && diasAteCampanha >= 0 && diasAteCampanha <= num(regras.diasCampanha);
+
+  // ---- Decisão pelo LUCRO da semana (out/2026) ----
+  const segs = segmentosRampa(regs, lucroEm);
+  const segAtual = segs[segs.length - 1] || null;
+  const segAnt = segs[segs.length - 2] || null;
+  const ehPrimeiro = !segAtual || segAtual.tipo === "inicio";
+  const fica = num(regras.lucroFica);
+  const volta = num(regras.lucroVolta);
+  const sobe = num(regras.lucroSobe);
+
+  // Depois de subir: compara com o nível em que o degrau anterior foi deixado.
+  let lucroCheck = null;
+  if (segAtual && segAtual.tipo === "subida" && segAnt && !acimaAtivo && segAtual.observacao !== "acima do alvo") {
+    const ref = segAnt.saida;
+    const refVendas = segAnt.saidaVendas;
+    const lucroPV = lucroEm(preco);
+    const precisaVender = ref > 0 && lucroPV > 0 ? ref / lucroPV : null;
+    const base = { de: segAnt.preco, para: segAtual.preco, ref, refVendas, lucroPorVenda: lucroPV, precisaVender, precisaPct: precisaVender != null && refVendas > 0 ? precisaVender / refVendas : null };
+    if (!(ref > 0)) lucroCheck = { ...base, status: "sem-ref", semanas: [] };
+    else {
+      const sem = segAtual.completas.map((w) => {
+        const pct = w.lucro / ref;
+        const pctV = refVendas > 0 ? w.vendas / refVendas : null;
+        return { ...w, pct, pctV, ruim: pct < volta || (pctV != null && pctV < num(regras.pisoVendas)) };
+      });
+      const ult = sem[sem.length - 1] || null;
+      const status = !ult ? "coletando" : sem.length >= 2 && sem.slice(-2).every((w) => w.ruim) ? "voltar" : ult.ruim || ult.pct < fica ? "sinaliza" : "fica";
+      lucroCheck = { ...base, status, semanas: sem, ultima: ult };
+    }
+  }
+
+  // Subir de novo (depois do 1º degrau): lucro ≥ 120% do patamar do degrau
+  // nas 2 últimas semanas completas DEPOIS das 2 que formam o patamar.
+  let lucroSubir = null;
+  if (!ehPrimeiro && segAtual) {
+    const pat = segAtual.patamar;
+    const depois = segAtual.completas.slice(2);
+    const ult2 = depois.slice(-2);
+    lucroSubir = {
+      patamar: pat,
+      meta: pat != null ? pat * sobe : null,
+      semanas: ult2,
+      medindo: pat == null,
+      faltamPatamar: Math.max(0, 2 - segAtual.completas.length),
+      ok: pat > 0 && ult2.length === 2 && ult2.every((w) => w.lucro >= sobe * pat - 0.005),
+    };
+  }
 
   const portoes = [
     { chave: "avaliacoes", rotulo: "Avaliações desde o último degrau", ok: avaliacoesDesde >= regras.avaliacoes, valor: `+${avaliacoesDesde} de +${regras.avaliacoes}`, falta: Math.max(0, regras.avaliacoes - avaliacoesDesde), curto: "avaliações" },
@@ -370,40 +540,94 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     { chave: "dias", rotulo: `Tempo no degrau ≥ ${diasMin} dias${diasMin > regras.dias ? (ultMud?.tipo === "descida" ? " (voltou de degrau)" : " (depois de salto duplo)") : ""}`, ok: dias >= diasMin, valor: `${dias} dia${dias === 1 ? "" : "s"}`, falta: Math.max(0, diasMin - dias), curto: "dias" },
     { chave: "ruins", rotulo: "Nenhuma avaliação 1–2★ nos últimos 7 dias", ok: ruins7 === 0, valor: String(ruins7), curto: "sem 1–2★" },
   ];
-  if (campanha) portoes.push({ chave: "campanha", rotulo: `Sem campanha nos próximos ${regras.diasCampanha} dias`, ok: !campanhaPerto, valor: diasAteCampanha >= 0 ? `campanha em ${diasAteCampanha} dia${diasAteCampanha === 1 ? "" : "s"}` : "já passou", curto: campanhaPerto ? "campanha perto" : "campanha" });
+  if (lucroSubir)
+    portoes.push({
+      chave: "lucro",
+      rotulo: `Lucro da semana ≥ ${Math.round(sobe * 100)}% do patamar do degrau (2 semanas)`,
+      ok: lucroSubir.ok,
+      valor: lucroSubir.medindo
+        ? `medindo o patamar (${2 - lucroSubir.faltamPatamar} de 2 semanas completas)`
+        : `${lucroSubir.semanas.length ? lucroSubir.semanas.map((w) => moeda(w.lucro)).join(" · ") : "sem semana depois do patamar"} vs ${moeda(lucroSubir.meta)}`,
+      curto: "lucro",
+    });
   const portoesOk = portoes.every((p) => p.ok);
 
-  // Check depois da última mudança de degrau (subida): compara cada semana
-  // registrada depois dela com a última semana antes dela.
-  const ultimaSubida = [...regs].reverse().find((r) => r.tipo === "subida" || r.tipo === "descida");
-  let check = null;
-  if (ultimaSubida && ultimaSubida.tipo === "subida") {
-    const antes = [...semanasN].reverse().find((s) => s.data < ultimaSubida.data || (s.data === ultimaSubida.data && String(s.criado_em || "") < String(ultimaSubida.criado_em || "")));
-    const depois = semanasN.filter((s) => s.data > ultimaSubida.data || (s.data === ultimaSubida.data && String(s.criado_em || "") > String(ultimaSubida.criado_em || "")));
-    if (antes && depois.length) {
-      // Sem conhecidos (vendasParaDecisao): a decisão olha só busca + Ads.
-      const lucroSem = (s) => vendasParaDecisao(s) * (lucroEm(num(s.preco) || preco) ?? 0);
-      const lAntes = lucroSem(antes);
-      const avaliar = depois.map((s) => {
-        const lucroOk = lucroSem(s) >= lAntes - 0.005;
-        const vendasOk = vendasParaDecisao(s) >= regras.pisoVendas * vendasParaDecisao(antes);
-        return { s, lucro: lucroSem(s), lucroOk, vendasOk, ok: lucroOk && vendasOk };
-      });
-      let falhasSeguidas = 0;
-      for (let k = avaliar.length - 1; k >= 0 && !avaliar[k].ok; k--) falhasSeguidas++;
-      const ult = avaliar[avaliar.length - 1];
-      check = {
-        de: num(antes.preco),
-        para: num(ultimaSubida.preco),
-        lucroAntes: lAntes,
-        lucroDepois: ult.lucro,
-        vendasAntes: vendasParaDecisao(antes),
-        vendasDepois: vendasParaDecisao(ult.s),
-        lucroOk: ult.lucroOk,
-        vendasOk: ult.vendasOk,
-        falhasSeguidas,
-      };
-    } else if (antes) check = { de: num(antes.preco), para: num(ultimaSubida.preco), pendente: true };
+  // Atalho pelo ritmo: no 1º degrau, 2 pedidos/dia por 4 dias + 1 avaliação nova.
+  const ritmo = dias > 0 ? vendasDesde / dias : 0;
+  const atalho = ehPrimeiro
+    ? {
+        dias: num(regras.ritmoDias),
+        pedidosDia: num(regras.ritmoPedidosDia),
+        ritmo,
+        ok: dias >= num(regras.ritmoDias) && ritmo >= num(regras.ritmoPedidosDia) && avaliacoesDesde >= 1 && (nota == null || nota >= regras.nota) && ruins7 === 0,
+      }
+    : null;
+
+  // ---- Rampa sazonal (produto "só na época de…") ----
+  const S = ctx.sazonal && ctx.sazonal.tipo === "epoca" ? ctx.sazonal : null;
+  let sazonal = null;
+  if (S) {
+    const acimaDe = (x) => degraus.filter((d) => d > x + 0.004 && d <= alvo + 0.004);
+    const restantes = preco != null && alvo != null && preco < alvo - 0.004 ? acimaDe(preco).length : 0;
+    const minD = Math.max(1, num(regras.sazonalDiasMin));
+    sazonal = { ...S, restantes };
+    if (S.fase === "subindo" || S.fase === "pico") {
+      const ini = desde > S.inicioTemporada ? desde : S.inicioTemporada;
+      const intervalo = restantes > 0 ? Math.max(minD, Math.floor(Math.max(0, diasEntre(ini, S.limite)) / restantes)) : null;
+      const proximaData = restantes > 0 ? (S.fase === "pico" ? maisDias(desde, minD) : maisDias(ini, intervalo)) : null;
+      const cronograma = [];
+      if (restantes > 0) {
+        let d = proximaData;
+        for (const v of acimaDe(preco)) {
+          cronograma.push({ preco: v, data: d });
+          d = maisDias(d, intervalo || minD);
+        }
+      }
+      const ritmoAnt = segAnt && segAtual?.tipo === "subida" ? segAnt.vendasReais / Math.max(1, diasEntre(segAnt.inicio, segAnt.fim || hoje)) : null;
+      const voltar = ritmoAnt > 0 && dias >= minD && ritmo < num(regras.sazonalQuedaVolta) * ritmoAnt;
+      const pelaData = !!proximaData && hoje >= proximaData && ritmo >= num(regras.sazonalRitmoMin);
+      const pelaPressa = ritmo >= num(regras.ritmoPedidosDia) && dias >= num(regras.ritmoDiasSazonal);
+      const subir = restantes > 0 && dias >= minD && ruins7 === 0 && (pelaData || pelaPressa);
+      const atrasado = restantes > 0 && !subir && !!proximaData && hoje >= proximaData && dias >= minD;
+      sazonal = { ...sazonal, proximaData, intervalo, cronograma, ritmo, ritmoAnt, subir, atrasado, voltar, pelaPressa: subir && pelaPressa && !pelaData };
+    } else if (S.fase === "entressafra") {
+      const lucroAlvo = lucroEm(alvo);
+      const pMetade = lucroAlvo > 0 && ctx.canal ? precoParaLucro(ctx.canal, lucroAlvo / 2, ctx.custo, ctx.peso, ctx.cfg) : null;
+      let pMin = null;
+      try {
+        pMin = ctx.canal && ctx.cfg ? precoMinimoAceitavel(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null;
+      } catch {
+        pMin = null;
+      }
+      const piso = Math.max(pMetade != null ? finalAcima(pMetade) : 0, pMin != null ? finalAcima(pMin) : 0) || null;
+      const espera = S.diasDesdeEvento <= num(regras.entressafraEspera);
+      const segEvento = segs.find((g) => g.inicio <= S.anterior && (g.fim == null || g.fim > S.anterior)) || null;
+      const patTemp = segEvento ? segEvento.patamar ?? segEvento.mediaLucro : null;
+      const pos = (segAtual?.completas || []).filter((w) => w.data > S.anterior);
+      const ult2 = pos.slice(-2);
+      const ultDescEntressafra = segAtual?.tipo === "descida" && segAtual.observacao === "entressafra";
+      const naoAjudou = ultDescEntressafra && !!segAnt && segAtual.completas.length >= 2 && segAtual.mediaLucro <= (segAnt.saida ?? 0) + 0.005;
+      let precoNovo = preco != null ? finalAbaixo(preco * (1 - num(regras.entressafraPasso))) : null;
+      if (piso != null && precoNovo != null && precoNovo < piso) precoNovo = piso;
+      const noPiso = piso != null && preco != null && preco <= piso + 0.004;
+      const desce = !espera && !noPiso && !naoAjudou && patTemp > 0 && ult2.length === 2 && ult2.every((w) => w.lucro < num(regras.entressafraQueda) * patTemp) && precoNovo < preco - 0.004;
+      sazonal = { ...sazonal, piso, espera, patTemp, semanasPos: ult2, naoAjudou, noPiso, desce, precoNovo };
+    }
+  }
+
+  // Aviso de campanha (informativo, nada bloqueia): a plataforma costuma pedir
+  // preço abaixo do menor preço dos últimos 30 dias.
+  let campanhaAviso = null;
+  const pc = ctx.proximaCampanha || null;
+  if (pc && pc.dias >= 0 && pc.dias <= 30 && preco != null) {
+    const corte30 = menosDias(hoje, 30);
+    const lista = [preco];
+    for (const r of regs) if (r.preco != null && r.data >= corte30) lista.push(num(r.preco));
+    const antes = [...regs].reverse().find((r) => r.preco != null && r.data < corte30);
+    if (antes) lista.push(num(antes.preco));
+    for (const a of Array.isArray(rampa.checklist?.ajustesDegrau) ? rampa.checklist.ajustesDegrau : []) if (a.data >= corte30) lista.push(num(a.de));
+    const menor = Math.min(...lista.filter((v) => v > 0));
+    campanhaAviso = { ...pc, menor, lucro: lucroEm(menor) };
   }
 
   // Ads: última semana com gasto.
@@ -422,7 +646,8 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const alertaNota = nota != null && nota < regras.notaAlerta;
 
   // ---- Teste de lançamento (Ads com orçamento fechado) ----
-  const inicioReg = regs.find((r) => r.tipo === "inicio");
+  // Rampa refeita grava um novo "inicio": vale o mais recente.
+  const inicioReg = [...regs].reverse().find((r) => r.tipo === "inicio");
   const inicioRampa = inicioReg?.data || (rampa.criado_em ? dataSP(rampa.criado_em) : hoje);
   const diasRampa = Math.max(0, diasEntre(inicioRampa, hoje));
   const lucroNoAlvo = lucroEm(alvo);
@@ -509,7 +734,6 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
         { rotulo: `${regras.acimaSemanas} semanas de vendas estáveis`, ok: estaveis, valor: ult3.length ? ult3.map((s) => fmtSemana(vendasParaDecisao(s))).join(" → ") : "sem registro" },
         { rotulo: `Nota ≥ ${String(regras.nota).replace(".", ",")} e nenhuma 1–2★ recente`, ok: nota != null && nota >= regras.nota && ruins7 === 0, valor: nota != null ? String(nota).replace(".", ",") : "—" },
       ];
-      if (campanha) criterios.push({ rotulo: "Sem campanha perto", ok: !campanhaPerto, valor: campanhaPerto ? `em ${diasAteCampanha} dias` : "ok" });
       if (bloqueado) criterios.push({ rotulo: "Teste anterior falhou", ok: false, valor: `liberado em ${bloqueadoAte.slice(8, 10)}/${bloqueadoAte.slice(5, 7)}` });
       acima = { ativo: false, prox: prox <= tetoAcima ? prox : null, teto: tetoAcima, lucroAgora: lAgora, lucroProx: lProx, podePerder, criterios, pronto: criterios.every((c) => c.ok) && prox <= tetoAcima };
     }
@@ -540,6 +764,11 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   });
   const revisar = !!anuncio;
 
+  // Sugestão — rampa normal: voltar (lucro) > revisar anúncio > sinaliza >
+  // subir (1º degrau: portões OU atalho pelo ritmo; depois: portões + lucro
+  // ≥ 120% do patamar) > segurar. Rampa sazonal: cronograma/entressafra.
+  const salto = (ok) => ok && vendasDesde >= num(regras.saltoVendas) * regras.vendas && i + 2 <= degraus.length - 1 && !(degraus[i + 2] > alvo + 0.004);
+  const podeSubir = !alertaNota && (portoesOk || !!atalho?.ok);
   let sugestao;
   if (acimaAtivo) {
     sugestao = acima?.aprovado
@@ -547,14 +776,31 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
       : acima?.reprovado
         ? { chave: "acima-voltar", tom: "bad", rotulo: "Voltar ao alvo" }
         : { chave: "acima-testando", tom: "warn", rotulo: `Testando acima (${acima?.diasFaltam ?? 0}d)` };
+  } else if (sazonal) {
+    const z = sazonal;
+    const dm = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "");
+    if (z.fase === "entressafra")
+      sugestao = z.desce
+        ? { chave: "descer", tom: "warn", rotulo: `Descer pra ${moeda(z.precoNovo)}`, preco: z.precoNovo }
+        : { chave: "segurar", tom: "neu", rotulo: z.espera ? "Depois da data: aguarde" : z.noPiso ? "No piso da entressafra" : z.naoAjudou ? "Estacionado" : "Entressafra" };
+    else if (z.fase === "aguardando") sugestao = { chave: "segurar", tom: "neu", rotulo: `Aguardando a temporada (${dm(z.inicioTemporada)})` };
+    else if (noAlvo) sugestao = { chave: "alvo", tom: "good", rotulo: `No alvo · ${z.nome}` };
+    else if (z.voltar) sugestao = { chave: "voltar", tom: "bad", rotulo: "Voltar degrau" };
+    else if (revisar) sugestao = { chave: "revisar", tom: "bad", rotulo: "Revisar anúncio" };
+    else if (z.subir && !alertaNota) sugestao = { chave: "subir", tom: "good", rotulo: z.pelaPressa ? "Subir degrau (vendendo rápido)" : "Subir degrau (cronograma)", saltos: 1 };
+    else if (z.atrasado) sugestao = { chave: "atrasado", tom: "warn", rotulo: "Atrasado no cronograma" };
+    else sugestao = { chave: "segurar", tom: "neu", rotulo: z.proximaData ? `No cronograma · próximo ${dm(z.proximaData)}` : "Segurar" };
   } else if (noAlvo) sugestao = acima?.pronto ? { chave: "testar-acima", tom: "good", rotulo: "Testar acima do alvo" } : { chave: "alvo", tom: "good", rotulo: "No alvo" };
-  else if (check && !check.pendente && check.falhasSeguidas >= 2) sugestao = { chave: "voltar", tom: "bad", rotulo: "Voltar degrau" };
+  else if (lucroCheck?.status === "voltar") sugestao = { chave: "voltar", tom: "bad", rotulo: "Voltar degrau" };
   else if (revisar) sugestao = { chave: "revisar", tom: "bad", rotulo: "Revisar anúncio" };
-  else if (check && !check.pendente && check.falhasSeguidas === 1) sugestao = { chave: "segurar", tom: "warn", rotulo: "Segurar" };
-  else if (portoesOk && !alertaNota && vendasDesde >= num(regras.saltoVendas) * regras.vendas && i + 2 <= degraus.length - 1)
-    sugestao = { chave: "subir", tom: "good", rotulo: "Subir 2 degraus", saltos: 2 };
-  else if (portoesOk && !alertaNota) sugestao = { chave: "subir", tom: "good", rotulo: "Subir degrau", saltos: 1 };
-  else sugestao = { chave: "segurar", tom: "warn", rotulo: "Segurar" };
+  else if (lucroCheck?.status === "sinaliza") sugestao = { chave: "segurar", tom: "warn", rotulo: lucroCheck.ultima?.ruim ? "Segurar (semana abaixo)" : "Lucrando menos" };
+  else if (podeSubir && salto(portoesOk)) sugestao = { chave: "subir", tom: "good", rotulo: "Subir 2 degraus", saltos: 2 };
+  else if (podeSubir) sugestao = { chave: "subir", tom: "good", rotulo: !portoesOk && atalho?.ok ? "Subir degrau (vendendo rápido)" : "Subir degrau", saltos: 1, peloRitmo: !portoesOk && !!atalho?.ok };
+  else sugestao = { chave: "segurar", tom: lucroCheck?.status === "fica" ? "neu" : "warn", rotulo: lucroCheck?.status === "fica" ? "Fica: lucro mantido" : "Segurar" };
+
+  // "Pode vender até N% menos e ganhar o mesmo" no próximo degrau.
+  const lucroProx = lucroEm(sugestao.saltos === 2 ? degraus[i + 2] : proximo);
+  const podePerder = lucroAtual > 0 && lucroProx > lucroAtual ? 1 - lucroAtual / lucroProx : null;
 
   const lucroSemana = ultimaSemanaN && ultimaSemanaN.data > corte7 ? num(ultimaSemanaN.vendas) * (lucroEm(num(ultimaSemanaN.preco) || preco) ?? 0) : null;
   const lucroSemanaAds = lucroSemana != null ? lucroSemana - num(ultimaSemanaN.ads_gasto) : null;
@@ -568,8 +814,9 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     lucroAtual, lucroAlvo: lucroEm(alvo), lucroProximo: lucroEm(proximo), lucroEm,
     zero: ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
     avaliacoesTotal, nota, vendasDesde, vendasTotal, vendasTotalDecisao, conhecidosTotal, avaliacoesDesde, dias, ruins7,
-    portoes, portoesOk, check, roasMin, roas, organico, organicoAntes, ultAds,
-    revisar, revisarPorAds, revisarPorLancamento, revisarPorTeste, anuncio, alertaNota, sugestao, ultimaSemana, diasMin, campanha, diasAteCampanha, campanhaPerto,
+    portoes, portoesOk, roasMin, roas, organico, organicoAntes, ultAds,
+    revisar, revisarPorAds, revisarPorLancamento, revisarPorTeste, anuncio, alertaNota, sugestao, ultimaSemana, diasMin, campanhaAviso,
+    segmentos: segs, lucroCheck, lucroSubir, atalho, ritmo, ehPrimeiro, sazonal, podePerder,
     lucroSemana, lucroSemanaAds, lucroSemanaAlvo, semanas, registros: regs, funil,
   };
 }

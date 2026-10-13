@@ -64,7 +64,7 @@ export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdu
         ))}
       </div>
 
-      {sub === "catalogo" && <CatalogoLista onEditar={editarDoCatalogo} />}
+      {sub === "catalogo" && <CatalogoLista onEditar={editarDoCatalogo} onToast={onToast} />}
       {sub === "materiais" && <Materiais onToast={onToast} />}
       {sub === "embalagens" && <Embalagens onToast={onToast} />}
       {sub === "produtos" && (

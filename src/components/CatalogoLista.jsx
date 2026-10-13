@@ -14,6 +14,13 @@ import { BRL, PCT } from "../lib/format.js";
 import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
 import Ajuda from "./Ajuda.jsx";
+import QuandoVende from "./QuandoVende.jsx";
+import { useLoja } from "../lib/LojaContext.jsx";
+import { configCalendario, quandoVendeDe, rotuloQuando, TIPOS_QUANDO } from "../lib/calendario.js";
+
+// Filtros do Catálogo (painel "Filtros ▾"). Regra: todo atributo novo do
+// produto que dê pra filtrar entra AQUI (um grupo a mais em FILTROS_VAZIO e no painel).
+const FILTROS_VAZIO = { tipo: "todos", quando: "", impressora: "", canal: "", rampa: "", semSku: false };
 
 // Cadastros → Catálogo: tudo que foi cadastrado (produtos com as variações,
 // kits) numa lista só, pra CONSULTAR sem abrir Precificação. Só lê — os números
@@ -24,23 +31,49 @@ const num = (v) => {
 };
 const g = (v) => (v ? `${Math.round(v)} g` : "—");
 
-export default function CatalogoLista({ onEditar }) {
+export default function CatalogoLista({ onEditar, onToast }) {
   const dados = useEscada();
   const { itens, produtos, canais, precos, materiais, rampas, alertaDe, mapaRampa, cfgDoProduto, carregando } = dados;
   const { impressoras } = useCatalogo();
   const { grupos } = useAnunciosGrupo();
   const mapaGrupos = useMemo(() => gruposPorItem(grupos), [grupos]);
   const [busca, setBusca] = useState("");
-  const [tipo, setTipo] = useState("todos");
+  const [filtros, setFiltros] = useState(FILTROS_VAZIO);
+  const [verFiltros, setVerFiltros] = useState(false);
+  const tipo = filtros.tipo;
+  const { lojas, lojaId } = useLoja();
+  const cal = useMemo(() => configCalendario(lojas.find((l) => l.id === lojaId)?.config_escada), [lojas, lojaId]);
   const [aberto, setAberto] = useState(null); // id do item com o detalhe aberto
   const [comVariacoes, setComVariacoes] = useState(() => new Set());
 
+  const precoDoCanal = (it, canalId) => {
+    const t = it.id[0] === "k" ? "kit" : it.id[0] === "v" ? "variacao" : "produto";
+    return precos.some((p) => p.item_tipo === t && p.item_id === it.id.slice(2) && p.canal_id === canalId && num(p.preco) > 0);
+  };
   const precoDe = (it, c) => {
     const t = it.id[0] === "k" ? "kit" : it.id[0] === "v" ? "variacao" : "produto";
     return precos.find((p) => p.item_tipo === t && p.item_id === it.id.slice(2) && p.canal_id === c.id) || null;
   };
   const alvo = busca.trim().toLowerCase();
   const bate = (it) => !alvo || it.nome.toLowerCase().includes(alvo) || (it.sku || "").toLowerCase().includes(alvo);
+  // Filtros que só valem pra produto (kit não tem Quando vende, impressora nem rampa).
+  const soProduto = !!(filtros.quando || filtros.impressora || filtros.rampa);
+  const passaProduto = (p, vs) => {
+    const prod = produtos.find((x) => x.id === p.id.slice(2));
+    if (filtros.quando) {
+      const q = quandoVendeDe(prod);
+      if (filtros.quando === "sem" ? !!q : q?.tipo !== filtros.quando) return false;
+    }
+    if (filtros.impressora && impressoraDoProduto(prod, impressoras)?.id !== filtros.impressora) return false;
+    if (filtros.rampa) {
+      const em = rampas.some((r) => r.produto_id === prod?.id);
+      if (filtros.rampa === "sim" ? !em : em) return false;
+    }
+    if (filtros.canal && ![p, ...vs].some((x) => precoDoCanal(x, filtros.canal))) return false;
+    if (filtros.semSku && ![p, ...vs].some((x) => !x.sku)) return false;
+    return true;
+  };
+  const passaKit = (k) => !soProduto && (!filtros.canal || precoDoCanal(k, filtros.canal)) && (!filtros.semSku || !k.sku);
   const linhas = useMemo(() => {
     const prods = itens.filter((i) => i.tipo === "Produto");
     const vars = itens.filter((i) => i.tipo === "Variação");
@@ -49,12 +82,21 @@ export default function CatalogoLista({ onEditar }) {
     if (tipo !== "kits")
       for (const p of prods) {
         const vs = vars.filter((v) => v.produtoId === p.id.slice(2));
-        if (bate(p) || vs.some(bate)) out.push({ item: p, variacoes: vs, abrirVars: !!alvo && !bate(p) });
+        if ((bate(p) || vs.some(bate)) && passaProduto(p, vs)) out.push({ item: p, variacoes: vs, abrirVars: !!alvo && !bate(p) });
       }
-    if (tipo !== "produtos") for (const k of kits) if (bate(k)) out.push({ item: k, variacoes: [] });
+    if (tipo !== "produtos") for (const k of kits) if (bate(k) && passaKit(k)) out.push({ item: k, variacoes: [] });
     return out.sort((a, b) => a.item.nome.localeCompare(b.item.nome));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itens, tipo, alvo]);
+  }, [itens, filtros, alvo, produtos, impressoras, rampas, precos]);
+  const ativos = [
+    filtros.tipo !== "todos" && { k: "tipo", txt: filtros.tipo === "kits" ? "só kits" : "só produtos" },
+    filtros.quando && { k: "quando", txt: filtros.quando === "sem" ? "sem classificação" : TIPOS_QUANDO.find((t) => t.chave === filtros.quando)?.rotulo.replace("…", "").toLowerCase() },
+    filtros.impressora && { k: "impressora", txt: impressoras.find((x) => x.id === filtros.impressora)?.nome || "impressora" },
+    filtros.canal && { k: "canal", txt: `com preço em ${canais.find((c) => c.id === filtros.canal)?.nome || "canal"}` },
+    filtros.rampa && { k: "rampa", txt: filtros.rampa === "sim" ? "em rampa" : "fora da rampa" },
+    filtros.semSku && { k: "semSku", txt: "sem SKU" },
+  ].filter(Boolean);
+  const tirar = (k) => setFiltros((f) => ({ ...f, [k]: FILTROS_VAZIO[k] }));
 
   if (carregando) return <div className="panel"><div className="empty">Carregando…</div></div>;
 
@@ -72,6 +114,7 @@ export default function CatalogoLista({ onEditar }) {
           <div className="muted-cel">
             {it.tipo}
             {it.sku ? ` · ${it.sku}` : " · sem SKU"}
+            {prod && quandoVendeDe(prod) && quandoVendeDe(prod).tipo !== "ano" ? ` · ${rotuloQuando(quandoVendeDe(prod), cal)}` : ""}
             {nVars > 0 && (
               <button
                 type="button"
@@ -236,6 +279,12 @@ export default function CatalogoLista({ onEditar }) {
               )}
             </div>
 
+            {it.tipo === "Produto" && prod && (
+              <div className="cat-card cat-quando">
+                <QuandoVende produtoId={prod.id} onToast={onToast} compacto />
+              </div>
+            )}
+
             <div className="catalogo-acoes">
               {editarAlvo.id && <button type="button" className="btn btn-mini" onClick={() => onEditar(editarAlvo)}>✎ editar cadastro</button>}
               {prod && it.tipo === "Produto" && <button type="button" className="btn btn-mini" onClick={() => irParaAba("producao", { produtoId: prod.id })}>Calcular custo</button>}
@@ -260,15 +309,84 @@ export default function CatalogoLista({ onEditar }) {
       </h3>
       <div className="toolbar">
         <input type="search" placeholder="Buscar por nome ou SKU" value={busca} onChange={(e) => setBusca(e.target.value)} style={{ maxWidth: 280 }} />
-        <div className="subabas" style={{ margin: 0 }}>
-          {[["todos", "Todos"], ["produtos", "Produtos"], ["kits", "Kits"]].map(([k, r]) => (
-            <button key={k} type="button" className={`btn btn-mini${tipo === k ? " primary" : ""}`} onClick={() => setTipo(k)}>{r}</button>
-          ))}
-        </div>
+        <button type="button" className={`btn btn-mini${verFiltros ? " primary" : ""}`} onClick={() => setVerFiltros((v) => !v)}>
+          Filtros {verFiltros ? "▴" : "▾"}
+          {ativos.length ? ` (${ativos.length})` : ""}
+        </button>
+        {ativos.map((a) => (
+          <span key={a.k} className="chip-filtro">
+            {a.txt}
+            <button type="button" className="btn-icone" title="Tirar este filtro" onClick={() => tirar(a.k)}>
+              ×
+            </button>
+          </span>
+        ))}
+        {ativos.length > 1 && (
+          <button type="button" className="link-btn" onClick={() => setFiltros(FILTROS_VAZIO)}>
+            limpar
+          </button>
+        )}
         <span className="muted-cel">{linhas.length} ite{linhas.length === 1 ? "m" : "ns"}</span>
       </div>
+      {verFiltros && (
+        <div className="painel-filtros">
+          <div className="field">
+            <label>Tipo</label>
+            <select value={filtros.tipo} onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })}>
+              <option value="todos">Todos</option>
+              <option value="produtos">Produtos</option>
+              <option value="kits">Kits</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Quando vende</label>
+            <select value={filtros.quando} onChange={(e) => setFiltros({ ...filtros, quando: e.target.value })}>
+              <option value="">Qualquer</option>
+              {TIPOS_QUANDO.map((t) => (
+                <option key={t.chave} value={t.chave}>
+                  {t.rotulo.replace("…", "")}
+                </option>
+              ))}
+              <option value="sem">Sem classificação</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Impressora</label>
+            <select value={filtros.impressora} onChange={(e) => setFiltros({ ...filtros, impressora: e.target.value })}>
+              <option value="">Qualquer</option>
+              {(impressoras || []).filter((x) => x.ativa !== false).map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Com preço no canal</label>
+            <select value={filtros.canal} onChange={(e) => setFiltros({ ...filtros, canal: e.target.value })}>
+              <option value="">Qualquer</option>
+              {canais.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Rampa</label>
+            <select value={filtros.rampa} onChange={(e) => setFiltros({ ...filtros, rampa: e.target.value })}>
+              <option value="">Qualquer</option>
+              <option value="sim">Em rampa</option>
+              <option value="nao">Fora da rampa</option>
+            </select>
+          </div>
+          <label className="check-filtro">
+            <input type="checkbox" checked={filtros.semSku} onChange={(e) => setFiltros({ ...filtros, semSku: e.target.checked })} /> Sem SKU
+          </label>
+        </div>
+      )}
       {!linhas.length ? (
-        <div className="empty">{alvo ? "Nada encontrado com essa busca." : "Nada cadastrado ainda."}</div>
+        <div className="empty">{alvo || ativos.length ? "Nada encontrado com essa busca/esses filtros." : "Nada cadastrado ainda."}</div>
       ) : (
         <div className="table-wrap">
           <table>

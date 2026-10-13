@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { infoSazonal, quandoVendeDe } from "../lib/calendario.js";
 import { dataSP } from "../lib/datas.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -106,7 +107,15 @@ function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
 // Única coisa gravada aqui: as tarefas manuais (schema v42, tabela tarefas).
 export default function Inicio({ onIrPara, onToast }) {
   const { lojaId } = useLoja();
-  const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf, linhasAds } = useCrescimento();
+  const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf, linhasAds, calendario } = useCrescimento();
+  // Lembrete de temporada (Quando vende = pico/época): 60 dias antes da data.
+  const temporadas = useMemo(
+    () =>
+      (dados.produtos || [])
+        .map((produto) => ({ produto, info: infoSazonal(quandoVendeDe(produto), calendario, hoje) }))
+        .filter((x) => x.info?.lembrete),
+    [dados.produtos, calendario, hoje]
+  );
   const { itens, canais, precos, produtos, kits, materiais, publicacoesCanal, mapaRampa, clientePagaHoje, alertaDe, pareceAtracaoDe, cobraNoCanal } = dados;
   // Itens de anúncio com vários itens (Ficha etapa 2) contam como anunciados.
   const { grupos: gruposAnuncio } = useAnunciosGrupo();
@@ -236,8 +245,8 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- Pra fazer + status ---
   const pendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, hoje }),
-    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, hoje }),
+    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, hoje]
   );
   const status = statusInicio({
     caixa,

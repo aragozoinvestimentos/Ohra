@@ -1,7 +1,7 @@
 import { hojeSP } from "../lib/datas.js";
 import { useState } from "react";
 import { BRL } from "../lib/format.js";
-import { conhecidosDe, diasDoRegistro, fmtSemana, pedidosParaDecisao, porSemana, vendasParaDecisao } from "../lib/rampa.js";
+import { conhecidosDe, diasDoRegistro, fmtSemana, pedidosParaDecisao, porSemana, REGRAS_PADRAO, vendasParaDecisao, vereditoSegmento } from "../lib/rampa.js";
 
 const num = (v) => {
   const x = Number(v);
@@ -16,7 +16,11 @@ const virgula = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits
 // preenchido, também CTR e conversão por semana (eixo % na ponta direita).
 // Marca as subidas
 // e descidas de degrau. Passar o mouse/tocar mostra os números do dia.
-export default function GraficoRampa({ est }) {
+// Marcadores (out/2026): linha vertical em cada mudança de preço — subida,
+// descida, ajuste do degrau (checklist.ajustesDegrau) e rampa refeita — e,
+// embaixo, o veredito entre um marcador e outro (lib/rampa.js →
+// vereditoSegmento: "vendeu X% menos e lucrou Y% mais → compensou").
+export default function GraficoRampa({ est, ajustes = [], regras = REGRAS_PADRAO }) {
   const [hover, setHover] = useState(null);
   const regs = est.registros || [];
   const datas = [...new Set(regs.map((r) => r.data))].sort();
@@ -57,6 +61,8 @@ export default function GraficoRampa({ est }) {
       temSemana: doDia.some((r) => r.tipo === "semana"),
       diasPer,
       mudanca,
+      // Lucro da semana (sem conhecidos, custo e taxas de hoje) — no tooltip.
+      lucro: doDia.filter((r) => r.tipo === "semana").reduce((t, r) => t + vendasParaDecisao(r) * (est.lucroEm ? est.lucroEm(num(r.preco) || num(ultPreco?.preco)) ?? 0 : 0), 0),
       ctr: comFunil.length && imp > 0 ? cli / imp : null,
       conv: comFunil.length && cli > 0 ? ped / cli : null,
     });
@@ -88,6 +94,24 @@ export default function GraficoRampa({ est }) {
   const yA = (v) => fundoPreco - ((v - aMin) / (aMax - aMin)) * (fundoPreco - topoPreco) * 0.9;
   const larg = (W - padL - padR) / pontos.length;
   const cx = (i) => padL + larg * i + larg / 2;
+
+  // Posição de qualquer data (marcador de ajuste pode cair entre dois registros).
+  const xDe = (d) => {
+    const k = datas.indexOf(d);
+    if (k >= 0) return cx(k);
+    const depois = datas.findIndex((x) => x > d);
+    if (depois <= 0) return depois === 0 ? cx(0) : cx(datas.length - 1);
+    const a = datas[depois - 1];
+    const b = datas[depois];
+    const f = (new Date(`${d}T12:00:00`) - new Date(`${a}T12:00:00`)) / (new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`));
+    return cx(depois - 1) + f * (cx(depois) - cx(depois - 1));
+  };
+  const segs = est.segmentos || [];
+  const marcos = [
+    ...segs.slice(1).map((g) => ({ data: g.inicio, tipo: g.tipo === "inicio" ? "refeita" : g.tipo, preco: g.preco, obs: g.observacao })),
+    ...(Array.isArray(ajustes) ? ajustes : []).map((a) => ({ data: a.data, tipo: "ajuste", preco: num(a.para), de: num(a.de) })),
+  ].filter((m) => m.data >= datas[0] && m.data <= datas[datas.length - 1]);
+  const ICONE = { subida: "↑", descida: "↓", ajuste: "✎", refeita: "↺" };
 
   // Linha do preço em degrau (horizontal até a próxima data)
   const comPreco = pontos.map((p, i) => ({ ...p, i })).filter((p) => p.preco != null);
@@ -144,6 +168,7 @@ export default function GraficoRampa({ est }) {
               {h.preco != null ? ` · ${BRL(h.preco)}` : ""}
               {h.temSemana ? ` · ${fmtSemana(h.vendas)} venda${h.vendas === 1 ? "" : "s"}${h.diasPer ? `/semana (registro de ${h.diasPer} dias)` : ""}` : ""}
               {h.conhecidos > 0 ? ` (${fmtSemana(h.conhecidos)} de conhecidos)` : ""}
+              {h.temSemana && est.lucroEm ? ` · lucro ${BRL(h.lucro)}/semana` : ""}
               {h.aval != null ? ` · ${h.aval} avaliações` : ""}
               {h.ctr != null ? ` · CTR ${fmtPct(h.ctr)}` : ""}
               {h.conv != null ? ` · conversão ${fmtPct(h.conv)}` : ""}
@@ -213,12 +238,17 @@ export default function GraficoRampa({ est }) {
           p.mudanca ? (
             <g key={`m${p.data}`}>
               <circle cx={cx(i)} cy={yP(num(p.mudanca.preco))} r="5" className={p.mudanca.tipo === "subida" ? "ponto-subida" : "ponto-descida"} />
-              <text x={cx(i)} y={yP(num(p.mudanca.preco)) - 10} textAnchor="middle" className="rotulo-mudanca">
-                {p.mudanca.tipo === "subida" ? "↑" : "↓"} {virgula(p.mudanca.preco)}
-              </text>
             </g>
           ) : null
         )}
+        {marcos.map((m, k) => (
+          <g key={`mk${k}`} className={`marco marco-${m.tipo}`}>
+            <line x1={xDe(m.data)} x2={xDe(m.data)} y1={padT - 4} y2={baseVendas} className="linha-marco" />
+            <text x={xDe(m.data) + 4} y={padT + 6} className="rotulo-marco">
+              {ICONE[m.tipo]} {virgula(m.preco)}
+            </text>
+          </g>
+        ))}
         {pontos.map((p, i) => (
           <text key={`x${p.data}`} x={cx(i)} y={H - 8} textAnchor="middle" className="eixo">{i === pontos.length - 1 && p.data === hojeSP() ? "hoje" : dataBR(p.data)}</text>
         ))}
@@ -226,6 +256,34 @@ export default function GraficoRampa({ est }) {
           <rect key={`h${p.data}`} x={padL + larg * i} y={0} width={larg} height={H} fill="transparent" onMouseEnter={() => setHover(i)} onClick={() => setHover(i)} />
         ))}
       </svg>
+      {segs.length > 1 && (
+        <div className="vereditos">
+          {segs.slice(1).map((g, k) => {
+            const ant = segs[k];
+            const v = g.tipo === "inicio" ? null : vereditoSegmento(g, ant, regras);
+            const titulo = { subida: "Depois de subir", descida: "Depois de voltar", inicio: "Rampa refeita" }[g.tipo] || "Mudança";
+            return (
+              <div key={`${g.inicio}-${k}`} className={`veredito veredito-${v?.chave || "neutro"}`}>
+                <span className="veredito-tit">
+                  {ICONE[g.tipo === "inicio" ? "refeita" : g.tipo]} {titulo} pra {BRL(g.preco)} <span className="muted-cel">({dataBR(g.inicio)})</span>
+                </span>
+                {g.tipo === "inicio" ? (
+                  <span className="muted-cel">a contagem recomeçou aqui</span>
+                ) : !v ? (
+                  <span className="muted-cel">sem semana registrada antes pra comparar</span>
+                ) : v.chave === "coletando" ? (
+                  <span className="muted-cel">{v.texto}</span>
+                ) : (
+                  <span>
+                    {fmtSemana(v.vendas)} vendas/sem (antes {fmtSemana(v.refVendas)}) · lucro {BRL(v.lucro)}/sem (antes {BRL(v.ref)}) →{" "}
+                    <b>{v.chave === "compensou" ? "✓ " : v.chave === "nao" ? "✗ " : "≈ "}{v.texto}</b>
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

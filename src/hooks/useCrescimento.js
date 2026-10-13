@@ -9,6 +9,7 @@ import { useAdsPeriodos } from "./useAdsPeriodos.js";
 import { adsDaLoja, avaliarAds, periodoAtivo, periodosDoItem, regrasAds } from "../lib/ads.js";
 import { lucroNoPreco } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
+import { configCalendario, infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -37,6 +38,10 @@ export function useCrescimento() {
   );
 
   // Uma linha por rampa, com tudo calculado ao vivo.
+  // Calendário da loja (Configuração → Lojas): temporada do produto sazonal e
+  // aviso da próxima campanha da plataforma.
+  const calendario = useMemo(() => configCalendario(cfgLoja), [cfgLoja]);
+  const campanha = useMemo(() => proximaCampanha(calendario, hoje), [calendario, hoje]);
   const linhas = useMemo(() => {
     return rampas
       .map((r) => {
@@ -47,14 +52,15 @@ export function useCrescimento() {
         const cfg = cfgDoProduto(r.produto_id);
         const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === r.produto_id && p.canal_id === r.canal_id);
         const adsAtivo = periodoAtivo(periodosDoItem(adsH.periodos, "produto", r.produto_id, r.canal_id), hoje);
-        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo };
+        const sazonal = infoSazonal(quandoVendeDe(produto), calendario, hoje);
+        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha };
         const regs = registros.filter((g) => g.rampa_id === r.id);
         const est = estadoRampa(r, regs, regras, ctx, hoje);
         return { r, produto, canal, item, cfg, ctx, est };
       })
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos]);
+  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha]);
 
   // Comissão de afiliado por item × canal (ao vivo).
   const linhasAf = useMemo(
@@ -104,5 +110,5 @@ export function useCrescimento() {
     };
   }, [itens, canais, precos, linhas, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje]);
 
-  return { dados, rampasH, af, regras, hoje, funilLoja, linhas, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds };
+  return { dados, rampasH, af, regras, hoje, funilLoja, calendario, linhas, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds };
 }
