@@ -113,47 +113,108 @@ export default function CatalogoLista({ onEditar }) {
     const emGrupos = mapaGrupos.get(it.id) || [];
     const rampasDo = prod ? rampas.filter((x) => x.produto_id === prod.id) : [];
     const editarAlvo = it.tipo === "Kit" ? { tipo: "kit", id: it.id.slice(2) } : { tipo: "produto", id: prod?.id };
+    // Composição do custo (barra + linhas): produção quebrada quando há detalhamento.
+    const partes = [];
+    if (r) {
+      const base = [
+        ["Material", r.material],
+        ["Energia", r.energia],
+        ["Máquina", r.roiPeca],
+        ["Manutenção", r.manutencao],
+        ["Falhas", r.falhas],
+        ["Acabamento", r.acabamento],
+      ];
+      base.forEach(([n, v]) => partes.push({ nome: n, valor: v }));
+      const resto = r.total - base.reduce((t, [, v]) => t + v, 0);
+      if (resto > 0.005) partes.push({ nome: "Consumíveis e modelagem", valor: resto });
+    } else if (kitLinhas.length) {
+      kitLinhas.forEach((l) => partes.push({ nome: `${l.quantidade} × ${l.produto.nome}`, valor: l.subtotal, sub: `${BRL(l.custoPeca)}/peça${l.manual ? " · à mão" : ` · chapa de ${l.pecasChapa}`}` }));
+    } else partes.push({ nome: "Produção", valor: it.custoProducao ?? 0 });
+    if (num(it.embalagem) > 0) partes.push({ nome: "Embalagem", valor: num(it.embalagem) });
+    const frete = num(it.freteProduto ?? it.frete);
+    if (frete > 0) partes.push({ nome: "Frete", valor: frete });
+    const total = partes.reduce((t, x) => t + x.valor, 0) || 1;
+    const salvosDet = canaisDo(it);
+    const imp = prod ? impressoraDoProduto(prod, impressoras) : null;
+    const info = [
+      `peso de envio ${g(it.peso)}`,
+      prod && it.tipo === "Produto" ? `${imp?.nome || "sem impressora"} · chapa de ${Math.max(1, num(prod.pecas_por_impressao) || 1)}` : null,
+      prod && !prod.producao_detalhe ? "custo de produção digitado à mão" : null,
+    ].filter(Boolean);
     return (
       <tr className="linha-detalhe">
         <td colSpan={5}>
           <div className="detalhe-cel catalogo-det">
-            <div className="catalogo-det-col">
-              <div className="ads-rotulo">Custo de hoje</div>
-              {r && (
-                <div className="kv-cel muted-cel">
-                  material {BRL(r.material)} · energia {BRL(r.energia)} · máquina {BRL(r.roiPeca)} · manutenção {BRL(r.manutencao)} · falhas {BRL(r.falhas)} · acabamento {BRL(r.acabamento)}
-                </div>
-              )}
-              {kitLinhas.map((l) => (
-                <div key={l.produto.id} className="kv-cel">
-                  {l.quantidade} × {l.produto.nome} ({BRL(l.custoPeca)}/peça{l.manual ? ", à mão" : `, chapa de ${l.pecasChapa}`}) = {BRL(l.subtotal)}
-                </div>
-              ))}
-              <div className="kv-cel">
-                produção {BRL(it.custoProducao ?? it.custoTotal)} · embalagem {BRL(it.embalagem ?? 0)} · frete {BRL(it.freteProduto ?? it.frete ?? 0)} = <b>{BRL(it.custoTotal)}</b>
+            <div className="cat-card">
+              <div className="cat-card-cab">
+                <span className="ads-rotulo">Custo de hoje</span>
+                <b className="cat-total">{BRL(it.custoTotal)}</b>
               </div>
-              <div className="kv-cel muted-cel">peso de envio {g(it.peso)}</div>
+              <div className="cat-barra" aria-hidden="true">
+                {partes.map((x, k) => (
+                  <span key={x.nome} className={`cat-cor-${k % 8}`} style={{ width: `${(x.valor / total) * 100}%` }} title={`${x.nome}: ${BRL(x.valor)}`} />
+                ))}
+              </div>
+              <div className="cat-linhas">
+                {partes.map((x, k) => (
+                  <div key={x.nome} className="cat-linha">
+                    <span className={`cat-ponto cat-cor-${k % 8}`} />
+                    <span className="cat-nome">
+                      {x.nome}
+                      {x.sub && <small>{x.sub}</small>}
+                    </span>
+                    <span className="cat-pct">{Math.round((x.valor / total) * 100)}%</span>
+                    <span className="cat-val">{BRL(x.valor)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="cat-info">{info.join(" · ")}</div>
             </div>
-            <div className="catalogo-det-col">
-              <div className="ads-rotulo">Preço salvo por canal</div>
-              {canaisDo(it).length ? (
-                canaisDo(it).map(({ c, s }) => {
-                  const est = estadoDoAlerta(alertaDe(it, c));
-                  return (
-                    <div key={c.id} className="kv-cel">
-                      <CanalTag canal={c} /> {BRL(s.preco)} · lucro {BRL(s.lucro)} · {PCT(s.margem)} {est && <Estado tipo={est.tipo}>{est.motivo}</Estado>}
-                    </div>
-                  );
-                })
+
+            <div className="cat-card">
+              <div className="cat-card-cab">
+                <span className="ads-rotulo">Preço salvo por canal</span>
+                {rampasDo.map((x) => (
+                  <Estado key={x.id} tipo="decisao">em rampa · {canais.find((c) => c.id === x.canal_id)?.nome || "canal"}</Estado>
+                ))}
+              </div>
+              {salvosDet.length ? (
+                <table className="cat-precos">
+                  <thead>
+                    <tr>
+                      <th>Canal</th>
+                      <th className="num">Preço</th>
+                      <th className="num">Lucro</th>
+                      <th className="num">Margem</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {salvosDet.map(({ c, s }) => {
+                      const est = estadoDoAlerta(alertaDe(it, c));
+                      return (
+                        <tr key={c.id}>
+                          <td><CanalTag canal={c} /></td>
+                          <td className="num"><b>{BRL(s.preco)}</b></td>
+                          <td className="num" style={num(s.lucro) < 0 ? { color: "var(--bad)" } : undefined}>{BRL(s.lucro)}</td>
+                          <td className="num">{PCT(s.margem)}</td>
+                          <td>{est && <Estado tipo={est.tipo}>{est.motivo}</Estado>}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               ) : (
                 <div className="muted-cel">Sem preço salvo em nenhum canal.</div>
               )}
-              {rampasDo.map((x) => (
-                <div key={x.id} className="kv-cel"><Estado tipo="decisao">em rampa · {canais.find((c) => c.id === x.canal_id)?.nome || "canal"}</Estado></div>
-              ))}
-              {emKits.length > 0 && <div className="kv-cel muted-cel">Nos kits: {emKits.map((k) => k.nome).join(", ")}</div>}
-              {emGrupos.length > 0 && <div className="kv-cel muted-cel">Nos anúncios: {emGrupos.map((x) => x.grupo.nome).join(", ")}</div>}
+              {(emKits.length > 0 || emGrupos.length > 0) && (
+                <div className="cat-info">
+                  {emKits.length > 0 && <div>Nos kits: {emKits.map((k) => k.nome).join(", ")}</div>}
+                  {emGrupos.length > 0 && <div>Nos anúncios: {emGrupos.map((x) => x.grupo.nome).join(", ")}</div>}
+                </div>
+              )}
             </div>
+
             <div className="catalogo-acoes">
               {editarAlvo.id && <button type="button" className="btn btn-mini" onClick={() => onEditar(editarAlvo)}>✎ editar cadastro</button>}
               {prod && it.tipo === "Produto" && <button type="button" className="btn btn-mini" onClick={() => irParaAba("producao", { produtoId: prod.id })}>Calcular custo</button>}

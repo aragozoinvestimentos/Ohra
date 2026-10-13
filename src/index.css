@@ -1599,13 +1599,29 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 /* Cadastros → Catálogo */
 .catalogo-canais { display: flex; flex-wrap: wrap; gap: 4px; }
 .linha-filha td:first-child { padding-left: 24px; }
-.catalogo-det { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
-.catalogo-det-col { display: grid; gap: 4px; align-content: start; font-size: 12.5px; }
-.catalogo-det .kv-cel { display: block; padding: 3px 0; border: 0; background: none; border-radius: 0; }
-.catalogo-det .kv-cel + .kv-cel { border-top: 1px solid var(--border); }
-.manut .acao .btn { white-space: nowrap; }
+.catalogo-det { display: grid; grid-template-columns: 1fr 1.2fr; gap: 12px; }
+.cat-card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 12px 14px; display: grid; gap: 10px; align-content: start; }
+.cat-card-cab { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cat-total { margin-left: auto; font-size: 18px; font-variant-numeric: tabular-nums; }
+.cat-barra { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--border); }
+.cat-barra > span { height: 100%; min-width: 2px; }
+.cat-linhas { display: grid; gap: 2px; font-size: 12.5px; }
+.cat-linha { display: grid; grid-template-columns: 10px 1fr auto 72px; gap: 8px; align-items: center; padding: 3px 0; }
+.cat-linha + .cat-linha { border-top: 1px dashed var(--border); }
+.cat-nome small { display: block; color: var(--ink-soft); font-size: 11px; }
+.cat-ponto { width: 8px; height: 8px; border-radius: 50%; }
+.cat-pct { color: var(--ink-soft); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.cat-val { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.cat-info { font-size: 12px; color: var(--ink-soft); display: grid; gap: 2px; }
+.cat-precos { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cat-precos th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); font-weight: 600; text-align: left; padding: 0 6px 6px; }
+.cat-precos th.num, .cat-precos td.num { text-align: right; }
+.cat-precos td { padding: 6px; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.cat-cor-0 { background: #b8743f; } .cat-cor-1 { background: #d9a46f; } .cat-cor-2 { background: #6f8a7a; } .cat-cor-3 { background: #9db08f; }
+.cat-cor-4 { background: #a3584a; } .cat-cor-5 { background: #c9b28a; } .cat-cor-6 { background: #7d8fa6; } .cat-cor-7 { background: #b0a7c4; }
 .catalogo-acoes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
-@media (max-width: 760px) { .catalogo-det { grid-template-columns: 1fr; } }
+.manut .acao .btn { white-space: nowrap; }
+@media (max-width: 900px) { .catalogo-det { grid-template-columns: 1fr; } }
 
 /* Minha farm */
 .manut { display: grid; gap: 8px; }
