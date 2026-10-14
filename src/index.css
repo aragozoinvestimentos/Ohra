@@ -1885,3 +1885,10 @@ tr.combinacao-off td { opacity: 0.45; }
 .ajuste-4x-rec { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--st-oportunidade-soft); color: var(--st-oportunidade); font-size: 10.5px; font-weight: 700; vertical-align: 1px; }
 .barra-parte { display: inline-block; width: 90px; height: 7px; border-radius: 999px; background: var(--surface-2); overflow: hidden; vertical-align: middle; margin-right: 6px; }
 .barra-parte i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+
+/* Rampa do anúncio inteiro (Crescimento → Rampa, grupoRampa.js) */
+.grupo-rampa-degraus { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; }
+.grupo-rampa-degraus .chip-ads { margin-left: 0; }
+.portoes-linha { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.portao { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--bg-soft, rgba(127,127,127,.1)); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.portao.ok { background: var(--st-oportunidade-soft); color: var(--st-oportunidade); }

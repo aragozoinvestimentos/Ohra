@@ -7,6 +7,8 @@
 // nada mais é gravado e o período continua em aberto.
 import { comissaoDoItem, idPrefixado } from "./afiliados.js";
 import { dataSP } from "./datas.js";
+import { itensSoNoGrupo } from "./grupoRampa.js";
+import { gruposPorItem } from "./anunciosGrupo.js";
 
 export const DIAS_SEMANA_PENDENTE = 7;
 
@@ -46,7 +48,7 @@ export function periodoEmAberto(ultimo, data) {
 // → { itens: [...], pendentes: [...], adiados: [...] }; item = { chave, tipo:
 // 'rampa'|'afiliado', rampaId?, itemTipo, itemId, canal, nome, ultimo, dias,
 // pendente, lembrete }.
-export function semanasPendentes({ rampas = [], rampaRegistros = [], afConfig = [], afRegistros = [], adsPeriodos = [], itens = [], canais = [], precos = [], lembretes = [], hoje }) {
+export function semanasPendentes({ rampas = [], rampasGrupo = [], grupos = [], rampaRegistros = [], afConfig = [], afRegistros = [], adsPeriodos = [], itens = [], canais = [], precos = [], lembretes = [], hoje }) {
   const out = [];
   const lembreteDe = (chave) => lembretes.find((l) => l.chave === chave && String(l.adiado_ate).slice(0, 10) > hoje) || null;
   for (const r of rampas) {
@@ -58,6 +60,17 @@ export function semanasPendentes({ rampas = [], rampaRegistros = [], afConfig = 
     const dias = diasEntre(ultimo, hoje);
     const chave = chaveSemanaRampa(r.id);
     out.push({ chave, tipo: "rampa", rampaId: r.id, itemTipo: "produto", itemId: r.produto_id, canal, nome: item.nome, ultimo, dias, pendente: dias > DIAS_SEMANA_PENDENTE, lembrete: lembreteDe(chave) });
+  }
+  // Rampa do anúncio com vários itens (v54).
+  for (const r of rampasGrupo) {
+    const canal = canais.find((c) => c.id === r.canal_id);
+    const g = grupos.find((x) => x.id === r.grupo_id);
+    if (!canal || !g) continue;
+    const ultimo = ultimoRegistroRampa(r, rampaRegistros);
+    if (!ultimo) continue;
+    const dias = diasEntre(ultimo, hoje);
+    const chave = chaveSemanaRampa(r.id);
+    out.push({ chave, tipo: "rampa", rampaId: r.id, itemTipo: "grupo", itemId: r.grupo_id, canal, nome: `Anúncio: ${g.nome}`, ultimo, dias, pendente: dias > DIAS_SEMANA_PENDENTE, lembrete: lembreteDe(chave) });
   }
   for (const row of afConfig) {
     if (!row.item_tipo || !row.item_id || !row.ativo) continue;
@@ -77,13 +90,21 @@ export function semanasPendentes({ rampas = [], rampaRegistros = [], afConfig = 
   }
   // Item só com Ads ligado (período ativo, schema v44), fora de rampa e sem
   // afiliado: registra a semana no mesmo afiliado_registros (vendas_total + Ads).
-  for (const p of adsPeriodos) {
-    if (p.motivo_fim || (p.fim && p.fim < hoje)) continue;
+  // Item que só existe dentro de um anúncio com vários itens: a semana é do anúncio.
+  const soNoGrupo = itensSoNoGrupo({ grupos, itens, precos });
+  const mapaGrupos = gruposPorItem(grupos);
+  for (const p0 of adsPeriodos) {
+    if (p0.motivo_fim || (p0.fim && p0.fim < hoje)) continue;
+    const idItem = p0.item_tipo !== "grupo" ? idPrefixado(p0.item_tipo, p0.item_id) : null;
+    const gDoItem = idItem && soNoGrupo.has(idItem) ? mapaGrupos.get(idItem)?.[0]?.grupo : null;
+    const p = gDoItem ? { ...p0, item_tipo: "grupo", item_id: gDoItem.id } : p0;
     const chave = chaveSemanaAf(p.item_tipo, p.item_id, p.canal_id);
     if (out.some((x) => x.chave === chave)) continue;
     if (p.item_tipo === "produto" && rampas.some((r) => r.produto_id === p.item_id && r.canal_id === p.canal_id)) continue;
+    if (p.item_tipo === "grupo" && rampasGrupo.some((r) => r.grupo_id === p.item_id && r.canal_id === p.canal_id)) continue;
     const canal = canais.find((c) => c.id === p.canal_id);
-    const item = itens.find((i) => i.id === idPrefixado(p.item_tipo, p.item_id));
+    const g = p.item_tipo === "grupo" ? grupos.find((x) => x.id === p.item_id) : null;
+    const item = g ? { nome: `Anúncio: ${g.nome}` } : itens.find((i) => i.id === idPrefixado(p.item_tipo, p.item_id));
     if (!canal || !item) continue;
     let ultimo = null;
     for (const g of afRegistros) if (g.item_tipo === p.item_tipo && g.item_id === p.item_id && g.canal_id === p.canal_id) ultimo = maior(ultimo, String(g.data).slice(0, 10));

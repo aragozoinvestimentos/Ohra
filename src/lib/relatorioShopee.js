@@ -354,7 +354,28 @@ export function lembrarIdsShopee(relatorios) {
   }
 }
 
-// Ads por item do app: itensApp = [{ chave, sku }]. Números do período do CSV
+// Anúncio com vários itens: o ID do item da Shopee → id do grupo, lembrado
+// toda vez que cruzarGrupos acha o anúncio no relatório de desempenho (o CSV
+// do Ads sozinho só traz o ID).
+const CHAVE_GRUPOS = "ohra:shopee:id-grupo";
+export function gruposShopeeLembrados() {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_GRUPOS) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+function lembrarGrupoShopee(itemId, grupoId) {
+  const m = gruposShopeeLembrados();
+  m[itemId] = grupoId;
+  try {
+    localStorage.setItem(CHAVE_GRUPOS, JSON.stringify(m));
+  } catch {
+    // sem problema: na próxima vez importa o desempenho junto
+  }
+}
+
+// Ads por item do app: itensApp = [{ chave, sku, grupoId? }] (grupoId = anúncio com vários itens). Números do período do CSV
 // (o andamento é ACUMULADO: exporte do início do período de Ads até ontem).
 export function adsPorItemApp(relatorios, itensApp) {
   const ads = (relatorios || []).find((r) => r?.tipo === "ads") || null;
@@ -374,19 +395,34 @@ export function adsPorItemApp(relatorios, itensApp) {
   }
   const porChave = {};
   const usados = new Set();
-  for (const it of itensApp) {
+  const idGrupo = gruposShopeeLembrados();
+  for (const it of itensApp.filter((x) => x.grupoId)) {
+    const ids = [...ads.porItem.keys()].filter((id) => idGrupo[id] === it.grupoId);
+    if (!ids.length) continue;
+    const t = { gasto: 0, cliques: 0, vendas: 0 };
+    for (const id of ids) {
+      const a = ads.porItem.get(id);
+      t.gasto += a.gasto;
+      t.cliques += a.cliques;
+      t.vendas += a.vendas;
+      usados.add(id);
+    }
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas };
+  }
+  for (const it of itensApp.filter((x) => !x.grupoId)) {
     const t = porSku.get(normSku(it.sku));
     if (!t) continue;
     t.ids.forEach((id) => usados.add(id));
     porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas };
   }
-  const adsSemPar = [...ads.porItem.entries()].filter(([id, a]) => !usados.has(id) && a.gasto > 0).map(([id, a]) => ({ itemId: id, ...a, conhecido: !!idSku[id] }));
+  const adsSemPar = [...ads.porItem.entries()].filter(([id, a]) => !usados.has(id) && a.gasto > 0).map(([id, a]) => ({ itemId: id, ...a, conhecido: !!idSku[id] || !!idGrupo[id] }));
   const avisos = [];
   if (adsSemPar.some((a) => !a.conhecido)) avisos.push("Alguns anúncios do Ads ainda não estão ligados a um SKU: importe junto, uma vez, o relatório de desempenho do produto (Informações Gerenciais → Produto → Performance do produto).");
   // Produto com SKU já ligado a algum anúncio e sem linha no CSV = sem gasto (0);
   // SKU que o app ainda não conhece fica em branco.
   const skusConhecidos = new Set(Object.values(idSku).map(normSku));
-  const zerados = itensApp.filter((it) => !porChave[it.chave] && skusConhecidos.has(normSku(it.sku))).map((it) => it.chave);
+  const gruposConhecidos = new Set(Object.values(idGrupo));
+  const zerados = itensApp.filter((it) => !porChave[it.chave] && (it.grupoId ? gruposConhecidos.has(it.grupoId) : skusConhecidos.has(normSku(it.sku)))).map((it) => it.chave);
   return { periodo: ads.periodo, porChave, zerados, adsSemPar, avisos };
 }
 
@@ -419,6 +455,7 @@ export function cruzarGrupos(relatorios, grupos) {
     if (!melhor) continue;
     const it = melhor.it;
     idsUsados.add(it.itemId);
+    lembrarGrupoShopee(it.itemId, g.id); // o andamento do Ads (CSV sozinho) usa essa ligação
     const porOpcao = {};
     const semOpcao = [];
     for (const v of it.variacoes) {

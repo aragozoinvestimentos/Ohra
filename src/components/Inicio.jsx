@@ -112,7 +112,10 @@ function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
 // Única coisa gravada aqui: as tarefas manuais (schema v42, tabela tarefas).
 export default function Inicio({ onIrPara, onToast }) {
   const { lojaId } = useLoja();
-  const { dados, rampasH, af, regras, hoje, linhas, linhasAf, semanaAf, linhasAds, calendario } = useCrescimento();
+  const { dados, rampasH, af, regras, hoje, linhas: linhasTodas, linhasGrupo, linhasAf, semanaAf, linhasAds, calendario } = useCrescimento();
+  // Rampas de produtos que só existem dentro de um anúncio com vários itens
+  // saem dos avisos (decide a rampa do anúncio inteiro, que entra no lugar).
+  const linhas = useMemo(() => [...linhasTodas.filter((l) => !l.soNoGrupo), ...(linhasGrupo || [])], [linhasTodas, linhasGrupo]);
   const campanhaProx = useMemo(() => proximaCampanha(calendario, hoje), [calendario, hoje]);
   const organicasH = useVendasOrganicas();
   const reservaH = useReservaProducao();
@@ -245,11 +248,11 @@ export default function Inicio({ onIrPara, onToast }) {
   // Repor a produção do mês = a MESMA conta da Reserva de produção do Fluxo de
   // Caixa (Vendas do mês, lib/vendasMes.js) + o saldo da reserva (v51).
   const reservaMes = useMemo(() => {
-    const v = vendasDoMes({ mes: mesDe(hoje), rampas: rampasH.rampas, rampaRegistros: rampasH.registros, afRegistros: af.registros, organicas: organicasH.registros, itens, canais, cfgDoProduto });
+    const v = vendasDoMes({ mes: mesDe(hoje), rampas: rampasH.rampas, rampasGrupo: rampasH.rampasGrupo, rampaRegistros: rampasH.registros, afRegistros: af.registros, organicas: organicasH.registros, itens, canais, cfgDoProduto });
     if (!v.total.unidades) return null;
     const res = saldoReserva(reservaH.registros);
     return { repor: v.total.repor, unidades: v.total.unidades, saldo: res.saldo, separado: res.porMes.get(mesDe(hoje)) || 0, temReserva: reservaH.disponivel };
-  }, [hoje, rampasH.rampas, rampasH.registros, af.registros, organicasH.registros, itens, canais, cfgDoProduto, reservaH.registros, reservaH.disponivel]);
+  }, [hoje, rampasH.rampas, rampasH.rampasGrupo, rampasH.registros, af.registros, organicasH.registros, itens, canais, cfgDoProduto, reservaH.registros, reservaH.disponivel]);
 
   // --- Pra fazer + status ---
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
@@ -617,7 +620,7 @@ export default function Inicio({ onIrPara, onToast }) {
             {linhas.map((l) => (
               <li key={l.r.id}>
                 <span>
-                  {l.produto.nome} <CanalTag canal={l.canal} /> <span className="muted-cel">{l.est.fase.rotulo} · vendendo {BRL(l.est.preco)}</span>
+                  {l.produto.nome} <CanalTag canal={l.canal} /> <span className="muted-cel">{l.est.fase.rotulo} · {l.ehGrupo ? `${l.g.pctAtual}% do preço salvo` : `vendendo ${BRL(l.est.preco)}`}</span>
                 </span>
                 <button type="button" className="link-btn" onClick={() => irParaAba("crescimento", { sub: "rampa", rampaId: l.r.id })}>
                   {l.est.sugestao.rotulo}

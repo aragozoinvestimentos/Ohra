@@ -66,7 +66,7 @@ export function fichaDoGrupo({ grupo, canal, itens, precos, produtos, kits, mapa
   const varNome = String(grupo.variacao_nome || "Conjunto").trim() || "Conjunto";
   const combos2 = v2 ? v2.opcoes : [null];
   const linhas = [];
-  for (const o of opcoes) {
+  for (const [idx, o] of opcoes.entries()) {
     const item = itens.find((i) => i.id === idDoItemOpcao(o)) || null;
     const rotulo = o.rotulo || item?.nome || "—";
     const vitrine = vitrineDaOpcao(o, canal);
@@ -74,6 +74,9 @@ export function fichaDoGrupo({ grupo, canal, itens, precos, produtos, kits, mapa
     if (vitrine && item) {
       an = { ...calcularAnuncio(vitrine, descontoDoItem(item.id, canal, { itens, produtos, kits }).desconto), vitrine: true };
       anSalvo = an;
+      // Anúncio inteiro em rampa (grupoRampa.js): a vitrine também desce/sobe no degrau.
+      const ra = mapaRampa?.get(`g:${grupo.id}|${idx}|${canal.id}`);
+      if (ra) an = { original: ra.original, promo: ra.promo, clientePaga: ra.clientePaga, real: ra.real, emRampa: true, vitrine: true, riscadoFixo: ra.riscadoFixo };
     }
     const valorCliente = item && an ? (vitrine ? an.clientePaga : clientePagaHoje?.(item, canal) ?? an.clientePaga) : null;
     const frete = item && an ? alertaPreco({ preco: an.real, canal, valorCliente }).frete : null;

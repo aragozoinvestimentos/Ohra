@@ -270,7 +270,7 @@ const GLOSSARIO = [
   },
   {
     termo: "ROAS",
-    def: "Receita que o Ads trouxe ÷ o que você gastou. O ROAS mínimo (preço ÷ lucro) é o empate: abaixo dele o Ads dá prejuízo.",
+    def: "Receita que o Ads trouxe ÷ o que você gastou. O ROAS de equilíbrio (preço de agora ÷ lucro) é onde o Ads se paga: abaixo dele dá prejuízo. Retorno = ROAS ÷ equilíbrio = quanto de lucro cada R$ 1 investido trouxe.",
   },
   {
     termo: "ROI da máquina",

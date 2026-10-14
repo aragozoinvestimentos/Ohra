@@ -1,10 +1,12 @@
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { andamentoValido, faseDaLoja, periodoLigado, resumoPeriodo, tetoPorFaixas, valoresAtuais, REGRAS_ADS } from "../lib/ads.js";
+import { andamentoValido, capacidadeDoItem, faseDaLoja, periodoLigado, resumoPeriodo, retornoAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS } from "../lib/ads.js";
 import { porSemana } from "../lib/rampa.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
-import { adsPorItemApp, lerRelatorio } from "../lib/relatorioShopee.js";
+import { adsPorItemApp, cruzarGrupos, lerRelatorio } from "../lib/relatorioShopee.js";
+import { useEscada } from "../hooks/useEscada.js";
+import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
 import { hojeSP } from "../lib/datas.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -12,7 +14,7 @@ import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import { EncerrarAdsDialog, NAO_RECOMENDA, PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
-import { ajustarPeriodoAds, encerrarPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
+import { ajustarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 
 // Crescimento → Ads (schema v44): avaliação semanal de Ads por produto/kit ×
@@ -26,6 +28,11 @@ const um = (v) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { minim
 const pct = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 const diasEntre = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
+const somarDias = (iso, n) => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
 const virg = (v) => (v == null || v === "" ? "" : String(v).replace(".", ","));
 const ORDEM = { resolver: 0, atencao: 1, oportunidade: 2, decisao: 3, info: 4, ok: 5 };
 
@@ -149,6 +156,18 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
     onToast(n ? `Andamento atualizado em ${n} produto${n > 1 ? "s" : ""}` : "Nada pra atualizar");
   }
 
+  // CSV do Ads com gasto num item sem período: cria o período (só no "Sim") e já guarda o andamento.
+  async function criarPeloCsv(l, inicio, ate, valores) {
+    setSalvando(true);
+    const r = await iniciarPeriodoAds({ lojaId, tipo: l.tipo, id: l.id, canalId: l.canal.id, inicio, nota: "criado pelo CSV do Shopee Ads" });
+    if (r.ok && r.periodo) await salvarAndamentoAds(r.periodo, { ate, ...valores });
+    setSalvando(false);
+    if (!r.ok) return onToast?.(r.msg), false;
+    window.dispatchEvent(new Event("focus"));
+    onToast?.(`${l.item.nome}: período de Ads criado desde ${dm(inicio)} — confira orçamento e meta em “Registrar ajuste”`);
+    return true;
+  }
+
   async function salvarRegras(f) {
     if (!loja) return;
     const novo = { ...(loja.config_escada?.ads || {}), ...(f.aumento != null ? { aumento: num(f.aumento) / 100 } : {}), ...(f.faixasTeto ? { faixasTeto: f.faixasTeto } : {}) };
@@ -192,12 +211,15 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
           <Ajuda
             texto={
               <>
-                Uma avaliação por semana, a partir das semanas registradas (ou importadas da Shopee). Ads é custo de venda: não entra no preço.
-                <br />• <b>7 dias de aprendizado</b> a cada período ou ajuste: não mexa em meta nem orçamento.
-                <br />• Depois: ROAS ≥ meta e gastou quase tudo → <b>aumentar {Math.round(regrasA.aumento * 100)}%</b> (1× por semana); entre o empate e a meta → manter; abaixo do empate → reduzir ou subir a meta; 2 semanas abaixo → pausar; {regrasA.cliquesSemVenda} cliques sem venda → pausar e revisar o anúncio.
-                <br />• <b>Empate</b> = preço ÷ lucro por venda: abaixo dele, o Ads tira lucro.
+                Decisão ao vivo pelo andamento (CSV do Shopee Ads) ou pela semana registrada. Ads é investimento: não entra no preço.
+                <br />• <b>ROAS de equilíbrio</b> = preço de agora ÷ lucro por venda (antes do Ads): abaixo dele, o Ads tira lucro. <b>Meta sugerida</b> = equilíbrio × 1,3.
+                <br />• <b>Retorno</b> = ROAS ÷ equilíbrio = quanto de lucro cada R$ 1 investido trouxe.
+                <br />• <b>7 dias de aprendizado</b> no começo do período; depois de cada ajuste, nova decisão em no mínimo <b>{regrasA.decisaoDias || 4} dias</b>.
+                <br />• Com a Shopee gastando ≥ 80% do orçamento: retorno 1–1,2× → manter; 1,2–2× → <b>+{Math.round(regrasA.aumento * 100)}%</b>; 2–3× → <b>+50%</b>; ≥ 3× → <b>dobrar</b> (sempre dentro do teto da loja e perguntando se a produção dá conta). Vendas via Ads caíram mais de 30% em 3 dias com retorno bom → também sugere aumentar.
+                <br />• Abaixo do equilíbrio: muitos cliques e poucas vendas → arrumar o anúncio; já no mínimo de {BRL(regrasA.minDiario)}/dia → subir a meta (mais seletivo) ou pausar; senão → reduzir o orçamento. A Shopee não gasta o orçamento → baixar a meta (mais alcance).
+                <br />• <b>Anúncio com vários itens</b> = uma linha só: equilíbrio pelo mix de vendas das opções (sem vendas, pela opção mais exigente).
                 <br />• Sem Ads: o app diz se vale impulsionar, se o anúncio precisa ser arrumado antes ou se o Ads não se paga neste preço.
-                <br />• <b>Produto “só na época de…”</b>: Aquecer (45 dias antes da data-limite, R$ 10/dia) → Ajustar (21 dias antes, 1 decisão por semana) → Alavancar (da data-limite em diante: a cada 3–4 dias pelo andamento, aumento até 30%, só com lucro) → Corte (7 dias antes da data: pausar). Na temporada o Ads tem que deixar pelo menos metade do lucro de cada venda (mínimo = 2× o empate).
+                <br />• <b>Produto “só na época de…”</b>: Aquecer (45 dias antes da data-limite, R$ 10/dia) → Ajustar (21 dias antes) → Alavancar (da data-limite em diante: a cada 3 dias pelo andamento, aumento até 30%, só com lucro) → Corte (7 dias antes da data: pausar). Na temporada o Ads tem que deixar pelo menos metade do lucro de cada venda (mínimo = 2× o equilíbrio).
                 <br />• <b>Teto da loja</b>: tabela progressiva pelo faturamento dos últimos 30 dias (cada % vale só pro pedaço da faixa) e nunca mais que metade do lucro do período.
               </>
             }
@@ -215,7 +237,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
             <input type="checkbox" checked={soLigados} onChange={(e) => setSoLigados(e.target.checked)} /> só com Ads ligado
           </label>
           <button type="button" className="btn btn-mini" onClick={() => setVerRegras((v) => !v)}>Regras do Ads</button>
-          {ligados > 0 && (
+          {linhasAds.linhas.length > 0 && (
             <button type="button" className="btn btn-mini" onClick={() => setAndamentoDlg(true)} title="Ver como está o Ads no meio do período, sem encerrar nada">
               Atualizar andamento
             </button>
@@ -234,8 +256,8 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                 <tr>
                   <th>Produto</th>
                   <th>Situação</th>
-                  <th className="num">ROAS semana</th>
-                  <th className="num">Empate</th>
+                  <th className="num">ROAS agora</th>
+                  <th className="num">Equilíbrio</th>
                   <th className="num">Meta</th>
                   <th className="num">Orçamento/dia</th>
                 </tr>
@@ -257,10 +279,17 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                               {l.sazonal.fim ? ` até ${dm(l.sazonal.fim)}` : ""}
                             </span>
                           )}
-                          <div className="muted-cel">{BRL(l.preco)} · lucro {l.lucro != null ? BRL(l.lucro) : "—"}</div>
+                          <div className="muted-cel">
+                            {l.tipo === "grupo" ? (l.mix ? `ticket médio ${BRL(l.preco)}` : `pior opção: ${l.pior?.rotulo || "—"} ${BRL(l.preco)}`) : BRL(l.preco)} · lucro {l.lucro != null ? BRL(l.lucro) : "—"}
+                            {l.tipo === "grupo" && ` · ${l.ops.length} opções${l.rampaGrupo ? ` · rampa ${l.rampaGrupo.g.pctAtual}%` : ""}`}
+                          </div>
+                          {av.avisoMeta && <span className="chip-cel atencao">meta alta pra começar</span>}
                         </td>
                         <td><Situacao av={av} compacto /></td>
-                        <td className="num" style={{ color: roasSemana == null || !av.empate ? undefined : roasSemana >= av.empate ? "var(--good)" : "var(--bad)" }}>{um(roasSemana)}</td>
+                        <td className="num" style={{ color: roasSemana == null || !av.empate ? undefined : roasSemana >= av.empate ? "var(--good)" : "var(--bad)" }}>
+                          {um(roasSemana)}
+                          {av.numeros?.retorno != null && <div className="sub-num">retorno {um(av.numeros.retorno)}×</div>}
+                        </td>
                         <td className="num">{um(av.empate)}</td>
                         <td className="num">{vals?.meta ? um(vals.meta) : "—"}</td>
                         <td className="num">{vals?.orcamento ? BRL(vals.orcamento) : "—"}</td>
@@ -293,6 +322,9 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
       {andamentoDlg && (
         <AndamentoDialog
           linhas={linhasAds.linhas.filter((l) => l.av.ativo)}
+          todas={linhasAds.linhas}
+          onEstender={(l, p, fim) => rodar(() => estenderPeriodoAds(p, fim), `${l.item.nome}: fim do período estendido até ${dm(fim)}`)}
+          onCriar={criarPeloCsv}
           hoje={hoje}
           salvando={salvando}
           onCancelar={() => setAndamentoDlg(false)}
@@ -320,11 +352,12 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
   const av = l.av;
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
-  const historico = l.periodos.map((p) => ({ p, r: resumoPeriodo(p, l.semanas, l.preco, av.empate, regrasA) }));
+  const historico = [...l.periodos].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).map((p) => ({ p, r: resumoPeriodo(p, l.semanas, l.preco, av.empate, regrasA) }));
   const totalDias = av.ativo?.fim ? diasEntre(av.ativo.inicio, av.ativo.fim) + 1 : null;
   const diaAtual = (n.dias ?? 0) + 1;
   const tomRoas = (r) => (r == null || !av.empate ? "" : r >= av.empate ? " bom" : " ruim");
   const andamento = av.ativo ? andamentoValido(av.ativo, l.semanas) : null;
+  const ret = n.lucroPorReal ?? retornoAds(n.roas, av.empate);
   const roasAnd = andamento && andamento.gasto > 0 ? (andamento.vendas * l.preco) / andamento.gasto : null;
   return (
     <div className="detalhe-cel ads-det">
@@ -332,6 +365,25 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
         <b>{av.titulo}</b>
         {av.texto}
       </div>
+      {av.avisoMeta && (
+        <div className="alerta alerta-warn">
+          <b>Meta alta pra começar — comece com {um(av.avisoMeta.sugerida)}</b>
+          A meta {um(av.avisoMeta.meta)} passa de 2× o ROAS de equilíbrio ({um(av.minimo ?? av.empate)}): a Shopee fica seletiva demais e quase não entrega. Baixe na plataforma e registre aqui.
+          <div style={{ marginTop: 6 }}>
+            <button type="button" className="btn btn-mini primary" onClick={() => onAjuste({ orcamento: vals.orcamento, meta: av.avisoMeta.sugerida, motivo: "meta alta pra começar (equilíbrio × 1,3)" })}>
+              Registrar ajuste: meta {um(av.avisoMeta.sugerida)}
+            </button>
+          </div>
+        </div>
+      )}
+      {l.tipo === "grupo" && (
+        <div className="alerta alerta-neutro">
+          <b>Anúncio com vários itens</b>
+          {l.mix
+            ? `Equilíbrio pelo mix das vendas dos últimos 30 dias (${l.ops.map((o) => `${o.rotulo} ${Math.round((l.mix.pesos.get(o.idx) || 0) * 100)}%`).join(" · ")}).`
+            : `Sem vendas por opção ainda: o equilíbrio é o da opção mais exigente (${l.pior?.rotulo || "—"}). Importe os relatórios da Shopee no Registrar semana pra ter o mix.`}
+        </div>
+      )}
       {av.ativo && (
         <div className="ads-cartao">
           <div className="ads-periodo">
@@ -343,7 +395,8 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
               <span className="ads-chips">
                 <span className="chip-ads">{vals.orcamento ? `${BRL(vals.orcamento)}/dia` : "sem orçamento"}</span>
                 <span className="chip-ads">meta {um(vals.meta)}</span>
-                <span className="chip-ads">empate {um(av.empate)}</span>
+                <span className="chip-ads">equilíbrio {um(av.empate)}</span>
+                {vals.meta && av.empate ? <span className="chip-ads">meta sugerida {um(Math.ceil(av.empate * 1.3 * 10 - 1e-9) / 10)}</span> : null}
               </span>
             </div>
             {totalDias ? (
@@ -361,7 +414,9 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
             <div><span>Cliques</span><b>{n.cliques || 0}</b></div>
             <div><span>ROAS</span><b className={`ads-roas${tomRoas(n.roas)}`}>{um(n.roas)}</b></div>
             <div><span>Custo por venda</span><b>{n.custoPorVenda != null ? BRL(n.custoPorVenda) : "—"}</b></div>
+            <div><span>Retorno</span><b className={`ads-roas${ret == null ? "" : ret >= 1 ? " bom" : " ruim"}`}>{ret != null ? `${um(ret)}×` : "—"}</b></div>
           </div>
+          {ret != null && <div className="muted-cel" style={{ marginTop: 2 }}>{textoRetorno(ret)} (antes de descontar o R$ 1)</div>}
           {andamento && (
             <div className="ads-andamento">
               <span className="ads-rotulo">Andamento até {dm(andamento.ate)}</span>
@@ -370,12 +425,18 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
                 <b className={`ads-roas${tomRoas(roasAnd)}`}>{um(roasAnd)}</b>
                 {andamento.custoPorVenda != null ? ` · ${BRL(andamento.custoPorVenda)} por venda` : ""}
               </span>
-              <span className="muted-cel">acumulado desde {dm(av.ativo.inicio)}, informado por você — só pra acompanhar; a avaliação usa as semanas registradas</span>
+              <span className="muted-cel">acumulado desde {dm(av.ativo.inicio)}, informado por você — entra na decisão depois do aprendizado (enquanto nenhuma semana registrada cobrir essas datas)</span>
+            </div>
+          )}
+          {n.constancia && (
+            <div className="ads-semana">
+              Vendas via Ads por dia: {um(n.constancia.agora)} nos últimos 3 dias × {um(n.constancia.antes)} nos 3 anteriores ({n.constancia.variacao >= 0 ? "+" : ""}
+              {Math.round(n.constancia.variacao * 100)}%)
             </div>
           )}
           {n.roasSemana != null && (
             <div className="ads-semana">
-              Última semana: ROAS <b className={`ads-roas${tomRoas(n.roasSemana)}`}>{um(n.roasSemana)}</b> · gastou {BRL(n.gastoSemana)}
+              {n.medida?.fonte === "andamento" ? `${vals.ultimoAjuste && vals.ultimoAjuste > av.ativo.inicio ? "Desde o último ajuste" : "Desde o início"} (até ${dm(n.medida.ate)})` : "Última semana"}: ROAS <b className={`ads-roas${tomRoas(n.roasSemana)}`}>{um(n.roasSemana)}</b> · gastou {BRL(n.gastoSemana)}
               {n.usoOrc != null ? ` (${Math.round(n.usoOrc * 100)}% do orçamento)` : ""}
               {n.organico != null ? ` · ${Math.round(n.organico * 100)}% das vendas orgânicas` : ""}
             </div>
@@ -385,13 +446,18 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
       <div className="acoes-ads">
         {av.ativo ? (
           <>
-            {av.chave === "aumentar" && (
-              <button type="button" className="btn btn-mini primary" onClick={() => onAjuste({ orcamento: av.novoOrcamento, meta: vals.meta, motivo: "aumento de 20% (ROAS ≥ meta)" })}>
-                Aumentei pra {BRL(av.novoOrcamento)}/dia
+            {(av.chave === "aumentar" || av.chave === "reduzir") && av.novoOrcamento && (
+              <button type="button" className="btn btn-mini primary" onClick={() => onAjuste({ orcamento: av.novoOrcamento, meta: vals.meta, motivo: av.chave === "aumentar" ? `${av.titulo.split(" →")[0].toLowerCase()} (retorno ${um(n.retorno)}×)` : "reduzi: ROAS abaixo do equilíbrio" })}>
+                {av.chave === "aumentar" ? "Aumentei" : "Reduzi"} pra {BRL(av.novoOrcamento)}/dia
+              </button>
+            )}
+            {av.chave === "subir-meta" && (
+              <button type="button" className="btn btn-mini primary" onClick={() => onAjuste({ orcamento: vals.orcamento, meta: av.novaMeta, motivo: "subi a meta: ROAS abaixo do equilíbrio no mínimo diário" })}>
+                Subi a meta pra {um(av.novaMeta)}
               </button>
             )}
             {av.chave === "meta-alta" && (
-              <button type="button" className="btn btn-mini primary" onClick={() => onAjuste({ orcamento: vals.orcamento, meta: av.novaMeta, motivo: "meta alta: gastou pouco" })}>
+              <button type="button" className="btn btn-mini primary" onClick={() => onAjuste({ orcamento: vals.orcamento, meta: av.novaMeta, motivo: "baixei a meta: a Shopee gastou pouco" })}>
                 Baixei a meta pra {um(av.novaMeta)}
               </button>
             )}
@@ -448,31 +514,6 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
   );
 }
 
-// Produção (Minha farm): peças por dia que a farm faz de UM produto (todas as
-// impressoras ativas × horas/dia ÷ tempo por peça). Só informa — a decisão de
-// aumentar o Ads é do Gustavo ("consegue produzir?").
-function pecasPorDia(produto, impressoras, farmConfig) {
-  if (!produto) return null;
-  const min = num(produto.tempo_impressao_horas) > 0 ? num(produto.tempo_impressao_horas) * 60 : num(produto.producao_detalhe?.tempo);
-  const porPeca = min > 0 ? min / Math.max(1, num(produto.pecas_por_impressao) || 1) : 0;
-  const ativas = (impressoras || []).filter((i) => i.ativa !== false).length || 1;
-  const horas = num(farmConfig?.horas_dia_operacao) || 8;
-  return porPeca > 0 ? Math.floor((ativas * horas * 60) / porPeca) : null;
-}
-function capacidadeDoItem(item, produtos, impressoras, farmConfig) {
-  if (item.id.startsWith("k:")) {
-    const caps = (item.componentes || []).map((c) => {
-      const cap = pecasPorDia(produtos.find((p) => p.id === c.produtoId), impressoras, farmConfig);
-      return cap != null ? cap / Math.max(1, num(c.quantidade) || 1) : null;
-    });
-    return caps.length && caps.every((c) => c != null) ? Math.floor(Math.min(...caps)) : null;
-  }
-  const pid = item.id.startsWith("p:") ? item.id.slice(2) : item.produtoId;
-  const cap = pecasPorDia(produtos.find((p) => p.id === pid), impressoras, farmConfig);
-  const pecas = Math.max(1, num(item.pecas) || 1);
-  return cap != null ? Math.floor(cap / pecas) : null;
-}
-
 function AjusteDialog({ d, hoje, salvando, onCancelar, onSalvar, onToast }) {
   const [f, setF] = useState({ data: hoje, orcamento: virg(d.orcamento ?? ""), meta: virg(d.meta ?? ""), motivo: d.motivo || "" });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
@@ -487,7 +528,7 @@ function AjusteDialog({ d, hoje, salvando, onCancelar, onSalvar, onToast }) {
   const vendasDia = ult ? num(ult.vendas) / 7 : null;
   const extraDia = ult && orcAtual > 0 ? (num(ult.ads_vendas) / 7) * (num(f.orcamento) / orcAtual - 1) : 0;
   const previsto = vendasDia != null ? vendasDia + Math.max(0, extraDia) : null;
-  const cap = capacidadeDoItem(d.linha.item, produtos || [], impressoras, farmConfig);
+  const cap = d.linha.tipo === "grupo" ? d.linha.capacidadeDia : capacidadeDoItem(d.linha.item, produtos || [], impressoras, farmConfig);
   const passa = previsto != null && cap != null && previsto > cap;
   const fmt = (v) => (v == null ? "—" : String(Math.round(v * 10) / 10).replace(".", ","));
   return (
@@ -500,7 +541,7 @@ function AjusteDialog({ d, hoje, salvando, onCancelar, onSalvar, onToast }) {
       </div>
       {minimo && f.meta !== "" && num(f.meta) < minimo && (
         <div className="alerta alerta-warn">
-          <b>Meta abaixo {minimo !== empate ? `do mínimo da temporada (${um(minimo)})` : `do empate (${um(empate)})`}</b>
+          <b>Meta abaixo {minimo !== empate ? `do mínimo da temporada (${um(minimo)})` : `do ROAS de equilíbrio (${um(empate)})`}</b>
           {minimo !== empate ? "Na temporada o Ads tem que deixar pelo menos metade do lucro de cada venda." : "Com essa meta, a plataforma pode vender com prejuízo pra você."}
         </div>
       )}
@@ -546,8 +587,11 @@ function RegrasAds({ regrasA, salvando, onSalvar }) {
 
 // Andamento do Ads (v48): números ACUMULADOS desde o início de cada período
 // ligado, até a data escolhida — à mão ou pelo CSV do Shopee Ads (todos de
-// uma vez). Cada envio substitui o anterior; não encerra nada nem decide nada.
-function AndamentoDialog({ linhas, hoje, salvando, onCancelar, onSalvar, onToast }) {
+// uma vez). Cada envio substitui o anterior; não encerra nada. Desde o plano
+// de 14/10/2026 o andamento entra na decisão (depois do aprendizado). O CSV
+// também pergunta (só age no "Sim"): período encerrado no app com gasto
+// depois do fim → estender o fim; gasto sem período → criar o período.
+function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSalvar, onEstender, onCriar, onToast }) {
   const ontem = (() => {
     const d = new Date(`${hoje || hojeSP()}T12:00:00`);
     d.setDate(d.getDate() - 1);
@@ -564,7 +608,9 @@ function AndamentoDialog({ linhas, hoje, salvando, onCancelar, onSalvar, onToast
   );
   const [doCsv, setDoCsv] = useState(() => new Set());
   const [avisos, setAvisos] = useState([]);
+  const [perguntas, setPerguntas] = useState([]); // [{ chave, l, tipo: 'estender'|'criar', periodo?, data, valores }]
   const [lendo, setLendo] = useState(false);
+  const esc = useEscada();
   const set = (chave, k) => (e) => setVals((p) => ({ ...p, [chave]: { ...p[chave], [k]: e.target.value } }));
 
   async function importar(e) {
@@ -575,8 +621,19 @@ function AndamentoDialog({ linhas, hoje, salvando, onCancelar, onSalvar, onToast
     try {
       const lidos = [];
       for (const a of arquivos) lidos.push(await lerRelatorio(a));
+      // Desempenho junto: aprende qual anúncio da Shopee é cada anúncio com vários itens.
+      const canalShopee = (esc.canais || []).find((c) => c.tipo === "shopee") || null;
+      if (canalShopee && lidos.some((r) => r.tipo === "desempenho"))
+        cruzarGrupos(
+          lidos,
+          (esc.gruposAnuncio || [])
+            .map((g) => ({ g, ficha: fichaDoGrupo({ grupo: g, canal: canalShopee, itens: esc.itens, precos: esc.precos, produtos: esc.produtos, kits: esc.kits, mapaRampa: esc.mapaRampa, publicacoes: esc.publicacoesCanal, clientePagaHoje: esc.clientePagaHoje }) }))
+            .filter((x) => x.ficha)
+            .map(({ g, ficha }) => ({ id: g.id, nome: g.nome, opcoes: ficha.opcoes.map((o, idx) => ({ idx, skus: ficha.linhas.filter((l) => l.opcao === o).map((l) => l.sku) })) }))
+        );
+      const shopeeTodas = todas.filter((l) => l.canal.tipo === "shopee");
+      const res = adsPorItemApp(lidos, shopeeTodas.map((l) => ({ chave: l.chave, sku: l.item.sku, grupoId: l.tipo === "grupo" ? l.id : null })));
       const shopee = linhas.filter((l) => l.canal.tipo === "shopee");
-      const res = adsPorItemApp(lidos, shopee.map((l) => ({ chave: l.chave, sku: l.item.sku })));
       const marc = new Set();
       setVals((p) => {
         const n = { ...p };
@@ -597,13 +654,35 @@ function AndamentoDialog({ linhas, hoje, salvando, onCancelar, onSalvar, onToast
         for (const l of shopee)
           if (res.periodo.de > l.av.ativo.inicio)
             av.push(`${l.item.nome}: o CSV começa em ${dm(res.periodo.de)}, mas o período de Ads começou em ${dm(l.av.ativo.inicio)} — exporte desde o início do período (o andamento é acumulado).`);
-      for (const a of res.adsSemPar.filter((x) => x.conhecido)) av.push(`Anúncio ${a.nome || a.itemId}: ${BRL(a.gasto)} de Ads, mas o produto não está com período de Ads ligado no app.`);
+      // Gasto no CSV de item SEM período ligado: estender o último ou criar um.
+      const pergs = [];
+      if (res.periodo?.de && res.periodo?.ate)
+        for (const l of shopeeTodas) {
+          if (l.av.ativo) continue;
+          const x = res.porChave[l.chave];
+          if (!x || !(x.gasto > 0)) continue;
+          const ult = (l.periodos || [])[0] || null;
+          const valores = { gasto: x.gasto, cliques: x.cliques, vendas: x.vendas };
+          if (ult && ult.fim && ult.fim < res.periodo.ate && ult.fim >= somarDias(res.periodo.de, -1))
+            pergs.push({ chave: l.chave, l, tipo: "estender", periodo: ult, data: res.periodo.ate, valores });
+          else if (!ult || !ult.fim || ult.fim < res.periodo.de) pergs.push({ chave: l.chave, l, tipo: "criar", data: res.periodo.de, ate: res.periodo.ate, valores });
+        }
+      setPerguntas(pergs);
+      for (const a of res.adsSemPar.filter((x) => x.conhecido)) av.push(`Anúncio ${a.nome || a.itemId}: ${BRL(a.gasto)} de Ads, mas não está ligado a nenhum produto/anúncio do app com preço salvo.`);
       setAvisos(av);
     } catch (err) {
       onToast?.(err.message || "Não foi possível ler o arquivo");
     } finally {
       setLendo(false);
     }
+  }
+
+  async function responder(q, sim) {
+    if (sim) {
+      const ok = q.tipo === "estender" ? await onEstender(q.l, q.periodo, q.data) : await onCriar(q.l, q.data, q.ate, q.valores);
+      if (!ok) return;
+    }
+    setPerguntas((p) => p.filter((x) => x.chave !== q.chave));
   }
 
   function salvar() {
@@ -619,8 +698,8 @@ function AndamentoDialog({ linhas, hoje, salvando, onCancelar, onSalvar, onToast
   return (
     <EditarDialog titulo="Atualizar andamento do Ads" classe="modal-andamento" salvando={salvando} onCancelar={onCancelar} onSalvar={salvar} salvarLabel="Salvar andamento">
       <p className="hint" style={{ marginTop: 0 }}>
-        Números <b>acumulados desde o início</b> de cada período de Ads até a data abaixo. Cada envio <b>substitui</b> o anterior (nunca soma). Não encerra o período e não
-        muda nenhuma decisão — a avaliação continua pelas semanas registradas, e o Registrar semana já vem com o que faltar.
+        Números <b>acumulados desde o início</b> de cada período de Ads até a data abaixo. Cada envio <b>substitui</b> o anterior (nunca soma). Não encerra o período. Depois do aprendizado, a
+        decisão do Ads usa o andamento mais novo — atualize a cada 3 dias. O Registrar semana já vem com o que faltar.
       </p>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 }}>
         <div className="field" style={{ margin: 0 }}>
@@ -631,8 +710,26 @@ function AndamentoDialog({ linhas, hoje, salvando, onCancelar, onSalvar, onToast
           {lendo ? "Lendo…" : "📄 Importar CSV do Shopee Ads"}
           <input type="file" accept=".csv,.xlsx" multiple hidden onChange={importar} />
         </label>
-        <Ajuda texto="Shopee: Marketing → Shopee Ads → escolha o período DO INÍCIO do período de Ads até ontem → Exportar dados → Dados Gerais de Anúncios. O app liga cada anúncio ao produto pelo SKU — se pedir, importe junto (uma vez) o relatório de desempenho do produto; depois ele lembra." />
+        <Ajuda texto="Shopee: Marketing → Shopee Ads → escolha o período DO INÍCIO do período de Ads até ontem → Exportar dados → Dados Gerais de Anúncios. O app liga cada anúncio ao produto pelo SKU (e o anúncio com vários itens pelas variações) — se pedir, importe junto (uma vez) o relatório de desempenho do produto; depois ele lembra." />
       </div>
+      {perguntas.map((q) => (
+        <div key={q.chave} className="alerta alerta-warn" style={{ margin: "0 0 8px" }}>
+          <b>
+            {q.l.item.nome}: {BRL(q.valores.gasto)} de Ads no CSV
+          </b>
+          {q.tipo === "estender"
+            ? `O período terminou em ${dm(q.periodo.fim)} no app, mas o CSV vai até ${dm(q.data)} com gasto. Estender o fim até ${dm(q.data)}?`
+            : `Não há período de Ads ligado no app. Criar um período a partir de ${dm(q.data)} (início do CSV), com o andamento até ${dm(q.ate)}?`}
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <button type="button" className="btn btn-mini primary" disabled={salvando} onClick={() => responder(q, true)}>
+              Sim
+            </button>
+            <button type="button" className="btn btn-mini" disabled={salvando} onClick={() => responder(q, false)}>
+              Não
+            </button>
+          </div>
+        </div>
+      ))}
       {avisos.map((a) => (
         <div key={a} className="alerta alerta-warn" style={{ margin: "0 0 8px" }}>{a}</div>
       ))}

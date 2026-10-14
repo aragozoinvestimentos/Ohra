@@ -8,7 +8,9 @@ import { supabase } from "./supabaseClient.js";
 
 const diasEntre = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
 const msgErro = (error) =>
-  /ads_periodos|schema cache|does not exist/.test(error.message) && !/tipo/.test(error.message)
+  /item_tipo_check/.test(error.message)
+    ? "Falta rodar o supabase/schema_v54.sql no Supabase (Ads do anúncio com vários itens)"
+    : /ads_periodos|schema cache|does not exist/.test(error.message) && !/tipo/.test(error.message)
     ? "Falta rodar o supabase/schema_v44.sql no Supabase"
     : `Não foi possível salvar: ${error.message}`;
 
@@ -16,7 +18,7 @@ const msgErro = (error) =>
 async function inserirPeriodo(linha) {
   let r = await supabase.from("ads_periodos").insert(linha).select().single();
   let semTipo = false;
-  if (r.error && /tipo/.test(r.error.message)) {
+  if (r.error && /tipo/.test(r.error.message) && !/item_tipo/.test(r.error.message)) {
     const { tipo: _tipo, ...sem } = linha;
     semTipo = true;
     r = await supabase.from("ads_periodos").insert(sem).select().single();
@@ -24,7 +26,7 @@ async function inserirPeriodo(linha) {
   return { ...r, semTipo };
 }
 
-// { lojaId, tipo: 'produto'|'kit', id, canalId, inicio, fim, orcamento, meta, nota, teste: bool, rampa?, regras? }
+// { lojaId, tipo: 'produto'|'kit'|'grupo' (anúncio com vários itens, v54), id, canalId, inicio, fim, orcamento, meta, nota, teste: bool, rampa?, regras? }
 export async function iniciarPeriodoAds({ lojaId, tipo, id, canalId, inicio, fim = null, orcamento = null, meta = null, nota = null, teste = false, rampa = null, regras = null }) {
   const linha = {
     loja_id: lojaId || null,
@@ -88,10 +90,24 @@ export async function excluirPeriodoAds(periodo, { rampa = null, hoje } = {}) {
   return { ok: true };
 }
 
-// Andamento do período (v48): substitui o anterior (nunca soma).
+// Andamento do período (v48): substitui o anterior (nunca soma). Os envios
+// anteriores ficam em `parcial.historico` (até 12, um por data) — a
+// constância do Ads (média de 3 dias × os 3 anteriores) lê daqui.
 export async function salvarAndamentoAds(periodo, { ate, gasto, cliques, vendas }) {
-  const parcial = { ate, gasto, cliques, vendas, em: new Date().toISOString() };
+  const ant = periodo?.parcial;
+  const hist = [...(Array.isArray(ant?.historico) ? ant.historico : []), ...(ant?.ate ? [{ ate: ant.ate, gasto: ant.gasto, cliques: ant.cliques, vendas: ant.vendas }] : [])]
+    .filter((h) => h && h.ate && h.ate < ate)
+    .reduce((m, h) => m.set(h.ate, h), new Map());
+  const historico = [...hist.values()].sort((a, b) => a.ate.localeCompare(b.ate)).slice(-12);
+  const parcial = { ate, gasto, cliques, vendas, em: new Date().toISOString(), historico };
   const { error } = await supabase.from("ads_periodos").update({ parcial }).eq("id", periodo.id);
   if (!error) return { ok: true };
   return { ok: false, msg: /parcial/.test(error.message) ? "Falta rodar o supabase/schema_v48.sql no Supabase" : msgErro(error) };
+}
+
+// CSV do Shopee Ads com gasto depois do fim de um período já encerrado no
+// app: só com o "Sim" do Gustavo, estende o fim até a data do CSV.
+export async function estenderPeriodoAds(periodo, fim) {
+  const { error } = await supabase.from("ads_periodos").update({ fim }).eq("id", periodo.id);
+  return error ? { ok: false, msg: msgErro(error) } : { ok: true };
 }

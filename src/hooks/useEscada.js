@@ -7,6 +7,8 @@ import { alertaPreco, estrategiaEfetiva, produtosEmRampa } from "../lib/estrateg
 import { anuncioDoItem, mapaAnuncioRampa, valorClientePagaHoje } from "../lib/rampaAnuncio.js";
 import { quantidadeAnunciada } from "../lib/quantidadesAnuncio.js";
 import { alvoEAgora } from "../lib/precoAgora.js";
+import { useAnunciosGrupo } from "./useAnunciosGrupo.js";
+import { mapaAnuncioGrupos } from "../lib/grupoRampa.js";
 
 // Tudo que as telas de preço por quantidade/Anunciar/Produtos precificados
 // precisam, em cima do catálogo AO VIVO (mudou custo, preço salvo, taxa,
@@ -17,7 +19,8 @@ import { alvoEAgora } from "../lib/precoAgora.js";
 export function useEscada() {
   const { lojas, lojaId } = useLoja();
   const dados = useRankingData();
-  const { rampas } = useRampas();
+  const { rampas, rampasGrupo } = useRampas();
+  const { grupos } = useAnunciosGrupo();
   const cfgLoja = useMemo(() => lojas.find((l) => l.id === lojaId)?.config_escada || null, [lojas, lojaId]);
   const produtosPorId = useMemo(() => new Map(dados.produtos.map((p) => [p.id, p])), [dados.produtos]);
 
@@ -34,10 +37,16 @@ export function useEscada() {
 
   // "O que digitar" da Rampa (riscado fixo + promo do degrau) pros itens em
   // rampa e os que dependem deles — e o que o cliente PAGA HOJE (frete grátis).
-  const mapaRampa = useMemo(
-    () => mapaAnuncioRampa({ rampas, canais: dados.canais, itens, produtos: dados.produtos, kits: dados.kits, precos, concorrentes, cfgDoProduto, publicacoes: dados.publicacoesCanal }),
-    [rampas, dados.canais, itens, dados.produtos, dados.kits, precos, concorrentes, cfgDoProduto, dados.publicacoesCanal]
-  );
+  // + rampa do ANÚNCIO com vários itens (v54, grupoRampa.js): as opções em
+  // rampa entram no mesmo mapa e PREVALECEM sobre uma rampa individual que
+  // ainda exista do mesmo item (o anúncio inteiro passa a decidir).
+  const mapaRampa = useMemo(() => {
+    const m = mapaAnuncioRampa({ rampas, canais: dados.canais, itens, produtos: dados.produtos, kits: dados.kits, precos, concorrentes, cfgDoProduto, publicacoes: dados.publicacoesCanal });
+    if (rampasGrupo?.length)
+      for (const [k, v] of mapaAnuncioGrupos({ rampasGrupo, grupos, canais: dados.canais, itens, produtos: dados.produtos, kits: dados.kits, precos, publicacoes: dados.publicacoesCanal, cfgDoProduto }))
+        m.set(k, v);
+    return m;
+  }, [rampas, rampasGrupo, grupos, dados.canais, itens, dados.produtos, dados.kits, precos, concorrentes, cfgDoProduto, dados.publicacoesCanal]);
   const clientePagaHoje = useCallback(
     (item, canal) => valorClientePagaHoje(item?.id, canal, { mapaRampa, precos, itens, produtos: dados.produtos, kits: dados.kits, publicacoes: dados.publicacoesCanal })?.valor ?? null,
     [mapaRampa, precos, itens, dados.produtos, dados.kits, dados.publicacoesCanal]
@@ -143,5 +152,5 @@ export function useEscada() {
   // Pra Anunciar/Início/Ficha: anunciado E no canal.
   const cobraNoCanal = useCallback((item, canal) => anunciadoNoCanal(item, canal) && noCanal(item, canal), [anunciadoNoCanal, noCanal]);
 
-  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, emRampa, estrategiaDe, alertaDe, pareceAtracaoDe, mapaRampa, clientePagaHoje, agoraDe, anunciadoNoCanal, noCanal, cobraNoCanal };
+  return { ...dados, cfgLoja, cfgDoProduto, escada, rampas, rampasGrupo, gruposAnuncio: grupos, emRampa, estrategiaDe, alertaDe, pareceAtracaoDe, mapaRampa, clientePagaHoje, agoraDe, anunciadoNoCanal, noCanal, cobraNoCanal };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 
@@ -56,5 +56,9 @@ export function useRampas({ comRegistros = false } = {}) {
     };
   }, [lojaId, comRegistros]);
 
-  return { ...estado, recarregar: () => window.dispatchEvent(new Event("focus")) };
+  // Rampas de anúncio com vários itens (v54, grupo_id) ficam à parte: as telas
+  // de produto continuam vendo só as rampas por produto.
+  const rampas = useMemo(() => estado.rampas.filter((r) => r.produto_id), [estado.rampas]);
+  const rampasGrupo = useMemo(() => estado.rampas.filter((r) => r.grupo_id), [estado.rampas]);
+  return { ...estado, rampas, rampasGrupo, recarregar: () => window.dispatchEvent(new Event("focus")) };
 }

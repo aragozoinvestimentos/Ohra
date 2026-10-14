@@ -5,6 +5,7 @@
 
 import { pendenciasDeTarefas } from "./tarefas.js";
 import { estadoSugestaoAfiliado } from "./estados.js";
+import { andamentoAtrasado } from "./ads.js";
 
 const brl = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
@@ -240,12 +241,33 @@ export function montarPendencias({
     if (!av.ativo) continue;
     if (av.chave === "pausar-revisar")
       add({ id: `ads|${l.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads com cliques sem venda`, texto: `${l.canal.nome} · ${av.titulo}`, ir: irAds, rotulo: "Abrir Ads" });
-    else if (["pausar", "reduzir", "inviavel-ativo"].includes(av.chave))
-      add({ id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo ${av.sazonal && av.minimo !== av.empate ? "do mínimo da temporada" : "do empate"} (ROAS ${(av.minimo ?? av.empate) ? (av.minimo ?? av.empate).toFixed(1).replace(".", ",") : "—"})`, ir: irAds, rotulo: "Abrir Ads" });
+    else if (["pausar", "reduzir", "inviavel-ativo", "subir-meta", "arrumar-anuncio"].includes(av.chave))
+      add({ id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo ${av.sazonal && av.minimo !== av.empate ? "do mínimo da temporada" : "do ROAS de equilíbrio"} (${(av.minimo ?? av.empate) ? (av.minimo ?? av.empate).toFixed(1).replace(".", ",") : "—"})`, ir: irAds, rotulo: "Abrir Ads" });
+    else if (av.chave === "segurar-producao")
+      add({ id: `ads|${l.chave}|producao`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: segurar o Ads`, texto: `${l.canal.nome} · as vendas subiram e a produção não acompanha`, ir: irAds, rotulo: "Abrir Ads" });
     else if (["pausar-corte", "atualizar-andamento"].includes(av.chave))
       add({ id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · ${av.chave === "pausar-corte" ? "último dia de entrega passou" : "fase Alavancar decide a cada 3–4 dias"}`, ir: irAds, rotulo: "Abrir Ads" });
     else if (["aumentar", "meta-alta"].includes(av.chave))
-      add({ id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? "ROAS acima da meta" : "a Shopee gastou pouco do orçamento"}`, ir: irAds, rotulo: "Abrir Ads" });
+      add({ id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? `retorno ${av.numeros?.retorno != null ? av.numeros.retorno.toFixed(1).replace(".", ",") : "—"}× o equilíbrio` : "a Shopee gastou pouco do orçamento"}`, ir: irAds, rotulo: "Abrir Ads" });
+    if (av.avisoMeta)
+      add({ id: `ads|${l.chave}|meta-alta-inicio`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: meta de ROAS alta pra começar`, texto: `${l.canal.nome} · meta ${av.avisoMeta.meta.toFixed(1).replace(".", ",")} — comece com ${av.avisoMeta.sugerida.toFixed(1).replace(".", ",")}`, ir: irAds, rotulo: "Abrir Ads" });
+  }
+  // Andamento do Ads (plano 14/10/2026): UM aviso quando o envio mais antigo
+  // entre os itens com Ads ligado tem mais de 3 dias.
+  {
+    const per = (ads?.linhas || []).filter((l) => l.av.ativo).map((l) => ({ ...l.av.ativo, _nome: l.item.nome }));
+    const atr = andamentoAtrasado(per, hoje);
+    if (atr)
+      add({
+        id: "ads|andamento",
+        grupo: "rotina",
+        ordem: 2,
+        tom: "warn",
+        titulo: `Atualizar o andamento do Ads — ${atr.semEnvio ? `${atr.periodo._nome} sem envio há ${atr.dias} dias` : `último envio há ${atr.dias} dias`}`,
+        texto: "CSV do Shopee Ads desde o início de cada período — as decisões do Ads usam o andamento",
+        ir: irAds,
+        rotulo: "Abrir Ads",
+      });
   }
   if (ads?.teto?.acimaTeto)
     add({ id: "ads|teto", grupo: "rotina", ordem: 2, tom: "warn", titulo: "Ads acima do teto da loja", texto: `${brl(ads.teto.gasto)} em 30 dias · teto ${brl(ads.teto.teto)} (fase ${ads.teto.fase})`, ir: irAds, rotulo: "Abrir Ads" });

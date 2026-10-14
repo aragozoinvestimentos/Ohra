@@ -448,7 +448,22 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const alvo = num(ctx.alvo) > 0 ? cent(num(ctx.alvo)) : degraus[degraus.length - 1] ?? null;
   const acimaAtivo = preco != null && alvo != null && preco > alvo + 0.004;
   const proximo = i < degraus.length - 1 && !(preco >= alvo - 0.004) ? degraus[i + 1] : null;
-  const lucroEm = (p) => (p > 0 && ctx.canal ? lucroNoPreco(ctx.canal, p, ctx.custo, ctx.peso, ctx.cfg) : null);
+  // Rampa do anúncio com vários itens (grupoRampa.js): o lucro médio por venda vem pronto.
+  const lucroEm = ctx.lucroEm
+    ? (p) => (p > 0 ? ctx.lucroEm(p) : null)
+    : (p) => (p > 0 && ctx.canal ? lucroNoPreco(ctx.canal, p, ctx.custo, ctx.peso, ctx.cfg) : null);
+  // Preço com um lucro (só pro anúncio com vários itens, sem custo único): busca binária.
+  const precoComLucro = (alvoLucro, ate) => {
+    let lo = 0.01;
+    let hi = Math.max(1, num(ate));
+    if (!((lucroEm(hi) ?? -1) >= alvoLucro)) return null;
+    for (let k = 0; k < 40; k++) {
+      const m = (lo + hi) / 2;
+      if ((lucroEm(m) ?? -Infinity) >= alvoLucro) hi = m;
+      else lo = m;
+    }
+    return cent(hi);
+  };
   const regs = (registros || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.criado_em || "").localeCompare(String(b.criado_em || "")));
   const semanas = regs.filter((r) => r.tipo === "semana");
   const ultimaSemana = semanas[semanas.length - 1] || null;
@@ -594,10 +609,10 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
       sazonal = { ...sazonal, proximaData, intervalo, cronograma, ritmo, ritmoAnt, subir, atrasado, voltar, pelaPressa: subir && pelaPressa && !pelaData };
     } else if (S.fase === "entressafra") {
       const lucroAlvo = lucroEm(alvo);
-      const pMetade = lucroAlvo > 0 && ctx.canal ? precoParaLucro(ctx.canal, lucroAlvo / 2, ctx.custo, ctx.peso, ctx.cfg) : null;
+      const pMetade = lucroAlvo > 0 ? (ctx.lucroEm ? precoComLucro(lucroAlvo / 2, alvo) : ctx.canal ? precoParaLucro(ctx.canal, lucroAlvo / 2, ctx.custo, ctx.peso, ctx.cfg) : null) : null;
       let pMin = null;
       try {
-        pMin = ctx.canal && ctx.cfg ? precoMinimoAceitavel(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null;
+        pMin = !ctx.lucroEm && ctx.canal && ctx.cfg ? precoMinimoAceitavel(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null;
       } catch {
         pMin = null;
       }
@@ -836,7 +851,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     alvoMudou,
     degraus, i, preco, alvo, proximo, fase, acimaAtivo, noAlvo, teste, acima, diasRampa,
     lucroAtual, lucroAlvo: lucroEm(alvo), lucroProximo: lucroEm(proximo), lucroEm,
-    zero: ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
+    zero: ctx.lucroEm ? precoComLucro(0, alvo) : ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
     avaliacoesTotal, nota, vendasDesde, vendasTotal, vendasTotalDecisao, conhecidosTotal, avaliacoesDesde, dias, ruins7,
     portoes, portoesOk, roasMin, roas, organico, organicoAntes, ultAds,
     revisar, revisarPorAds, revisarPorLancamento, revisarPorTeste, anuncio, alertaNota, sugestao, ultimaSemana, diasMin, campanhaAviso,

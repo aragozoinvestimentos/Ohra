@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { BRL } from "../lib/format.js";
-import { metaSugerida } from "../lib/ads.js";
+import { metaAltaDemais, metaSugerida } from "../lib/ads.js";
 import EditarDialog from "./EditarDialog.jsx";
 
 // Diálogos dos períodos de Ads — os MESMOS na aba Crescimento → Ads e no
@@ -26,7 +26,7 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, salvan
   const [f, setF] = useState(() => ({
     inicio: hoje,
     orcamento: virg(comoTeste0 ? teste.orcamentoDia : regrasA.minDiario),
-    meta: av?.empate ? virg(metaSugerida(av.empate)) : "",
+    meta: av?.empate ? virg(metaSugerida(av.minimo ?? av.empate, regrasA)) : "",
     fim: comoTeste0 ? somarDiasIso(hoje, teste.dias - 1) : "",
     nota: "",
     comoTeste: comoTeste0,
@@ -40,6 +40,9 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, salvan
       orcamento: v ? virg(teste.orcamentoDia) : p.orcamento,
     }));
   const metaBaixa = av?.empate && f.meta !== "" && num(f.meta) < av.empate;
+  // Meta alta pra começar (> 2× o equilíbrio): a Shopee quase não entrega.
+  const refMeta = av?.minimo ?? av?.empate;
+  const metaAlta = !f.comoTeste && refMeta && f.meta !== "" && metaAltaDemais(num(f.meta), refMeta, regrasA);
   const dias = f.fim && f.inicio ? Math.round((new Date(`${f.fim}T12:00:00`) - new Date(`${f.inicio}T12:00:00`)) / 86400000) + 1 : null;
   return (
     <EditarDialog
@@ -66,16 +69,25 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, salvan
         {f.comoTeste
           ? "Compra as primeiras vendas e avaliações: é investimento, não lucro. A régua do ROAS não vale durante o teste; o resultado sai na Rampa e no histórico da aba Ads."
           : "Registre o que você configurou na plataforma. Os 7 primeiros dias são de aprendizado: o app não sugere mexer."}
-        {av?.empate ? ` Empate deste produto: ROAS ${um(av.empate)}.` : ""}
+        {av?.empate ? ` ROAS de equilíbrio: ${um(av.empate)} · meta sugerida ${um(metaSugerida(refMeta, regrasA))} (equilíbrio × 1,3).` : ""}
       </p>
       <div className="grid-auto">
         <div className="field"><label>Início</label><input type="date" value={f.inicio} onChange={set("inicio")} /></div>
         <div className="field"><label>Orçamento diário (R$)</label><input type="text" inputMode="decimal" value={f.orcamento} onChange={set("orcamento")} /></div>
-        <div className="field"><label>Meta de ROAS {f.comoTeste ? "(opcional)" : ""}</label><input type="text" inputMode="decimal" value={f.meta} onChange={set("meta")} placeholder={av?.empate ? virg(metaSugerida(av.empate)) : ""} /></div>
+        <div className="field"><label>Meta de ROAS {f.comoTeste ? "(opcional)" : ""}</label><input type="text" inputMode="decimal" value={f.meta} onChange={set("meta")} placeholder={av?.empate ? virg(metaSugerida(av.minimo ?? av.empate, regrasA)) : ""} /></div>
         <div className="field"><label>Fim {f.comoTeste ? "" : "(opcional)"}</label><input type="date" value={f.fim} onChange={set("fim")} /></div>
       </div>
       {f.comoTeste && dias && num(f.orcamento) > 0 && <p className="hint" style={{ margin: "0 0 6px" }}>Total do teste: {BRL(num(f.orcamento) * dias)} em {dias} dias.</p>}
-      {metaBaixa && <div className="alerta alerta-warn"><b>Meta abaixo do empate ({um(av.empate)})</b>Com essa meta, a Shopee pode vender com prejuízo pra você.</div>}
+      {metaBaixa && <div className="alerta alerta-warn"><b>Meta abaixo do ROAS de equilíbrio ({um(av.empate)})</b>Com essa meta, a Shopee pode vender com prejuízo pra você.</div>}
+      {metaAlta && (
+        <div className="alerta alerta-warn">
+          <b>Meta alta pra começar — comece com {um(metaSugerida(refMeta, regrasA))}</b>
+          Mais que 2× o equilíbrio ({um(refMeta)}): a Shopee fica seletiva demais e quase não entrega. Meta mais baixa = mais alcance; dá pra subir depois.{" "}
+          <button type="button" className="link-btn" onClick={() => setF((p) => ({ ...p, meta: virg(metaSugerida(refMeta, regrasA)) }))}>
+            usar {um(metaSugerida(refMeta, regrasA))}
+          </button>
+        </div>
+      )}
       {num(f.orcamento) > 0 && num(f.orcamento) < regrasA.minDiario && <div className="alerta alerta-warn"><b>Abaixo do mínimo da Shopee</b>A Shopee exige no mínimo {BRL(regrasA.minDiario)}/dia.</div>}
       <div className="field"><label>Observação (opcional)</label><input type="text" value={f.nota} onChange={set("nota")} placeholder="ex.: GMV Max, meta de ROAS" /></div>
     </EditarDialog>
@@ -89,7 +101,7 @@ export function EncerrarAdsDialog({ nome, teste = false, hoje, salvando, onCance
       <p className="hint" style={{ marginTop: 0 }}>Marque o dia em que pausou na plataforma. O período fica no histórico com o resultado{teste ? " e o teste é concluído na Rampa" : ""}.</p>
       <div className="grid-auto">
         <div className="field"><label>Pausei em</label><input type="date" value={f.fim} onChange={(e) => setF((p) => ({ ...p, fim: e.target.value }))} /></div>
-        <div className="field"><label>Motivo (opcional)</label><input type="text" value={f.motivo} onChange={(e) => setF((p) => ({ ...p, motivo: e.target.value }))} placeholder="ex.: ROAS abaixo do empate" /></div>
+        <div className="field"><label>Motivo (opcional)</label><input type="text" value={f.motivo} onChange={(e) => setF((p) => ({ ...p, motivo: e.target.value }))} placeholder="ex.: ROAS abaixo do equilíbrio" /></div>
       </div>
     </EditarDialog>
   );

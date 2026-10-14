@@ -33,7 +33,7 @@ const ID_PREFIXO = { produto: "p", variacao: "v", kit: "k" };
  * → { linhas: [{ chave, item, canal, unidades, faturamento, recebe, repor, lucro, ads, comissao, semanas }],
  *     total: { unidades, faturamento, recebe, repor, lucro, ads, comissao, sobra }, semanas }
  */
-export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros = [], organicas = [], itens = [], canais = [], cfgDoProduto = () => null }) {
+export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros = [], afRegistros = [], organicas = [], itens = [], canais = [], cfgDoProduto = () => null }) {
   const porChave = new Map();
   const itemDe = (tipo, id) => itens.find((i) => i.id === `${ID_PREFIXO[tipo] || "p"}:${id}`) || null;
   const somar = ({ tipo, id, canalId, unidades, preco, ads, comissao, aMao = false }) => {
@@ -57,6 +57,9 @@ export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros
     porChave.set(chave, l);
   };
   const doMes = (g) => g.data && mesDe(diaFimRegistro(g.data)) === mes;
+  // Ads do anúncio com vários itens (v54): as vendas dele entram por opção
+  // (vendas_organicas com grupo_id); aqui só o gasto de Ads, no total.
+  let adsAnuncios = 0;
 
   // Comissão de afiliado dos produtos em rampa: linha de afiliado_registros
   // sem vendas_total, no mesmo produto × canal × data.
@@ -70,12 +73,19 @@ export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros
   for (const g of rampaRegistros) {
     if (g.tipo !== "semana" || !doMes(g)) continue;
     const r = rampas.find((x) => x.id === g.rampa_id);
-    if (!r) continue;
+    if (!r) {
+      if (rampasGrupo.some((x) => x.id === g.rampa_id)) adsAnuncios += num(g.ads_gasto);
+      continue;
+    }
     const k = `${r.produto_id}|${r.canal_id}|${String(g.data).slice(0, 10)}`;
     somar({ tipo: "produto", id: r.produto_id, canalId: r.canal_id, unidades: num(g.vendas), preco: num(g.preco), ads: g.ads_gasto, comissao: comissaoRampa.get(k) || 0 });
   }
   for (const g of afRegistros) {
     if (g.vendas_total == null || !doMes(g)) continue;
+    if (g.item_tipo === "grupo") {
+      adsAnuncios += num(g.ads_gasto);
+      continue;
+    }
     somar({ tipo: g.item_tipo, id: g.item_id, canalId: g.canal_id, unidades: num(g.vendas_total), preco: num(g.preco), ads: g.ads_gasto, comissao: g.comissao });
   }
 
@@ -89,6 +99,8 @@ export function vendasDoMes({ mes, rampas = [], rampaRegistros = [], afRegistros
     .sort((a, b) => b.lucro - a.lucro);
   const soma = (k) => cent(linhas.reduce((t, l) => t + l[k], 0));
   const total = { unidades: linhas.reduce((t, l) => t + l.unidades, 0), faturamento: soma("faturamento"), recebe: soma("recebe"), repor: soma("repor"), lucro: soma("lucro"), ads: soma("ads"), comissao: soma("comissao") };
+  total.adsAnuncios = cent(adsAnuncios);
+  total.ads = cent(total.ads + adsAnuncios);
   total.sobra = cent(total.lucro - total.ads - total.comissao);
   return { linhas, total };
 }

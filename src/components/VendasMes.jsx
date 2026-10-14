@@ -34,7 +34,7 @@ const fimDoMes = (mes) => {
 export default function VendasMes({ mes, onToast }) {
   const { lojaId } = useLoja();
   const { itens, canais, precos, cfgDoProduto, cfgLoja } = useEscada();
-  const { rampas, registros } = useRampas({ comRegistros: true });
+  const { rampas, rampasGrupo, registros } = useRampas({ comRegistros: true });
   const af = useAfiliados();
   const reserva = useReservaProducao();
   const org = useVendasOrganicas();
@@ -49,8 +49,8 @@ export default function VendasMes({ mes, onToast }) {
   const hoje = hojeISO();
 
   const v = useMemo(
-    () => vendasDoMes({ mes, rampas, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto }),
-    [mes, rampas, registros, af.registros, org.registros, itens, canais, cfgDoProduto]
+    () => vendasDoMes({ mes, rampas, rampasGrupo, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto }),
+    [mes, rampas, rampasGrupo, registros, af.registros, org.registros, itens, canais, cfgDoProduto]
   );
   const res = useMemo(() => saldoReserva(reserva.registros), [reserva.registros]);
   const jaSeparado = res.porMes.get(mes) || 0;

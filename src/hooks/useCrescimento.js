@@ -6,7 +6,10 @@ import { estadoRampa, metricasFunil, referenciaFunilLoja, regrasDaLoja } from ".
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
-import { adsDaLoja, avaliarAds, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, tetoDaLoja } from "../lib/ads.js";
+import { adsDaLoja, avaliarAds, capacidadeDoItem, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, tetoDaLoja } from "../lib/ads.js";
+import { equilibrioDoGrupo, estadoRampaGrupo, itensSoNoGrupo, mixDoGrupo, opcoesNoCanal } from "../lib/grupoRampa.js";
+import { idGrupo, idDoItemOpcao, opcoesDoGrupo } from "../lib/anunciosGrupo.js";
+import { useCatalogo } from "./useCatalogo.js";
 import { lucroNoPreco } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
 import { canalDireto } from "../lib/canais.js";
@@ -22,9 +25,13 @@ const num = (v) => {
 // conta pra aba Crescimento e pro Início (que só lê).
 export function useCrescimento() {
   const dados = useEscada();
-  const { itens, produtos, canais, precos, cfgDoProduto, cfgLoja } = dados;
+  const { itens, produtos, kits, canais, precos, cfgDoProduto, cfgLoja, publicacoesCanal, gruposAnuncio: grupos } = dados;
   const rampasH = useRampas({ comRegistros: true });
-  const { rampas, registros } = rampasH;
+  const { rampas, rampasGrupo, registros } = rampasH;
+  const { impressoras, farmConfig } = useCatalogo();
+  // Itens que só existem dentro de um anúncio com vários itens: saem dos avisos
+  // individuais de rampa e da lista de Ads (entram pelo anúncio inteiro).
+  const soNoGrupo = useMemo(() => itensSoNoGrupo({ grupos, itens, precos }), [grupos, itens, precos]);
   const af = useAfiliados();
   const regras = useMemo(() => regrasDaLoja(cfgLoja), [cfgLoja]);
   const hoje = hojeISO();
@@ -60,11 +67,40 @@ export function useCrescimento() {
         const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha };
         const regs = registros.filter((g) => g.rampa_id === r.id);
         const est = estadoRampa(r, regs, regras, ctx, hoje);
-        return { r, produto, canal, item, cfg, ctx, est };
+        return { r, produto, canal, item, cfg, ctx, est, soNoGrupo: soNoGrupo.has(item.id) };
       })
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha]);
+  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha, soNoGrupo]);
+
+  // Rampa do ANÚNCIO com vários itens (v54, grupoRampa.js): degraus em % do
+  // preço salvo de cada opção; mesma estadoRampa por dentro.
+  const linhasGrupo = useMemo(() => {
+    const out = [];
+    for (const r of rampasGrupo || []) {
+      const grupo = (grupos || []).find((g) => g.id === r.grupo_id);
+      const canal = canais.find((c) => c.id === r.canal_id);
+      if (!grupo || !canal) continue;
+      // Sazonal: o 1º produto das opções que é "só na época de…".
+      let sazonal = null;
+      for (const o of opcoesDoGrupo(grupo)) {
+        const it = itens.find((i) => i.id === idDoItemOpcao(o));
+        const pid = it ? (it.id.startsWith("p:") ? it.id.slice(2) : it.produtoId || (it.componentes || [])[0]?.produtoId) : null;
+        const prod = pid ? produtos.find((p) => p.id === pid) : null;
+        const sz = prod ? infoSazonal(quandoVendeDe(prod), calendario, hoje) : null;
+        if (sz && sz.tipo === "epoca") {
+          sazonal = sz;
+          break;
+        }
+      }
+      const adsAtivo = periodoAtivo(periodosDoItem(adsH.periodos, "grupo", grupo.id, canal.id), hoje);
+      const regs = registros.filter((g) => g.rampa_id === r.id);
+      const g = estadoRampaGrupo({ rampa: r, registros: regs, regras, grupo, canal, itens, produtos, kits, precos, publicacoes: publicacoesCanal, cfgDoProduto, organicas: organicasH.registros, hoje, sazonal, funilLoja, adsAtivo, proximaCampanha: campanha });
+      if (!g) continue;
+      out.push({ r, grupo, canal, produto: { id: null, nome: `Anúncio: ${grupo.nome}`, sku: "" }, item: null, ehGrupo: true, g, est: g.est, regs });
+    }
+    return out.sort((a, b) => a.grupo.nome.localeCompare(b.grupo.nome));
+  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasH.registros, hoje, calendario, funilLoja, adsH.periodos, campanha]);
 
   // Comissão de afiliado por item × canal (ao vivo).
   const linhasAf = useMemo(
@@ -93,6 +129,7 @@ export function useCrescimento() {
     for (const it of itens) {
       const tipo = itemTipoDoId(it.id);
       if (tipo === "variacao") continue; // o Ads é por anúncio (produto pai ou kit)
+      if (soNoGrupo.has(it.id)) continue; // entra pela linha do anúncio com vários itens
       const id = it.id.slice(2);
       for (const canal of canais) {
         if (canalDireto(canal)) continue; // venda direta: sem Ads
@@ -105,7 +142,65 @@ export function useCrescimento() {
         // Produto "só na época de…": fase do Ads sazonal (Aquecer/Ajustar/Alavancar/Corte).
         const produto = tipo === "produto" ? produtos.find((p) => p.id === id) : null;
         const sazonal = produto ? faseAdsSazonal(infoSazonal(quandoVendeDe(produto), calendario, hoje), hoje, regrasA) : null;
-        base.push({ chave: `${tipo}|${id}|${canal.id}`, item: it, tipo, id, canal, rampa, preco, lucroEm, lucro: lucroEm(preco), semanas: semanasDe(tipo, id, canal.id, rampa), periodos: periodosDoItem(adsH.periodos, tipo, id, canal.id), sazonal });
+        base.push({ chave: `${tipo}|${id}|${canal.id}`, item: it, tipo, id, canal, rampa, preco, lucroEm, lucro: lucroEm(preco), semanas: semanasDe(tipo, id, canal.id, rampa), periodos: periodosDoItem(adsH.periodos, tipo, id, canal.id), sazonal, capacidadeDia: capacidadeDoItem(it, produtos, impressoras, farmConfig) });
+      }
+    }
+    // Anúncio com vários itens = UMA linha de Ads (plano 14/10/2026). Equilíbrio
+    // pelo mix de vendas das opções (sem vendas: a opção mais exigente). Os
+    // períodos e semanas de Ads das opções que só existem no anúncio aparecem aqui.
+    for (const grupo of grupos || []) {
+      for (const canal of canais) {
+        if (canalDireto(canal)) continue;
+        const ops = opcoesNoCanal({ grupo, canal, itens, precos, cfgDoProduto });
+        if (!ops.length) continue;
+        const rampaG = linhasGrupo.find((l) => l.grupo.id === grupo.id && l.canal.id === canal.id) || null;
+        const pct = rampaG ? rampaG.g.pctAtual : 100;
+        const mix = mixDoGrupo({ grupo, organicas: organicasH.registros, itens, hoje, ops });
+        const eq = equilibrioDoGrupo({ ops, pct, mix, canal, itens, produtos, kits, publicacoes: publicacoesCanal });
+        if (!eq) continue;
+        const ticket100 = rampaG?.g.ticket100 || eq.preco;
+        const opsSo = ops.filter((o) => soNoGrupo.has(o.itemId));
+        const semanas = rampaG
+          ? rampaG.regs.filter((g) => g.tipo === "semana").map((g) => ({ ...g, preco: g.preco != null ? (Number(g.preco) / 100) * ticket100 : null }))
+          : (af.registros || []).filter((g) => g.item_tipo === "grupo" && g.item_id === grupo.id && g.canal_id === canal.id && g.vendas_total != null).map((g) => ({ ...g, vendas: g.vendas_total, vendasAfiliado: g.vendas }));
+        // histórico de Ads das opções (antes do anúncio virar uma linha só)
+        for (const o of opsSo) {
+          const t = itemTipoDoId(o.itemId);
+          for (const g of af.registros || [])
+            if (g.item_tipo === t && g.item_id === o.itemId.slice(2) && g.canal_id === canal.id && g.vendas_total != null && Number(g.ads_gasto) > 0 && !semanas.some((x) => String(x.data).slice(0, 10) === String(g.data).slice(0, 10)))
+              semanas.push({ ...g, vendas: g.vendas_total, vendasAfiliado: g.vendas });
+        }
+        semanas.sort((a, b) => String(a.data).localeCompare(String(b.data)));
+        // Os do próprio anúncio vêm primeiro; das opções, o que mais gastou (o
+        // anúncio com Ads de verdade) antes — o 1º ligado é o "período atual".
+        const gastoDe = (p) => Number(p.parcial?.gasto) || 0;
+        const periodos = [
+          ...periodosDoItem(adsH.periodos, "grupo", grupo.id, canal.id),
+          ...opsSo.flatMap((o) => periodosDoItem(adsH.periodos, itemTipoDoId(o.itemId), o.itemId.slice(2), canal.id)).sort((a, b) => gastoDe(b) - gastoDe(a) || String(b.inicio).localeCompare(String(a.inicio))),
+        ];
+        const caps = ops.map((o) => capacidadeDoItem(o.item, produtos, impressoras, farmConfig));
+        const item = { id: idGrupo(grupo.id), nome: `Anúncio: ${grupo.nome}`, sku: "", grupo: true };
+        base.push({
+          chave: `grupo|${grupo.id}|${canal.id}`,
+          item,
+          tipo: "grupo",
+          id: grupo.id,
+          canal,
+          grupo,
+          ops,
+          mix,
+          pior: eq.pior,
+          rampa: null,
+          rampaGrupo: rampaG,
+          preco: eq.preco,
+          lucroEm: eq.lucroEm,
+          lucro: eq.lucro,
+          semanas,
+          periodos,
+          sazonal: rampaG?.est.sazonal ? faseAdsSazonal(rampaG.est.sazonal, hoje, regrasA) : null,
+          capacidadeDia: caps.every((c) => c != null) ? Math.min(...caps) : null,
+          semFaturamento: true, // vendas do anúncio já entram pelas vendas_organicas (grupo_id)
+        });
       }
     }
     const loja = adsDaLoja(base.flatMap((b) => b.semanas.map((s) => ({ ...s, preco: num(s.preco) || b.preco }))), hoje, regrasA);
@@ -122,6 +217,10 @@ export function useCrescimento() {
     for (const b of base)
       for (const s of b.semanas) {
         if (!(String(s.data).slice(0, 10) > desde30)) continue;
+        if (b.semFaturamento) {
+          gasto30 += num(s.ads_gasto);
+          continue;
+        }
         const p = num(s.preco) || b.preco;
         fat30 += num(s.vendas) * p;
         lucro30 += num(s.vendas) * (b.lucroEm(p) ?? 0);
@@ -142,7 +241,7 @@ export function useCrescimento() {
     const teto = tetoDaLoja({ faturamento: fat30, lucro: lucro30, gasto: gasto30, regras: regrasA });
     const linhasA = base.map((b) => ({
       ...b,
-      av: avaliarAds({ preco: b.preco, lucro: b.lucro, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: b.rampa?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: teto, sazonal: b.sazonal }),
+      av: avaliarAds({ preco: b.preco, lucro: b.lucro, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: (b.rampa || b.rampaGrupo)?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: teto, sazonal: b.sazonal, capacidadeDia: b.capacidadeDia }),
     }));
     // Lembretes de virada de fase do Ads sazonal (Início): na 1ª semana de cada fase.
     const sazonal = [];
@@ -160,7 +259,7 @@ export function useCrescimento() {
       });
     }
     return { loja, teto, sazonal, linhas: linhasA };
-  }, [itens, canais, precos, produtos, linhas, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros]);
+  }, [itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig]);
 
-  return { dados, rampasH, af, regras, hoje, funilLoja, calendario, linhas, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds };
+  return { dados, rampasH, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH };
 }

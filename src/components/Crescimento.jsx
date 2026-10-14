@@ -35,6 +35,7 @@ import AdsCrescimento from "./AdsCrescimento.jsx";
 import { PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
 import { encerrarPeriodoAds, iniciarPeriodoAds } from "../lib/adsAcoes.js";
 import OndeSeDecide from "./OndeSeDecide.jsx";
+import RampaGrupo from "./RampaGrupo.jsx";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { pegarPedido } from "../lib/navegar.js";
 import { useSemanaPendente } from "../hooks/useSemanaPendente.js";
@@ -85,7 +86,7 @@ function Copiavel({ valor, texto }) {
 // Sub-aba (Rampa de preço / Ads / Afiliados) fica no cabeçalho do App (lib/subAbas.js).
 
 export default function Crescimento({ onToast }) {
-  const { dados, rampasH, af, regras, hoje, linhas, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds } = useCrescimento();
+  const { dados, rampasH, af, regras, hoje, linhas, linhasGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds } = useCrescimento();
   const [sub, setSub] = useSubAba("ohra:crescimento-sub", "rampa", ["rampa", "ads", "afiliados"]);
   const [semanaAberta, setSemanaAberta] = useState(false);
   const [selId, setSelId] = useState(null); // rampa aberta no Detalhe
@@ -105,7 +106,7 @@ export default function Crescimento({ onToast }) {
   }, []);
 
 
-  const podeRegistrar = linhas.length > 0 || linhasAf.some((l) => l.conf.ativo) || linhasAds.linhas.some((l) => l.av.ativo);
+  const podeRegistrar = linhas.length > 0 || linhasGrupo.length > 0 || linhasAf.some((l) => l.conf.ativo) || linhasAds.linhas.some((l) => l.av.ativo);
 
   return (
     <>
@@ -119,6 +120,7 @@ export default function Crescimento({ onToast }) {
           rampasH={rampasH}
           regras={regras}
           linhas={linhas}
+          linhasGrupo={linhasGrupo}
           hoje={hoje}
           comissaoSemana={semanaAf.comissaoRampa}
           podeRegistrar={podeRegistrar}
@@ -155,13 +157,13 @@ export default function Crescimento({ onToast }) {
         />
       )}
       {semanaAberta && (
-        <RegistrarSemanaDialog linhas={linhas} linhasAf={linhasAf} linhasAds={linhasAds} af={af} onToast={onToast} onClose={() => setSemanaAberta(false)} />
+        <RegistrarSemanaDialog linhas={linhas} linhasGrupo={linhasGrupo} linhasAf={linhasAf} linhasAds={linhasAds} af={af} onToast={onToast} onClose={() => setSemanaAberta(false)} />
       )}
     </>
   );
 }
 
-function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje, comissaoSemana, podeRegistrar, onRegistrar, onToast, selId, setSelId }) {
+function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linhasGrupo = [], hoje, comissaoSemana, podeRegistrar, onRegistrar, onToast, selId, setSelId }) {
   const { lojas, lojaId, atualizar } = useLoja();
   const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal } = dados;
   const { rampas, disponivel, carregando } = rampasH;
@@ -530,6 +532,11 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
                       <td className="td-com-saude">
                         <PontoSaude estado={saudeRampa(e, pendDe(l))} />
                         <b>{l.produto.nome}</b>
+                        {l.soNoGrupo && (
+                          <span className="badge info tag-pronto" title="Este produto só é vendido dentro de um anúncio com vários itens: a rampa do anúncio inteiro decide e os avisos desta rampa ficam de fora do Início. Pode encerrar esta rampa (× no Detalhe).">
+                            só no anúncio com vários itens
+                          </span>
+                        )}
                         <div className="sub-linha">
                           <CanalTag canal={l.canal} /> · {e.avaliacoesTotal} avaliações{e.nota != null ? ` · nota ${virgula(e.nota, 1)}` : ""}
                         </div>
@@ -618,6 +625,8 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, hoje,
           </>
         )}
       </div>
+
+      <RampaGrupo linhasGrupo={linhasGrupo} dados={dados} hoje={hoje} onToast={onToast} selId={selId} setSelId={setSelId} linhasAds={linhasAds} onVerAds={onVerAds} />
 
       {sel && (
         <Detalhe
@@ -1426,7 +1435,7 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onRefazer, onDescer, o
               <b style={{ color: e.roas == null ? undefined : e.roas >= (e.roasMin || Infinity) ? "var(--good)" : "var(--bad)" }}>{e.roas != null ? virgula(e.roas, 1) : "—"}</b>
             </div>
             <div>
-              <small>ROAS mínimo (empate)</small>
+              <small>ROAS de equilíbrio</small>
               <b>{e.roasMin != null ? virgula(e.roasMin, 1) : "—"}</b>
             </div>
             <div>
@@ -2058,13 +2067,15 @@ const AvisoIntervalo = ({ aviso }) =>
 // Uma janela só pra semana: produtos em rampa (vendas, avaliações, nota, 1–2★,
 // Ads) + bloco Afiliado nos itens com comissão ativa — e os itens com
 // afiliado fora de rampa (kits, variações, produtos no alvo sem rampa).
-function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClose }) {
+function RegistrarSemanaDialog({ linhas, linhasGrupo = [], linhasAf, linhasAds, af, onToast, onClose }) {
   const { lojaId } = useLoja();
   const [data, setData] = useState(hojeISO());
   const afDe = (l) => linhasAf.find((x) => x.chave === `produto|${l.r.produto_id}|${l.r.canal_id}` && x.conf.ativo) || null;
   const foraRampa = linhasAf.filter((x) => x.conf.ativo && !x.rampa);
   // Itens só com Ads ligado (Crescimento → Ads), fora de rampa e sem afiliado.
-  const soAds = (linhasAds?.linhas || []).filter((x) => x.av.ativo && !x.rampa && !foraRampa.some((y) => y.chave === x.chave));
+  // (anúncio com vários itens em rampa registra no bloco da rampa dele)
+  const soAds = (linhasAds?.linhas || []).filter((x) => x.av.ativo && !x.rampa && !x.rampaGrupo && !foraRampa.some((y) => y.chave === x.chave));
+  const chaveAdsGrupo = (lg) => `grupo|${lg.grupo.id}|${lg.canal.id}`;
   // Andamento do Ads (v48): o que foi informado no meio do período e ainda não
   // está em semana registrada já vem nos campos de Ads (acumulado − registrado).
   const [andamentos] = useState(() => {
@@ -2075,6 +2086,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
       if (a) m[id] = a;
     };
     for (const l of linhas) de(`produto|${l.r.produto_id}|${l.r.canal_id}`, l.r.id);
+    for (const l of linhasGrupo) de(chaveAdsGrupo(l), l.r.id);
     for (const x of foraRampa) de(x.chave, x.chave);
     for (const x of soAds) de(x.chave, x.chave);
     return m;
@@ -2088,6 +2100,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
   const [f, setF] = useState(() => ({
     ...Object.fromEntries(soAds.map((x) => [x.chave, comAndamento(x.chave, { ...VAZIO_RAMPA })])),
     ...Object.fromEntries(linhas.map((l) => [l.r.id, comAndamento(l.r.id, { ...VAZIO_RAMPA, ...VAZIO_FUNIL, ...VAZIO_AF })])),
+    ...Object.fromEntries(linhasGrupo.map((l) => [l.r.id, comAndamento(l.r.id, { ...VAZIO_RAMPA, ...VAZIO_FUNIL })])),
     ...Object.fromEntries(foraRampa.map((x) => [x.chave, comAndamento(x.chave, { ...VAZIO_RAMPA, ...VAZIO_AF })])),
   }));
   const notaAndamento = (id) =>
@@ -2141,7 +2154,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
         ...foraRampa
           .filter((x) => ehShopee(x.canal))
           .map((x) => ({ chave: x.chave, sku: x.item.sku, tipo: x.tipo, skuPai: x.tipo === "variacao" ? skuDoProduto(x.item.produtoId) : "", quantidade: x.item.quantidade })),
-        ...soAds.filter((x) => ehShopee(x.canal)).map((x) => ({ chave: x.chave, sku: x.item.sku, tipo: x.tipo })),
+        ...soAds.filter((x) => ehShopee(x.canal) && x.tipo !== "grupo").map((x) => ({ chave: x.chave, sku: x.item.sku, tipo: x.tipo })),
       ];
       const res = cruzarRelatorios(lidos, itensApp);
       // Anúncios com vários itens: SKUs de cada opção (× cor) como a Ficha gerou.
@@ -2175,6 +2188,24 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
         };
       }
       setVendasGrupo(novasGrupo);
+      // O anúncio inteiro (total de vendas, funil e Ads) vai pro bloco dele:
+      // rampa do anúncio ou "só Ads" do anúncio.
+      for (const g of grupos) {
+        const r = rg.porGrupo[g.id];
+        if (!r) continue;
+        const lg = linhasGrupo.find((l) => l.grupo.id === g.id && ehShopee(l.canal));
+        const sa = soAds.find((x) => x.tipo === "grupo" && x.id === g.id && ehShopee(x.canal));
+        const chave = lg ? lg.r.id : sa ? sa.chave : null;
+        if (!chave) continue;
+        res.porChave[chave] = {
+          vendas: r.unidades ?? null,
+          impressoes: r.impressoes ?? null,
+          cliquesProduto: r.cliques ?? null,
+          pedidos: r.pedidos ?? null,
+          ...(r.ads ? { gasto: r.ads.gasto, cliques: r.ads.cliques, adsVendas: r.ads.vendas } : {}),
+        };
+        itensApp.push({ chave, rampa: !!lg, grupo: true });
+      }
       res.semPar = res.semPar.filter((i) => !rg.idsUsados.has(i.itemId));
       res.adsSemPar = res.adsSemPar.filter((a) => !rg.idsUsados.has(a.itemId));
       const marcados = new Set();
@@ -2277,6 +2308,31 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
           parceiro_id: v.parceiro || null,
         });
     }
+    // Rampa do anúncio com vários itens: preço do registro = % do degrau.
+    const grupoRampaSalvar = [];
+    for (const l of linhasGrupo) {
+      const v = fv(l.r.id);
+      if (!preenchido(v, [...Object.keys(VAZIO_RAMPA), ...Object.keys(VAZIO_FUNIL)])) continue;
+      grupoRampaSalvar.push({
+        loja_id: lojaId || null,
+        rampa_id: l.r.id,
+        tipo: "semana",
+        ...dataDoPeriodo(perRampa(l)),
+        degrau: l.est.i,
+        preco: l.g.pctAtual,
+        vendas: v.vendas === "" ? 0 : Math.round(num(v.vendas)),
+        avaliacoes: intOuNull(v.avaliacoes),
+        nota: v.nota === "" ? null : num(v.nota),
+        avaliacoes_ruins: Math.round(num(v.ruins)),
+        ads_gasto: v.gasto === "" ? null : num(v.gasto),
+        ads_vendas: intOuNull(v.adsVendas),
+        ...(v.cliques !== "" ? { ads_cliques: Math.round(num(v.cliques)) } : {}),
+        ...(v.conhecidos !== "" ? { conhecidos: Math.round(num(v.conhecidos)) } : {}),
+        ...(v.impressoes !== "" ? { visualizacoes: Math.round(num(v.impressoes)) } : {}),
+        ...(v.cliquesProduto !== "" ? { visitas: Math.round(num(v.cliquesProduto)) } : {}),
+        ...(v.pedidos !== "" ? { pedidos: Math.round(num(v.pedidos)) } : {}),
+      });
+    }
     for (const x of foraRampa) {
       const v = fv(x.chave);
       if (!preenchido(v, ["vendas", "gasto", "cliques", "adsVendas", "conhecidos", "afVendas", "afComissao"])) continue;
@@ -2345,8 +2401,8 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
         });
       }
     }
-    if (!rampaSalvar.length && !afSalvar.length && !grupoSalvar.length) return onToast?.(grupoRepetido.length ? `Vendas de “${grupoRepetido.join(", ")}” desse período já foram registradas` : "Preencha pelo menos um item");
-    if ([...rampaSalvar, ...afSalvar].some((g) => g.periodo_inicio && g.periodo_inicio >= g.data)) return onToast?.("Período inválido: o “De” precisa ser antes do “Até”");
+    if (!rampaSalvar.length && !grupoRampaSalvar.length && !afSalvar.length && !grupoSalvar.length) return onToast?.(grupoRepetido.length ? `Vendas de “${grupoRepetido.join(", ")}” desse período já foram registradas` : "Preencha pelo menos um item");
+    if ([...rampaSalvar, ...grupoRampaSalvar, ...afSalvar].some((g) => g.periodo_inicio && g.periodo_inicio >= g.data)) return onToast?.("Período inválido: o “De” precisa ser antes do “Até”");
     const semAf = afSalvar.find((g) => g.vendas_total != null && g.vendas > g.vendas_total);
     if (semAf) return onToast?.("Vendas via afiliado não podem passar das vendas da semana");
     // Ads + afiliado + conhecidos ≤ vendas totais da semana.
@@ -2357,6 +2413,8 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
       if (somaPassa(r.vendas, [r.ads_vendas, afV?.vendas, r.conhecidos]))
         return onToast?.(`${l.produto.nome}: Ads + afiliado + conhecidos passam das ${r.vendas} vendas da semana`);
     }
+    for (const r of grupoRampaSalvar)
+      if (somaPassa(r.vendas, [r.ads_vendas, r.conhecidos])) return onToast?.(`${linhasGrupo.find((x) => x.r.id === r.rampa_id)?.produto.nome}: Ads + conhecidos passam das ${r.vendas} vendas da semana`);
     for (const g of afSalvar.filter((x) => x.vendas_total != null))
       if (somaPassa(g.vendas_total, [g.ads_vendas, g.vendas, g.conhecidos])) {
         const x = [...foraRampa, ...soAds].find((y) => y.tipo === g.item_tipo && y.id === g.item_id && y.canal.id === g.canal_id);
@@ -2380,8 +2438,8 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
       }
       return res;
     };
-    if (rampaSalvar.length) {
-      const { error } = await inserir("rampa_registros", rampaSalvar);
+    if (rampaSalvar.length || grupoRampaSalvar.length) {
+      const { error } = await inserir("rampa_registros", [...rampaSalvar, ...grupoRampaSalvar]);
       if (error) {
         setSalvando(false);
         if (/visualizacoes|visitas|pedidos/.test(error.message)) return onToast?.("Falta rodar o supabase/schema_v36.sql no Supabase");
@@ -2413,6 +2471,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
     // Recarrega rampas/afiliados já (semana pendente some no Início e no menu sem esperar o realtime).
     window.dispatchEvent(new Event("focus"));
     const n = new Set([
+      ...grupoRampaSalvar.map((r) => r.rampa_id),
       ...rampaSalvar.map((r) => {
         const l = linhas.find((x) => x.r.id === r.rampa_id);
         return `produto|${l.r.produto_id}|${l.r.canal_id}`;
@@ -2593,6 +2652,42 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
           </div>
         );
       })}
+      {linhasGrupo.map((l) => {
+        const id = l.r.id;
+        const imp = importado?.porChave[id];
+        return (
+          <div key={id} className="bloco-semana">
+            <div className="bloco-semana-titulo">
+              <b>{l.produto.nome}</b> <CanalTag canal={l.canal} /> <span className="muted-cel">rampa do anúncio inteiro · {l.g.pctAtual}% do preço salvo · {l.est.avaliacoesTotal} avaliações até agora</span>
+            </div>
+            {notaAndamento(id)}
+            {imp && (
+              <div className="importar-linha">
+                📄 do relatório: {imp.vendas ?? 0} venda{imp.vendas === 1 ? "" : "s"} no anúncio inteiro{imp.gasto != null ? ` · Ads ${BRL(imp.gasto)}` : ""}
+              </div>
+            )}
+            {perRampa(l) ? (
+              blocoPeriodo(id, perRampa(l))
+            ) : (
+              <AvisoIntervalo aviso={avisoIntervalo(l.est.registros.filter((g) => g.tipo === "semana").map((g) => g.data), data, { inicio: l.est.registros.find((g) => g.tipo === "inicio")?.data || null })} />
+            )}
+            <div className="grid-semana">
+              <div className="field"><label>Vendas (todas as opções)</label><input type="number" min="0" value={fv(id).vendas} onChange={set(id, "vendas")} className={doRelatorio(id, "vendas")} /></div>
+              <div className="field"><label>Avaliações (total)</label><input type="number" min="0" value={fv(id).avaliacoes} onChange={set(id, "avaliacoes")} /></div>
+              <div className="field"><label>Nota</label><input type="text" inputMode="decimal" value={fv(id).nota} onChange={set(id, "nota")} /></div>
+              <div className="field"><label>1–2★ na semana</label><input type="number" min="0" value={fv(id).ruins} onChange={set(id, "ruins")} /></div>
+              <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(id).gasto} onChange={set(id, "gasto")} className={doRelatorio(id, "gasto")} /></div>
+              <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(id).cliques} onChange={set(id, "cliques")} className={doRelatorio(id, "cliques")} /></div>
+              <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(id).adsVendas} onChange={set(id, "adsVendas")} className={doRelatorio(id, "adsVendas")} /></div>
+              <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={fv(id).conhecidos} onChange={set(id, "conhecidos")} placeholder="amigos/família" /></div>
+              <div className="field"><label>Impressões de Produto</label><input type="number" min="0" value={fv(id).impressoes} onChange={set(id, "impressoes")} className={doRelatorio(id, "impressoes")} /></div>
+              <div className="field"><label>Cliques Por Produto</label><input type="number" min="0" value={fv(id).cliquesProduto} onChange={set(id, "cliquesProduto")} className={doRelatorio(id, "cliquesProduto")} /></div>
+              <div className="field"><label>Pedidos</label><input type="number" min="0" value={fv(id).pedidos} onChange={set(id, "pedidos")} className={doRelatorio(id, "pedidos")} /></div>
+            </div>
+            <p className="hint" style={{ margin: "4px 0 0" }}>Vendas e avaliações do anúncio inteiro (todas as opções) — são os portões da rampa do anúncio. As vendas por opção vão pro dinheiro pelo bloco “Anúncio” da importação.</p>
+          </div>
+        );
+      })}
       {foraRampa.map((x) => (
         <div key={x.chave} className="bloco-semana">
           <div className="bloco-semana-titulo">
@@ -2668,7 +2763,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
             <div className="importar-linha">
               📄 do relatório: {a.unidades ?? total} venda{(a.unidades ?? total) === 1 ? "" : "s"}
               {a.impressoes != null ? ` · ${a.impressoes} impressões · ${a.cliques ?? 0} cliques · ${a.pedidos ?? 0} pedidos` : ""}
-              {a.ads ? ` · Ads ${BRL(a.ads.gasto)} (${a.ads.vendas} vendas via Ads — não entra nas contas ainda)` : ""}
+              {a.ads ? ` · Ads ${BRL(a.ads.gasto)} (${a.ads.vendas} vendas via Ads)` : ""}
             </div>
             <div className="table-wrap">
               <table>
@@ -2702,7 +2797,7 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
               <div className="importar-aviso">⚠ Variações do anúncio com SKU que não bate com nenhuma opção: {a.semOpcao.map((v) => `${v.sku} (${v.unidades})`).join(", ")} — confira os SKUs na Shopee (copie da 3º Ficha)</div>
             )}
             <p className="hint" style={{ margin: "6px 0 0" }}>
-              Entra só no dinheiro (Fluxo de Caixa → Vendas do mês, cada opção no preço dela). Não conta pros portões da rampa dos produtos — a rampa mede o anúncio de cada item sozinho.
+              Por opção, entra no dinheiro (Fluxo de Caixa → Vendas do mês, cada opção no preço dela). O total do anúncio, o funil e o Ads vão pro bloco do anúncio (rampa do anúncio inteiro ou Ads), quando ele tem rampa ou Ads ligado.
             </p>
           </div>
         );

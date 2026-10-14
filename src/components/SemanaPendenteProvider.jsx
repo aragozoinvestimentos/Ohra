@@ -6,6 +6,7 @@ import { useRampas } from "../hooks/useRampas.js";
 import { useAfiliados } from "../hooks/useAfiliados.js";
 import { useLembretes } from "../hooks/useLembretes.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
+import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { SemanaPendenteContext } from "../hooks/useSemanaPendente.js";
 import { adiadoAte, semanasPendentes } from "../lib/semanaPendente.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
@@ -15,7 +16,8 @@ import { hojeISO } from "../lib/fluxoCaixa.js";
 export default function SemanaPendenteProvider({ children, onToast }) {
   const { lojaId } = useLoja();
   const { itens, canais, precos } = useRankingData();
-  const { rampas, registros } = useRampas({ comRegistros: true });
+  const { rampas, rampasGrupo, registros } = useRampas({ comRegistros: true });
+  const { grupos } = useAnunciosGrupo();
   const af = useAfiliados();
   const { lembretes, disponivel } = useLembretes();
   const { periodos: adsPeriodos } = useAdsPeriodos();
@@ -26,7 +28,7 @@ export default function SemanaPendenteProvider({ children, onToast }) {
   });
 
   const valor = useMemo(() => {
-    const r = semanasPendentes({ rampas, rampaRegistros: registros, afConfig: af.config, afRegistros: af.registros, adsPeriodos, itens, canais, precos, lembretes, hoje });
+    const r = semanasPendentes({ rampas, rampasGrupo, grupos, rampaRegistros: registros, afConfig: af.config, afRegistros: af.registros, adsPeriodos, itens, canais, precos, lembretes, hoje });
     const porChave = new Map(r.itens.map((x) => [x.chave, x]));
     // "pular" = não registrar esta semana; "amanha" = lembrar amanhã. Só grava o lembrete.
     async function adiar(chave, tipo) {
@@ -52,7 +54,7 @@ export default function SemanaPendenteProvider({ children, onToast }) {
       return true;
     }
     return { ...r, porChave, adiar, desfazer, disponivel, hoje };
-  }, [rampas, registros, af.config, af.registros, adsPeriodos, itens, canais, precos, lembretes, hoje, lojaId, disponivel]);
+  }, [rampas, rampasGrupo, grupos, registros, af.config, af.registros, adsPeriodos, itens, canais, precos, lembretes, hoje, lojaId, disponivel]);
 
   return <SemanaPendenteContext.Provider value={valor}>{children}</SemanaPendenteContext.Provider>;
 }
