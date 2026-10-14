@@ -129,3 +129,40 @@ export function gruposPorItem(grupos) {
     }
   return m;
 }
+
+// "Qual opção vende" (3º Ficha): vendas do anúncio com vários itens importadas
+// da Shopee (vendas_organicas.grupo_id, schema v53), por opção, nos últimos
+// `dias` (pela data "Até" de cada importação). lucroDe(item, canalId, preco) =
+// lucro de UMA unidade naquele preço (custo e taxas de hoje).
+export const MIN_VENDAS_SUGESTAO = 10;
+export function vendasPorOpcao({ grupo, registros, itens, hoje, dias = 30, lucroDe }) {
+  if (!grupo) return null;
+  const opcoes = opcoesDoGrupo(grupo);
+  const corte = new Date(`${hoje}T12:00:00`);
+  corte.setDate(corte.getDate() - dias);
+  const desde = corte.toISOString().slice(0, 10);
+  const doGrupo = (registros || []).filter((r) => r.grupo_id === grupo.id && String(r.data).slice(0, 10) > desde);
+  const linhas = opcoes.map((o, idx) => {
+    const id = idDoItemOpcao(o);
+    const item = itens.find((i) => i.id === id) || null;
+    const rs = doGrupo.filter((r) => `${PREFIXO[r.item_tipo] || "p"}:${r.item_id}` === id);
+    const unidades = rs.reduce((t, r) => t + Number(r.unidades || 0), 0);
+    const faturamento = rs.reduce((t, r) => t + Number(r.unidades || 0) * Number(r.preco || 0), 0);
+    const lucro = item ? rs.reduce((t, r) => t + Number(r.unidades || 0) * (lucroDe(item, r.canal_id, Number(r.preco)) ?? 0), 0) : null;
+    return { idx, rotulo: o.rotulo || item?.nome || "—", item, unidades, faturamento, lucro, vitrine: !!o.vitrine };
+  });
+  const total = linhas.reduce((t, l) => t + l.unidades, 0);
+  for (const l of linhas) l.parte = total > 0 ? l.unidades / total : 0;
+  const sugestoes = [];
+  if (total >= MIN_VENDAS_SUGESTAO) {
+    const top = linhas.reduce((m, l) => (!m || l.unidades > m.unidades ? l : m), null);
+    for (const l of linhas)
+      if (l.unidades === 0) sugestoes.push({ tipo: "atencao", texto: `${l.rotulo}: nenhuma venda em ${dias} dias — tire do anúncio ou mude o preço dessa opção.` });
+    if (top && top.vitrine && top.parte >= 0.6)
+      sugestoes.push({ tipo: "atencao", texto: `${Math.round(top.parte * 100)}% levam só ${top.rotulo} (a vitrine): o preço de entrada atrai, mas os kits não estão convencendo — destaque nas fotos a economia do kit.` });
+    else if (top && !top.vitrine && top.parte >= 0.5)
+      sugestoes.push({ tipo: "oportunidade", texto: `${top.rotulo} é a mais vendida (${Math.round(top.parte * 100)}%) — dá pra testar uma promo menor nela (preço uns 5% maior).` });
+  }
+  const datas = doGrupo.map((r) => String(r.data).slice(0, 10)).sort();
+  return { linhas, total, dias, ultima: datas[datas.length - 1] || null, sugestoes, temRegistros: doGrupo.length > 0 };
+}

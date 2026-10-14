@@ -5,10 +5,12 @@ import { useEscada } from "../hooks/useEscada.js";
 import { quebraNoValor } from "../lib/precoAgora.js";
 import { TdLucro } from "./AlvoAgora.jsx";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
-import { BRL } from "../lib/format.js";
+import { BRL, PCT } from "../lib/format.js";
 import { nomeCanal } from "../lib/canais.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
-import { LIMITE_NOME_OPCAO, fichaDoGrupo, idDoItemOpcao, opcoesDoGrupo, variacao2DoGrupo } from "../lib/anunciosGrupo.js";
+import { LIMITE_NOME_OPCAO, MIN_VENDAS_SUGESTAO, fichaDoGrupo, idDoItemOpcao, opcoesDoGrupo, variacao2DoGrupo, vendasPorOpcao } from "../lib/anunciosGrupo.js";
+import { useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
+import { hojeSP } from "../lib/datas.js";
 import BuscaItem from "./BuscaItem.jsx";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -38,6 +40,24 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
   const [copiado, setCopiado] = useState(null);
   const grupo = grupos.find((g) => g.id === grupoId) || null;
 
+  // "Qual opção vende": vendas do anúncio importadas da Shopee (vendas_organicas.grupo_id).
+  const vendasOrg = useVendasOrganicas();
+  const vendasOp = useMemo(
+    () =>
+      grupo
+        ? vendasPorOpcao({
+            grupo,
+            registros: vendasOrg.registros,
+            itens,
+            hoje: hojeSP(),
+            lucroDe: (item, canalId, preco) => {
+              const c = canais.find((x) => x.id === canalId);
+              return c ? quebraNoValor(item, c, preco, cfgDoProduto(item.produtoId || (item.id.startsWith("p:") ? item.id.slice(2) : null)))?.lucro ?? null : null;
+            },
+          })
+        : null,
+    [grupo, vendasOrg.registros, itens, canais, cfgDoProduto]
+  );
   const ficha = useMemo(
     () => (grupo && canal ? fichaDoGrupo({ grupo, canal, itens, precos, produtos, kits, mapaRampa, publicacoes: publicacoesCanal, clientePagaHoje }) : null),
     [grupo, canal, itens, precos, produtos, kits, mapaRampa, publicacoesCanal, clientePagaHoje]
@@ -186,6 +206,64 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
           )}
         </div>
       </div>
+
+      {grupo && vendasOp && (
+        <div className="panel qual-opcao">
+          <h3>
+            Qual opção vende <small>últimos {vendasOp.dias} dias{vendasOp.ultima ? ` · importado até ${vendasOp.ultima.split("-").reverse().slice(0, 2).join("/")}` : ""}</small>
+            <Ajuda texto="Vendas deste anúncio por opção, vindas do relatório de desempenho da Shopee importado em Crescimento → Registrar semana (o app reconhece o anúncio pelo SKU de cada variação — use os SKUs desta Ficha na Shopee). Entram só no dinheiro (Vendas do mês); não contam pra rampa dos produtos." />
+          </h3>
+          {!vendasOp.temRegistros ? (
+            <div className="empty">Nenhuma venda importada ainda. Exporte o relatório de desempenho da Shopee e importe em Crescimento → Registrar semana.</div>
+          ) : (
+            <>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Opção</th>
+                      <th className="num">Vendas</th>
+                      <th>Parte</th>
+                      <th className="num">Faturamento</th>
+                      <th className="num">Lucro</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vendasOp.linhas.map((l) => (
+                      <tr key={l.idx}>
+                        <td>
+                          {l.rotulo}
+                          {l.vitrine && <span className="chip-cel decisao" style={{ marginLeft: 6 }}>vitrine</span>}
+                        </td>
+                        <td className="num">{l.unidades}</td>
+                        <td>
+                          <div className="barra-parte"><i style={{ width: `${Math.round(l.parte * 100)}%` }} /></div>
+                          <span className="muted-cel">{PCT(l.parte)}</span>
+                        </td>
+                        <td className="num">{BRL(l.faturamento)}</td>
+                        <td className="num">{l.lucro != null ? BRL(l.lucro) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {vendasOp.total < MIN_VENDAS_SUGESTAO ? (
+                <p className="hint">
+                  {vendasOp.total} venda{vendasOp.total === 1 ? "" : "s"} até agora — as sugestões aparecem a partir de {MIN_VENDAS_SUGESTAO} vendas no período.
+                </p>
+              ) : vendasOp.sugestoes.length ? (
+                vendasOp.sugestoes.map((s) => (
+                  <div key={s.texto} className={`alerta ${s.tipo === "oportunidade" ? "alerta-good" : "alerta-warn"}`}>
+                    {s.texto}
+                  </div>
+                ))
+              ) : (
+                <p className="hint">✓ As opções estão vendendo de forma equilibrada.</p>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {grupo && canal && ficha && (
         <>

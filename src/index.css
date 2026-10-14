@@ -1883,3 +1883,5 @@ tr.combinacao-off td { opacity: 0.45; }
 .ajustes-4x-recomendado b { color: var(--st-oportunidade); }
 .ajustes-4x-recomendado .link-btn { margin-left: 6px; }
 .ajuste-4x-rec { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: var(--st-oportunidade-soft); color: var(--st-oportunidade); font-size: 10.5px; font-weight: 700; vertical-align: 1px; }
+.barra-parte { display: inline-block; width: 90px; height: 7px; border-radius: 999px; background: var(--surface-2); overflow: hidden; vertical-align: middle; margin-right: 6px; }
+.barra-parte i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
