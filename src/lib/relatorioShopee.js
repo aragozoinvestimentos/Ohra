@@ -478,3 +478,49 @@ export function cruzarGrupos(relatorios, grupos) {
   }
   return { porGrupo, idsUsados };
 }
+
+// ---------- Central de importação (aba Análise, v55) ----------
+// O relatório lido vai pra `importacoes.dados` (JSON) e volta igual ao que o
+// lerRelatorio devolve — o Registrar semana preenche sozinho a partir daqui.
+export function relatorioParaGuardar(r) {
+  if (!r) return null;
+  if (r.tipo === "ads") return { ...r, porItem: [...r.porItem.entries()] };
+  return { ...r };
+}
+export function relatorioDoGuardado(d) {
+  if (!d || !d.tipo) return null;
+  if (d.tipo === "ads") return { ...d, porItem: new Map(d.porItem || []) };
+  return d;
+}
+
+/**
+ * CSV do Shopee Ads → andamento de cada período ligado + perguntas (só agem no
+ * "Sim"): período encerrado no app com gasto depois do fim → estender; gasto
+ * sem período → criar. Mesma conta da central e da janela "Atualizar andamento".
+ * todas = linhasAds.linhas (useCrescimento). → { porChave, zerados, periodo, avisos, perguntas }
+ */
+export function andamentoDoCsv(lidos, todas) {
+  const shopee = (todas || []).filter((l) => l.canal?.tipo === "shopee");
+  const res = adsPorItemApp(lidos, shopee.map((l) => ({ chave: l.chave, sku: l.item.sku, grupoId: l.tipo === "grupo" ? l.id : null })));
+  const avisos = [...(res.avisos || [])];
+  const perguntas = [];
+  const somar = (iso, n) => {
+    const d = new Date(`${iso}T12:00:00`);
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
+  for (const l of shopee) {
+    if (l.av?.ativo && res.periodo?.de && res.periodo.de > l.av.ativo.inicio)
+      avisos.push(`${l.item.nome}: o CSV começa em ${dm(res.periodo.de)}, mas o período de Ads começou em ${dm(l.av.ativo.inicio)} — exporte desde o início do período (o andamento é acumulado).`);
+    if (l.av?.ativo || !res.periodo?.de || !res.periodo?.ate) continue;
+    const x = res.porChave[l.chave];
+    if (!x || !(x.gasto > 0)) continue;
+    const ult = (l.periodos || [])[0] || null;
+    const valores = { gasto: x.gasto, cliques: x.cliques, vendas: x.vendas };
+    if (ult && ult.fim && ult.fim < res.periodo.ate && ult.fim >= somar(res.periodo.de, -1)) perguntas.push({ chave: l.chave, l, tipo: "estender", periodo: ult, data: res.periodo.ate, valores });
+    else if (!ult || !ult.fim || ult.fim < res.periodo.de) perguntas.push({ chave: l.chave, l, tipo: "criar", data: res.periodo.de, ate: res.periodo.ate, valores });
+  }
+  for (const a of (res.adsSemPar || []).filter((x) => x.conhecido)) avisos.push(`Anúncio ${a.nome || a.itemId}: R$ ${a.gasto.toFixed(2).replace(".", ",")} de Ads, mas não está ligado a nenhum produto/anúncio do app com preço salvo.`);
+  return { ...res, avisos, perguntas };
+}

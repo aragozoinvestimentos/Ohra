@@ -1,6 +1,6 @@
 import { trocarSubAba, useSubAba } from "../lib/subAbas.js";
 import { canalDireto } from "../lib/canais.js";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { alertaPreco } from "../lib/estrategia.js";
 import { menorFinalComFreteGratis } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
@@ -39,14 +39,16 @@ import RampaGrupo from "./RampaGrupo.jsx";
 import { useLembrado } from "../hooks/useLembrado.js";
 import { iniciarRampaGrupo } from "../lib/grupoRampa.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
-import { pegarPedido } from "../lib/navegar.js";
+import { irParaAba, pegarPedido } from "../lib/navegar.js";
 import { useSemanaPendente } from "../hooks/useSemanaPendente.js";
 import SemanaPendenteFaixa from "./SemanaPendenteFaixa.jsx";
 import { chaveSemanaRampa, periodoEmAberto, somarDiasIso, ultimoRegistroAf, ultimoRegistroRampa } from "../lib/semanaPendente.js";
 import Estado, { PontoSaude } from "./Estado.jsx";
 import { estadoSugestaoRampa, saudeRampa } from "../lib/estados.js";
 import { useRankingData } from "../hooks/useRankingData.js";
-import { cruzarGrupos, cruzarRelatorios, lembrarIdsShopee, lerRelatorio, normSku, textoMistura } from "../lib/relatorioShopee.js";
+import { cruzarGrupos, cruzarRelatorios, lembrarIdsShopee, lerRelatorio, normSku, relatorioDoGuardado, textoMistura } from "../lib/relatorioShopee.js";
+import { useVendasReais } from "../hooks/useVendasReais.js";
+import { unidadesNoPeriodo } from "../lib/pedidos.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { recarregarVendasOrganicas, useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
@@ -2169,6 +2171,7 @@ function RegistrarSemanaDialog({ linhas, linhasGrupo = [], linhasAf, linhasAds, 
   const fv = (id) => f[id] || VAZIO_TODOS;
   const set = (id, k) => (e) => setF((p) => ({ ...p, [id]: { ...VAZIO_TODOS, ...p[id], [k]: e.target.value } }));
   const doRelatorio = (id, k) =>
+    (k === "vendas" && doPedido[id] && !doPedido[id].falta) ||
     importado?.marcados.has(`${id}|${k}`) || (andamentos[id] && !importado?.porChave[id] && ["gasto", "cliques", "adsVendas"].includes(k)) ? "campo-importado" : undefined;
 
   async function importarRelatorios(e) {
@@ -2179,6 +2182,18 @@ function RegistrarSemanaDialog({ linhas, linhasGrupo = [], linhasAf, linhasAds, 
     try {
       const lidos = [];
       for (const a of arquivos) lidos.push(await lerRelatorio(a));
+      const novaData = aplicarLidos(lidos);
+      aplicarPedidos(novaData || data);
+    } catch (err) {
+      onToast?.(err.message || "Não foi possível ler o arquivo");
+    } finally {
+      setLendo(false);
+    }
+  }
+  // Relatórios lidos (do arquivo ou guardados na central) → preenche os campos.
+  // Devolve a data nova do registro (dia seguinte ao fim do relatório) ou null.
+  function aplicarLidos(lidos) {
+    {
       lembrarIdsShopee(lidos); // o andamento do Ads usa essa ligação ID do item → SKU
       const ehShopee = (canal) => canal?.tipo === "shopee";
       const skuDoProduto = (id) => catProdutos.find((p) => p.id === id)?.sku || "";
@@ -2275,12 +2290,72 @@ function RegistrarSemanaDialog({ linhas, linhasGrupo = [], linhasAf, linhasAds, 
         dataAjustada: novaData && novaData !== data ? novaData : null,
         semPar: res.semPar.map((i) => ({ ...i, existe: !!i.sku && skusApp.has(i.sku) })),
       });
-    } catch (err) {
-      onToast?.(err.message || "Não foi possível ler o arquivo");
-    } finally {
-      setLendo(false);
+      return novaData;
     }
   }
+
+  // ---- Central de importação (aba Análise, v55) ----
+  // Vendas da semana = pedidos REAIS importados da Olist (portões da Rampa,
+  // afiliado e Ads) quando a plataforma tem pedidos em todos os dias do
+  // período; o Desempenho guardado na central preenche o funil. Só PREENCHE.
+  const reais = useVendasReais({ itens: esc.itens, canais: esc.canais, cfgDoProduto: esc.cfgDoProduto });
+  const [doPedido, setDoPedido] = useState({}); // id → { un, de, ate } | { falta: true, de, ate }
+  const idsDoBloco = (tipo, id) => {
+    if (tipo === "produto") return [`p:${id}`, ...esc.itens.filter((i) => i.id.startsWith("v:") && i.produtoId === id).map((i) => i.id)];
+    return [`${tipo === "variacao" ? "v" : "k"}:${id}`];
+  };
+  function aplicarPedidos(dataAlvo) {
+    if (!reais.cobertura.tem) return;
+    const blocos = [
+      ...linhas.map((l) => ({ id: l.r.id, canal: l.canal, ids: idsDoBloco("produto", l.r.produto_id), ultimo: ultimoRegistroRampa(l.r, l.est.registros) })),
+      ...foraRampa.map((x) => ({ id: x.chave, canal: x.canal, ids: idsDoBloco(x.tipo, x.id), ultimo: ultimoRegistroAf(x.tipo, x.id, x.canal.id, af.registros, x.conf.row) })),
+      ...soAds.filter((x) => x.tipo !== "grupo").map((x) => ({ id: x.chave, canal: x.canal, ids: idsDoBloco(x.tipo, x.id), ultimo: ultimoRegistroAf(x.tipo, x.id, x.canal.id, af.registros) || String(x.av.ativo.inicio).slice(0, 10) })),
+    ];
+    const notas = {};
+    setF((prev) => {
+      const nf = { ...prev };
+      for (const b of blocos) {
+        const v = { ...VAZIO_TODOS, ...nf[b.id] };
+        const per = periodoEmAberto(b.ultimo, dataAlvo);
+        const de = v.de || (per?.pendente ? per.de : null) || somarDiasIso(dataAlvo, -7);
+        const ate = v.ate || (per?.pendente ? per.ate : null) || somarDiasIso(dataAlvo, -1);
+        if (!reais.cobertura.cobre(b.canal, de, ate)) {
+          if (reais.cobertura.platDoCanal(b.canal)) notas[b.id] = { falta: true, de, ate };
+          continue;
+        }
+        const un = unidadesNoPeriodo(reais.linhas, { ids: b.ids, canalId: b.canal.id, de, ate });
+        v.vendas = String(un);
+        nf[b.id] = v;
+        notas[b.id] = { un, de, ate };
+      }
+      return nf;
+    });
+    setDoPedido(notas);
+  }
+  const notaPedidos = (id) => {
+    const n = doPedido[id];
+    if (!n) return null;
+    return n.falta ? (
+      <div className="importar-linha muted-cel">📦 Sem pedidos importados de todos os dias {diaMes(n.de)} a {diaMes(n.ate)} — importe os pedidos da Olist em Análise → Importar dados (ou preencha à mão).</div>
+    ) : (
+      <div className="importar-linha">📦 Vendas dos pedidos (Olist) de {diaMes(n.de)} a {diaMes(n.ate)}: {n.un} un. — é o que conta nos portões</div>
+    );
+  };
+  function aplicarCentral() {
+    const des = [...(reais.importacoes || [])].filter((i) => i.ok && i.relatorio === "shopee:desempenho" && i.dados).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0];
+    let novaData = null;
+    if (des) {
+      const r = relatorioDoGuardado(des.dados);
+      if (r) novaData = aplicarLidos([{ ...r, arquivo: des.arquivo || "Desempenho (central)" }]);
+    }
+    aplicarPedidos(novaData || data);
+  }
+  const autoCentral = useRef(false);
+  useEffect(() => {
+    if (autoCentral.current || reais.carregando || !esc.itens.length) return;
+    autoCentral.current = true;
+    aplicarCentral();
+  });
   const preenchido = (v, campos) => campos.some((k) => v[k] !== "");
   // Registro por período (v40): sem registro há mais de 7 dias → De (início
   // do período em aberto) e Até (véspera da data), editáveis. Grava
@@ -2574,20 +2649,25 @@ function RegistrarSemanaDialog({ linhas, linhasGrupo = [], linhasAf, linhasAds, 
         comissão em branco = estimada pelo %). Deixe em branco o que não quiser registrar.
       </p>
       <div className="importar-shopee">
-        <label className={`btn btn-mini${lendo ? " disabled" : ""}`}>
-          {lendo ? "Lendo…" : "📄 Importar relatórios da Shopee"}
+        <span className="muted-cel">📥 Já vem preenchido pela central (Análise → Importar dados): vendas = pedidos da Olist · funil = Desempenho da Shopee · Ads = andamento. Complete avaliações, nota, 1–2★ e conhecidos.</span>
+        <button type="button" className="btn btn-mini" onClick={aplicarCentral} disabled={lendo}>
+          ↺ Preencher de novo
+        </button>
+        <button
+          type="button"
+          className="btn btn-mini"
+          onClick={() => {
+            onClose();
+            trocarSubAba("ohra:analise-sub", "importar");
+            irParaAba("analise");
+          }}
+        >
+          Abrir a central →
+        </button>
+        <label className={`btn btn-mini${lendo ? " disabled" : ""}`} title="Se preferir, ainda dá pra escolher os arquivos da Shopee aqui (Desempenho .xlsx + Ads .csv)">
+          {lendo ? "Lendo…" : "📄 arquivo"}
           <input type="file" accept=".xlsx,.csv" multiple hidden onChange={importarRelatorios} disabled={lendo} />
         </label>
-        <Ajuda
-          texto={
-            <>
-              Escolha os dois arquivos juntos, com o mesmo período (Últimos 7 Dias):
-              <br />• <b>Desempenho</b> (.xlsx): Dados → Informações Gerenciais → Produto → Performance do produto → Exportar dados.
-              <br />• <b>Shopee Ads</b> (.csv): Marketing → Shopee Ads → Exportar dados → Dados Gerais de Anúncios.
-              <br />O app liga cada anúncio ao produto pelo <b>SKU</b> (o SKU Principal da Shopee = SKU do Cadastros) e preenche vendas (Unidades, pedido pago), impressões, cliques, pedidos e o Ads. Nada é gravado até você clicar em Registrar. Avaliações, nota, 1–2★, conhecidos e afiliado continuam à mão. O arquivo é lido só no seu navegador.
-            </>
-          }
-        />
         {importado && (
           <div className="importar-resumo">
             <b>
@@ -2628,6 +2708,7 @@ function RegistrarSemanaDialog({ linhas, linhasGrupo = [], linhasAf, linhasAds, 
               <b>{l.produto.nome}</b> <CanalTag canal={l.canal} /> <span className="muted-cel">em rampa · vendendo {BRL(l.est.preco)} · {l.est.avaliacoesTotal} avaliações até agora</span>
             </div>
             {notaAndamento(l.r.id)}
+            {notaPedidos(l.r.id)}
             {importado?.porChave[l.r.id] && (
               <div className="importar-linha">
                 📄 do relatório: {importado.porChave[l.r.id].vendas ?? 0} venda{importado.porChave[l.r.id].vendas === 1 ? "" : "s"}
@@ -2727,6 +2808,7 @@ function RegistrarSemanaDialog({ linhas, linhasGrupo = [], linhasAf, linhasAds, 
             <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">fora de rampa · vendendo {BRL(x.preco)}</span>
           </div>
           {notaAndamento(x.chave)}
+          {notaPedidos(x.chave)}
           {importado?.porChave[x.chave] && (
             <div className="importar-linha">
               📄 do relatório: {importado.porChave[x.chave].vendas ?? 0} venda{importado.porChave[x.chave].vendas === 1 ? "" : "s"}
@@ -2759,6 +2841,7 @@ function RegistrarSemanaDialog({ linhas, linhasGrupo = [], linhasAf, linhasAds, 
             <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">só Ads · vendendo {BRL(x.preco)}</span>
           </div>
           {notaAndamento(x.chave)}
+          {notaPedidos(x.chave)}
           {importado?.porChave[x.chave] && (
             <div className="importar-linha">
               📄 do relatório: {importado.porChave[x.chave].vendas ?? 0} venda{importado.porChave[x.chave].vendas === 1 ? "" : "s"}

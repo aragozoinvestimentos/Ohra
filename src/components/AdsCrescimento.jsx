@@ -1,3 +1,5 @@
+import { irParaAba } from "../lib/navegar.js";
+import { trocarSubAba } from "../lib/subAbas.js";
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
@@ -706,8 +708,19 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
           <label>Até (inclusive)</label>
           <input type="date" value={ate} max={hoje} onChange={(e) => setAte(e.target.value)} />
         </div>
-        <label className="btn btn-mini" style={{ cursor: "pointer" }}>
-          {lendo ? "Lendo…" : "📄 Importar CSV do Shopee Ads"}
+        <button
+          type="button"
+          className="btn btn-mini primary"
+          onClick={() => {
+            onCancelar();
+            trocarSubAba("ohra:analise-sub", "importar");
+            irParaAba("analise");
+          }}
+        >
+          📥 CSV do Shopee Ads: enviar na central →
+        </button>
+        <label className="btn btn-mini" style={{ cursor: "pointer" }} title="Também dá pra escolher o CSV aqui">
+          {lendo ? "Lendo…" : "📄 arquivo"}
           <input type="file" accept=".csv,.xlsx" multiple hidden onChange={importar} />
         </label>
         <Ajuda texto="Shopee: Marketing → Shopee Ads → escolha o período DO INÍCIO do período de Ads até ontem → Exportar dados → Dados Gerais de Anúncios. O app liga cada anúncio ao produto pelo SKU (e o anúncio com vários itens pelas variações) — se pedir, importe junto (uma vez) o relatório de desempenho do produto; depois ele lembra." />

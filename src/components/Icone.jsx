@@ -114,6 +114,13 @@ const PATHS = {
       <path d="M2 10h20M6 15h4M16 3l-4 3-4-3" />
     </>
   ),
+  analise: (
+    <>
+      <path d="M3 3v18h18" />
+      <path d="M7 15l4-4 3 3 6-7" />
+      <path d="M16 7h4v4" />
+    </>
+  ),
   config: (
     <>
       <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />

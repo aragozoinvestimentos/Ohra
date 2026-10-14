@@ -9,6 +9,8 @@ import { recarregarVendasOrganicas, useVendasOrganicas } from "../hooks/useVenda
 import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
 import BuscaItem from "./BuscaItem.jsx";
 import { saldoReserva, vendasDoMes } from "../lib/vendasMes.js";
+import { trocarSubAba } from "../lib/subAbas.js";
+import { useVendasReais } from "../hooks/useVendasReais.js";
 import { regrasAds, tetoDaLoja } from "../lib/ads.js";
 import { hojeISO, mesDe, rotuloMes } from "../lib/fluxoCaixa.js";
 import { BRL, PCT } from "../lib/format.js";
@@ -38,6 +40,7 @@ export default function VendasMes({ mes, onToast }) {
   const af = useAfiliados();
   const reserva = useReservaProducao();
   const org = useVendasOrganicas();
+  const reais = useVendasReais({ itens, canais, cfgDoProduto });
   const [vendaOrg, setVendaOrg] = useState(null); // formulário da venda orgânica (novo ou edição)
   const [excluirOrg, setExcluirOrg] = useState(null);
   const [verItem, setVerItem] = useState(null);
@@ -49,8 +52,8 @@ export default function VendasMes({ mes, onToast }) {
   const hoje = hojeISO();
 
   const v = useMemo(
-    () => vendasDoMes({ mes, rampas, rampasGrupo, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto }),
-    [mes, rampas, rampasGrupo, registros, af.registros, org.registros, itens, canais, cfgDoProduto]
+    () => vendasDoMes({ mes, rampas, rampasGrupo, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura }),
+    [mes, rampas, rampasGrupo, registros, af.registros, org.registros, itens, canais, cfgDoProduto, reais.linhas, reais.cobertura]
   );
   const res = useMemo(() => saldoReserva(reserva.registros), [reserva.registros]);
   const jaSeparado = res.porMes.get(mes) || 0;
@@ -271,8 +274,8 @@ export default function VendasMes({ mes, onToast }) {
         <h3 className="section-title h3-split">
           <span>
           Vendas por produto
-          <span className="badge info" style={{ marginLeft: 8 }}>estimado</span>
-          <Ajuda texto="Das semanas registradas no Crescimento (Registrar semana): produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Produto fora de rampa sem Ads e sem afiliado: use “+ Registrar venda orgânica” (só financeiro — no preço que você digitar, no mês da data Até)." />
+          <span className="badge info" style={{ marginLeft: 8 }}>{t.real > 0 ? (t.real >= t.unidades ? "real" : "real + estimado") : "estimado"}</span>
+          <Ajuda texto="REAL: pedidos importados na aba Análise (Olist) e vendas físicas — o valor pago de verdade, com o custo e as taxas de hoje; nas semanas com pedidos importados a estimativa daquela plataforma sai. ESTIMADO (onde ainda não há pedidos): das semanas registradas no Crescimento (Registrar semana): produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Produto fora de rampa sem Ads e sem afiliado: use “+ Registrar venda orgânica” (só financeiro — no preço que você digitar, no mês da data Até)." />
           </span>
           <button type="button" className="btn btn-mini primary" onClick={novaVendaOrg} disabled={!org.disponivel} title={org.disponivel ? "Venda de produto fora de rampa — só pro fechamento do mês" : "Rode o supabase/schema_v52.sql no Supabase"}>
             + Registrar venda orgânica
@@ -311,6 +314,7 @@ export default function VendasMes({ mes, onToast }) {
                       <td>
                         {l.item.nome} <CanalTag canal={l.canal} />
                         {l.aMao > 0 && <span className="muted-cel"> · {l.aMao} orgânica{l.aMao > 1 ? "s" : ""} à mão</span>}
+                        {l.real > 0 && l.real < l.unidades && <span className="muted-cel"> · {l.real} dos pedidos</span>}
                       </td>
                       <td className="num">{l.unidades} un.</td>
                       <td className="num">{BRL(l.faturamento)}</td>
@@ -321,7 +325,7 @@ export default function VendasMes({ mes, onToast }) {
                       </td>
                       <td className="num muted-cel">{l.ads || l.comissao ? BRL(l.ads + l.comissao) : "—"}</td>
                     </tr>
-                    {verItem === l.chave && (
+                    {verItem === l.chave && l.unidades > 0 && (
                       <tr className="linha-detalhe">
                         <td colSpan={7}>
                           <div className="detalhe-cel">
@@ -337,7 +341,7 @@ export default function VendasMes({ mes, onToast }) {
                                 <small>De onde vem</small>
                                 <b>{l.unidades} un.</b>
                                 <span>
-                                  {[l.semanas > 0 && `${l.semanas} semana${l.semanas > 1 ? "s" : ""} do Crescimento`, l.aMao > 0 && `${l.aMao} un. orgânica${l.aMao > 1 ? "s" : ""} à mão`].filter(Boolean).join(" · ")}
+                                  {[l.real > 0 && `${l.real} un. dos pedidos importados (real)`, l.semanas > 0 && `${l.semanas} semana${l.semanas > 1 ? "s" : ""} do Crescimento (estimado)`, l.aMao > 0 && `${l.aMao} un. orgânica${l.aMao > 1 ? "s" : ""} à mão`].filter(Boolean).join(" · ")}
                                 </span>
                               </div>
                               {(l.ads > 0 || l.comissao > 0) && (
@@ -398,6 +402,9 @@ export default function VendasMes({ mes, onToast }) {
                       <td>{o.periodo_inicio && o.periodo_inicio !== String(o.data).slice(0, 10) ? `${dm(o.periodo_inicio)} a ${dm(o.data)}` : dm(o.data)}</td>
                       <td>
                         {nomeItem(itemId)} {canal && <CanalTag canal={canal} />}
+                        {canal && reais.cobertura.cobre(canal, String(o.data).slice(0, 10)) && (
+                          <div className="muted-cel" title="Esses dias já têm pedidos importados da Olist — as vendas entram por eles">não conta: já está nos pedidos importados</div>
+                        )}
                         {(o.conhecidos > 0 || o.observacao) && (
                           <div className="muted-cel">{[o.conhecidos > 0 && `${o.conhecidos} de conhecidos`, o.observacao].filter(Boolean).join(" · ")}</div>
                         )}
@@ -462,6 +469,20 @@ export default function VendasMes({ mes, onToast }) {
           {!emRampaNoCanal(vendaOrg.itemId, vendaOrg.canalId) && jaNoRegistrarSemana(vendaOrg.itemId, vendaOrg.canalId) && (
             <div className="alerta alerta-warn">Esse item já tem vendas deste mês registradas pelo Registrar semana (Ads/afiliado) — confira pra não contar duas vezes.</div>
           )}
+          {(() => {
+            const canal = canais.find((c) => c.id === vendaOrg.canalId);
+            const ate = vendaOrg.ate || hoje;
+            const de = vendaOrg.de || ate;
+            if (!canal || !(reais.cobertura.cobre(canal, de) || reais.cobertura.cobre(canal, ate))) return null;
+            return (
+              <div className="alerta alerta-warn">
+                <b>Este canal já tem pedidos importados nesse período</b> As vendas da {canal.nome} nesses dias já entram pelos pedidos (aba Análise) — e esta venda à mão não seria contada. O registro à mão é pra venda fora da Olist: use “+ Registrar venda física” em Análise → Importar dados.{" "}
+                <button type="button" className="link-btn" onClick={() => { setVendaOrg(null); trocarSubAba("ohra:analise-sub", "importar"); irParaAba("analise"); }}>
+                  ir pra Análise →
+                </button>
+              </div>
+            );
+          })()}
           <div className="row2">
             <div className="field">
               <label>De (opcional)</label>

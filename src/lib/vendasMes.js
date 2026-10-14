@@ -12,7 +12,11 @@ import { mesDe } from "./fluxoCaixa.js";
 //     no mês da data "Até". Ads/Afiliados/Rampa não leem essa tabela.
 // Unidades vendidas em kit contam como unidades no preço da semana (estimativa).
 // A semana entra no mês do ÚLTIMO dia dela (o registro cobre até a véspera da data).
-// Fase B (depois): valores reais do relatório da Shopee/Olist, custo congelado.
+// REAL (aba Análise, v55): pedidos importados da Olist + vendas físicas
+// (`pedidos` = linhas de pedidos.enriquecer, `cobertura` = coberturaPedidos).
+// Nos dias em que a plataforma tem pedidos importados, a estimativa daquela
+// semana sai (só o Ads/comissão registrados continuam) e valem os pedidos —
+// valor pago de verdade, lucro com custo e taxas de hoje.
 
 const num = (v) => {
   const x = Number(v);
@@ -33,18 +37,30 @@ const ID_PREFIXO = { produto: "p", variacao: "v", kit: "k" };
  * → { linhas: [{ chave, item, canal, unidades, faturamento, recebe, repor, lucro, ads, comissao, semanas }],
  *     total: { unidades, faturamento, recebe, repor, lucro, ads, comissao, sobra }, semanas }
  */
-export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros = [], afRegistros = [], organicas = [], itens = [], canais = [], cfgDoProduto = () => null }) {
+export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros = [], afRegistros = [], organicas = [], itens = [], canais = [], cfgDoProduto = () => null, pedidos = [], cobertura = null }) {
   const porChave = new Map();
   const itemDe = (tipo, id) => itens.find((i) => i.id === `${ID_PREFIXO[tipo] || "p"}:${id}`) || null;
-  const somar = ({ tipo, id, canalId, unidades, preco, ads, comissao, aMao = false }) => {
+  const novaLinha = (chave, item, canal) => porChave.get(chave) || { chave, item, canal, unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, ads: 0, comissao: 0, semanas: 0, aMao: 0, real: 0 };
+  const coberto = (canal, data) => !!(cobertura && canal && cobertura.cobre(canal, diaFimRegistro(data)));
+  const somar = ({ tipo, id, canalId, unidades, preco, ads, comissao, aMao = false, soCustos = false }) => {
     const item = itemDe(tipo, id);
     const canal = canais.find((c) => c.id === canalId);
+    if (soCustos) {
+      // Semana já coberta pelos pedidos reais: só o Ads/comissão registrados.
+      if (!item || !canal || !(num(ads) > 0 || num(comissao) > 0)) return;
+      const chave = `${item.id}|${canal.id}`;
+      const l = novaLinha(chave, item, canal);
+      l.ads += num(ads);
+      l.comissao += num(comissao);
+      porChave.set(chave, l);
+      return;
+    }
     if (!item || !canal || !(unidades > 0) || !(preco > 0)) return;
     const cfg = cfgDoProduto(item.produtoId || (tipo === "produto" ? id : null));
     const custo = num(item.custoTotal);
     const lucroUn = lucroNoPreco(canal, preco, custo, num(item.peso), cfg) ?? 0;
     const chave = `${item.id}|${canal.id}`;
-    const l = porChave.get(chave) || { chave, item, canal, unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, ads: 0, comissao: 0, semanas: 0, aMao: 0 };
+    const l = novaLinha(chave, item, canal);
     l.unidades += unidades;
     l.faturamento += unidades * preco;
     l.recebe += unidades * (lucroUn + custo);
@@ -78,7 +94,8 @@ export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros
       continue;
     }
     const k = `${r.produto_id}|${r.canal_id}|${String(g.data).slice(0, 10)}`;
-    somar({ tipo: "produto", id: r.produto_id, canalId: r.canal_id, unidades: num(g.vendas), preco: num(g.preco), ads: g.ads_gasto, comissao: comissaoRampa.get(k) || 0 });
+    const cob = coberto(canais.find((c) => c.id === r.canal_id), g.data);
+    somar({ tipo: "produto", id: r.produto_id, canalId: r.canal_id, unidades: num(g.vendas), preco: num(g.preco), ads: g.ads_gasto, comissao: comissaoRampa.get(k) || 0, soCustos: cob });
   }
   for (const g of afRegistros) {
     if (g.vendas_total == null || !doMes(g)) continue;
@@ -86,12 +103,32 @@ export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros
       adsAnuncios += num(g.ads_gasto);
       continue;
     }
-    somar({ tipo: g.item_tipo, id: g.item_id, canalId: g.canal_id, unidades: num(g.vendas_total), preco: num(g.preco), ads: g.ads_gasto, comissao: g.comissao });
+    const cob = coberto(canais.find((c) => c.id === g.canal_id), g.data);
+    somar({ tipo: g.item_tipo, id: g.item_id, canalId: g.canal_id, unidades: num(g.vendas_total), preco: num(g.preco), ads: g.ads_gasto, comissao: g.comissao, soCustos: cob });
   }
 
   for (const o of organicas) {
     if (!o.data || mesDe(String(o.data).slice(0, 10)) !== mes) continue;
+    // Já está nos pedidos importados daquela plataforma → não conta de novo.
+    if (cobertura && cobertura.cobre(canais.find((c) => c.id === o.canal_id), String(o.data).slice(0, 10))) continue;
     somar({ tipo: o.item_tipo, id: o.item_id, canalId: o.canal_id, unidades: num(o.unidades), preco: num(o.preco), aMao: true });
+  }
+
+  // Pedidos reais do mês (+ vendas físicas): valor pago, lucro com custo e taxas de hoje.
+  const FISICO = { id: "fisico", nome: "Venda física", tipo: "custom" };
+  for (const p of pedidos) {
+    if (!p.valido || !p.item || !p.data || mesDe(String(p.data).slice(0, 10)) !== mes) continue;
+    const canal = p.canal || (p.origem === "fisico" ? FISICO : null);
+    if (!canal) continue;
+    const chave = `${p.item.id}|${canal.id}`;
+    const l = novaLinha(chave, p.item, canal);
+    l.unidades += p.q;
+    l.faturamento += p.pago;
+    l.recebe += p.recebe;
+    l.repor += p.custo;
+    l.lucro += p.lucro ?? 0;
+    l.real += p.q;
+    porChave.set(chave, l);
   }
 
   const linhas = [...porChave.values()]
@@ -99,6 +136,7 @@ export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros
     .sort((a, b) => b.lucro - a.lucro);
   const soma = (k) => cent(linhas.reduce((t, l) => t + l[k], 0));
   const total = { unidades: linhas.reduce((t, l) => t + l.unidades, 0), faturamento: soma("faturamento"), recebe: soma("recebe"), repor: soma("repor"), lucro: soma("lucro"), ads: soma("ads"), comissao: soma("comissao") };
+  total.real = linhas.reduce((t, l) => t + l.real, 0);
   total.adsAnuncios = cent(adsAnuncios);
   total.ads = cent(total.ads + adsAnuncios);
   total.sobra = cent(total.lucro - total.ads - total.comissao);

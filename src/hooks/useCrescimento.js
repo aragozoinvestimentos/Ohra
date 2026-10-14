@@ -13,6 +13,8 @@ import { useCatalogo } from "./useCatalogo.js";
 import { lucroNoPreco } from "../lib/escada.js";
 import { itemTipoDoId } from "../lib/variacoes.js";
 import { canalDireto } from "../lib/canais.js";
+import { useVendasReais } from "./useVendasReais.js";
+import { somarDias } from "../lib/pedidos.js";
 import { useVendasOrganicas } from "./useVendasOrganicas.js";
 import { configCalendario, infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
 
@@ -40,6 +42,9 @@ export function useCrescimento() {
   const adsH = useAdsPeriodos();
   // Vendas orgânicas lançadas à mão (v52): entram no faturamento do teto de Ads.
   const organicasH = useVendasOrganicas();
+  // Pedidos reais (aba Análise, v55): no teto do Ads, o faturamento dos dias
+  // com pedidos importados vem deles (a estimativa das semanas sai).
+  const reais = useVendasReais({ itens, canais, cfgDoProduto });
 
   // Referência do funil: mediana de CTR e conversão dos produtos da loja
   // (só com 5+ produtos com funil calculável; senão, referência geral).
@@ -217,7 +222,7 @@ export function useCrescimento() {
     for (const b of base)
       for (const s of b.semanas) {
         if (!(String(s.data).slice(0, 10) > desde30)) continue;
-        if (b.semFaturamento) {
+        if (b.semFaturamento || reais.cobertura.cobre(b.canal, somarDias(String(s.data).slice(0, 10), -1))) {
           gasto30 += num(s.ads_gasto);
           continue;
         }
@@ -232,11 +237,16 @@ export function useCrescimento() {
       if (!(String(o.data).slice(0, 10) > desde30)) continue;
       const it = itens.find((i) => i.id === `${PRE[o.item_tipo] || "p"}:${o.item_id}`);
       const canal = canais.find((c) => c.id === o.canal_id);
-      if (!it || !canal) continue;
+      if (!it || !canal || reais.cobertura.cobre(canal, String(o.data).slice(0, 10))) continue;
       const un = num(o.unidades);
       const p = num(o.preco);
       fat30 += un * p;
       lucro30 += un * (lucroNoPreco(canal, p, it.custoTotal, it.peso, cfgDoProduto(it.produtoId || (o.item_tipo === "produto" ? o.item_id : null))) ?? 0);
+    }
+    for (const p of reais.linhas) {
+      if (!p.valido || !(String(p.data) > desde30) || String(p.data) > hoje) continue;
+      fat30 += p.pago;
+      lucro30 += p.lucro ?? 0;
     }
     const teto = tetoDaLoja({ faturamento: fat30, lucro: lucro30, gasto: gasto30, regras: regrasA });
     const linhasA = base.map((b) => ({
@@ -259,7 +269,7 @@ export function useCrescimento() {
       });
     }
     return { loja, teto, sazonal, linhas: linhasA };
-  }, [itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig]);
+  }, [itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura]);
 
   return { dados, rampasH, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH };
 }

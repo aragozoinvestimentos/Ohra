@@ -1,5 +1,8 @@
 import { Fragment, useMemo, useState } from "react";
 import { useEscada } from "../hooks/useEscada.js";
+import { useVendasReais } from "../hooks/useVendasReais.js";
+import { agruparPorItem, curvaABC, somarDias } from "../lib/pedidos.js";
+import { hojeSP } from "../lib/datas.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { gruposPorItem } from "../lib/anunciosGrupo.js";
@@ -19,7 +22,7 @@ import { configCalendario, quandoVendeDe, rotuloQuando, TIPOS_QUANDO } from "../
 
 // Filtros do Catálogo (painel "Filtros ▾"). Regra: todo atributo novo do
 // produto que dê pra filtrar entra AQUI (um grupo a mais em FILTROS_VAZIO e no painel).
-const FILTROS_VAZIO = { tipo: "todos", quando: "", impressora: "", canal: "", rampa: "", semSku: false };
+const FILTROS_VAZIO = { tipo: "todos", quando: "", impressora: "", canal: "", rampa: "", semSku: false, abc: "" };
 
 // Cadastros → Catálogo: tudo que foi cadastrado (produtos com as variações,
 // kits) numa lista só, pra CONSULTAR sem abrir Precificação. Só lê — os números
@@ -43,6 +46,15 @@ export default function CatalogoLista({ onEditar, onToast }) {
   const { lojas, lojaId } = useLoja();
   const cal = useMemo(() => configCalendario(lojas.find((l) => l.id === lojaId)?.config_escada), [lojas, lojaId]);
   const [aberto, setAberto] = useState(null); // id do item com o detalhe aberto
+  // Curva ABC (aba Análise, v55): pelo lucro dos pedidos dos últimos 90 dias,
+  // produto agrupado com as variações. Sem pedidos = sem selo.
+  const reais = useVendasReais({ itens, canais, cfgDoProduto: dados.cfgDoProduto });
+  const classeAbc = useMemo(() => {
+    const hoje = hojeSP();
+    const de = somarDias(hoje, -89);
+    const g = agruparPorItem(reais.linhas.filter((l) => l.data >= de && l.data <= hoje), { itens, porPai: true });
+    return new Map(curvaABC(g, { crit: "lucro" }).linhas.map((l) => [l.chave, l.classe]));
+  }, [reais.linhas, itens]);
   const [comVariacoes, setComVariacoes] = useState(() => new Set());
 
   const precoDoCanal = (it, canalId) => {
@@ -70,9 +82,11 @@ export default function CatalogoLista({ onEditar, onToast }) {
     }
     if (filtros.canal && ![p, ...vs].some((x) => precoDoCanal(x, filtros.canal))) return false;
     if (filtros.semSku && ![p, ...vs].some((x) => !x.sku)) return false;
+    if (!passaAbc(p)) return false;
     return true;
   };
-  const passaKit = (k) => !soProduto && (!filtros.canal || precoDoCanal(k, filtros.canal)) && (!filtros.semSku || !k.sku);
+  const passaAbc = (it) => !filtros.abc || (filtros.abc === "sem" ? !classeAbc.has(it.id) : classeAbc.get(it.id) === filtros.abc);
+  const passaKit = (k) => !soProduto && passaAbc(k) && (!filtros.canal || precoDoCanal(k, filtros.canal)) && (!filtros.semSku || !k.sku);
   const linhas = useMemo(() => {
     const prods = itens.filter((i) => i.tipo === "Produto");
     const vars = itens.filter((i) => i.tipo === "Variação");
@@ -86,7 +100,7 @@ export default function CatalogoLista({ onEditar, onToast }) {
     if (tipo !== "produtos") for (const k of kits) if (bate(k) && passaKit(k)) out.push({ item: k, variacoes: [] });
     return out.sort((a, b) => a.item.nome.localeCompare(b.item.nome));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itens, filtros, alvo, produtos, impressoras, rampas, precos]);
+  }, [itens, filtros, alvo, produtos, impressoras, rampas, precos, classeAbc]);
   const ativos = [
     filtros.tipo !== "todos" && { k: "tipo", txt: filtros.tipo === "kits" ? "só kits" : "só produtos" },
     filtros.quando && { k: "quando", txt: filtros.quando === "sem" ? "sem classificação" : TIPOS_QUANDO.find((t) => t.chave === filtros.quando)?.rotulo.replace("…", "").toLowerCase() },
@@ -94,6 +108,7 @@ export default function CatalogoLista({ onEditar, onToast }) {
     filtros.canal && { k: "canal", txt: `com preço em ${canais.find((c) => c.id === filtros.canal)?.nome || "canal"}` },
     filtros.rampa && { k: "rampa", txt: filtros.rampa === "sim" ? "em rampa" : "fora da rampa" },
     filtros.semSku && { k: "semSku", txt: "sem SKU" },
+    filtros.abc && { k: "abc", txt: filtros.abc === "sem" ? "sem venda (90 dias)" : `curva ABC: ${filtros.abc}` },
   ].filter(Boolean);
   const tirar = (k) => setFiltros((f) => ({ ...f, [k]: FILTROS_VAZIO[k] }));
 
@@ -110,6 +125,11 @@ export default function CatalogoLista({ onEditar, onToast }) {
         <td>
           {filho ? "↳ " : ""}
           <b>{filho ? it.nomeVariacao || it.nome : it.nome}</b>
+          {!filho && classeAbc.get(it.id) && (
+            <span className={`selo-abc ${classeAbc.get(it.id)}`} title={`Curva ABC (lucro dos pedidos dos últimos 90 dias): classe ${classeAbc.get(it.id)} — ver em Análise → Curva ABC`}>
+              {classeAbc.get(it.id)}
+            </span>
+          )}
           <div className="muted-cel">
             {it.tipo}
             {it.sku ? ` · ${it.sku}` : " · sem SKU"}
@@ -381,6 +401,16 @@ export default function CatalogoLista({ onEditar, onToast }) {
               <option value="">Qualquer</option>
               <option value="sim">Em rampa</option>
               <option value="nao">Fora da rampa</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Curva ABC (90 dias)</label>
+            <select value={filtros.abc} onChange={(e) => setFiltros({ ...filtros, abc: e.target.value })}>
+              <option value="">Qualquer</option>
+              <option value="A">A · não pode faltar</option>
+              <option value="B">B · pode crescer</option>
+              <option value="C">C · revisar</option>
+              <option value="sem">Sem venda nos pedidos</option>
             </select>
           </div>
           <label className="check-filtro">

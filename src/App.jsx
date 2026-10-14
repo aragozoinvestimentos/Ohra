@@ -57,6 +57,7 @@ const Tutorial = lazyAba(() => import("./components/Tutorial.jsx"));
 const Configuracao = lazyAba(() => import("./components/Configuracao.jsx"));
 const Crescimento = lazyAba(() => import("./components/Crescimento.jsx"));
 const FluxoCaixa = lazyAba(() => import("./components/FluxoCaixa.jsx"));
+const Analise = lazyAba(() => import("./components/Analise.jsx"));
 const MinhaFarm = lazyAba(() => import("./components/MinhaFarm.jsx"));
 const Inicio = lazyAba(() => import("./components/Inicio.jsx"));
 
@@ -158,6 +159,17 @@ const MENU = [
           { tab: "ranking", label: "Ranking por retorno" },
         ],
       },
+      {
+        key: "m-analise",
+        label: "Análise",
+        icone: "analise",
+        sub: "Pedidos reais: importar, curva ABC e evolução",
+        abas: [
+          { tab: "analise", s: "importar", label: "Importar dados", ordem: "1" },
+          { tab: "analise", s: "abc", label: "Curva ABC", ordem: "2" },
+          { tab: "analise", s: "evolucao", label: "Evolução e métricas", ordem: "3" },
+        ],
+      },
     ],
   },
   {
@@ -187,7 +199,7 @@ const TABS = [...new Set(ITENS_MENU.flatMap((i) => i.abas.filter((a) => a.tab).m
 
 const TAB_KEY = "ohra:ultima-aba";
 // Chaves das sub-abas lembradas das telas (as mesmas que as telas já usavam).
-const SUB_CHAVE = { cadastros: "ohra:cadastros-sub", crescimento: "ohra:crescimento-sub", caixa: "ohra:caixa:sub" };
+const SUB_CHAVE = { cadastros: "ohra:cadastros-sub", crescimento: "ohra:crescimento-sub", caixa: "ohra:caixa:sub", analise: "ohra:analise-sub" };
 
 // O app abre no Início (sessão nova do navegador). Recarregar a página na
 // mesma sessão continua na aba em que estava — só aceita uma chave que ainda
@@ -219,6 +231,7 @@ export default function App() {
   const [cadastrosSub] = useSubAba(SUB_CHAVE.cadastros, "catalogo");
   const [crescimentoSub] = useSubAba(SUB_CHAVE.crescimento, "rampa");
   const [caixaSub] = useSubAba(SUB_CHAVE.caixa, "caixa");
+  const [analiseSub] = useSubAba(SUB_CHAVE.analise, "importar");
   // Última tela aberta dentro de cada item do menu (estado derivado da aba atual).
   const [ultimaDoMenu, setUltimaDoMenu] = useState({});
   const menuDaTab = menuDaAba(tab);
@@ -359,7 +372,7 @@ export default function App() {
   const grupoAtual = tab === "tutorial" ? "Ajuda" : menuAtual?.grupo || "Ohra";
   const tituloAtual = tab === "tutorial" ? TUTORIAL.label : menuAtual?.label;
   const subtituloAtual = tab === "tutorial" ? TUTORIAL.sub : menuAtual?.sub;
-  const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub };
+  const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub, analise: analiseSub };
   const abaAtiva = (a) => a.tab === tab && (!a.s || a.s === subDaAba[a.tab]);
   // Vai pra uma sub-aba do cabeçalho: troca a aba e a sub-aba dela.
   function irParaEntrada(a) {
@@ -556,6 +569,14 @@ export default function App() {
           {visitadas.has("caixa") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
               <FluxoCaixa key={lojaId || "sem-loja"} onToast={showToast} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "analise" ? "active" : ""}`}>
+          {visitadas.has("analise") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Analise key={lojaId || "sem-loja"} onToast={showToast} />
             </Suspense>
           )}
         </section>

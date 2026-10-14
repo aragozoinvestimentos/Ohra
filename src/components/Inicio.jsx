@@ -1,4 +1,6 @@
 import { vendasDoMes, saldoReserva } from "../lib/vendasMes.js";
+import { useVendasReais } from "../hooks/useVendasReais.js";
+import { PLATAFORMAS } from "../lib/pedidos.js";
 import { useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
 import { useReservaProducao } from "../hooks/useReservaProducao.js";
 import { revisoesPrecoDireto } from "../lib/revisarPreco.js";
@@ -120,6 +122,12 @@ export default function Inicio({ onIrPara, onToast }) {
   const organicasH = useVendasOrganicas();
   const reservaH = useReservaProducao();
   const cfgDoProduto = dados.cfgDoProduto;
+  const reais = useVendasReais({ itens: dados.itens, canais: dados.canais, cfgDoProduto });
+  // Central da aba Análise: plataformas com canal cadastrado (aviso de pedidos atrasados).
+  const impCentral = useMemo(
+    () => (reais.carregando ? null : { disponivel: reais.disponivel, lista: reais.importacoes, plataformas: PLATAFORMAS.filter((p) => (dados.canais || []).some((c) => c.tipo === p.tipo)) }),
+    [reais.carregando, reais.disponivel, reais.importacoes, dados.canais]
+  );
   // Lembrete de temporada (Quando vende = pico/época): 60 dias antes da data.
   const temporadas = useMemo(
     () =>
@@ -248,18 +256,18 @@ export default function Inicio({ onIrPara, onToast }) {
   // Repor a produção do mês = a MESMA conta da Reserva de produção do Fluxo de
   // Caixa (Vendas do mês, lib/vendasMes.js) + o saldo da reserva (v51).
   const reservaMes = useMemo(() => {
-    const v = vendasDoMes({ mes: mesDe(hoje), rampas: rampasH.rampas, rampasGrupo: rampasH.rampasGrupo, rampaRegistros: rampasH.registros, afRegistros: af.registros, organicas: organicasH.registros, itens, canais, cfgDoProduto });
+    const v = vendasDoMes({ mes: mesDe(hoje), rampas: rampasH.rampas, rampasGrupo: rampasH.rampasGrupo, rampaRegistros: rampasH.registros, afRegistros: af.registros, organicas: organicasH.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura });
     if (!v.total.unidades) return null;
     const res = saldoReserva(reservaH.registros);
     return { repor: v.total.repor, unidades: v.total.unidades, saldo: res.saldo, separado: res.porMes.get(mesDe(hoje)) || 0, temReserva: reservaH.disponivel };
-  }, [hoje, rampasH.rampas, rampasH.rampasGrupo, rampasH.registros, af.registros, organicasH.registros, itens, canais, cfgDoProduto, reservaH.registros, reservaH.disponivel]);
+  }, [hoje, rampasH.rampas, rampasH.rampasGrupo, rampasH.registros, af.registros, organicasH.registros, itens, canais, cfgDoProduto, reservaH.registros, reservaH.disponivel, reais.linhas, reais.cobertura]);
 
   // --- Pra fazer + status ---
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
   const revisoes = useMemo(() => revisoesPrecoDireto({ itens, canais, precos, hoje }), [itens, canais, precos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], hoje }),
-    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, hoje }),
+    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.

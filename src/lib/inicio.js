@@ -41,7 +41,7 @@ export function areaPendencia(p) {
   if (aba === "crescimento") return p.ir.pedido?.sub === "ads" ? "ads" : p.ir.pedido?.sub === "afiliados" ? "afiliados" : "crescimento";
   if (aba === "promocoes") return "crescimento";
   if (ABAS_PRECO.includes(aba)) return "preco";
-  if (aba === "caixa" || aba === "metas") return "dinheiro";
+  if (aba === "caixa" || aba === "metas" || aba === "analise") return "dinheiro";
   if (["farm", "registro", "otimizacao", "producao"].includes(aba)) return "producao";
   return "outros";
 }
@@ -61,6 +61,7 @@ export function montarPendencias({
   temporadas = [], // [{ produto, info }] lembrete da temporada (calendario.js → infoSazonal().lembrete)
   revisoes = [], // [{ item, canal, motivos }] venda direta: preço velho ou custo subiu (revisarPreco.js)
   adsSazonal = [], // [{ chave, item, canal, aviso }] fases do Ads sazonal (ads.js → avisoAdsSazonal)
+  importacoes = null, // { disponivel, lista, plataformas: [{ id, nome }] } — central da aba Análise (v55)
   hoje = "",
 }) {
   const out = [];
@@ -269,6 +270,36 @@ export function montarPendencias({
         rotulo: "Abrir Ads",
       });
   }
+  // Central de importação (aba Análise, v55): pedidos da Olist há mais de 7
+  // dias por plataforma que já foi importada (Shopee: também nunca enviada) e
+  // o Desempenho da Shopee há mais de 7 dias. UM aviso, em Atenção e rotina.
+  if (importacoes?.disponivel) {
+    const dias = (rel) => {
+      const u = [...(importacoes.lista || [])].filter((i) => i.ok && i.relatorio === rel).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0];
+      if (!u?.criado_em) return null;
+      const d = new Date(u.criado_em).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+      return Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${d}T12:00:00`)) / 86400000);
+    };
+    const atrasados = [];
+    for (const p of importacoes.plataformas || []) {
+      const d = dias(`pedidos:${p.id}`);
+      if (d == null ? p.id === "shopee" : d > 7) atrasados.push(d == null ? `${p.nome}: nunca enviado` : `${p.nome}: há ${d} dias`);
+    }
+    const dd = (importacoes.plataformas || []).some((p) => p.id === "shopee") ? dias("shopee:desempenho") : null;
+    if (dd != null && dd > 7) atrasados.push(`Desempenho da Shopee: há ${dd} dias`);
+    if (atrasados.length)
+      add({
+        id: "analise|importar",
+        grupo: "rotina",
+        ordem: 2,
+        tom: "warn",
+        titulo: "Importar os pedidos da semana",
+        texto: `${atrasados.join(" · ")} — vendas, caixa e curva ABC usam os pedidos`,
+        ir: { aba: "analise", pedido: { sub: "importar" } },
+        rotulo: "Abrir a central",
+      });
+  }
+
   if (ads?.teto?.acimaTeto)
     add({ id: "ads|teto", grupo: "rotina", ordem: 2, tom: "warn", titulo: "Ads acima do teto da loja", texto: `${brl(ads.teto.gasto)} em 30 dias · teto ${brl(ads.teto.teto)} (fase ${ads.teto.fase})`, ir: irAds, rotulo: "Abrir Ads" });
 
