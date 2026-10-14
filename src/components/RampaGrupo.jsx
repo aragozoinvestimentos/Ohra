@@ -136,7 +136,6 @@ export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, s
                         <td colSpan={5}>
                           <DetalheGrupo
                             l={l}
-                            hoje={hoje}
                             linhaAds={linhasAds?.linhas.find((x) => x.chave === `grupo|${l.grupo.id}|${l.canal.id}`) || null}
                             onVerAds={onVerAds}
                             onMudar={(m) => setMudar({ l, ...m })}
@@ -194,7 +193,7 @@ export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, s
   );
 }
 
-function DetalheGrupo({ l, hoje, linhaAds, onVerAds, onMudar, onEncerrar }) {
+function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar }) {
   const e = l.est;
   const sg = sugestaoDe(e);
   const degraus = (l.r.degraus || []).map(num);
@@ -202,30 +201,69 @@ function DetalheGrupo({ l, hoje, linhaAds, onVerAds, onMudar, onEncerrar }) {
   const z = e.sazonal;
   const proxIdx = sg?.chave === "subir" ? Math.min(degraus.length - 1, i + (sg.saltos || 1)) : i < degraus.length - 1 ? i + 1 : null;
   const pctDescer = z?.fase === "entressafra" && sg?.chave === "descer" ? Math.max(50, Math.round(l.g.pctAtual - 8)) : null;
+  const um1 = (v) => String(Math.round(num(v) * 10) / 10).replace(".", ",");
+  const inicio = e.registros.find((g) => g.tipo === "inicio")?.data || l.r.desde;
+  const tipoSug = estadoSugestaoRampa({ ...e, sugestao: sg });
+  const proximo = z && z.fase !== "entressafra" && z.proximaData
+    ? { titulo: proxIdx != null ? `${pctTxt(degraus[proxIdx])} em ${dm(z.proximaData)}` : "No alvo", sub: `cronograma de ${z.nome} · no alvo até ${dm(z.limite)}` }
+    : { titulo: sg.rotulo, sub: z ? `${z.nome}` : e.portoesOk ? "todos os portões ok" : `${e.portoes.filter((p) => !p.ok).length} portão(ões) faltando` };
   return (
-    <div className="detalhe-cel">
-      <div className="grupo-rampa-degraus">
-        {degraus.map((d, k) => (
-          <span key={k} className={`chip-ads${k === i ? " ligado" : ""}`}>{pctTxt(d)}</span>
-        ))}
-        <span className="muted-cel">desde {dm(e.registros.find((g) => g.tipo === "inicio")?.data || l.r.desde)} · {e.dias} dia{e.dias === 1 ? "" : "s"} neste degrau</span>
+    <div className="detalhe-cel gr-det">
+      <div className="gr-topo">
+        <ol className="gr-steps" aria-label="Degraus da rampa">
+          {degraus.map((d, k) => (
+            <li key={k} className={k < i ? "feito" : k === i ? "atual" : ""}>
+              <span className="gr-step-bola">{k < i ? "✓" : k + 1}</span>
+              <span className="gr-step-pct">{pctTxt(d)}</span>
+              {k === degraus.length - 1 && <span className="gr-step-alvo">alvo</span>}
+            </li>
+          ))}
+        </ol>
+        <span className="muted-cel">
+          desde {dm(inicio)} · {e.dias} dia{e.dias === 1 ? "" : "s"} neste degrau
+        </span>
       </div>
+
       {e.anuncio && (
-        <div className="alerta alerta-warn">
+        <div className="alerta alerta-warn" style={{ margin: 0 }}>
           <b>{e.anuncio.titulo}</b>
           {e.anuncio.texto} Comece por: {e.anuncio.porOnde}.
         </div>
       )}
-      {z && (
-        <div className="alerta alerta-neutro">
-          <b>Temporada: {z.nome}</b>
-          {z.fase === "entressafra"
-            ? `Depois da data — ${sg.rotulo}.`
-            : z.proximaData
-              ? `Cronograma: próximo degrau em ${dm(z.proximaData)} (no alvo até ${dm(z.limite)}).`
-              : `No alvo até ${dm(z.limite)}.`}
+
+      <div className="gr-cards">
+        <div className="gr-card">
+          <span className="gr-card-rot">Preço agora</span>
+          <b className="gr-card-num">{pctTxt(l.g.pctAtual)}</b>
+          <span className="gr-card-sub">do preço salvo · ticket médio {BRL(e.preco)}</span>
         </div>
-      )}
+        <div className="gr-card">
+          <span className="gr-card-rot">Lucro médio por venda</span>
+          <b className="gr-card-num" style={{ color: e.lucroAtual != null && e.lucroAtual < 0 ? "var(--bad)" : undefined }}>{e.lucroAtual != null ? BRL(e.lucroAtual) : "—"}</b>
+          <span className="gr-card-sub">no alvo {e.lucroAlvo != null ? BRL(e.lucroAlvo) : "—"}</span>
+        </div>
+        <div className={`gr-card${tipoSug ? ` gr-card-${tipoSug}` : ""}`}>
+          <span className="gr-card-rot">Próximo passo</span>
+          <b className="gr-card-num gr-card-txt">{proximo.titulo}</b>
+          <span className="gr-card-sub">{proximo.sub}</span>
+        </div>
+        <div className="gr-card">
+          <span className="gr-card-rot">Desde o degrau</span>
+          <b className="gr-card-num">{e.vendasDesde} venda{e.vendasDesde === 1 ? "" : "s"}</b>
+          <span className="gr-card-sub">+{e.avaliacoesDesde} avaliações · nota {e.nota != null ? um1(e.nota) : "—"}</span>
+        </div>
+        {linhaAds && (
+          <div className="gr-card">
+            <span className="gr-card-rot">Ads do anúncio</span>
+            <b className="gr-card-num gr-card-txt">{linhaAds.av.titulo}</b>
+            <span className="gr-card-sub">
+              {linhaAds.av.empate ? `equilíbrio ${um1(linhaAds.av.empate)} · ` : ""}
+              <button type="button" className="link-btn" onClick={onVerAds}>ver no Ads</button>
+            </span>
+          </div>
+        )}
+      </div>
+
       {!z && (
         <div className="portoes-linha">
           {e.portoes.map((p) => (
@@ -235,74 +273,79 @@ function DetalheGrupo({ l, hoje, linhaAds, onVerAds, onMudar, onEncerrar }) {
           ))}
         </div>
       )}
-      <div className="ads-rotulo" style={{ marginTop: 8 }}>
-        O que digitar no canal · {pctTxt(l.g.pctAtual)} do preço salvo
-      </div>
-      <div className="table-wrap">
-        <table className="tabela-ads">
-          <thead>
-            <tr>
-              <th>Opção</th>
-              <th className="num">Preço salvo</th>
-              <th className="num">Preço original</th>
-              <th className="num">Promo</th>
-              <th className="num">Cliente paga</th>
-              <th className="num">Lucro</th>
-            </tr>
-          </thead>
-          <tbody>
-            {l.g.linhas.map((x) => (
-              <tr key={x.idx}>
-                <td>
-                  {x.rotulo}
-                  {x.vitrine && <span className="muted-cel"> · vitrine</span>}
-                  {x.pelo4x && <div className="muted-cel">subiu pra caber na regra de 4×</div>}
-                </td>
-                <td className="num">{BRL(x.base)}</td>
-                <td className="num">{x.an ? BRL(x.an.original) : "—"}{x.fixo ? <div className="muted-cel">fixo</div> : null}</td>
-                <td className="num">{x.an ? `${x.an.promo}%` : "—"}</td>
-                <td className="num"><b>{x.an ? BRL(x.an.clientePaga) : "—"}</b></td>
-                <td className="num" style={{ color: x.lucro != null && x.lucro < 0 ? "var(--bad)" : undefined }}>{x.lucro != null ? BRL(x.lucro) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="hint" style={{ margin: "4px 0 8px" }}>
-        Depois de trocar a promo na plataforma, marque ✓ nas opções em{" "}
-        <button type="button" className="link-btn" onClick={() => irParaAba("publicar")}>
-          5º Anunciar
-        </button>
-        .
-      </p>
-      {linhaAds && (
-        <div className="alerta alerta-neutro">
-          <b>Ads do anúncio: {linhaAds.av.titulo}</b>
-          {linhaAds.av.empate ? `ROAS de equilíbrio ${String(Math.round(linhaAds.av.empate * 10) / 10).replace(".", ",")}. ` : ""}
-          <button type="button" className="link-btn" onClick={onVerAds}>Ver em Crescimento → Ads</button>
+
+      <div className="gr-tabela-cartao">
+        <div className="gr-tabela-cab">
+          <b>O que digitar no canal</b>
+          <span className="chip-cel decisao">{pctTxt(l.g.pctAtual)} do preço salvo</span>
+          <span className="muted-cel gr-tabela-dica">só a promo muda — o preço original fica fixo</span>
         </div>
-      )}
-      <div className="acoes-ads">
-        {proxIdx != null && proxIdx > i && (
-          <button type="button" className={`btn btn-mini${sg?.chave === "subir" ? " primary" : ""}`} onClick={() => onMudar({ novoIdx: proxIdx, tipo: "subida" })}>
-            Subir pra {pctTxt(degraus[proxIdx])}
-          </button>
-        )}
-        {i > 0 && (
-          <button type="button" className={`btn btn-mini${sg?.chave === "voltar" ? " primary" : ""}`} onClick={() => onMudar({ novoIdx: i - 1, tipo: "descida" })}>
-            Voltar pra {pctTxt(degraus[i - 1])}
-          </button>
-        )}
-        {pctDescer != null && (
-          <button type="button" className="btn btn-mini primary" onClick={() => onMudar({ novoPct: pctDescer, tipo: "descida", obs: "entressafra" })}>
-            Descer pra {pctTxt(pctDescer)} (entressafra)
-          </button>
-        )}
-        <button type="button" className="btn btn-mini" onClick={onEncerrar}>
-          × Encerrar rampa
-        </button>
+        <div className="table-wrap">
+          <table className="gr-tabela">
+            <thead>
+              <tr>
+                <th>Opção</th>
+                <th className="num">Preço salvo</th>
+                <th className="num">Preço original</th>
+                <th className="num">Promo</th>
+                <th className="num">Cliente paga</th>
+                <th className="num">Lucro</th>
+              </tr>
+            </thead>
+            <tbody>
+              {l.g.linhas.map((x) => (
+                <tr key={x.idx}>
+                  <td>
+                    <span className="gr-opcao">{x.rotulo}</span>
+                    <span className="gr-tags">
+                      {x.vitrine && <span className="chip-cel info" title="Preço só deste anúncio (vitrine)">vitrine</span>}
+                      {x.pelo4x && <span className="chip-cel atencao" title="Subiu pra caber na regra de 4× da Shopee">regra 4×</span>}
+                    </span>
+                  </td>
+                  <td className="num muted-num">{BRL(x.base)}</td>
+                  <td className="num">
+                    {x.an ? BRL(x.an.original) : "—"}
+                    {x.fixo ? <span className="gr-fixo" title="Já anunciado: o preço original não muda">🔒</span> : null}
+                  </td>
+                  <td className="num">{x.an ? <span className="pill-promo">{x.an.promo}%</span> : "—"}</td>
+                  <td className="num"><b className="gr-paga">{x.an ? BRL(x.an.clientePaga) : "—"}</b></td>
+                  <td className="num" style={{ color: x.lucro != null && x.lucro < 0 ? "var(--bad)" : undefined }}>{x.lucro != null ? BRL(x.lucro) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-      <p className="hint" style={{ margin: "6px 0 0" }}>Hoje: {hoje ? dm(hoje) : ""} · vendas desde o degrau {e.vendasDesde} · avaliações +{e.avaliacoesDesde} · nota {e.nota != null ? String(e.nota).replace(".", ",") : "—"}</p>
+
+      <div className="gr-rodape">
+        <div className="acoes-ads" style={{ margin: 0 }}>
+          {proxIdx != null && proxIdx > i && (
+            <button type="button" className={`btn btn-mini${sg?.chave === "subir" ? " primary" : ""}`} onClick={() => onMudar({ novoIdx: proxIdx, tipo: "subida" })}>
+              ↑ Subir pra {pctTxt(degraus[proxIdx])}
+            </button>
+          )}
+          {i > 0 && (
+            <button type="button" className={`btn btn-mini${sg?.chave === "voltar" ? " primary" : ""}`} onClick={() => onMudar({ novoIdx: i - 1, tipo: "descida" })}>
+              ↓ Voltar pra {pctTxt(degraus[i - 1])}
+            </button>
+          )}
+          {pctDescer != null && (
+            <button type="button" className="btn btn-mini primary" onClick={() => onMudar({ novoPct: pctDescer, tipo: "descida", obs: "entressafra" })}>
+              ↓ Descer pra {pctTxt(pctDescer)} (entressafra)
+            </button>
+          )}
+          <button type="button" className="btn btn-mini" onClick={onEncerrar}>
+            × Encerrar rampa
+          </button>
+        </div>
+        <span className="hint" style={{ margin: 0 }}>
+          Trocou a promo na plataforma? Marque ✓ em{" "}
+          <button type="button" className="link-btn" onClick={() => irParaAba("publicar")}>
+            5º Anunciar
+          </button>
+          .
+        </span>
+      </div>
     </div>
   );
 }

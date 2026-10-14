@@ -1892,3 +1892,43 @@ tr.combinacao-off td { opacity: 0.45; }
 .portoes-linha { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .portao { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--bg-soft, rgba(127,127,127,.1)); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .portao.ok { background: var(--st-oportunidade-soft); color: var(--st-oportunidade); }
+
+/* Detalhe da rampa do anúncio inteiro */
+.gr-det { gap: 12px; }
+.gr-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.gr-steps { display: flex; align-items: center; list-style: none; margin: 0; padding: 0; gap: 0; }
+.gr-steps li { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.gr-steps li + li::before { content: ""; width: 28px; height: 2px; background: var(--border-strong, rgba(127,127,127,.3)); margin: 0 8px; border-radius: 2px; }
+.gr-steps li.feito + li::before, .gr-steps li.feito + li.atual::before { background: var(--accent); }
+.gr-step-bola { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: var(--surface-2); color: var(--ink-soft); border: 1px solid var(--border); }
+.gr-steps li.feito .gr-step-bola { background: var(--accent); color: #fff; border-color: var(--accent); }
+.gr-steps li.atual .gr-step-bola { background: var(--st-decisao-soft); color: var(--st-decisao); border: 2px solid var(--accent); }
+.gr-steps li.atual .gr-step-pct { color: var(--ink); font-weight: 700; }
+.gr-step-alvo { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
+.gr-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.gr-card { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); min-width: 0; }
+.gr-card-rot { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); font-weight: 600; }
+.gr-card-num { font-size: 18px; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.gr-card-txt { font-size: 14px; }
+.gr-card-sub { font-size: 12px; color: var(--ink-soft); }
+.gr-card-oportunidade { background: var(--st-oportunidade-soft); border-color: transparent; }
+.gr-card-atencao { background: var(--st-atencao-soft); border-color: transparent; }
+.gr-card-resolver { background: var(--st-resolver-soft); border-color: transparent; }
+.gr-card-info { background: var(--st-info-soft); border-color: transparent; }
+.gr-tabela-cartao { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.gr-tabela-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+.gr-tabela-cab .chip-cel { margin-top: 0; }
+.gr-tabela-dica { margin-left: auto; }
+.gr-tabela { width: 100%; }
+.gr-tabela th { font-size: 10.5px; }
+.gr-tabela td { vertical-align: middle; }
+.gr-tabela tbody tr:hover { background: var(--surface-2); }
+.gr-opcao { font-weight: 600; }
+.gr-tags { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.gr-tags .chip-cel { margin-top: 0; }
+.muted-num { color: var(--ink-soft); }
+.gr-fixo { font-size: 10px; margin-left: 4px; opacity: .7; }
+.pill-promo { display: inline-block; min-width: 38px; text-align: center; padding: 1px 8px; border-radius: 99px; background: var(--st-decisao-soft); color: var(--st-decisao); font-weight: 700; font-size: 12px; }
+.gr-paga { font-size: 14px; }
+.gr-rodape { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+@media (max-width: 760px) { .gr-tabela-dica { margin-left: 0; } .gr-steps li + li::before { width: 14px; margin: 0 4px; } }
