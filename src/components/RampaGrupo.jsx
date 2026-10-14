@@ -32,6 +32,13 @@ export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, s
   const [mudar, setMudar] = useState(null); // { l, novo (índice), tipo }
   const [encerrar, setEncerrar] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const [busca, setBusca] = useState("");
+  // Busca por nome do anúncio, nome/rótulo das opções ou SKU.
+  const visiveis = useMemo(() => {
+    const t = busca.trim().toLowerCase();
+    if (!t) return linhasGrupo;
+    return linhasGrupo.filter((l) => [l.grupo.nome, ...l.g.ops.flatMap((o) => [o.rotulo, o.item?.nome, o.item?.sku])].filter(Boolean).join(" ").toLowerCase().includes(t));
+  }, [linhasGrupo, busca]);
   // "+ Iniciar rampa" (topo) e o diálogo da rampa de produto abrem este diálogo.
   useEffect(() => {
     const abrir = () => setIniciar(true);
@@ -91,6 +98,12 @@ export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, s
           + Rampa do anúncio inteiro
         </button>
       </h3>
+      {linhasGrupo.length > 0 && (
+        <div className="toolbar">
+          <input type="search" className="busca-rampa" placeholder="Buscar por nome ou SKU" value={busca} onChange={(ev) => setBusca(ev.target.value)} />
+          {busca && <span className="muted-cel">{visiveis.length} de {linhasGrupo.length}</span>}
+        </div>
+      )}
       {!linhasGrupo.length ? (
         <div className="empty">Nenhum anúncio com vários itens em rampa. Use “+ Rampa do anúncio inteiro”.</div>
       ) : (
@@ -106,7 +119,12 @@ export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, s
               </tr>
             </thead>
             <tbody>
-              {linhasGrupo.map((l) => {
+              {!visiveis.length && (
+                <tr>
+                  <td colSpan={5} className="muted-cel">Nenhum anúncio com “{busca}”.</td>
+                </tr>
+              )}
+              {visiveis.map((l) => {
                 const e = l.est;
                 const sg = sugestaoDe(e);
                 const tipo = estadoSugestaoRampa({ ...e, sugestao: sg });

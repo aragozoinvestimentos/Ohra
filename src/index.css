@@ -1932,3 +1932,8 @@ tr.combinacao-off td { opacity: 0.45; }
 .gr-paga { font-size: 14px; }
 .gr-rodape { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 @media (max-width: 760px) { .gr-tabela-dica { margin-left: 0; } .gr-steps li + li::before { width: 14px; margin: 0 4px; } }
+
+/* Detalhe da rampa minimizável */
+.btn-recolher { border: 0; background: transparent; color: var(--ink-soft); cursor: pointer; font-size: 13px; padding: 0 6px 0 0; line-height: 1; }
+.btn-recolher:hover { color: var(--accent); }
+.panel.detalhe-recolhido > *:not(h3) { display: none; }

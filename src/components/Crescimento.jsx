@@ -36,6 +36,7 @@ import { PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
 import { encerrarPeriodoAds, iniciarPeriodoAds } from "../lib/adsAcoes.js";
 import OndeSeDecide from "./OndeSeDecide.jsx";
 import RampaGrupo from "./RampaGrupo.jsx";
+import { useLembrado } from "../hooks/useLembrado.js";
 import { iniciarRampaGrupo } from "../lib/grupoRampa.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { pegarPedido } from "../lib/navegar.js";
@@ -174,6 +175,8 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
   const [encerrar, setEncerrar] = useState(null);
   const [descer, setDescer] = useState(null); // entressafra: descer um degrau
   const [busca, setBusca] = useState("");
+  // Detalhe do produto (Evolução, portões, checklist…) pode ser minimizado — lembrado no navegador.
+  const [detalheRecolhido, setDetalheRecolhido] = useLembrado("ohra:rampa:detalhe-recolhido", "0");
   const [verRegras, setVerRegras] = useState(false);
   const [acimaConfirma, setAcimaConfirma] = useState(null);
   const [alvoAjuste, setAlvoAjuste] = useState(null); // linha com "alvo mudou" esperando confirmação // { tipo: "testar"|"voltar"|"aprovar", linha, preco }
@@ -534,7 +537,10 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
                 {linhasVis.map((l) => {
                   const e = l.est;
                   return (
-                    <tr key={l.r.id} className={`linha-clicavel${sel?.r.id === l.r.id ? " linha-atual" : ""}`} onClick={() => setSelId(l.r.id)}>
+                    <tr key={l.r.id} className={`linha-clicavel${sel?.r.id === l.r.id ? " linha-atual" : ""}`} onClick={() => {
+                        setSelId(l.r.id);
+                        if (detalheRecolhido === "1" && sel?.r.id !== l.r.id) setDetalheRecolhido("0");
+                      }}>
                       <td className="td-com-saude">
                         <PontoSaude estado={saudeRampa(e, pendDe(l))} />
                         <b>{l.produto.nome}</b>
@@ -637,6 +643,8 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
       {sel && (
         <Detalhe
           l={sel}
+          recolhido={detalheRecolhido === "1"}
+          onAlternar={() => setDetalheRecolhido(detalheRecolhido === "1" ? "0" : "1")}
           anuncio={anuncio}
           regras={regras}
           onMudar={(dir) => setMudar({ linha: sel, dir })}
@@ -1013,7 +1021,7 @@ function CronogramaSazonal({ e, onDescer }) {
   );
 }
 
-function Detalhe({ l, anuncio, regras, onMudar, onEditar, onRefazer, onDescer, onAjustarDegrau, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo, adsLinha, onVerAds }) {
+function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, onEditar, onRefazer, onDescer, onAjustarDegrau, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo, adsLinha, onVerAds }) {
   const e = l.est;
   const noAlvo = e.noAlvo;
   const [orcEdit, setOrcEdit] = useState("");
@@ -1027,9 +1035,12 @@ function Detalhe({ l, anuncio, regras, onMudar, onEditar, onRefazer, onDescer, o
   const roasPos = (v) => Math.max(2, Math.min(98, (v / Math.max(e.roasMin * 2, (e.roas || 0) * 1.2, 1)) * 100));
 
   return (
-    <div className="panel">
+    <div className={`panel${recolhido ? " detalhe-recolhido" : ""}`}>
       <h3 className="section-title">
         <span>
+          <button type="button" className="btn-recolher" onClick={onAlternar} title={recolhido ? "Mostrar o detalhe (evolução, portões, checklist)" : "Minimizar o detalhe pra economizar espaço"} aria-expanded={!recolhido}>
+            {recolhido ? "▸" : "▾"}
+          </button>
           {l.produto.nome} <CanalTag canal={l.canal} />
           <span className="h3-contagem">
             degrau {e.i + 1} de {e.degraus.length} desde {dataBR(l.r.desde)} ({e.dias} dia{e.dias === 1 ? "" : "s"}) · {e.vendasTotal} vendas no total{e.conhecidosTotal > 0 ? ` (${e.conhecidosTotal} de conhecidos)` : ""}
