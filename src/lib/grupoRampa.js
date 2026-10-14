@@ -91,7 +91,8 @@ export function precosDoDegrau({ ops, pct, canal, itens, produtos, kits, publica
   const f = num(pct) / 100;
   const linhas = ops.map((o) => {
     const { desconto } = descontoDoItem(o.item.id, canal, { itens, produtos, kits });
-    const fixo = o.vitrine ? null : riscadoFixoDe(o.item.id, canal.id, publicacoes);
+    // Riscado FIXO também na vitrine: a opção é o mesmo item × canal marcado na Anunciar.
+    const fixo = riscadoFixoDe(o.item.id, canal.id, publicacoes);
     const riscado = fixo || calcularAnuncio(o.base, desconto)?.original || o.base;
     return { ...o, desconto, fixo, riscado };
   });
