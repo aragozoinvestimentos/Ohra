@@ -583,7 +583,8 @@ export default function Publicar({ onToast, onSub }) {
                             </span>
                             {o.vitrine && (
                               <span className="sub" style={{ color: "var(--st-decisao)" }}>
-                                vitrine em {canais.find((c) => c.id === o.vitrine.canal_id)?.nome || "canal"}: neste anúncio o cliente paga {BRL(o.vitrine.preco)} (veja original e promo na 3º Ficha) — o ✓/↻ ao lado segue o preço salvo do item
+                                vitrine em {canais.find((c) => c.id === o.vitrine.canal_id)?.nome || "canal"}: neste anúncio o cliente paga {BRL(rampaMapa.get(`g:${b.g.id}|${b.ops.indexOf(b.ops.find((x) => x.o === o))}|${o.vitrine.canal_id}`)?.clientePaga ?? o.vitrine.preco)}
+                                {rampaMapa.get(`g:${b.g.id}|${b.ops.indexOf(b.ops.find((x) => x.o === o))}|${o.vitrine.canal_id}`) ? " (rampa do anúncio)" : ""}
                               </span>
                             )}
                           </td>

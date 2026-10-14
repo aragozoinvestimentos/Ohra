@@ -195,6 +195,9 @@ export function mapaAnuncioGrupos({ rampasGrupo, grupos, canais, itens, produtos
       const linha = { ...l.an, itemId: l.itemId, nome: l.rotulo, lucro: l.lucro, acima: pct > 100, degrau: l.real, alvo: l.base, grupo: grupo.nome, grupoId: grupo.id, pct };
       const chave = l.vitrine ? `g:${grupo.id}|${l.idx}|${canal.id}` : `${l.itemId}|${canal.id}`;
       if (!out.has(chave)) out.set(chave, linha);
+      // Opção vitrine: o item sozinho (linha solta na Anunciar) segue o MESMO
+      // preço do anúncio enquanto ele está em rampa — o anúncio inteiro decide.
+      if (l.vitrine && !out.has(`${l.itemId}|${canal.id}`)) out.set(`${l.itemId}|${canal.id}`, linha);
     }
   }
   return out;
