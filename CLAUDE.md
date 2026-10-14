@@ -256,6 +256,27 @@ Item do catálogo tem `pecas` (produto = 1; variação = quantidade; kit = soma 
 - **Espaçamento compacto** (out/2026, aprovado pelo Gustavo pela prévia): conteúdo 12/20, painel 10/14 (faixa do título 8/14), entre painéis 10, células 5/10, KPI 8/12 com número 20px, campos 6, sub-abas/KPIs/topo 10 de margem. Não voltar ao espaçamento largo.
 - **Visual**: KPIs com rótulo discreto em caixa alta e número forte; margem boa só com ponto verde (atenção/prejuízo continuam coloridos); estados vazios com borda tracejada; números tabulares; transições curtas (respeita reduced-motion).
 
+## Plano combinado em 14/10/2026 (Ads, ROAS e anúncio com vários itens) — A IMPLEMENTAR, nesta ordem
+
+**Bloco 1 — Ads do anúncio com vários itens + ROAS** (SQL v54 pra `ads_periodos` aceitar item "grupo"):
+- Anúncio com vários itens = UMA linha no Ads ("Anúncio: Kit Natal 01"); os kits/produtos que só existem dentro do grupo (sem anúncio próprio) saem da lista do Ads; equilíbrio do anúncio = ponderado pelas vendas de cada opção ("Qual opção vende"), sem vendas = a opção de pior equilíbrio; CSV do Shopee Ads e "Atualizar andamento" caem nessa linha (o ID do anúncio já é reconhecido por `cruzarGrupos`).
+- "Empate" vira **"ROAS de equilíbrio"** no app inteiro (= preço ÷ lucro antes do Ads, preço de AGORA); retorno = ROAS ÷ equilíbrio, mostrado como "cada R$ 1 investido voltou R$ X de lucro" (Ads é investimento — decisão do Gustavo).
+- Escada pelo retorno (só com a Shopee gastando o orçamento, dentro do teto da loja, com "consegue produzir?"): < 1× → as 3 saídas abaixo · 1–1,2× manter · 1,2–2× +20% · 2–3× +50% · ≥ 3× dobrar (R$10 → 12 / 15 / 20).
+- Abaixo do equilíbrio, 3 saídas realistas: muitos cliques sem venda → arrumar o anúncio pelo funil (título/foto/página); já no mínimo de R$ 10/dia → subir o ROAS alvo (ou pausar); acima do mínimo → reduzir o orçamento. Não gasta o orçamento → baixar o ROAS alvo (ROAS alvo baixo = Shopee mostra pra mais gente; alto = mais seletiva, menos alcance).
+- Meta sugerida = equilíbrio × 1,3; aviso "meta alta pra começar — comece com X" no "+ Novo período" e no período ligado sem ajuste quando meta > 2× o equilíbrio (botão "Registrar ajuste: meta X").
+
+**Bloco 2 — Ritmo ao vivo:**
+- Atualização parcial (andamento) passa a CONTAR nas decisões depois do aprendizado (dado mais recente vale); decisões no mínimo a cada **4 dias** depois de cada ajuste (7 dias de aprendizado no início continuam), pra todos (não só sazonal; sazonal mantém a regra própria mais agressiva).
+- Constância: média de vendas/dia dos últimos 3 dias vs a anterior; caiu > 30% com retorno ≥ 1,2× → sugerir aumentar; subiu muito e a produção não acompanha → segurar; nunca reagir a 1 dia isolado.
+- Início: UM item "Atualizar o andamento do Ads — último envio há N dias" quando o envio mais antigo dos itens com Ads ligado tiver > 3 dias.
+- Importar CSV do Ads: período encerrado no app com gasto depois do fim → perguntar "estender o fim até dd/mm?"; gasto sem período → perguntar "criar período a partir de dd/mm?" (só com o Sim).
+
+**Bloco 3 — Rampa do anúncio inteiro:**
+- Rampa pra anúncio com vários itens (degraus em % do preço salvo de cada opção: ex. 90 → 95 → 100 → +5%), todas as opções sobem juntas só pela promo (riscado fixo), vitrine respeitando o 4×; portões pelas vendas/avaliações do anúncio (importação); Natal = lógica sazonal.
+- **Refletir na 5º Anunciar**: cada subida gera o ↻ "o que trocar" em cada opção pro Gustavo dar o ✓ depois de alterar na plataforma.
+- Produtos que só existem dentro do grupo saem dos avisos individuais de rampa/Ads.
+- **Ao terminar, avisar o Gustavo** pra ele encerrar (× no Detalhe) as rampas individuais de Letreiro, Suporte de Guardanapos e Tigela Árvore de Natal na Shopee (ele autorizou; ele mesmo encerra no app — nunca apagar dado real direto).
+
 ## Pendências combinadas com o Gustavo (não esquecer)
 
 - **Futuro (não agora)**: aba Importar vendas — ler o relatório exportado da Olist (Gustavo vai mandar o modelo) → vendas por item/canal/quantidade (Ranking real, kits mais vendidos, Fluxo de Caixa). Data de conferência das taxas: Gustavo acha desnecessário por enquanto.
