@@ -389,3 +389,55 @@ export function adsPorItemApp(relatorios, itensApp) {
   const zerados = itensApp.filter((it) => !porChave[it.chave] && skusConhecidos.has(normSku(it.sku))).map((it) => it.chave);
   return { periodo: ads.periodo, porChave, zerados, adsSemPar, avisos };
 }
+
+// ---- Anúncio com vários itens (3º Ficha → anuncios_grupo) ----
+// O anúncio do kit tem SKU principal próprio; cada opção da Shopee tem o SKU
+// que a Ficha gerou (SKU do item + sufixo da opção + sufixo da cor). Aqui o
+// anúncio é achado pelas VARIAÇÕES: o anúncio do relatório cujas variações
+// batem com mais opções do grupo (≥ 2, ou a única se o grupo tiver 1).
+// grupos = [{ id, nome, opcoes: [{ idx, skus: [SKU…] }] }]
+// → { porGrupo: { id: { itemId, nomeAnuncio, impressoes, cliques, pedidos,
+//      unidades, porOpcao: { idx: unidades }, semOpcao: [{sku, unidades}], ads } },
+//    idsUsados: Set }
+export function cruzarGrupos(relatorios, grupos) {
+  const desemp = relatorios.find((r) => r.tipo === "desempenho") || null;
+  const ads = relatorios.find((r) => r.tipo === "ads") || null;
+  const porGrupo = {};
+  const idsUsados = new Set();
+  if (!desemp) return { porGrupo, idsUsados };
+  for (const g of grupos || []) {
+    const skuOpcao = new Map();
+    for (const o of g.opcoes) for (const s of o.skus) if (s) skuOpcao.set(normSku(s), o.idx);
+    if (!skuOpcao.size) continue;
+    const minimo = Math.min(2, g.opcoes.length);
+    let melhor = null;
+    for (const it of desemp.itens) {
+      if (idsUsados.has(it.itemId)) continue;
+      const opcoes = new Set(it.variacoes.map((v) => skuOpcao.get(v.sku)).filter((x) => x != null));
+      if (opcoes.size >= minimo && (!melhor || opcoes.size > melhor.n)) melhor = { it, n: opcoes.size };
+    }
+    if (!melhor) continue;
+    const it = melhor.it;
+    idsUsados.add(it.itemId);
+    const porOpcao = {};
+    const semOpcao = [];
+    for (const v of it.variacoes) {
+      const idx = skuOpcao.get(v.sku);
+      if (idx != null) porOpcao[idx] = (porOpcao[idx] || 0) + (v.unidades || 0);
+      else if (v.unidades > 0) semOpcao.push({ sku: v.sku || v.nome, unidades: v.unidades });
+    }
+    const a = ads?.porItem.get(it.itemId) || null;
+    porGrupo[g.id] = {
+      itemId: it.itemId,
+      nomeAnuncio: it.nome,
+      impressoes: it.impressoes,
+      cliques: it.cliques,
+      pedidos: it.pedidos,
+      unidades: it.unidades,
+      porOpcao,
+      semOpcao,
+      ads: a ? { gasto: a.gasto, cliques: a.cliques, vendas: a.vendas } : null,
+    };
+  }
+  return { porGrupo, idsUsados };
+}

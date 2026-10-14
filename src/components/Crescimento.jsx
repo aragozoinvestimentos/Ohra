@@ -43,7 +43,11 @@ import { chaveSemanaRampa, periodoEmAberto, somarDiasIso, ultimoRegistroAf, ulti
 import Estado, { PontoSaude } from "./Estado.jsx";
 import { estadoSugestaoRampa, saudeRampa } from "../lib/estados.js";
 import { useRankingData } from "../hooks/useRankingData.js";
-import { cruzarRelatorios, lembrarIdsShopee, lerRelatorio, normSku, textoMistura } from "../lib/relatorioShopee.js";
+import { cruzarGrupos, cruzarRelatorios, lembrarIdsShopee, lerRelatorio, normSku, textoMistura } from "../lib/relatorioShopee.js";
+import { useEscada } from "../hooks/useEscada.js";
+import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
+import { recarregarVendasOrganicas, useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
+import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
 import { andamentoParaSemana } from "../lib/ads.js";
 
 const num = (v) => {
@@ -2099,6 +2103,14 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
   const { produtos: catProdutos, kits: catKits } = useRankingData();
   const [importado, setImportado] = useState(null);
   const [lendo, setLendo] = useState(false);
+  // Anúncio com vários itens (3º Ficha): vendas separadas por opção pelo SKU
+  // das variações → vendas_organicas (SÓ financeiro; não conta pra rampa).
+  const esc = useEscada();
+  const { grupos } = useAnunciosGrupo();
+  const vendasOrg = useVendasOrganicas();
+  const [vendasGrupo, setVendasGrupo] = useState({}); // { grupoId: { canal, periodo, anuncio, linhas: [{ idx, rotulo, item, preco, unidades }] } }
+  const setUnidGrupo = (gid, idx) => (e) =>
+    setVendasGrupo((p) => ({ ...p, [gid]: { ...p[gid], linhas: p[gid].linhas.map((x) => (x.idx === idx ? { ...x, unidades: e.target.value } : x)) } }));
   const alternarFunil = (id) =>
     setFunilAberto((s) => {
       const n = new Set(s);
@@ -2132,6 +2144,39 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
         ...soAds.filter((x) => ehShopee(x.canal)).map((x) => ({ chave: x.chave, sku: x.item.sku, tipo: x.tipo })),
       ];
       const res = cruzarRelatorios(lidos, itensApp);
+      // Anúncios com vários itens: SKUs de cada opção (× cor) como a Ficha gerou.
+      const canalShopee = (esc.canais || []).find((c) => c.tipo === "shopee") || null;
+      const fichas = canalShopee
+        ? grupos
+            .map((g) => ({ g, ficha: fichaDoGrupo({ grupo: g, canal: canalShopee, itens: esc.itens, precos: esc.precos, produtos: esc.produtos, kits: esc.kits, mapaRampa: esc.mapaRampa, publicacoes: esc.publicacoesCanal, clientePagaHoje: esc.clientePagaHoje }) }))
+            .filter((x) => x.ficha)
+        : [];
+      const rg = cruzarGrupos(
+        lidos,
+        fichas.map(({ g, ficha }) => ({
+          id: g.id,
+          nome: g.nome,
+          opcoes: ficha.opcoes.map((o, idx) => ({ idx, skus: ficha.linhas.filter((l) => l.opcao === o).map((l) => l.sku) })),
+        }))
+      );
+      const novasGrupo = {};
+      for (const { g, ficha } of fichas) {
+        const r = rg.porGrupo[g.id];
+        if (!r) continue;
+        novasGrupo[g.id] = {
+          canal: canalShopee,
+          grupo: g,
+          periodo: res.periodo,
+          anuncio: r,
+          linhas: ficha.opcoes.map((o, idx) => {
+            const l = ficha.linhas.find((x) => x.opcao === o);
+            return { idx, rotulo: l?.rotulo || o.rotulo, item: l?.item || null, preco: l?.an ? Number(l.an.real ?? l.an.clientePaga) : null, vitrine: !!l?.vitrine, unidades: String(r.porOpcao[idx] || 0) };
+          }),
+        };
+      }
+      setVendasGrupo(novasGrupo);
+      res.semPar = res.semPar.filter((i) => !rg.idsUsados.has(i.itemId));
+      res.adsSemPar = res.adsSemPar.filter((a) => !rg.idsUsados.has(a.itemId));
       const marcados = new Set();
       const novaData = res.periodo?.ate ? somarDiasIso(res.periodo.ate, 1) : null;
       setF((prev) => {
@@ -2272,7 +2317,35 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
         parceiro_id: null,
       });
     }
-    if (!rampaSalvar.length && !afSalvar.length) return onToast?.("Preencha pelo menos um item");
+    // Vendas do anúncio com vários itens → vendas_organicas (SÓ financeiro). O
+    // mesmo anúncio × período já importado não é gravado de novo.
+    const grupoSalvar = [];
+    const grupoRepetido = [];
+    for (const vg of Object.values(vendasGrupo)) {
+      const per = vg.periodo;
+      if (!per?.de || !per?.ate) continue;
+      if ((vendasOrg.registros || []).some((r) => r.grupo_id === vg.grupo.id && String(r.data).slice(0, 10) === per.ate && String(r.periodo_inicio || "").slice(0, 10) === per.de)) {
+        grupoRepetido.push(vg.grupo.nome);
+        continue;
+      }
+      for (const x of vg.linhas) {
+        const u = Math.round(num(x.unidades));
+        if (!(u > 0) || !x.item || !(x.preco > 0)) continue;
+        grupoSalvar.push({
+          loja_id: lojaId || null,
+          item_tipo: x.item.id.startsWith("k:") ? "kit" : x.item.id.startsWith("v:") ? "variacao" : "produto",
+          item_id: x.item.id.slice(2),
+          canal_id: vg.canal.id,
+          periodo_inicio: per.de,
+          data: per.ate,
+          unidades: u,
+          preco: Math.round(x.preco * 100) / 100,
+          observacao: `Anúncio “${vg.grupo.nome}” · ${x.rotulo} · importado da Shopee`,
+          grupo_id: vg.grupo.id,
+        });
+      }
+    }
+    if (!rampaSalvar.length && !afSalvar.length && !grupoSalvar.length) return onToast?.(grupoRepetido.length ? `Vendas de “${grupoRepetido.join(", ")}” desse período já foram registradas` : "Preencha pelo menos um item");
     if ([...rampaSalvar, ...afSalvar].some((g) => g.periodo_inicio && g.periodo_inicio >= g.data)) return onToast?.("Período inválido: o “De” precisa ser antes do “Até”");
     const semAf = afSalvar.find((g) => g.vendas_total != null && g.vendas > g.vendas_total);
     if (semAf) return onToast?.("Vendas via afiliado não podem passar das vendas da semana");
@@ -2322,6 +2395,20 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
         return onToast?.(/afiliado_registros|schema cache|does not exist/.test(error.message) ? "Falta rodar o supabase/schema_v35.sql no Supabase (afiliados)" : `Não foi possível salvar o afiliado: ${error.message}`);
       }
     }
+    let avisoGrupo = "";
+    if (grupoSalvar.length) {
+      let r = await supabase.from("vendas_organicas").insert(grupoSalvar);
+      if (r.error && /grupo_id/.test(r.error.message)) {
+        r = await supabase.from("vendas_organicas").insert(grupoSalvar.map(({ grupo_id: _g, ...x }) => x));
+        if (!r.error) avisoGrupo = " · vendas do anúncio do kit salvas sem o vínculo do anúncio — falta rodar o supabase/schema_v53.sql";
+      }
+      if (r.error) avisoGrupo = /vendas_organicas|schema cache|does not exist/.test(r.error.message) ? " · vendas do anúncio do kit NÃO salvas: falta rodar o supabase/schema_v52.sql" : ` · vendas do anúncio do kit NÃO salvas: ${r.error.message}`;
+      else {
+        if (!avisoGrupo) avisoGrupo = ` · anúncio com vários itens: ${grupoSalvar.reduce((t, g) => t + g.unidades, 0)} un. em Vendas do mês`;
+        recarregarVendasOrganicas();
+      }
+    }
+    if (grupoRepetido.length) avisoGrupo += ` · “${grupoRepetido.join(", ")}” já tinha esse período (não gravado de novo)`;
     setSalvando(false);
     // Recarrega rampas/afiliados já (semana pendente some no Início e no menu sem esperar o realtime).
     window.dispatchEvent(new Event("focus"));
@@ -2335,7 +2422,9 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
     onToast?.(
       faltou.size
         ? `Semana registrada (${n} item${n > 1 ? "s" : ""}) sem ${[...faltou].map((c) => (c === "conhecidos" ? "o campo Conhecidos (schema_v39)" : "o período (schema_v40)")).join(" e ")} — falta rodar o SQL no Supabase`
-        : `Semana registrada (${n} item${n > 1 ? "s" : ""})`
+        : n
+          ? `Semana registrada (${n} item${n > 1 ? "s" : ""})${avisoGrupo}`
+          : `Vendas registradas${avisoGrupo}`
     );
     onClose();
   }
@@ -2568,6 +2657,56 @@ function RegistrarSemanaDialog({ linhas, linhasAf, linhasAds, af, onToast, onClo
           </div>
         </div>
       ))}
+      {Object.values(vendasGrupo).map((vg) => {
+        const a = vg.anuncio;
+        const total = vg.linhas.reduce((t, x) => t + num(x.unidades), 0);
+        return (
+          <div key={vg.grupo.id} className="bloco-semana">
+            <div className="bloco-semana-titulo">
+              <b>Anúncio: {vg.grupo.nome}</b> <CanalTag canal={vg.canal} /> <span className="muted-cel">vários itens · {vg.periodo ? `${diaMes(vg.periodo.de)} a ${diaMes(vg.periodo.ate)}` : ""}</span>
+            </div>
+            <div className="importar-linha">
+              📄 do relatório: {a.unidades ?? total} venda{(a.unidades ?? total) === 1 ? "" : "s"}
+              {a.impressoes != null ? ` · ${a.impressoes} impressões · ${a.cliques ?? 0} cliques · ${a.pedidos ?? 0} pedidos` : ""}
+              {a.ads ? ` · Ads ${BRL(a.ads.gasto)} (${a.ads.vendas} vendas via Ads — não entra nas contas ainda)` : ""}
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Opção</th>
+                    <th className="num">Preço</th>
+                    <th className="num">Vendas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vg.linhas.map((x) => (
+                    <tr key={x.idx}>
+                      <td>
+                        {x.rotulo}
+                        <div className="muted-cel">{x.item ? x.item.nome : "item não encontrado"}</div>
+                      </td>
+                      <td className="num">
+                        {x.preco ? BRL(x.preco) : "—"}
+                        {x.vitrine && <div className="muted-cel">vitrine</div>}
+                      </td>
+                      <td className="num">
+                        <input type="number" min="0" style={{ width: 80 }} value={x.unidades} onChange={setUnidGrupo(vg.grupo.id, x.idx)} className="campo-importado" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {a.semOpcao.length > 0 && (
+              <div className="importar-aviso">⚠ Variações do anúncio com SKU que não bate com nenhuma opção: {a.semOpcao.map((v) => `${v.sku} (${v.unidades})`).join(", ")} — confira os SKUs na Shopee (copie da 3º Ficha)</div>
+            )}
+            <p className="hint" style={{ margin: "6px 0 0" }}>
+              Entra só no dinheiro (Fluxo de Caixa → Vendas do mês, cada opção no preço dela). Não conta pros portões da rampa dos produtos — a rampa mede o anúncio de cada item sozinho.
+            </p>
+          </div>
+        );
+      })}
     </EditarDialog>
   );
 }
