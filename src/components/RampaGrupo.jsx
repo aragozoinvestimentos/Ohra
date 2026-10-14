@@ -1,9 +1,9 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
 import { canalDireto } from "../lib/canais.js";
-import { opcoesNoCanal, PASSO_GRUPO, PCT_INICIO_GRUPO, precosDoDegrau, sugerirDegrausGrupo } from "../lib/grupoRampa.js";
+import { EVENTO_INICIAR_GRUPO, opcoesNoCanal, PASSO_GRUPO, PCT_INICIO_GRUPO, precosDoDegrau, sugerirDegrausGrupo } from "../lib/grupoRampa.js";
 import { estadoSugestaoRampa } from "../lib/estados.js";
 import { irParaAba } from "../lib/navegar.js";
 import CanalTag from "./CanalTag.jsx";
@@ -32,6 +32,12 @@ export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, s
   const [mudar, setMudar] = useState(null); // { l, novo (índice), tipo }
   const [encerrar, setEncerrar] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  // "+ Iniciar rampa" (topo) e o diálogo da rampa de produto abrem este diálogo.
+  useEffect(() => {
+    const abrir = () => setIniciar(true);
+    window.addEventListener(EVENTO_INICIAR_GRUPO, abrir);
+    return () => window.removeEventListener(EVENTO_INICIAR_GRUPO, abrir);
+  }, []);
   const aberta = linhasGrupo.find((l) => l.r.id === selId) || null;
   const grupos = dados.gruposAnuncio || [];
   if (!grupos.length && !linhasGrupo.length) return null;

@@ -36,6 +36,7 @@ import { PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
 import { encerrarPeriodoAds, iniciarPeriodoAds } from "../lib/adsAcoes.js";
 import OndeSeDecide from "./OndeSeDecide.jsx";
 import RampaGrupo from "./RampaGrupo.jsx";
+import { iniciarRampaGrupo } from "../lib/grupoRampa.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { pegarPedido } from "../lib/navegar.js";
 import { useSemanaPendente } from "../hooks/useSemanaPendente.js";
@@ -451,6 +452,11 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
         <button type="button" className="btn" onClick={() => setIniciar({})}>
           + Iniciar rampa
         </button>
+        {(dados.gruposAnuncio || []).length > 0 && (
+          <button type="button" className="btn" onClick={iniciarRampaGrupo} title="Rampa do anúncio com vários itens (ex.: Kit Natal 01) — todas as opções sobem juntas">
+            + Rampa de anúncio com vários itens
+          </button>
+        )}
         <button type="button" className="btn primary" onClick={onRegistrar} disabled={!podeRegistrar}>
           Registrar semana
         </button>
@@ -1870,6 +1876,22 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
       )}
       {!editar && !refazer && (
         <>
+          {(dados.gruposAnuncio || []).length > 0 && (
+            <div className="alerta alerta-neutro" style={{ marginTop: 0 }}>
+              <b>Anúncio com vários itens (ex.: {dados.gruposAnuncio[0].nome})?</b>
+              Ele não aparece aqui: a rampa dele é do anúncio inteiro, com todas as opções subindo juntas.{" "}
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  onClose(null);
+                  iniciarRampaGrupo();
+                }}
+              >
+                Iniciar rampa do anúncio →
+              </button>
+            </div>
+          )}
           <div className="field">
             <label>Produto (só os que têm preço salvo em algum canal)</label>
             <BuscaItem

@@ -25,6 +25,11 @@ const num = (v) => {
 const cent = (v) => Math.round(v * 100) / 100;
 const centavoAcima = (x) => Math.ceil(x * 100 - 1e-6) / 100;
 
+// "+ Rampa de anúncio com vários itens" (topo do Crescimento e o diálogo da
+// rampa de produto) abre o diálogo de RampaGrupo.jsx por este evento.
+export const EVENTO_INICIAR_GRUPO = "ohra:iniciar-rampa-grupo";
+export const iniciarRampaGrupo = () => window.dispatchEvent(new Event(EVENTO_INICIAR_GRUPO));
+
 export const PCT_INICIO_GRUPO = 90; // degrau inicial sugerido (% do preço salvo)
 export const PASSO_GRUPO = 5; // +5 pontos por degrau
 
