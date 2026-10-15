@@ -18,6 +18,7 @@ import EditarDialog from "./EditarDialog.jsx";
 import { EncerrarAdsDialog, NAO_RECOMENDA, PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
 import { ajustarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import { AgoraRampa } from "./RampaAgora.jsx";
 
 // Crescimento → Ads (schema v44): avaliação semanal de Ads por produto/kit ×
 // canal — a decisão vem SÓ de lib/ads.js (avaliarAds); aqui só mostra e grava
@@ -38,6 +39,52 @@ const somarDias = (iso, n) => {
 const virg = (v) => (v == null || v === "" ? "" : String(v).replace(".", ","));
 const ORDEM = { resolver: 0, atencao: 1, oportunidade: 2, decisao: 3, info: 4, ok: 5 };
 
+// Lista em seções (out/2026, mesmo padrão da Rampa): o que fazer vem SÓ do
+// avaliarAds — aqui só escolhe a seção, o botão da linha e a próxima decisão.
+const SECOES_ADS = [
+  ["fazer", "Pra fazer agora"],
+  ["oport", "Oportunidade"],
+  ["acomp", "Acompanhando"],
+  ["sem", "Sem Ads"],
+];
+function secaoAds(av) {
+  if (["resolver", "atencao"].includes(av.estado) || av.avisoMeta) return "fazer";
+  if (av.estado === "oportunidade") return "oport";
+  return av.ativo ? "acomp" : "sem";
+}
+const PAUSAR = new Set(["pausar", "pausar-revisar", "pausar-corte", "inviavel-ativo"]);
+/** Ação da linha: { k: novo|ajuste|encerrar|abrir, botao, ajuste?, depois } */
+function acaoDoAds(av) {
+  const vals = av.ativo ? valoresAtuais(av.ativo) : null;
+  const n = av.numeros || {};
+  const DEPOIS_AJ = "Depois de mudar na Shopee: registre aqui — o app espera uns dias pra decidir de novo.";
+  if (av.ativo) {
+    if ((av.chave === "aumentar" || av.chave === "reduzir") && av.novoOrcamento)
+      return {
+        k: "ajuste",
+        botao: `${av.chave === "aumentar" ? "Aumentei" : "Reduzi"} pra ${BRL(av.novoOrcamento)}/dia`,
+        ajuste: { orcamento: av.novoOrcamento, meta: vals.meta, motivo: av.chave === "aumentar" ? `${av.titulo.split(" →")[0].toLowerCase()} (retorno ${um(n.retorno)}×)` : "reduzi: ROAS abaixo do equilíbrio" },
+        depois: DEPOIS_AJ,
+      };
+    if (av.chave === "subir-meta") return { k: "ajuste", botao: `Subi a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "subi a meta: ROAS abaixo do equilíbrio no mínimo diário" }, depois: DEPOIS_AJ };
+    if (av.chave === "meta-alta") return { k: "ajuste", botao: `Baixei a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "baixei a meta: a Shopee gastou pouco" }, depois: DEPOIS_AJ };
+    if (av.avisoMeta) return { k: "ajuste", botao: `Registrar ajuste: meta ${um(av.avisoMeta.sugerida)}`, ajuste: { orcamento: vals.orcamento, meta: av.avisoMeta.sugerida, motivo: "meta alta pra começar (equilíbrio × 1,3)" }, depois: DEPOIS_AJ };
+    if (PAUSAR.has(av.chave)) return { k: "encerrar", botao: "Pausei — encerrar período", depois: "Depois de pausar na Shopee: encerre o período aqui (o histórico fica guardado)." };
+    return { k: "abrir", botao: null };
+  }
+  if (["pode", "ligar-sazonal"].includes(av.chave)) return { k: "novo", botao: "+ Novo período", depois: "Depois de ligar na Shopee: registre o período aqui com o orçamento e a meta que usou." };
+  if (av.chave === "arrumar") return { k: "abrir", botao: null };
+  return { k: "abrir", botao: null };
+}
+function proximaAds(av, hoje) {
+  if (!av.ativo) return null;
+  if (av.decideEm) return { texto: `Decidir em ${dm(av.decideEm)}` };
+  if (av.ativo.tipo === "teste") return { texto: av.ativo.fim ? `Teste até ${dm(av.ativo.fim)}` : "Teste em andamento" };
+  const ult = av.ativo.parcial?.em ? String(av.ativo.parcial.em).slice(0, 10) : null;
+  if (!ult || diasEntre(ult, hoje) > 3) return { texto: ult ? `Atualizar o andamento (último ${dm(ult)})` : "Atualizar o andamento", atrasada: true };
+  return { texto: `Atualizar o andamento em ${dm(somarDias(ult, 3))}` };
+}
+
 function Situacao({ av, compacto }) {
   if (av.estado === "ok") return <span className={compacto ? "muted-cel" : undefined}>✓ {av.titulo}</span>;
   return <Estado tipo={av.estado}>{av.titulo}</Estado>;
@@ -50,6 +97,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   const [canalId, setCanalId] = useState(null);
   const canal = canaisComLinha.find((c) => c.id === canalId) || canaisComLinha.find((c) => c.tipo === "shopee") || canaisComLinha[0] || null;
   const [soLigados, setSoLigados] = useState(false);
+  const [filtro, setFiltro] = useState("todos");
   const [aberta, setAberta] = useState(null);
   const [periodoDlg, setPeriodoDlg] = useState(null); // { linha }
   const [ajusteDlg, setAjusteDlg] = useState(null); // { linha, orcamento, meta }
@@ -62,11 +110,19 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   const linhas = useMemo(
     () =>
       linhasAds.linhas
-        .filter((l) => l.canal.id === canal?.id && (!soLigados || l.av.ativo))
+        .filter((l) => l.canal.id === canal?.id && (!soLigados || l.av.ativo) && (filtro === "todos" || secaoAds(l.av) === filtro))
         .sort((a, b) => (b.av.ativo ? 1 : 0) - (a.av.ativo ? 1 : 0) || ORDEM[a.av.estado] - ORDEM[b.av.estado] || a.item.nome.localeCompare(b.item.nome)),
-    [linhasAds, canal, soLigados]
+    [linhasAds, canal, soLigados, filtro]
   );
   const ligados = linhasAds.linhas.filter((l) => l.av.ativo).length;
+  const doCanal = linhasAds.linhas.filter((l) => l.canal.id === canal?.id);
+  const fazerLinha = (l) => {
+    const a = acaoDoAds(l.av);
+    if (a.k === "ajuste") setAjusteDlg({ linha: l, ...a.ajuste });
+    else if (a.k === "encerrar") setEncerrarDlg({ linha: l });
+    else if (a.k === "novo") setPeriodoDlg({ linha: l });
+    else setAberta(l.chave);
+  };
   const L = linhasAds.loja;
   const T = linhasAds.teto; // teto de Ads da loja (30 dias, tabela progressiva + metade do lucro)
   const [verTabela, setVerTabela] = useState(false);
@@ -235,6 +291,16 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
               ))}
             </select>
           )}
+          <div className="filtros-lista" role="group" aria-label="Filtrar a lista">
+            {[["todos", "Todos"], ...SECOES_ADS.map(([k, t]) => [k, k === "fazer" ? "Pra fazer" : t])]
+              .map(([k, rot]) => [k, rot, k === "todos" ? doCanal.length : doCanal.filter((l) => secaoAds(l.av) === k).length])
+              .filter(([k, , n]) => k === "todos" || n > 0)
+              .map(([k, rot, n]) => (
+                <button key={k} type="button" className={`filtro-btn${filtro === k ? " ativo" : ""}${k === "oport" ? " filtro-subir" : ""}`} onClick={() => setFiltro(k)}>
+                  {rot} <span className="filtro-n">{n}</span>
+                </button>
+              ))}
+          </div>
           <label className="check-inline">
             <input type="checkbox" checked={soLigados} onChange={(e) => setSoLigados(e.target.checked)} /> só com Ads ligado
           </label>
@@ -257,16 +323,30 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
               <thead>
                 <tr>
                   <th>Produto</th>
-                  <th>Situação</th>
+                  <th>O que fazer</th>
                   <th className="num">ROAS agora</th>
                   <th className="num">Equilíbrio</th>
                   <th className="num">Meta</th>
                   <th className="num">Orçamento/dia</th>
+                  <th>Próxima decisão</th>
                 </tr>
               </thead>
               <tbody>
-                {linhas.map((l) => {
+                {SECOES_ADS.map(([sec, tituloSec]) => {
+                  const doSec = linhas.filter((l) => secaoAds(l.av) === sec);
+                  if (!doSec.length) return null;
+                  return (
+                    <Fragment key={sec}>
+                      <tr className={`secao-lista secao-${sec === "oport" ? "subir" : sec}`}>
+                        <td colSpan={7}>
+                          {sec === "oport" ? "↑ " : sec === "fazer" ? "! " : ""}
+                          {tituloSec} <span className="filtro-n">{doSec.length}</span>
+                        </td>
+                      </tr>
+                {doSec.map((l) => {
                   const av = l.av;
+                  const ac = acaoDoAds(av);
+                  const prox = proximaAds(av, hoje);
                   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
                   const roasSemana = av.numeros?.roasSemana;
                   return (
@@ -287,7 +367,23 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                           </div>
                           {av.avisoMeta && <span className="chip-cel atencao">meta alta pra começar</span>}
                         </td>
-                        <td><Situacao av={av} compacto /></td>
+                        <td className="o-que-fazer">
+                          <div className="oqf">
+                            <Situacao av={av} compacto />
+                            {ac.botao && (
+                              <button
+                                type="button"
+                                className={`btn btn-mini ${av.estado === "oportunidade" ? "btn-verde" : ["resolver", "atencao"].includes(av.estado) || av.avisoMeta ? "primary" : ""}`}
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  fazerLinha(l);
+                                }}
+                              >
+                                {ac.botao}
+                              </button>
+                            )}
+                          </div>
+                        </td>
                         <td className="num" style={{ color: roasSemana == null || !av.empate ? undefined : roasSemana >= av.empate ? "var(--good)" : "var(--bad)" }}>
                           {um(roasSemana)}
                           {av.numeros?.retorno != null && <div className="sub-num">retorno {um(av.numeros.retorno)}×</div>}
@@ -295,12 +391,14 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                         <td className="num">{um(av.empate)}</td>
                         <td className="num">{vals?.meta ? um(vals.meta) : "—"}</td>
                         <td className="num">{vals?.orcamento ? BRL(vals.orcamento) : "—"}</td>
+                        <td>{prox ? <span className={prox.atrasada ? "prox-atrasada" : "muted-cel"}>{prox.texto}</span> : <span className="muted-cel">—</span>}</td>
                       </tr>
                       {aberta === l.chave && (
                         <tr className="linha-detalhe">
-                          <td colSpan={6}>
+                          <td colSpan={7}>
                             <Detalhe
                               l={l}
+                              onFazer={() => fazerLinha(l)}
                               regrasA={regrasA}
                               hoje={hoje}
                               onNovo={() => setPeriodoDlg({ linha: l })}
@@ -311,6 +409,9 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                           </td>
                         </tr>
                       )}
+                    </Fragment>
+                  );
+                })}
                     </Fragment>
                   );
                 })}
@@ -350,7 +451,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   );
 }
 
-function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) {
+function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, onFazer }) {
   const av = l.av;
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
@@ -363,10 +464,18 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
   const roasAnd = andamento && andamento.gasto > 0 ? (andamento.vendas * l.preco) / andamento.gasto : null;
   return (
     <div className="detalhe-cel ads-det">
-      <div className={`alerta alerta-${{ resolver: "bad", atencao: "warn", oportunidade: "good" }[av.estado] || "neutro"}`}>
-        <b>{av.titulo}</b>
-        {av.texto}
-      </div>
+      {(() => {
+        const ac = acaoDoAds(av);
+        const tipo = av.estado === "ok" ? "info" : av.estado;
+        const ROT = { resolver: "Resolver agora", atencao: "Atenção", oportunidade: "Oportunidade — mais lucro", decisao: "Decisão sua em andamento", info: "Nada a fazer agora" };
+        return (
+          <AgoraRampa
+            acao={{ tipo, rotulo: ROT[tipo], titulo: av.titulo, porque: av.texto, acao: ac.botao ? ac.k : null, botao: ac.botao, depois: ac.depois }}
+            proxima={proximaAds(av, hoje)}
+            onAcao={onFazer}
+          />
+        );
+      })()}
       {av.avisoMeta && (
         <div className="alerta alerta-warn">
           <b>Meta alta pra começar — comece com {um(av.avisoMeta.sugerida)}</b>
@@ -448,21 +557,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir }) 
       <div className="acoes-ads">
         {av.ativo ? (
           <>
-            {(av.chave === "aumentar" || av.chave === "reduzir") && av.novoOrcamento && (
-              <button type="button" className="btn btn-mini primary" onClick={() => onAjuste({ orcamento: av.novoOrcamento, meta: vals.meta, motivo: av.chave === "aumentar" ? `${av.titulo.split(" →")[0].toLowerCase()} (retorno ${um(n.retorno)}×)` : "reduzi: ROAS abaixo do equilíbrio" })}>
-                {av.chave === "aumentar" ? "Aumentei" : "Reduzi"} pra {BRL(av.novoOrcamento)}/dia
-              </button>
-            )}
-            {av.chave === "subir-meta" && (
-              <button type="button" className="btn btn-mini primary" onClick={() => onAjuste({ orcamento: vals.orcamento, meta: av.novaMeta, motivo: "subi a meta: ROAS abaixo do equilíbrio no mínimo diário" })}>
-                Subi a meta pra {um(av.novaMeta)}
-              </button>
-            )}
-            {av.chave === "meta-alta" && (
-              <button type="button" className="btn btn-mini primary" onClick={() => onAjuste({ orcamento: vals.orcamento, meta: av.novaMeta, motivo: "baixei a meta: a Shopee gastou pouco" })}>
-                Baixei a meta pra {um(av.novaMeta)}
-              </button>
-            )}
+            {/* Aumentei/Reduzi/Subi/Baixei a meta: botão do cartão "O que fazer agora" em cima. */}
             <button type="button" className="btn btn-mini" onClick={() => onAjuste({ orcamento: vals.orcamento, meta: vals.meta })}>
               Registrar ajuste
             </button>

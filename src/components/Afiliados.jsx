@@ -24,6 +24,7 @@ import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
 import { estadoSituacaoAfiliado, estadoSugestaoAfiliado } from "../lib/estados.js";
+import { AgoraRampa } from "./RampaAgora.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
@@ -42,7 +43,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
   const { lojaId } = useLoja();
   const { itens, canais } = dados;
   const { config, parceiros, registros, disponivel, carregando } = af;
-  const [filtro, setFiltro] = useState("relevantes");
+  const [filtro, setFiltro] = useState("todos");
   const [busca, setBusca] = useState("");
   const [editItem, setEditItem] = useState(null); // linha de comissão
   const [selAf, setSelAf] = useState(null); // linha com o detalhe aberto
@@ -63,7 +64,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
   const termos = normalizarTexto(busca).split(" ").filter(Boolean);
   const tabela = linhasAf.filter((l) => {
     if (filtro === "ativos" && !l.conf.ativo) return false;
-    if (filtro === "relevantes" && (l.situacao === "sem" || l.situacao === "apertado")) return false;
+    if (["fazer", "oport", "sem"].includes(filtro) && secaoAf(l) !== filtro) return false;
     if (termos.length) {
       const t = normalizarTexto(`${l.item.nome} ${l.item.sku || ""} ${l.canal.nome}`);
       if (!termos.every((x) => t.includes(x))) return false;
@@ -197,16 +198,20 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
         </h3>
         <div className="toolbar">
           <input type="text" placeholder="Buscar item ou canal…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-          <div className="subabas subabas-compacta">
+          <div className="filtros-lista" role="group" aria-label="Filtrar a lista">
             {[
-              ["relevantes", "Com margem"],
-              ["ativos", "Com afiliado"],
-              ["todos", "Todos"],
-            ].map(([k, label]) => (
-              <button key={k} type="button" className={`btn${filtro === k ? " primary" : ""}`} onClick={() => setFiltro(k)}>
-                {label}
-              </button>
-            ))}
+              ["todos", "Todos", linhasAf.length],
+              ["fazer", "Pra fazer", linhasAf.filter((l) => secaoAf(l) === "fazer").length],
+              ["oport", "Oportunidade", linhasAf.filter((l) => secaoAf(l) === "oport").length],
+              ["ativos", "Com afiliado", ativos.length],
+              ["sem", "Sem espaço", linhasAf.filter((l) => secaoAf(l) === "sem").length],
+            ]
+              .filter(([k, , n]) => k === "todos" || n > 0)
+              .map(([k, label, n]) => (
+                <button key={k} type="button" className={`filtro-btn${filtro === k ? " ativo" : ""}${k === "oport" ? " filtro-subir" : ""}`} onClick={() => setFiltro(k)}>
+                  {label} <span className="filtro-n">{n}</span>
+                </button>
+              ))}
           </div>
           <span className="toolbar-info">
             {tabela.length} de {linhasAf.length}
@@ -228,11 +233,22 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                   <th className="num">Preço</th>
                   <th className="num">Recomendada</th>
                   <th className="centro">Comissão atual</th>
-                  <th>Situação</th>
+                  <th>O que fazer</th>
                 </tr>
               </thead>
               <tbody>
-                {tabela.map((l) => (
+                {SECOES_AF.map(([sec, tituloSec]) => {
+                  const doSec = tabela.filter((l) => secaoAf(l) === sec);
+                  if (!doSec.length) return null;
+                  return (
+                    <Fragment key={sec}>
+                      <tr className={`secao-lista secao-${sec === "oport" ? "subir" : sec}`}>
+                        <td colSpan={6}>
+                          {sec === "oport" ? "↑ " : sec === "fazer" ? "! " : ""}
+                          {tituloSec} <span className="filtro-n">{doSec.length}</span>
+                        </td>
+                      </tr>
+                {doSec.map((l) => (
                   <Fragment key={l.chave}>
                   <tr className={`linha-clicavel${selAf === l.chave ? " linha-atual" : ""}`} onClick={() => setSelAf((x) => (x === l.chave ? null : l.chave))}>
                     <td>
@@ -266,8 +282,26 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                         <span className="muted-cel">—</span>
                       )}
                     </td>
-                    <td>
-                      <Situacao l={l} compacto />
+                    <td className="o-que-fazer">
+                      <div className="oqf">
+                        <Situacao l={l} compacto />
+                        {(() => {
+                          const a = acaoAf(l);
+                          return a.botao ? (
+                            <button
+                              type="button"
+                              className={`btn btn-mini ${a.verde ? "btn-verde" : "primary"}`}
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                if (a.usar != null) salvarItem(l, { ativo: true, comissao: a.usar }, `${l.item.nome}: comissão ${pct(a.usar)} neste item`);
+                                else setEditItem(l);
+                              }}
+                            >
+                              {a.botao}
+                            </button>
+                          ) : null;
+                        })()}
+                      </div>
                     </td>
                   </tr>
                   {selAf === l.chave && (
@@ -280,6 +314,18 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                               ×
                             </button>
                           </div>
+                          {(() => {
+                            const a = acaoAf(l);
+                            const tipo = estadoSituacaoAfiliado(l) || "info";
+                            const ROT = { resolver: "Resolver agora", atencao: "Atenção", oportunidade: "Oportunidade — mais vendas", decisao: "Decisão sua em andamento", info: "Nada a fazer agora" };
+                            return (
+                              <AgoraRampa
+                                acao={{ tipo, rotulo: ROT[tipo], titulo: a.titulo, porque: textoSituacao(l), acao: a.botao ? "x" : null, botao: a.botao, depois: a.depois }}
+                                proxima={l.conf.ativo ? { texto: "conferir as vendas via afiliado no Registrar semana" } : null}
+                                onAcao={() => (a.usar != null ? salvarItem(l, { ativo: true, comissao: a.usar }, `${l.item.nome}: comissão ${pct(a.usar)} neste item`) : setEditItem(l))}
+                              />
+                            );
+                          })()}
                           <div className="detalhe-cel-grade">
                             <div className="kv-cel">
                               <small>Lucro sem afiliado</small>
@@ -331,6 +377,9 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                   )}
                   </Fragment>
                 ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -574,6 +623,35 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
 }
 
 // Explicação da situação (detalhe da linha).
+// Lista em seções (out/2026, mesmo padrão da Rampa e do Ads) — a situação vem de lib/afiliados.js.
+const SECOES_AF = [
+  ["fazer", "Pra fazer agora"],
+  ["oport", "Oportunidade"],
+  ["acomp", "Acompanhando"],
+  ["sem", "Sem espaço pra comissão"],
+];
+function secaoAf(l) {
+  if (l.situacao === "acima" || l.situacao === "alta") return "fazer";
+  if (l.situacao === "pode") return "oport";
+  if (l.situacao === "sem" || l.situacao === "apertado" || !l.situacao) return l.conf.ativo ? "fazer" : "sem";
+  return "acomp";
+}
+/** Ação da linha/cartão: { titulo, botao, usar (% pra gravar direto) | null = abre o diálogo, verde, depois } */
+function acaoAf(l) {
+  const alvo = l.recomendada ?? (l.situacao === "acima" && l.max >= 0.01 ? l.max : null);
+  const DEPOIS = "Depois: configure o mesmo % no painel de afiliados do canal — aqui é só o acompanhamento.";
+  if (l.situacao === "acima" || l.situacao === "alta")
+    return alvo
+      ? { titulo: l.situacao === "acima" ? "Comissão acima da máxima" : "Comissão come sua margem", botao: `Usar ${pct(alvo)}`, usar: alvo, depois: DEPOIS }
+      : { titulo: "Comissão acima da máxima — tire da campanha", botao: "Mudar / desativar", usar: null, depois: DEPOIS };
+  if (l.situacao === "pode") return { titulo: `Pode ativar até ${pct(l.recomendada)}`, botao: "Ativar…", usar: null, verde: true, depois: DEPOIS };
+  if ((l.situacao === "sem" || l.situacao === "apertado" || !l.situacao) && l.conf.ativo) return { titulo: "Sem espaço pra comissão — tire da campanha", botao: "Mudar / desativar", usar: null, depois: DEPOIS };
+  if (l.situacao === "ok") return { titulo: "Comissão dentro da recomendada", botao: null };
+  if (l.situacao === "rampa") return { titulo: "Em rampa / crescimento: não usar ainda", botao: null };
+  if (l.situacao === "atracao") return { titulo: "Atração: só se quiser", botao: null };
+  return { titulo: "Sem espaço pra comissão neste preço", botao: null };
+}
+
 function textoSituacao(l) {
   const alvo = l.recomendada ?? (l.situacao === "acima" && l.max >= 0.01 ? l.max : null);
   switch (l.situacao) {

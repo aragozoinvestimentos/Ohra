@@ -369,7 +369,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
         depoisDeAjuste
           ? `Você mudou orçamento/meta em ${dm(refDecisao)}: espere até ${dm(somarDiasIso(refDecisao, gapDias))} pra decidir de novo (a Shopee se ajusta uns dias).`
           : `A plataforma ainda está aprendendo: não mexa na meta nem no orçamento até ${dm(somarDiasIso(refDecisao, gapDias))}. Atualize o andamento ou registre a semana normalmente.`,
-        { numeros }
+        { numeros, decideEm: somarDiasIso(refDecisao, gapDias) }
       );
     if (!empate || empate > regras.roasInviavel)
       return sitA("inviavel-ativo", "atencao", "Ads não se paga neste preço", empate ? `O ROAS de equilíbrio é ${um(empate)}: cada R$ 1 de Ads precisa trazer ${moeda(empate)} em vendas. Pause, a não ser que esteja comprando as primeiras vendas de propósito.` : "Sem lucro neste preço: cada venda via Ads aumenta o prejuízo. Pause.", { numeros });
