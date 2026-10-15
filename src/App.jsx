@@ -226,7 +226,9 @@ export default function App() {
   const [tab, setTab] = useState(loadTab);
   // Abas já abertas nesta sessão: só montam na primeira visita e depois
   // continuam montadas (escondidas) — o que você digitou não se perde.
-  const [visitadas, setVisitadas] = useState(() => new Set([tab]));
+  // O Início monta sempre (escondido): é ele que calcula as bolinhas do menu
+  // (marcas e urgentes) — sem isso, abrir o app direto noutra aba não as mostrava.
+  const [visitadas, setVisitadas] = useState(() => new Set([tab, "inicio"]));
   if (!visitadas.has(tab)) setVisitadas(new Set(visitadas).add(tab));
   const [configSub, setConfigSub] = useState("lojas");
   const [cadastrosSub] = useSubAba(SUB_CHAVE.cadastros, "catalogo");
