@@ -243,7 +243,11 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
     const quando = (d === 0 ? "hoje" : d === 1 ? "ontem" : `há ${d} dias`) + (d <= 1 ? ` às ${horaSP(u.criado_em)}` : "");
     return { t: d > limiteDias ? "velho" : "ok", txt: `${u.resumo || ""} · enviado ${quando}${d > limiteDias ? " — hora de atualizar" : ""}` };
   }
-  const Relat = ({ rel, nome, onde, limite, onArquivo, aceita = ".xls,.xlsx,.csv", multiplo = false }) => {
+  // Chamado como função (não como <Componente/>): definido dentro do render,
+  // um componente seria recriado a cada atualização e o <input type=file>
+  // remontado — a escolha do arquivo se perdia se a tela atualizasse com a
+  // janela de arquivos aberta (era preciso enviar 2 vezes).
+  const relat = ({ rel, nome, onde, limite, onArquivo, aceita = ".xls,.xlsx,.csv", multiplo = false }) => {
     const st = status(rel, limite);
     return (
       <div className="ana-relat">
@@ -334,15 +338,14 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
           <CanalTag tipo={p.tipo} nome={p.nome} /> <span className="dir">pedidos pela Olist{p.id === "shopee" ? " + relatórios de anúncio" : ""}</span>
         </h3>
         {aviso && <div className="ana-relat"><div className="ana-aviso-cfg">⚠ {aviso}</div></div>}
-        {canal && (
-          <Relat
-            rel={`pedidos:${p.id}`}
-            nome="Pedidos (Olist)"
-            limite={7}
-            onde={<>Olist → Vendas → Pedidos de venda → <b>E-commerce = {p.nome}</b> → período → Exportar</>}
-            onArquivo={(f) => enviarPedidos(p, canal, f)}
-          />
-        )}
+        {canal &&
+          relat({
+            rel: `pedidos:${p.id}`,
+            nome: "Pedidos (Olist)",
+            limite: 7,
+            onde: <>Olist → Vendas → Pedidos de venda → <b>E-commerce = {p.nome}</b> → período → Exportar</>,
+            onArquivo: (f) => enviarPedidos(p, canal, f),
+          })}
         {canal && pend && pend.plat.id === p.id && (
           <div className="ana-pend">
             {pend.confirmar ? (
@@ -385,24 +388,24 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
         )}
         {canal && p.id === "shopee" && (
           <>
-            <Relat
-              rel="shopee:desempenho"
-              nome="Desempenho do produto (funil)"
-              limite={7}
-              aceita=".xlsx"
-              multiplo
-              onde={<>Shopee → Dados → Informações Gerenciais → Produto → Performance do produto → <b>Exportar</b> (Últimos 7 dias). Se aparecer mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam</>}
-              onArquivo={(fs) => enviarShopee("desempenho", fs)}
-            />
-            <Relat
-              rel="shopee:ads"
-              nome="Ads (CSV)"
-              limite={3}
-              aceita=".csv"
-              multiplo
-              onde={<>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem). Se tiver mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam</>}
-              onArquivo={(fs) => enviarShopee("ads", fs)}
-            />
+            {relat({
+              rel: "shopee:desempenho",
+              nome: "Desempenho do produto (funil)",
+              limite: 7,
+              aceita: ".xlsx",
+              multiplo: true,
+              onde: <>Shopee → Dados → Informações Gerenciais → Produto → Performance do produto → <b>Exportar</b> (Últimos 7 dias). Se aparecer mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam</>,
+              onArquivo: (fs) => enviarShopee("desempenho", fs),
+            })}
+            {relat({
+              rel: "shopee:ads",
+              nome: "Ads (CSV)",
+              limite: 3,
+              aceita: ".csv",
+              multiplo: true,
+              onde: <>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem). Se tiver mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam</>,
+              onArquivo: (fs) => enviarShopee("ads", fs),
+            })}
             {perguntas.map((q) => (
               <div key={q.chave} className="ana-pend">
                 <b>{q.l.item.nome}: {BRL(q.valores.gasto)} de Ads no CSV</b>
