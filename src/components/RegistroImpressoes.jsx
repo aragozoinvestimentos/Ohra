@@ -4,6 +4,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { BRL, PCT } from "../lib/format.js";
 import { custoProdutoPorPeca } from "../lib/calc.js";
+import { infoPeca } from "../lib/planoKit.js";
 import {
   calcTaxaFalhaAtual,
   calcFracaoMediaFalha,
@@ -43,7 +44,7 @@ export default function RegistroImpressoes({ onToast }) {
   const { lojaId } = useLoja();
   // Produtos (detalhamento de produção) e materiais (preço atual) vêm do
   // catálogo compartilhado — ao vivo, sem busca própria.
-  const { produtos, materiais } = useCatalogo();
+  const { produtos, materiais, kits = [], kitProdutos = [] } = useCatalogo();
   const [registros, setRegistros] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [form, setForm] = useState(VAZIO_FORM);
@@ -97,6 +98,37 @@ export default function RegistroImpressoes({ onToast }) {
   }, [lojaId]);
 
   const produtoSelecionado = produtos.find((p) => p.id === form.produtoId) || null;
+  // Kit (também o composto, que só é vendido junto): o lote conta KITS. Sugestão:
+  // a chapa do kit da Otimização (kits.chapa_kit: kits por chapa + tempo total),
+  // senão 1 kit = soma do tempo por peça de cada produto × quantidade.
+  const kitSelecionado = form.produtoId.startsWith("k:") ? kits.find((k) => k.id === form.produtoId.slice(2)) || null : null;
+  const kitInfo = useMemo(() => {
+    if (!kitSelecionado) return null;
+    const linhas = kitProdutos
+      .filter((kp) => kp.kit_id === kitSelecionado.id)
+      .map((kp) => ({ p: produtos.find((x) => x.id === kp.produto_id), q: Number(kp.quantidade) || 0 }))
+      .filter((l) => l.p && l.q > 0);
+    let custo = 0;
+    let custoOk = linhas.length > 0;
+    let tempo = 0;
+    for (const { p, q } of linhas) {
+      const c = custoProdutoPorPeca(p, materiais);
+      if (c) custo += c.total * q;
+      else custoOk = false;
+      const i = infoPeca(p);
+      tempo += (i.tempoChapaMin / i.pecasChapa) * q;
+    }
+    const chapa = kitSelecionado.chapa_kit || null;
+    const porChapa = Number(chapa?.kitsPorChapa) || null;
+    const daChapa = !!(porChapa && Number(chapa?.tempo) > 0);
+    const tempoChapa = daChapa ? Number(chapa.tempo) : tempo > 0 ? Math.round(tempo) : null;
+    return { custo: custoOk ? custo : null, porChapa: daChapa ? porChapa : 1, tempoChapa, daChapa };
+  }, [kitSelecionado, kitProdutos, produtos, materiais]);
+  useEffect(() => {
+    if (!kitInfo) return;
+    setForm((prev) => ({ ...prev, quantidadeLote: kitInfo.porChapa, tempoEstimadoMin: kitInfo.tempoChapa ?? prev.tempoEstimadoMin, tempoManual: false }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.produtoId, kitInfo?.porChapa, kitInfo?.tempoChapa]);
 
   // Ao escolher um produto cadastrado, sugere quantidade e tempo a partir do
   // detalhamento salvo — continua editável, porque na prática o lote de
@@ -117,9 +149,10 @@ export default function RegistroImpressoes({ onToast }) {
       const resultado = custoProdutoPorPeca(produtoSelecionado, materiais);
       return resultado ? resultado.total : null;
     }
+    if (kitInfo) return kitInfo.custo;
     const manual = Number(form.custoPorPecaManual);
     return isFinite(manual) && manual > 0 ? manual : null;
-  }, [produtoSelecionado, materiais, form.custoPorPecaManual]);
+  }, [produtoSelecionado, kitInfo, materiais, form.custoPorPecaManual]);
 
   const custoLotePreview = custoPorPecaSelecionado != null ? custoPorPecaSelecionado * (Number(form.quantidadeLote) || 0) : null;
 
@@ -130,8 +163,8 @@ export default function RegistroImpressoes({ onToast }) {
   // Tempo proporcional às peças: a chapa cheia do produto (pecas_por_impressao)
   // leva producao_detalhe.tempo; com menos/mais peças o tempo sugerido acompanha.
   // Se você digitar o tempo na mão, ele não muda mais (até trocar de produto).
-  const tempoChapa = Number(produtoSelecionado?.producao_detalhe?.tempo) || null;
-  const pecasChapa = Number(produtoSelecionado?.pecas_por_impressao) || null;
+  const tempoChapa = kitInfo ? kitInfo.tempoChapa : Number(produtoSelecionado?.producao_detalhe?.tempo) || null;
+  const pecasChapa = kitInfo ? kitInfo.porChapa : Number(produtoSelecionado?.pecas_por_impressao) || null;
   const tempoProporcional = (qtd) => (tempoChapa && pecasChapa && Number(qtd) > 0 ? Math.round((tempoChapa * Number(qtd)) / pecasChapa) : null);
   function mudarQuantidade(e) {
     const qtd = e.target.value;
@@ -145,7 +178,7 @@ export default function RegistroImpressoes({ onToast }) {
   }
 
   async function registrar() {
-    const nome = produtoSelecionado?.nome || form.nomeLivre.trim();
+    const nome = produtoSelecionado?.nome || (kitSelecionado ? `${kitSelecionado.nome} (kit)` : "") || form.nomeLivre.trim();
     if (!nome) {
       onToast?.("Escolha um produto cadastrado ou digite o nome da peça");
       return;
@@ -261,13 +294,22 @@ export default function RegistroImpressoes({ onToast }) {
             <label>Produto cadastrado (opcional)</label>
             <select value={form.produtoId} onChange={(e) => setForm((prev) => ({ ...prev, produtoId: e.target.value, nomeLivre: "" }))}>
               <option value="">— peça avulsa / ainda não cadastrada —</option>
-              {produtos.map((p) => (
-                <option key={p.id} value={p.id}>{p.nome}</option>
-              ))}
+              <optgroup label="Produtos">
+                {produtos.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nome}</option>
+                ))}
+              </optgroup>
+              {kits.length > 0 && (
+                <optgroup label="Kits (impressos juntos)">
+                  {kits.map((k) => (
+                    <option key={k.id} value={`k:${k.id}`}>{k.nome}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
-          {!produtoSelecionado && (
+          {!produtoSelecionado && !kitSelecionado && (
             <div className="field">
               <label>Nome da peça</label>
               <input type="text" value={form.nomeLivre} onChange={set("nomeLivre")} placeholder="ex: Suporte de celular V2" />
@@ -276,7 +318,7 @@ export default function RegistroImpressoes({ onToast }) {
 
           <div className="row2">
             <div className="field">
-              <label title="Quantas peças nessa impressão">Peças no lote</label>
+              <label title={kitSelecionado ? "Quantos kits nessa impressão" : "Quantas peças nessa impressão"}>{kitSelecionado ? "Kits no lote" : "Peças no lote"}</label>
               <input type="number" step="1" min="1" value={form.quantidadeLote} onChange={mudarQuantidade} />
             </div>
             <div className="field">
@@ -292,14 +334,18 @@ export default function RegistroImpressoes({ onToast }) {
                   </small>
                 ) : (
                   <small className="hint">
-                    proporcional às peças (chapa de {pecasChapa} = {tempoChapa} min)
+                    {kitInfo
+                      ? kitInfo.daChapa
+                        ? `proporcional (chapa do kit: ${pecasChapa} kit${pecasChapa > 1 ? "s" : ""} = ${tempoChapa} min)`
+                        : `proporcional (1 kit ≈ ${tempoChapa} min, soma das peças)`
+                      : `proporcional às peças (chapa de ${pecasChapa} = ${tempoChapa} min)`}
                   </small>
                 )
               ) : null}
             </div>
           </div>
 
-          {!produtoSelecionado && (
+          {!produtoSelecionado && !kitSelecionado && (
             <div className="field">
               <label>Custo estimado por peça (R$) — opcional</label>
               <input type="number" step="0.01" value={form.custoPorPecaManual} onChange={set("custoPorPecaManual")} placeholder="deixe em branco se não souber" />
