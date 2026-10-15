@@ -1,5 +1,6 @@
 import { PASSOS } from "./lib/passosPreco.js";
 import { trocarSubAba, useSubAba } from "./lib/subAbas.js";
+import { assinarMarcas, lerMarcas, somarMarcas } from "./lib/marcas.js";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { assinarUrgentes, lerUrgentes } from "./lib/urgentes.js";
 import logo from "./assets/logo.png";
@@ -428,8 +429,7 @@ export default function App() {
                 <button key={item.key} data-menu={item.key} className={menuAtual?.key === item.key ? "active" : ""} onClick={() => irParaMenu(item)} title={item.label}>
                   <Icone nome={item.icone} />
                   <span>{item.label}</span>
-                  {item.key === "m-crescer" && <BolinhaSemana />}
-                  {item.key === "m-inicio" && <BolinhaUrgentes />}
+                  {item.key === "m-inicio" ? <BolinhaUrgentes /> : <Marcas filtro={(k) => item.abas.some((a) => a.tab && a.tab === k.split(":")[0])} />}
                 </button>
               ))}
             </div>
@@ -478,6 +478,7 @@ export default function App() {
                   <button key={`${a.tab}:${a.s || ""}`} type="button" data-tab={a.tab} data-sub={a.s} className={abaAtiva(a) ? "ativo" : ""} aria-current={abaAtiva(a) ? "page" : undefined} onClick={() => irParaEntrada(a)}>
                     {a.ordem && <span className="topbar-abas-ordem">{a.tab === "canal" ? a.ordem : `${a.ordem} ·`}</span>}
                     {a.label}
+                    <Marcas filtro={(k) => k === (a.s ? `${a.tab}:${a.s}` : a.tab)} />
                   </button>
                 ),
               )}
@@ -684,6 +685,21 @@ function BolinhaUrgentes() {
   return (
     <span className="bolinha-menu bolinha-urgente" title={`${n} ${n === 1 ? "item urgente" : "itens urgentes"} no Início`}>
       {n}
+    </span>
+  );
+}
+
+// Marcas de notificação (src/lib/marcas.js, calculadas pelo Início):
+// vermelha = resolver, âmbar = atenção (só quando não há vermelha), verde forte = oportunidade.
+function Marcas({ filtro }) {
+  const m = useSyncExternalStore(assinarMarcas, lerMarcas, lerMarcas);
+  const t = somarMarcas(m, filtro);
+  if (!t.r && !t.a && !t.o) return null;
+  return (
+    <span className="marcas">
+      {t.r > 0 && <span className="marca marca-r" title={`${t.r} pra resolver`}>{t.r}</span>}
+      {!t.r && t.a > 0 && <span className="marca marca-a" title={`${t.a} pedindo atenção`}>{t.a}</span>}
+      {t.o > 0 && <span className="marca marca-o" title={`${t.o} oportunidade${t.o > 1 ? "s" : ""} (mais lucro)`}>↑{t.o}</span>}
     </span>
   );
 }

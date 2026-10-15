@@ -26,6 +26,7 @@ import { sugestoesAfiliado, vendasPorOrigem } from "../lib/afiliados.js";
 import { calcTaxaFalhaAtual, TAXA_FALHA_PRIOR_PCT } from "../lib/registroImpressao.js";
 import { AREAS_PENDENCIA, GRUPOS_PENDENCIA, areaPendencia, montarPendencias, statusInicio } from "../lib/inicio.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
+import { contarMarcas, publicarMarcas } from "../lib/marcas.js";
 import { irParaAba } from "../lib/navegar.js";
 import { BRL, PCT } from "../lib/format.js";
 import Kpis from "./Kpis.jsx";
@@ -344,6 +345,11 @@ export default function Inicio({ onIrPara, onToast }) {
   useEffect(() => {
     if (!carregando) publicarUrgentes(nUrgentes);
   }, [nUrgentes, carregando]);
+  // Marcas do menu e das sub-abas (vermelha/âmbar/verde): os mesmos avisos do Pra fazer.
+  const marcas = contarMarcas(pendencias);
+  useEffect(() => {
+    if (!carregando) publicarMarcas(marcas);
+  }, [marcas, carregando]);
   const totalGrupo = (g) => [...urgAvisos, ...resto].filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : g === "rotina" && mostraTarefas ? tf.n.topo : 0);
 
   const CARDS = [

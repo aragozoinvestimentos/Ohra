@@ -2023,3 +2023,15 @@ tr.combinacao-off td { opacity: 0.45; }
 .selo-abc.A { background: var(--abc-a-soft); color: var(--abc-a); } .selo-abc.B { background: var(--abc-b-soft); color: var(--abc-b); } .selo-abc.C { background: var(--abc-c-soft); color: var(--abc-c); }
 .panel > h3 .dir { margin-left: auto; font-weight: 500; font-size: 12px; color: var(--ink-soft); }
 .ana-fis-lin .btn-icone { min-width: 24px; padding: 2px 5px; font-size: 12px; }
+
+/* Marcas de notificação (menu e sub-abas do topo, out/2026) */
+.marcas { margin-left: auto; display: inline-flex; gap: 3px; flex: none; }
+.topbar-abas .marcas { margin-left: 6px; }
+.marca { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; color: #fff; font-size: 10.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.marca-r { background: var(--st-resolver); }
+.marca-a { background: #c98a1b; }
+.marca-o { background: #17a34a; }
+[data-theme="dark"] .marca-r, [data-theme="dark"] .marca-a, [data-theme="dark"] .marca-o { color: #141414; }
+[data-theme="dark"] .marca-o { background: #3ddc84; }
+[data-theme="dark"] .marca-a { background: #f0b740; }
+[data-theme="dark"] .marca-r { background: #ff8a7a; }
