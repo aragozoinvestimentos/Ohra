@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { BRL } from "../lib/format.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { lerXls } from "../lib/lerXls.js";
-import { andamentoDoCsv, juntarAds, juntarDesempenho, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioParaGuardar } from "../lib/relatorioShopee.js";
+import { andamentoDoCsv, juntarAds, juntarDesempenho, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioDoGuardado, relatorioParaGuardar } from "../lib/relatorioShopee.js";
 import { PLATAFORMAS, caixaDosPedidos, interpretarPedidosOlist, ligarSku, plataformaDoNumero, tipoEIdDoItem, normSku } from "../lib/pedidos.js";
 import { excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
 import { estenderPeriodoAds, iniciarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
@@ -32,6 +32,9 @@ const diasDesde = (iso, hoje) => (iso ? Math.round((new Date(`${hoje}T12:00:00`)
 const dataDoEnvio = (imp) => (imp?.criado_em ? new Date(imp.criado_em).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }) : null);
 const ICONE = { ok: "✓", erro: "✗", velho: "!", nunca: "–", pend: "?" };
 const CHAVE_CONFERIDA = "ohra:plataforma-conferida";
+const horaSP = (iso) => (iso ? new Date(iso).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "");
+// Identifica uma lista pelo conteúdo (os nomes dos arquivos da Shopee costumam ser iguais).
+const assinatura = (r) => (r.tipo === "ads" ? [...r.porItem.entries()].map(([id, a]) => `${id}:${a.gasto}`).sort().join(",") : (r.itens || []).map((i) => i.itemId).sort().join(","));
 const conferidas = () => {
   try {
     return JSON.parse(localStorage.getItem(CHAVE_CONFERIDA) || "{}") || {};
@@ -164,15 +167,31 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
       if (lidos.some((x) => x.tipo !== tipo)) throw new Error(tipo === "desempenho" ? "Isto é o CSV do Shopee Ads — suba no botão “Ads (CSV)”. Nada foi importado." : "Isto é o relatório de Desempenho — suba no botão “Desempenho do produto”. Nada foi importado.");
       // A Shopee separa os anúncios em listas (melhor desempenho, recém-cadastrados…):
       // os arquivos escolhidos juntos viram um relatório só.
-      const r = tipo === "ads" ? juntarAds(lidos) : juntarDesempenho(lidos);
-      if (r.periodosDiferentes) throw new Error(`Os arquivos têm períodos diferentes — exporte todas as listas com o mesmo período${tipo === "ads" ? " (do início do período de Ads até ontem)" : ""}. Nada foi importado.`);
-      const arquivo = { name: r.arquivo || arquivos[0].name };
+      const juntar = tipo === "ads" ? juntarAds : juntarDesempenho;
+      const novo = juntar(lidos);
+      if (novo.periodosDiferentes) throw new Error(`Os arquivos têm períodos diferentes — exporte todas as listas com o mesmo período${tipo === "ads" ? " (do início do período de Ads até ontem)" : ""}. Nada foi importado.`);
+      // Listas enviadas uma de cada vez: junta com as já enviadas do MESMO período
+      // (a mesma lista enviada de novo substitui a anterior, não soma).
+      const ant = ultimaImp(rel);
+      const mesmoPeriodo = ant?.dados && novo.periodo && String(ant.periodo_de).slice(0, 10) === novo.periodo.de && String(ant.periodo_ate).slice(0, 10) === novo.periodo.ate;
+      const partesAnt = mesmoPeriodo ? (ant.dados.partes || [{ ...ant.dados, arquivo: ant.arquivo, em: ant.criado_em }]).map(relatorioDoGuardado).filter(Boolean) : [];
+      const agora = new Date().toISOString();
+      const novas = lidos.map((x) => ({ ...x, em: agora }));
+      const assinNovas = new Set(novas.map(assinatura));
+      const partes = [...partesAnt.filter((x) => !assinNovas.has(assinatura(x))), ...novas];
+      const r = juntar(partes.map((x, i) => ({ ...x, arquivo: `${i}|${x.arquivo || ""}` })));
+      const listas = partes.map((x) => {
+        const n = tipo === "ads" ? x.porItem.size : (x.itens || []).length;
+        return `${n} anúncio${n === 1 ? "" : "s"} (${horaSP(x.em)})`;
+      });
+      const txtListas = partes.length > 1 ? ` · ${partes.length} listas: ${listas.join(" + ")}` : "";
+      const arquivo = { name: partes.map((x) => x.arquivo).filter(Boolean).join(" + ") || arquivos[0].name };
       lembrarIdsShopee([r]);
       aprenderGrupos([r]);
       let resumo = "";
       if (tipo === "desempenho") {
         const lig = (r.itens || []).filter((i) => ligarSku(i.sku, itens)).length;
-        resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${r.arquivos > 1 ? ` · ${r.arquivos} listas juntas` : ""} · ${(r.itens || []).length} anúncios lidos, ${lig} ligados ao app — o Registrar semana já vem preenchido`;
+        resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${txtListas} · ${(r.itens || []).length} anúncios no total, ${lig} ligados ao app — o Registrar semana já vem preenchido`;
       } else {
         const res = andamentoDoCsv([r], linhasAds?.linhas || []);
         let n = 0;
@@ -185,12 +204,12 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
         }
         setPerguntas(res.perguntas || []);
         setAvisos((a) => ({ ...a, [rel]: res.avisos || [] }));
-        resumo = `${dm(res.periodo?.de)} a ${dm(res.periodo?.ate)}${r.arquivos > 1 ? ` · ${r.arquivos} listas juntas` : ""} · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado`;
+        resumo = `${dm(res.periodo?.de)} a ${dm(res.periodo?.ate)}${txtListas} · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado`;
         window.dispatchEvent(new Event("focus"));
       }
-      const g = await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivo.name, periodo: r.periodo, ok: true, resumo, dados: relatorioParaGuardar(r) });
+      const g = await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivo.name, periodo: r.periodo, ok: true, resumo, dados: { ...relatorioParaGuardar({ ...r, arquivo: arquivo.name }), partes: partes.map(relatorioParaGuardar) } });
       if (!g.ok) throw new Error(g.msg);
-      setResultado((x) => ({ ...x, [rel]: { t: "ok", txt: `${resumo} · agora` } }));
+      setResultado((x) => ({ ...x, [rel]: { t: "ok", txt: `${resumo} · enviado agora (${horaSP(agora)})${partesAnt.length && partes.length > partesAnt.length ? " — juntou com a lista anterior" : ""}` } }));
       recarregarPedidos();
     } catch (e) {
       setResultado((x) => ({ ...x, [rel]: { t: "erro", txt: e.message || "Não foi possível ler o arquivo." } }));
@@ -221,7 +240,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
     const u = ultimaImp(rel);
     if (!u) return { t: "nunca", txt: "nunca enviado" };
     const d = diasDesde(dataDoEnvio(u), hoje);
-    const quando = d === 0 ? "hoje" : d === 1 ? "ontem" : `há ${d} dias`;
+    const quando = (d === 0 ? "hoje" : d === 1 ? "ontem" : `há ${d} dias`) + (d <= 1 ? ` às ${horaSP(u.criado_em)}` : "");
     return { t: d > limiteDias ? "velho" : "ok", txt: `${u.resumo || ""} · enviado ${quando}${d > limiteDias ? " — hora de atualizar" : ""}` };
   }
   const Relat = ({ rel, nome, onde, limite, onArquivo, aceita = ".xls,.xlsx,.csv", multiplo = false }) => {
@@ -372,7 +391,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
               limite={7}
               aceita=".xlsx"
               multiplo
-              onde={<>Shopee → Dados → Informações Gerenciais → Produto → Performance do produto → <b>Exportar</b> (Últimos 7 dias). Se aparecer mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período e escolha os arquivos juntos</b></>}
+              onde={<>Shopee → Dados → Informações Gerenciais → Produto → Performance do produto → <b>Exportar</b> (Últimos 7 dias). Se aparecer mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam</>}
               onArquivo={(fs) => enviarShopee("desempenho", fs)}
             />
             <Relat
@@ -381,7 +400,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
               limite={3}
               aceita=".csv"
               multiplo
-              onde={<>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem). Se tiver mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período e escolha os arquivos juntos</b></>}
+              onde={<>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem). Se tiver mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam</>}
               onArquivo={(fs) => enviarShopee("ads", fs)}
             />
             {perguntas.map((q) => (
