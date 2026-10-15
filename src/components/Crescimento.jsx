@@ -1729,7 +1729,27 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
                 <span>
                   {rotulo}
                   {destaque && <em className="comece"> ← comece por aqui</em>}
-                  <small>{dica}</small>
+                  {/* Produto sem concorrente direto: marca como feito comparando com um substituto. */}
+                  {k === "concorrente" && l.r.checklist?.concorrente === "substituto" ? (
+                    <small>
+                      Sem concorrente direto — comparei com um substituto (o que a pessoa compraria no lugar: outra versão, outro material, algo que resolve a mesma coisa).
+                    </small>
+                  ) : (
+                    <small>{dica}</small>
+                  )}
+                  {k === "concorrente" && !l.r.checklist?.concorrente && (
+                    <button
+                      type="button"
+                      className="link-btn"
+                      title="Nunca viu anúncio igual ao seu? Compare com o que a pessoa compraria no lugar (outra versão, outro material, algo que resolve a mesma coisa) — esse é o preço que ela tem na cabeça."
+                      onClick={(ev) => {
+                        ev.preventDefault();
+                        onChecklist(l, "concorrente", "substituto");
+                      }}
+                    >
+                      não tem concorrente direto — comparei com um substituto
+                    </button>
+                  )}
                 </span>
               </label>
             );

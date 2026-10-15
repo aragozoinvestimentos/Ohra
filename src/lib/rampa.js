@@ -927,6 +927,6 @@ export const CHECKLIST_ANUNCIO = [
   ["descricao", "Primeiras linhas da descrição", "Benefício e o que vem na embalagem antes do detalhe técnico"],
   ["variacoes", "Variações com foto própria", "Cada cor/opção com a sua foto"],
   ["kit", "Kit visível no mesmo anúncio", "“Leve 2/3” puxa o ticket e a conversão"],
-  ["concorrente", "Comparar com o concorrente", "Preço, frete, prazo e avaliações dos 3 primeiros da busca"],
+  ["concorrente", "Comparar com o concorrente", "Preço, frete, prazo e avaliações dos 3 primeiros da busca (sem concorrente direto: compare com um substituto)"],
   ["avaliacao", "Pedir avaliação com foto", "Cartão no pacote — as primeiras avaliações com foto pesam muito"],
 ];
