@@ -443,7 +443,22 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
             <BuscaItem grupos={gruposBusca} value={fisico.itemId} onChange={(id) => setFisico((f) => ({ ...f, itemId: id, preco: f.preco || precoSugerido(id) }))} vazio="— escolha o item —" />
           </div>
           <div className="field"><label>Quantidade</label><input type="number" min="1" value={fisico.qtd} onChange={(e) => setFisico((f) => ({ ...f, qtd: e.target.value }))} /></div>
-          <div className="field"><label>Preço de cada (R$)</label><input type="text" inputMode="decimal" value={fisico.preco} onChange={(e) => setFisico((f) => ({ ...f, preco: e.target.value }))} /></div>
+          <div className="field">
+            <label>Preço de venda (R$)</label>
+            <input type="text" inputMode="decimal" value={fisico.preco} onChange={(e) => setFisico((f) => ({ ...f, preco: e.target.value }))} />
+            {(() => {
+              const it = itens.find((i) => i.id === fisico.itemId);
+              const q = num(fisico.qtd) || 1;
+              const pc = num(it?.pecas) || 1;
+              if (!it) return null;
+              return (
+                <div className="faint" style={{ marginTop: 3 }}>
+                  {pc > 1 ? `do ${it.nomeVariacao || it.nome.split(" — ").pop()} inteiro (${pc} peças)` : "por unidade"}
+                  {q > 1 && num(fisico.preco) > 0 ? ` · ${q} × = ${BRL(q * num(fisico.preco))}` : ""}
+                </div>
+              );
+            })()}
+          </div>
           <div className="field"><label>Data</label><input type="date" value={fisico.data} max={hoje} onChange={(e) => setFisico((f) => ({ ...f, data: e.target.value }))} /></div>
           <div className="field">
             <label>Recebi por</label>
