@@ -107,6 +107,7 @@ export default function RegistroImpressoes({ onToast }) {
       ...prev,
       quantidadeLote: Number(produtoSelecionado.pecas_por_impressao) || prev.quantidadeLote || 1,
       tempoEstimadoMin: produtoSelecionado.producao_detalhe?.tempo ?? prev.tempoEstimadoMin,
+      tempoManual: false,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.produtoId]);
@@ -124,6 +125,23 @@ export default function RegistroImpressoes({ onToast }) {
 
   function set(key) {
     return (e) => setForm((prev) => ({ ...prev, [key]: e.target.value }));
+  }
+
+  // Tempo proporcional às peças: a chapa cheia do produto (pecas_por_impressao)
+  // leva producao_detalhe.tempo; com menos/mais peças o tempo sugerido acompanha.
+  // Se você digitar o tempo na mão, ele não muda mais (até trocar de produto).
+  const tempoChapa = Number(produtoSelecionado?.producao_detalhe?.tempo) || null;
+  const pecasChapa = Number(produtoSelecionado?.pecas_por_impressao) || null;
+  const tempoProporcional = (qtd) => (tempoChapa && pecasChapa && Number(qtd) > 0 ? Math.round((tempoChapa * Number(qtd)) / pecasChapa) : null);
+  function mudarQuantidade(e) {
+    const qtd = e.target.value;
+    setForm((prev) => {
+      const sug = tempoProporcional(qtd);
+      return { ...prev, quantidadeLote: qtd, ...(!prev.tempoManual && sug != null ? { tempoEstimadoMin: sug } : {}) };
+    });
+  }
+  function mudarTempo(e) {
+    setForm((prev) => ({ ...prev, tempoEstimadoMin: e.target.value, tempoManual: e.target.value !== "" }));
   }
 
   async function registrar() {
@@ -259,11 +277,25 @@ export default function RegistroImpressoes({ onToast }) {
           <div className="row2">
             <div className="field">
               <label title="Quantas peças nessa impressão">Peças no lote</label>
-              <input type="number" step="1" min="1" value={form.quantidadeLote} onChange={set("quantidadeLote")} />
+              <input type="number" step="1" min="1" value={form.quantidadeLote} onChange={mudarQuantidade} />
             </div>
             <div className="field">
               <label>Tempo estimado (min)</label>
-              <input type="number" step="1" value={form.tempoEstimadoMin} onChange={set("tempoEstimadoMin")} />
+              <input type="number" step="1" value={form.tempoEstimadoMin} onChange={mudarTempo} />
+              {tempoChapa && pecasChapa ? (
+                form.tempoManual && tempoProporcional(form.quantidadeLote) != null && Number(form.tempoEstimadoMin) !== tempoProporcional(form.quantidadeLote) ? (
+                  <small className="hint">
+                    proporcional: {tempoProporcional(form.quantidadeLote)} min ·{" "}
+                    <button type="button" className="link-btn" onClick={() => setForm((prev) => ({ ...prev, tempoEstimadoMin: tempoProporcional(prev.quantidadeLote), tempoManual: false }))}>
+                      usar
+                    </button>
+                  </small>
+                ) : (
+                  <small className="hint">
+                    proporcional às peças (chapa de {pecasChapa} = {tempoChapa} min)
+                  </small>
+                )
+              ) : null}
             </div>
           </div>
 
