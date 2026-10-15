@@ -1,12 +1,12 @@
 import { trocarSubAba, useSubAba } from "../lib/subAbas.js";
 import { canalDireto } from "../lib/canais.js";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { alertaPreco } from "../lib/estrategia.js";
 import { menorFinalComFreteGratis } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
-import { BRL, PCT } from "../lib/format.js";
+import { BRL } from "../lib/format.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 
 // "2026-10-03" → "03/10" (sem passar por Date, que no fuso do Brasil voltaria um dia).
@@ -38,13 +38,15 @@ import OndeSeDecide from "./OndeSeDecide.jsx";
 import RampaGrupo from "./RampaGrupo.jsx";
 import { useLembrado } from "../hooks/useLembrado.js";
 import { iniciarRampaGrupo } from "../lib/grupoRampa.js";
+import { acaoDaRampa, proximaConferencia, sinaisDaRampa } from "../lib/rampaAgora.js";
+import { AgoraRampa, MarcaAba, OlhandoRampa } from "./RampaAgora.jsx";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { irParaAba, pegarPedido } from "../lib/navegar.js";
 import { useSemanaPendente } from "../hooks/useSemanaPendente.js";
 import SemanaPendenteFaixa from "./SemanaPendenteFaixa.jsx";
 import { chaveSemanaRampa, periodoEmAberto, somarDiasIso, ultimoRegistroAf, ultimoRegistroRampa } from "../lib/semanaPendente.js";
 import Estado, { PontoSaude } from "./Estado.jsx";
-import { estadoSugestaoRampa, saudeRampa } from "../lib/estados.js";
+import { saudeRampa } from "../lib/estados.js";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { cruzarGrupos, cruzarRelatorios, lembrarIdsShopee, lerRelatorio, normSku, relatorioDoGuardado, textoMistura } from "../lib/relatorioShopee.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
@@ -184,19 +186,42 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
   const [alvoAjuste, setAlvoAjuste] = useState(null); // linha com "alvo mudou" esperando confirmação // { tipo: "testar"|"voltar"|"aprovar", linha, preco }
   const [salvando, setSalvando] = useState(false);
 
-  const sel = linhas.find((l) => l.r.id === selId) || linhas[0] || null;
-  // Busca por nome ou SKU na lista "Produtos em rampa".
-  const linhasVis = useMemo(() => {
-    const t = busca.trim().toLowerCase();
-    if (!t) return linhas;
-    return linhas.filter((l) => `${l.produto.nome} ${l.produto.sku || ""}`.toLowerCase().includes(t));
-  }, [linhas, busca]);
+  const selEhGrupo = linhasGrupo.some((g) => g.r.id === selId);
+  const sel = selEhGrupo ? null : linhas.find((l) => l.r.id === selId) || (selId ? null : linhas[0]) || null;
+  const [filtroLista, setFiltroLista] = useState("todos");
+  const [abaPedida, setAbaPedida] = useState(null); // botão da linha que abre uma aba do Detalhe
   // Semana pendente (estado único com o Início): adiada não mostra etiqueta.
   const semanaPend = useSemanaPendente();
   const pendDe = (l) => {
     const x = semanaPend.porChave.get(chaveSemanaRampa(l.r.id));
     return x && x.pendente && !x.lembrete ? x : null;
   };
+  // Lista única "Em rampa" (out/2026): produtos + anúncios com vários itens,
+  // separada pelo que pedir ação — a ação vem de lib/rampaAgora.js (só lê o
+  // que a rampa decidiu). Semana pendente sem outra ação = "Registrar a semana".
+  const itensLista = useMemo(() => {
+    const um = (l, grupo) => {
+      const acao = acaoDaRampa(l.est, { canal: l.canal.nome, grupo, checklist: l.r.checklist || {}, pctDe: grupo ? l.g?.pctDe : null });
+      const pend = pendDe(l);
+      const doGrupo = !grupo && l.soNoGrupo;
+      const secao = doGrupo ? "acomp" : ["resolver", "atencao"].includes(acao.tipo) ? "fazer" : acao.tipo === "oportunidade" ? "subir" : pend ? "fazer" : "acomp";
+      return { l, grupo, acao, pend, secao, proxima: proximaConferencia(l.est, { pendente: pend }) };
+    };
+    return [...linhas.map((l) => um(l, false)), ...linhasGrupo.map((l) => um(l, true))];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linhas, linhasGrupo, semanaPend]);
+  const itensVis = useMemo(() => {
+    const t = busca.trim().toLowerCase();
+    return itensLista.filter((x) => {
+      if (filtroLista === "fazer" && x.secao !== "fazer") return false;
+      if (filtroLista === "subir" && x.secao !== "subir") return false;
+      if (filtroLista === "produtos" && x.grupo) return false;
+      if (filtroLista === "grupos" && !x.grupo) return false;
+      if (!t) return true;
+      const txt = x.grupo ? [x.l.produto.nome, ...(x.l.g?.ops || []).flatMap((o) => [o.rotulo, o.item?.nome, o.item?.sku])] : [x.l.produto.nome, x.l.produto.sku];
+      return txt.filter(Boolean).join(" ").toLowerCase().includes(t);
+    });
+  }, [itensLista, filtroLista, busca]);
 
   // Preços "vendendo agora" de todos os produtos em rampa (por canal) — os
   // kits de produtos diferentes usam o degrau de cada peça.
@@ -218,8 +243,6 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
   }, [sel, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal]);
 
   // --- KPIs ---
-  const prontos = linhas.filter((l) => l.est.sugestao.chave === "subir");
-  const segurando = linhas.filter((l) => ["segurar", "revisar", "voltar"].includes(l.est.sugestao.chave));
   const lucroSemana = linhas.reduce((s, l) => s + (l.est.lucroSemana || 0), 0) - (comissaoSemana || 0);
   const lucroSemanaAds = linhas.reduce((s, l) => s + (l.est.lucroSemanaAds ?? l.est.lucroSemana ?? 0), 0) - (comissaoSemana || 0);
   const lucroSemanaAlvo = linhas.reduce((s, l) => s + (l.est.lucroSemanaAlvo || 0), 0);
@@ -470,21 +493,30 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
       <Kpis
         itens={[
           {
-            label: "Em rampa",
-            valor: String(linhas.length),
-            sub: !linhas.length
-              ? "nenhum produto ainda"
-              : linhas.filter((l) => l.est.teste.status === "recomendado").length
-                ? `${linhas.filter((l) => l.est.teste.status === "recomendado").length} com teste de lançamento recomendado`
-                : `${new Set(linhas.map((l) => l.canal.id)).size} canal(is)`,
-            tom: linhas.some((l) => l.est.teste.status === "recomendado") ? "warn" : undefined,
+            label: "Pra fazer agora",
+            valor: String(itensLista.filter((x) => x.secao === "fazer").length),
+            tom: itensLista.some((x) => x.secao === "fazer" && x.acao.tipo === "resolver") ? "bad" : itensLista.some((x) => x.secao === "fazer") ? "warn" : undefined,
+            sub: (() => {
+              const f = itensLista.filter((x) => x.secao === "fazer");
+              if (!f.length) return "nada pendente ✓";
+              const c = {};
+              for (const x of f) {
+                const k = x.acao.tipo === "info" && x.pend ? "registrar a semana" : (x.l.est.sugestao?.rotulo || x.acao.titulo).toLowerCase();
+                c[k] = (c[k] || 0) + 1;
+              }
+              return Object.entries(c).map(([k, n]) => `${n} ${k}`).join(" · ");
+            })(),
           },
-          { label: "Prontos pra subir", valor: String(prontos.length), tom: prontos.length ? "good" : undefined, sub: prontos.map((l) => l.produto.nome).join(", ") || "—" },
           {
-            label: "Segurando / revisar",
-            valor: String(segurando.length),
-            tom: segurando.length ? "warn" : undefined,
-            sub: segurando.length ? `${segurando.filter((l) => l.est.sugestao.chave === "revisar").length} revisar anúncio · ${segurando.filter((l) => l.est.sugestao.chave === "voltar").length} voltar` : "—",
+            label: "Prontos pra subir",
+            valor: String(itensLista.filter((x) => x.secao === "subir").length),
+            tom: itensLista.some((x) => x.secao === "subir") ? "good" : undefined,
+            sub: itensLista.filter((x) => x.secao === "subir").map((x) => x.l.produto.nome).join(", ") || "—",
+          },
+          {
+            label: "Em rampa",
+            valor: String(linhas.length + linhasGrupo.length),
+            sub: `${linhas.length} produto${linhas.length === 1 ? "" : "s"}${linhasGrupo.length ? ` · ${linhasGrupo.length} anúncio${linhasGrupo.length > 1 ? "s" : ""} com vários itens` : ""}`,
           },
           {
             label: "Lucro da semana",
@@ -499,152 +531,117 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
       <div className="panel">
         <h3 className="section-title">
           <span>
-            Produtos em rampa
-            <Ajuda texto="Rampa de preço: o produto entra perto do 0 a 0 pra ganhar vendas e avaliações no orgânico e sobe em degraus pequenos (até ~5%, finais ,49/,99) até o PREÇO ALVO — o preço salvo em Produtos precificados, que não muda. Sobe só quando passa em todos os portões. Clique numa linha pra ver o detalhe embaixo. Nada aqui muda o cadastro." />
+            Em rampa
+            <Ajuda texto="Rampa de preço: o produto (ou o anúncio com vários itens inteiro) entra perto do 0 a 0 pra ganhar vendas e avaliações no orgânico e sobe em degraus pequenos até o PREÇO ALVO — o preço salvo em Produtos precificados, que não muda. A lista mostra primeiro o que pede ação agora, depois o que está pronto pra subir e por último o que só está sendo acompanhado. Clique numa linha pra ver o detalhe embaixo. Nada aqui muda o cadastro." />
           </span>
           <span className="h3-contagem">semana de {dataBR(hoje)}</span>
         </h3>
         {carregando ? (
           <div className="empty">Carregando…</div>
-        ) : !linhas.length ? (
+        ) : !itensLista.length ? (
           <div className="empty">
-            Nenhum produto em rampa. Use “+ Iniciar rampa” no topo: escolha o produto, o canal e o preço em que ele já está vendendo.
+            Nada em rampa. Use “+ Iniciar rampa” no topo: escolha o produto, o canal e o preço em que ele já está vendendo (ou o anúncio com vários itens inteiro).
           </div>
         ) : (
           <>
-          {linhas.length > 1 || busca ? (
             <div className="toolbar">
+              <div className="filtros-lista" role="group" aria-label="Filtrar a lista">
+                {[
+                  ["todos", "Todos", itensLista.length],
+                  ["fazer", "Pra fazer", itensLista.filter((x) => x.secao === "fazer").length],
+                  ["subir", "Pronto pra subir", itensLista.filter((x) => x.secao === "subir").length],
+                  ["produtos", "Produtos", linhas.length],
+                  ["grupos", "Vários itens", linhasGrupo.length],
+                ]
+                  .filter(([k, , n]) => k === "todos" || n > 0)
+                  .map(([k, rot, n]) => (
+                    <button key={k} type="button" className={`filtro-btn${filtroLista === k ? " ativo" : ""}${k === "subir" ? " filtro-subir" : ""}`} onClick={() => setFiltroLista(k)}>
+                      {rot} <span className="filtro-n">{n}</span>
+                    </button>
+                  ))}
+              </div>
               <input type="search" className="busca-rampa" placeholder="Buscar por nome ou SKU" value={busca} onChange={(ev) => setBusca(ev.target.value)} />
-              {busca && <span className="muted-cel">{linhasVis.length} de {linhas.length}</span>}
+              {(busca || filtroLista !== "todos") && <span className="muted-cel">{itensVis.length} de {itensLista.length}</span>}
             </div>
-          ) : null}
-          {!linhasVis.length ? (
-            <div className="empty">Nenhum produto em rampa com “{busca}”.</div>
-          ) : (
-          <div className="table-wrap lista-rampa">
-            <table>
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th>Fase</th>
-                  <th className="num">0 a 0</th>
-                  <th className="num">Vendendo</th>
-                  <th className="num">Alvo</th>
-                  <th>Próximo degrau</th>
-                  <th>Portões</th>
-                  <th>Sugestão</th>
-                </tr>
-              </thead>
-              <tbody>
-                {linhasVis.map((l) => {
-                  const e = l.est;
-                  return (
-                    <tr key={l.r.id} className={`linha-clicavel${sel?.r.id === l.r.id ? " linha-atual" : ""}`} onClick={() => {
-                        setSelId(l.r.id);
-                        if (detalheRecolhido === "1" && sel?.r.id !== l.r.id) setDetalheRecolhido("0");
-                      }}>
-                      <td className="td-com-saude">
-                        <PontoSaude estado={saudeRampa(e, pendDe(l))} />
-                        <b>{l.produto.nome}</b>
-                        {l.soNoGrupo && (
-                          <span className="badge info tag-pronto" title="Este produto só é vendido dentro de um anúncio com vários itens: a rampa do anúncio inteiro decide e os avisos desta rampa ficam de fora do Início. Pode encerrar esta rampa (× no Detalhe).">
-                            só no anúncio com vários itens
-                          </span>
-                        )}
-                        <div className="sub-linha">
-                          <CanalTag canal={l.canal} /> · {e.avaliacoesTotal} avaliações{e.nota != null ? ` · nota ${virgula(e.nota, 1)}` : ""}
-                        </div>
-                        {l.r.checklist?.pronto ? (
-                          <span className="badge good tag-pronto" title={`Você marcou como pronto em ${diaMes(l.r.checklist.pronto)}: agora é só acompanhar e registrar a semana`}>
-                            ✓ pronto
-                          </span>
-                        ) : (
-                          <span className="badge info tag-pronto" title="Ainda não marcado como pronto (botão no fim do painel do produto, em Revisar anúncio)">
-                            preparando
-                          </span>
-                        )}
-                        <TagTeste teste={e.teste} />
-                        {pendDe(l) && (
-                          <span className="badge warn tag-pronto" title={`Último registro em ${diaMes(pendDe(l).ultimo)} — use “Registrar semana”`}>
-                            ↻ semana pendente há {pendDe(l).dias} dias
-                          </span>
-                        )}
-                        {e.alvoMudou && (
-                          <span className="badge warn tag-pronto" title={`O preço salvo mudou de ${BRL(e.alvoMudou.de)} para ${BRL(e.alvoMudou.para)} — abra o produto pra ajustar os degraus`}>
-                            ⚠ alvo mudou
-                          </span>
-                        )}
-                        {e.sazonal && (
-                          <span className="badge info tag-pronto" title={`Produto sazonal: no alvo até ${dataBR(e.sazonal.limite)} (${e.sazonal.motivoLimite})`}>
-                            {e.sazonal.nome} · {{ subindo: `alvo até ${dataBR(e.sazonal.limite)}`, pico: "temporada", entressafra: "entressafra", aguardando: `temporada em ${dataBR(e.sazonal.inicioTemporada)}` }[e.sazonal.fase]}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {e.fase.rotulo}
-                        {e.fase.chave !== "acima" ? ` · ${e.i + 1} de ${e.degraus.length}` : ` · ${BRL(e.preco)}`}
-                        <div className="degrau-dots">
-                          {e.degraus.map((d, k) => (
-                            <i key={k} className={k < e.i ? "ok" : k === e.i ? "at" : ""} />
-                          ))}
-                        </div>
-                      </td>
-                      <td className="num">{BRL(e.zero)}</td>
-                      <td className="num">
-                        <b>{BRL(e.preco)}</b>
-                        <div className="sub-num">lucro {BRL(e.lucroAtual)}</div>
-                      </td>
-                      <td className="num">
-                        {BRL(e.alvo)}
-                        <div className="sub-num">lucro {BRL(e.lucroAlvo)}</div>
-                      </td>
-                      <td>{e.proximo ? <>{BRL(e.proximo)} <span className="muted-cel">(+{PCT(e.proximo / e.preco - 1)})</span></> : "—"}</td>
-                      <td>
-                        {e.fase.chave === "alvo" ? (
-                          <span className="muted-cel">—</span>
-                        ) : e.sazonal ? (
-                          <span className="muted-cel">{e.sazonal.proximaData ? `cronograma: próximo ${dataBR(e.sazonal.proximaData)}` : e.sazonal.fase === "entressafra" ? `piso ${BRL(e.sazonal.piso)}` : "—"}</span>
-                        ) : (
-                          <div className="chips-portoes">
-                            {e.portoes.map((p) => (
-                              <span key={p.chave} className={`chip-portao ${p.ok ? "ok" : "no"}`} title={`${p.rotulo}: ${p.valor}`}>
-                                {p.ok ? `✓ ${p.curto}` : p.falta ? `faltam ${p.falta} ${p.curto}` : `✗ ${p.curto}`}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {(() => {
-                          const tipo = estadoSugestaoRampa(e);
-                          return tipo ? (
-                            <Estado tipo={tipo} icone={tipo === "oportunidade" ? "↑" : undefined}>
-                              {e.sugestao.rotulo}
-                            </Estado>
-                          ) : (
-                            <span className="muted-cel">{e.sugestao.rotulo}</span>
-                          );
-                        })()}
-                        {e.sugestao.chave === "revisar" && e.anuncio && (
-                          <div className="sub-num" title={`${e.anuncio.titulo} — por onde começar`}>começar por: {e.anuncio.porOnde.toLowerCase()}</div>
-                        )}
-                      </td>
+            {!itensVis.length ? (
+              <div className="empty">Nada nesta lista{busca ? ` com “${busca}”` : ""}.</div>
+            ) : (
+              <div className="table-wrap lista-rampa">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Produto / anúncio</th>
+                      <th>Degrau agora → alvo</th>
+                      <th>O que fazer</th>
+                      <th>Próxima conferência</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {[
+                      ["fazer", "Pra fazer agora"],
+                      ["subir", "Pronto pra subir"],
+                      ["acomp", "Acompanhando"],
+                    ].map(([sec, titulo]) => {
+                      const doSec = itensVis.filter((x) => x.secao === sec);
+                      if (!doSec.length) return null;
+                      return (
+                        <Fragment key={sec}>
+                          <tr className={`secao-lista secao-${sec}`}>
+                            <td colSpan={4}>
+                              {sec === "subir" ? "↑ " : sec === "fazer" ? "! " : ""}
+                              {titulo} <span className="filtro-n">{doSec.length}</span>
+                            </td>
+                          </tr>
+                          {doSec.map((x) => (
+                            <LinhaEmRampa
+                              key={x.l.r.id}
+                              x={x}
+                              atual={x.grupo ? selId === x.l.r.id : sel?.r.id === x.l.r.id}
+                              onAbrir={() => {
+                                setSelId(x.l.r.id);
+                                if (detalheRecolhido === "1") setDetalheRecolhido("0");
+                              }}
+                              onAcao={() => {
+                                const k = x.acao.acao;
+                                if (x.grupo || !k) {
+                                  setSelId(x.l.r.id);
+                                  if (!k && x.pend && podeRegistrar) onRegistrar();
+                                  return;
+                                }
+                                if (k === "subir") setMudar({ linha: x.l, dir: 1 });
+                                else if (k === "subir2") setMudar({ linha: x.l, dir: 2 });
+                                else if (k === "voltar") setMudar({ linha: x.l, dir: -1 });
+                                else if (k === "descer") setDescer(x.l);
+                                else if (k === "testar-acima") setAcimaConfirma({ tipo: "testar", linha: x.l, preco: x.l.est.acima?.prox });
+                                else if (k === "aprovar") setAcimaConfirma({ tipo: "aprovar", linha: x.l });
+                                else if (k === "voltar-alvo") setAcimaConfirma({ tipo: "voltar", linha: x.l });
+                                else {
+                                  setSelId(x.l.r.id);
+                                  setAbaPedida({ id: x.l.r.id, aba: k === "teste" ? "ads" : k, n: Date.now() });
+                                  if (detalheRecolhido === "1") setDetalheRecolhido("0");
+                                }
+                              }}
+                              onRegistrar={podeRegistrar ? onRegistrar : null}
+                            />
+                          ))}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
       </div>
 
-      <RampaGrupo linhasGrupo={linhasGrupo} dados={dados} hoje={hoje} onToast={onToast} selId={selId} setSelId={setSelId} linhasAds={linhasAds} onVerAds={onVerAds} />
+      <RampaGrupo linhasGrupo={linhasGrupo} dados={dados} hoje={hoje} onToast={onToast} selId={selId} setSelId={setSelId} linhasAds={linhasAds} onVerAds={onVerAds} soDetalhe />
 
       {sel && (
         <Detalhe
           l={sel}
+          pend={pendDe(sel)}
+          abaPedida={abaPedida?.id === sel.r.id ? abaPedida : null}
           recolhido={detalheRecolhido === "1"}
           onAlternar={() => setDetalheRecolhido(detalheRecolhido === "1" ? "0" : "1")}
           anuncio={anuncio}
@@ -1023,7 +1020,108 @@ function CronogramaSazonal({ e, onDescer }) {
   );
 }
 
-function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, onEditar, onRefazer, onDescer, onAjustarDegrau, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo, adsLinha, onVerAds }) {
+// Uma linha da lista "Em rampa" (produto ou anúncio com vários itens).
+function LinhaEmRampa({ x, atual, onAbrir, onAcao, onRegistrar }) {
+  const { l, grupo, pend, proxima } = x;
+  const e = l.est;
+  // Produto que só vende dentro do anúncio com vários itens: a rampa do anúncio decide.
+  const acao = !grupo && l.soNoGrupo ? { tipo: "info", titulo: "Segue a rampa do anúncio inteiro", porque: "Pode encerrar esta rampa (⋯ Mais no detalhe)." } : x.acao;
+  const pctTxt = (v) => `${String(Math.round(Number(v) * 10) / 10).replace(".", ",")}%`;
+  const registrar = acao.tipo === "info" && pend;
+  const ic = { resolver: "!", atencao: "⚠", oportunidade: "↑", decisao: "◆" }[acao.tipo];
+  const botao = registrar ? (onRegistrar ? "Registrar semana" : null) : grupo ? (acao.acao ? "Abrir" : null) : acao.botao;
+  const botaoCurto = botao && botao.length > 26 ? "Abrir" : botao;
+  return (
+    <tr className={`linha-clicavel${atual ? " linha-atual" : ""}`} onClick={onAbrir}>
+      <td className="td-com-saude">
+        {!grupo && <PontoSaude estado={saudeRampa(e, pend)} />}
+        <b>{l.produto.nome}</b>
+        {grupo && (
+          <span className="badge info tag-pronto" title="Anúncio com vários itens: todas as opções sobem juntas, em % do preço salvo de cada uma">
+            vários itens
+          </span>
+        )}
+        {!grupo && l.soNoGrupo && (
+          <span className="badge info tag-pronto" title="Este produto só é vendido dentro de um anúncio com vários itens: a rampa do anúncio inteiro decide e os avisos desta rampa ficam de fora do Início. Pode encerrar esta rampa (⋯ Mais no Detalhe).">
+            só no anúncio com vários itens
+          </span>
+        )}
+        <div className="sub-linha">
+          <CanalTag canal={l.canal} />
+          {grupo ? ` · ${l.g.ops.length} opções` : ` · ${e.avaliacoesTotal} avaliações${e.nota != null ? ` · nota ${virgula(e.nota, 1)}` : ""}`}
+        </div>
+        {!grupo &&
+          (l.r.checklist?.pronto ? (
+            <span className="badge good tag-pronto" title={`Você marcou como pronto em ${diaMes(l.r.checklist.pronto)}`}>
+              ✓ pronto
+            </span>
+          ) : (
+            <span className="badge info tag-pronto" title="Ainda não marcado como pronto (no fim do checklist, aba Anúncio do detalhe)">
+              preparando
+            </span>
+          ))}
+        {!grupo && <TagTeste teste={e.teste} />}
+        {e.alvoMudou && !grupo && (
+          <span className="badge warn tag-pronto" title={`O preço salvo mudou de ${BRL(e.alvoMudou.de)} para ${BRL(e.alvoMudou.para)}`}>
+            ⚠ alvo mudou
+          </span>
+        )}
+        {e.sazonal && (
+          <span className="badge info tag-pronto" title={`Produto sazonal: no alvo até ${dataBR(e.sazonal.limite)} (${e.sazonal.motivoLimite})`}>
+            {e.sazonal.nome} · {{ subindo: `alvo até ${dataBR(e.sazonal.limite)}`, pico: "temporada", entressafra: "entressafra", aguardando: `temporada em ${dataBR(e.sazonal.inicioTemporada)}` }[e.sazonal.fase]}
+          </span>
+        )}
+      </td>
+      <td>
+        <b>{grupo ? pctTxt(l.g.pctAtual) : BRL(e.preco)}</b>
+        <span className="muted-cel"> → {grupo ? "100%" : BRL(e.alvo)}</span>
+        <div className="degrau-dots">
+          {e.degraus.map((d, k) => (
+            <i key={k} className={k < e.i ? "ok" : k === e.i ? "at" : ""} />
+          ))}
+        </div>
+        <div className="sub-num">
+          {e.fase.rotulo}
+          {e.fase.chave !== "acima" ? ` · ${e.i + 1} de ${e.degraus.length}` : ""} · lucro {BRL(e.lucroAtual)}
+        </div>
+      </td>
+      <td className="o-que-fazer">
+        <div className="oqf">
+          {registrar ? (
+            <Estado tipo="atencao" icone="↻">Registrar a semana</Estado>
+          ) : acao.tipo === "info" ? (
+            <span className="muted-cel">{acao.titulo}</span>
+          ) : (
+            <Estado tipo={acao.tipo} icone={ic}>
+              {acao.titulo}
+            </Estado>
+          )}
+          {botaoCurto && (
+            <button
+              type="button"
+              className={`btn btn-mini ${acao.tipo === "oportunidade" && !registrar ? "btn-verde" : registrar || ["resolver", "atencao"].includes(acao.tipo) ? "primary" : ""}`}
+              title={botao}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                onAcao();
+              }}
+            >
+              {botaoCurto}
+            </button>
+          )}
+        </div>
+        {(registrar ? `Último registro em ${diaMes(pend.ultimo)} — ${pend.dias} dias sem registrar` : acao.porque) && (
+          <div className="sub-num oqf-porque">{registrar ? `Último registro em ${diaMes(pend.ultimo)} — ${pend.dias} dias sem registrar` : acao.porque}</div>
+        )}
+      </td>
+      <td>
+        <span className={proxima.atrasada ? "prox-atrasada" : "muted-cel"}>{proxima.texto}</span>
+      </td>
+    </tr>
+  );
+}
+
+function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAlternar, anuncio, regras, onMudar, onEditar, onRefazer, onDescer, onAjustarDegrau, onEncerrar, onChecklist, acoesTeste, onAcima, onAjustarAlvo, adsLinha, onVerAds }) {
   const e = l.est;
   const noAlvo = e.noAlvo;
   const [orcEdit, setOrcEdit] = useState("");
@@ -1035,6 +1133,44 @@ function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, o
   const faltam = e.portoes.filter((p) => !p.ok);
   const av = adsLinha?.av || null;
   const roasPos = (v) => Math.max(2, Math.min(98, (v / Math.max(e.roasMin * 2, (e.roas || 0) * 1.2, 1)) * 100));
+  // Detalhe reorganizado (out/2026, prévia aprovada): "O que fazer agora", o
+  // que o app está olhando e as abas (com marca onde há algo a fazer).
+  const [aba, setAba] = useState(abaPedida?.aba || "plano");
+  const [abaVista, setAbaVista] = useState(abaPedida?.n || null);
+  if (abaPedida && abaPedida.n !== abaVista) {
+    setAbaVista(abaPedida.n);
+    setAba(abaPedida.aba);
+  }
+  const [verMais, setVerMais] = useState(false);
+  const acao = acaoDaRampa(e, { canal: l.canal.nome, checklist: l.r.checklist || {} });
+  const sinais = sinaisDaRampa(e);
+  const proxima = proximaConferencia(e, { pendente: pend });
+  const sk = e.sugestao.chave;
+  const marcaAba = {
+    plano: ["subir", "testar-acima", "acima-aprovado"].includes(sk) ? "oportunidade" : ["voltar", "descer", "atrasado", "acima-voltar"].includes(sk) || e.lucroCheck?.status === "sinaliza" ? "atencao" : null,
+    anuncio: e.anuncio ? (e.anuncio.motivo === "teste" ? "resolver" : "atencao") : e.semVenda || e.alertaNota ? "atencao" : null,
+    ads: e.teste?.status === "recomendado" ? "atencao" : av && ["resolver", "atencao", "oportunidade"].includes(av.estado) ? av.estado : null,
+    digitar: anuncio?.linhas?.some((a) => a.acimaDoRiscado) ? "atencao" : null,
+  };
+  const fazer = (k) => {
+    if (k === "subir") onMudar(1);
+    else if (k === "subir2") onMudar(2);
+    else if (k === "voltar") onMudar(-1);
+    else if (k === "descer") onDescer();
+    else if (k === "testar-acima") onAcima("testar", e.acima?.prox);
+    else if (k === "aprovar") onAcima("aprovar");
+    else if (k === "voltar-alvo") onAcima("voltar");
+    else if (k === "anuncio") setAba("anuncio");
+    else if (k === "teste") setAba("ads");
+    else if (k === "plano") setAba("plano");
+  };
+  const ABAS = [
+    ["plano", "Plano e portões"],
+    ["digitar", `O que digitar${(anuncio?.linhas || []).length > 1 ? ` (${anuncio.linhas.length})` : ""}`],
+    ["anuncio", "Anúncio"],
+    ["evolucao", "Evolução"],
+    ["ads", "Ads e teste"],
+  ];
 
   return (
     <div className={`panel${recolhido ? " detalhe-recolhido" : ""}`}>
@@ -1054,25 +1190,26 @@ function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, o
           </span>
         </span>
         <span className="acoes-detalhe">
-          <button type="button" className="btn btn-mini" onClick={onEditar}>Editar degraus</button>
-          <button type="button" className="btn btn-mini" onClick={onRefazer} title="Configurou errado? Refaz a rampa do zero (preço inicial, degraus) sem precisar encerrar e criar de novo">
-            ↺ Refazer rampa
-          </button>
-          {!noAlvo && (
-            <button type="button" className="btn btn-mini" onClick={onAjustarDegrau} title="Corrige o preço do degrau em que você está, sem contar como subida">
-              ✎ Ajustar preço deste degrau
+          {sk === "subir" && (
+            <button type="button" className="btn btn-mini btn-verde" onClick={() => onMudar(e.sugestao.saltos === 2 ? 2 : 1)}>
+              {e.sugestao.saltos === 2 ? `↑↑ Subir 2 (pra ${BRL(e.degraus[e.i + 2])})` : `↑ Subir pra ${BRL(e.proximo)}`}
             </button>
           )}
-          <button type="button" className="btn btn-mini" onClick={() => onMudar(-1)} disabled={e.i === 0}>↓ Voltar degrau</button>
-          <button type="button" className={`btn btn-mini${e.sugestao.chave === "subir" && e.sugestao.saltos !== 2 ? " primary" : ""}`} onClick={() => onMudar(1)} disabled={noAlvo || !e.proximo}>
-            ↑ Subir{e.proximo ? ` para ${BRL(e.proximo)}` : ""}
-          </button>
-          {e.sugestao.saltos === 2 && (
-            <button type="button" className="btn btn-mini primary" onClick={() => onMudar(2)}>
-              ↑↑ Subir 2 (para {BRL(e.degraus[e.i + 2])})
+          <span className="menu-mais">
+            <button type="button" className="btn btn-mini" onClick={() => setVerMais((v) => !v)} aria-expanded={verMais}>
+              ⋯ Mais
             </button>
-          )}
-          <button type="button" className="del" title="Encerrar rampa" onClick={onEncerrar}>×</button>
+            {verMais && (
+              <span className="menu-mais-lista" onClick={() => setVerMais(false)}>
+                {!noAlvo && <button type="button" onClick={onAjustarDegrau}>✎ Ajustar preço deste degrau</button>}
+                <button type="button" onClick={onEditar}>Editar degraus</button>
+                {sk !== "subir" && e.proximo && !noAlvo && <button type="button" onClick={() => onMudar(1)}>↑ Subir pra {BRL(e.proximo)}</button>}
+                {e.i > 0 && <button type="button" onClick={() => onMudar(-1)}>↓ Voltar degrau</button>}
+                <button type="button" onClick={onRefazer}>↺ Refazer rampa (configurei errado)</button>
+                <button type="button" className="perigo" onClick={onEncerrar}>× Encerrar rampa</button>
+              </span>
+            )}
+          </span>
         </span>
       </h3>
 
@@ -1095,7 +1232,48 @@ function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, o
         </div>
       )}
 
-      <div className="grid-rampa">
+      <div className="nums-rampa">
+        <div>
+          <small>Preço agora</small>
+          <b>{BRL(e.preco)}</b>
+          <span>alvo {BRL(e.alvo)}</span>
+        </div>
+        <div>
+          <small>Lucro por venda</small>
+          <b>{BRL(e.lucroAtual)}</b>
+          <span>no alvo {BRL(e.lucroAlvo)}</span>
+        </div>
+        <div>
+          <small>Vendas desde o degrau</small>
+          <b>{e.vendasDesde}</b>
+          <span>
+            em {e.dias} dia{e.dias === 1 ? "" : "s"} · {e.vendasTotal} no total
+          </span>
+        </div>
+        <div>
+          <small>Avaliações</small>
+          <b>
+            {e.avaliacoesTotal}
+            {e.nota != null ? ` · ★${virgula(e.nota, 1)}` : ""}
+          </b>
+          <span>+{e.avaliacoesDesde} desde o degrau</span>
+        </div>
+      </div>
+
+      <AgoraRampa acao={acao} proxima={proxima} onAcao={fazer} />
+      <OlhandoRampa sinais={sinais} />
+
+      <div className="abas-rampa" role="tablist">
+        {ABAS.map(([k, rot]) => (
+          <button key={k} type="button" role="tab" aria-selected={aba === k} className={aba === k ? "ativo" : ""} onClick={() => setAba(k)}>
+            {rot}
+            <MarcaAba tipo={marcaAba[k]} />
+          </button>
+        ))}
+      </div>
+
+      {aba === "plano" && (
+      <div className="aba-rampa">
         <div>
           <h4 className="sub-h">Plano de preço</h4>
           <div className="ladder">
@@ -1265,8 +1443,11 @@ function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, o
 
           {e.lucroCheck && <ValeAPena e={e} regras={regras} />}
         </div>
+      </div>
+      )}
 
-        <div>
+      {aba === "ads" && (
+        <div className="aba-rampa">
           {t.status === "ads-ligado" && (
             <div className="teste-card">
               <h4 className="sub-h">Ads ligado</h4>
@@ -1387,6 +1568,11 @@ function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, o
             </div>
           )}
 
+        </div>
+      )}
+
+      {aba === "digitar" && (
+        <div className="aba-rampa">
           <h4 className="sub-h">
             O que digitar em {l.canal.nome} <span className="muted-cel">({anuncio?.riscadoFixo ? `preço original já anunciado (${BRL(anuncio.riscadoFixo)}) fica fixo — só a promo muda` : anuncio?.desconto > 0.005 ? `riscado fixo do alvo, desconto ${Math.round(anuncio.desconto * 100)}% — só a promo muda` : "canal sem desconto configurado"})</span>
           </h4>
@@ -1447,6 +1633,11 @@ function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, o
             Variações e kits: a mesma curva de desconto do 2º Por quantidade (até {Math.round((l.cfg.descontoMax ?? 0.3) * 100)}%, lucro sempre subindo) sobre o preço de agora, sem passar do alvo de cada kit (o preço salvo dele não muda). Clique no valor pra copiar.
           </p>
 
+        </div>
+      )}
+
+      {aba === "ads" && (
+        <div className="aba-rampa">
           <h4 className="sub-h">Ads {e.ultAds ? <span className="muted-cel">· semana de {dataBR(e.ultAds.data)}</span> : null}</h4>
           <div className="mini3">
             <div>
@@ -1495,10 +1686,11 @@ function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, o
           ) : null}
           <p className="hint" style={{ margin: 0 }}>Lembrete: não suba de degrau e mexa no Ads na mesma semana.</p>
         </div>
-      </div>
+      )}
 
-      <FunilAnuncio funil={e.funil} />
+      {aba === "anuncio" && <FunilAnuncio funil={e.funil} />}
 
+      {aba === "evolucao" && (
       <div className="secao-rampa">
         <h4 className="sub-h">
           Evolução <span className="muted-cel">· preço vendido, vendas por semana e avaliações</span>
@@ -1510,7 +1702,9 @@ function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, o
         </h4>
         <GraficoRampa est={e} ajustes={l.r.checklist?.ajustesDegrau} regras={regras} />
       </div>
+      )}
 
+      {aba === "anuncio" && (
       <div className={`secao-rampa${e.revisar ? " destaque-revisar" : ""}`}>
         <h4 className="sub-h">
           Revisar anúncio
@@ -1560,6 +1754,7 @@ function Detalhe({ l, recolhido = false, onAlternar, anuncio, regras, onMudar, o
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -1641,6 +1836,7 @@ function RegrasPortoes({ regras, loja, atualizar, onToast }) {
     ["notaAlerta", "Nota que gera alerta", 0.1],
     ["roasInviavel", "Ads inviável com ROAS mínimo acima de", 0.5],
     ["revisarDias", "Dias no lançamento até sugerir revisar", 1],
+    ["semVendaDias", "Dias no degrau sem nenhuma venda até avisar", 1],
     ["maxDegraus", "Máximo de degraus até o alvo", 1],
     ["saltoVendas", "Salto de 2 degraus com vendas ≥ (× o portão)", 0.5],
     ["diasAposSalto", "Dias parado depois de salto ou de voltar", 1],

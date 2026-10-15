@@ -6,6 +6,8 @@ import { canalDireto } from "../lib/canais.js";
 import { EVENTO_INICIAR_GRUPO, opcoesNoCanal, PASSO_GRUPO, PCT_INICIO_GRUPO, precosDoDegrau, sugerirDegrausGrupo } from "../lib/grupoRampa.js";
 import { estadoSugestaoRampa } from "../lib/estados.js";
 import { irParaAba } from "../lib/navegar.js";
+import { acaoDaRampa, proximaConferencia, sinaisDaRampa } from "../lib/rampaAgora.js";
+import { AgoraRampa, MarcaAba, OlhandoRampa } from "./RampaAgora.jsx";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Estado from "./Estado.jsx";
@@ -26,7 +28,7 @@ const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 // Sugestão da rampa do anúncio (testar acima do alvo é só por produto).
 const sugestaoDe = (e) => (e.sugestao?.chave === "testar-acima" ? { chave: "alvo", tom: "good", rotulo: "No alvo" } : e.sugestao);
 
-export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, setSelId, linhasAds, onVerAds }) {
+export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, setSelId, linhasAds, onVerAds, soDetalhe = false }) {
   const { lojaId } = useLoja();
   const [iniciar, setIniciar] = useState(false);
   const [mudar, setMudar] = useState(null); // { l, novo (índice), tipo }
@@ -80,6 +82,79 @@ export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, s
   }
 
   const previa = mudar ? precosDoDegrau({ ops: mudar.l.g.ops, pct: mudar.novoPct ?? num(mudar.l.r.degraus[mudar.novoIdx]), canal: mudar.l.canal, itens: dados.itens, produtos: dados.produtos, kits: dados.kits, publicacoes: dados.publicacoesCanal }) : null;
+
+  const dialogos = (
+    <>
+      {mudar && (
+        <ConfirmDialog
+          titulo={mudar.tipo === "subida" ? "Subir o anúncio inteiro?" : "Descer o anúncio inteiro?"}
+          larga
+          mensagem={
+            <>
+              <p style={{ marginTop: 0 }}>
+                {mudar.l.produto.nome} em {mudar.l.canal.nome}: <b>{pctTxt(mudar.l.g.pctAtual)}</b> → <b>{pctTxt(mudar.novoPct ?? mudar.l.r.degraus[mudar.novoIdx])}</b> do preço salvo. Troque só a promo de cada opção:
+              </p>
+              <table className="tabela-ads">
+                <tbody>
+                  {(previa || []).map((x) => (
+                    <tr key={x.idx}>
+                      <td>{x.rotulo}</td>
+                      <td className="num">{x.an ? `${BRL(x.an.original)} · promo ${x.an.promo}% → ${BRL(x.an.clientePaga)}` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          }
+          confirmarLabel={salvando ? "Salvando…" : "Confirmar"}
+          onConfirm={aplicarMudanca}
+          onCancel={() => setMudar(null)}
+        />
+      )}
+      {encerrar && (
+        <ConfirmDialog
+          titulo="Encerrar a rampa do anúncio?"
+          mensagem={`Encerrar a rampa de "${encerrar.produto.nome}" em ${encerrar.canal.nome}? Os registros semanais dela são apagados. Os preços salvos das opções continuam os mesmos.`}
+          confirmarLabel="Encerrar rampa"
+          perigo
+          onConfirm={encerrarRampa}
+          onCancel={() => setEncerrar(null)}
+        />
+      )}
+      {iniciar && <IniciarRampaGrupo dados={dados} linhasGrupo={linhasGrupo} hoje={hoje} onToast={onToast} onClose={(id) => (setIniciar(false), id && setSelId(id))} />}
+    </>
+  );
+
+  // Lista única "Em rampa" (Crescimento.jsx) mostra as linhas; aqui só o detalhe do anúncio aberto.
+  if (soDetalhe)
+    return (
+      <>
+        {aberta && (
+          <div className="panel">
+            <h3 className="section-title">
+              <span>
+                {aberta.produto.nome} <CanalTag canal={aberta.canal} />
+                <span className="h3-contagem">
+                  anúncio com vários itens · {aberta.g.ops.length} opções{aberta.g.mix ? ` · mix de ${aberta.g.mix.total} vendas (30 dias)` : " · sem vendas ainda: opções com o mesmo peso"}
+                </span>
+              </span>
+              <button type="button" className="btn btn-mini" style={{ marginLeft: "auto" }} onClick={() => setSelId(null)}>
+                Fechar
+              </button>
+            </h3>
+            <DetalheGrupo
+              l={aberta}
+              comAgora
+              linhaAds={linhasAds?.linhas.find((x) => x.chave === `grupo|${aberta.grupo.id}|${aberta.canal.id}`) || null}
+              onVerAds={onVerAds}
+              onMudar={(m) => setMudar({ l: aberta, ...m })}
+              onEncerrar={() => setEncerrar(aberta)}
+            />
+          </div>
+        )}
+        {dialogos}
+      </>
+    );
 
   return (
     <div className="panel">
@@ -170,48 +245,13 @@ export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, s
         </div>
       )}
 
-      {mudar && (
-        <ConfirmDialog
-          titulo={mudar.tipo === "subida" ? "Subir o anúncio inteiro?" : "Descer o anúncio inteiro?"}
-          larga
-          mensagem={
-            <>
-              <p style={{ marginTop: 0 }}>
-                {mudar.l.produto.nome} em {mudar.l.canal.nome}: <b>{pctTxt(mudar.l.g.pctAtual)}</b> → <b>{pctTxt(mudar.novoPct ?? mudar.l.r.degraus[mudar.novoIdx])}</b> do preço salvo. Troque só a promo de cada opção:
-              </p>
-              <table className="tabela-ads">
-                <tbody>
-                  {(previa || []).map((x) => (
-                    <tr key={x.idx}>
-                      <td>{x.rotulo}</td>
-                      <td className="num">{x.an ? `${BRL(x.an.original)} · promo ${x.an.promo}% → ${BRL(x.an.clientePaga)}` : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          }
-          confirmarLabel={salvando ? "Salvando…" : "Confirmar"}
-          onConfirm={aplicarMudanca}
-          onCancel={() => setMudar(null)}
-        />
-      )}
-      {encerrar && (
-        <ConfirmDialog
-          titulo="Encerrar a rampa do anúncio?"
-          mensagem={`Encerrar a rampa de "${encerrar.produto.nome}" em ${encerrar.canal.nome}? Os registros semanais dela são apagados. Os preços salvos das opções continuam os mesmos.`}
-          confirmarLabel="Encerrar rampa"
-          perigo
-          onConfirm={encerrarRampa}
-          onCancel={() => setEncerrar(null)}
-        />
-      )}
-      {iniciar && <IniciarRampaGrupo dados={dados} linhasGrupo={linhasGrupo} hoje={hoje} onToast={onToast} onClose={(id) => (setIniciar(false), id && setSelId(id))} />}
+      {dialogos}
     </div>
   );
 }
 
-function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar }) {
+function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar, comAgora = false }) {
+  const [aba, setAba] = useState("plano");
   const e = l.est;
   const sg = sugestaoDe(e);
   const degraus = (l.r.degraus || []).map(num);
@@ -225,8 +265,41 @@ function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar }) {
   const proximo = z && z.fase !== "entressafra" && z.proximaData
     ? { titulo: proxIdx != null ? `${pctTxt(degraus[proxIdx])} em ${dm(z.proximaData)}` : "No alvo", sub: `cronograma de ${z.nome} · no alvo até ${dm(z.limite)}` }
     : { titulo: sg.rotulo, sub: z ? `${z.nome}` : e.portoesOk ? "todos os portões ok" : `${e.portoes.filter((p) => !p.ok).length} portão(ões) faltando` };
+  // Mesmo padrão do detalhe do produto (out/2026): "O que fazer agora", o que o app olha e abas.
+  const acao = comAgora ? acaoDaRampa({ ...e, sugestao: sg }, { canal: l.canal.nome, grupo: true, pctDe: l.g.pctDe }) : null;
+  const fazer = (k) => {
+    if ((k === "subir" || k === "subir2") && proxIdx != null && proxIdx > i) onMudar({ novoIdx: proxIdx, tipo: "subida" });
+    else if (k === "voltar" && i > 0) onMudar({ novoIdx: i - 1, tipo: "descida" });
+    else if (k === "descer" && pctDescer != null) onMudar({ novoPct: pctDescer, tipo: "descida", obs: "entressafra" });
+    else setAba("plano");
+  };
+  const acimaRiscado = l.g.linhas.some((x) => x.an?.acimaDoRiscado);
+  const mostra = (a) => !comAgora || aba === a;
   return (
     <div className="detalhe-cel gr-det">
+      {comAgora && (
+        <>
+          <AgoraRampa
+            acao={{ ...acao, depois: acao.acao && ["subir", "subir2", "voltar", "descer"].includes(acao.acao) ? "Depois de confirmar: troque a promo de cada opção em Anunciar (aba “O que digitar” mostra os números)." : acao.depois }}
+            proxima={proximaConferencia(e)}
+            onAcao={fazer}
+          />
+          <OlhandoRampa sinais={sinaisDaRampa(e)} />
+          <div className="abas-rampa" role="tablist">
+            {[
+              ["plano", "Plano e portões", ["subir"].includes(sg?.chave) ? "oportunidade" : ["voltar", "descer", "atrasado"].includes(sg?.chave) ? "atencao" : null],
+              ["digitar", `O que digitar (${l.g.linhas.length})`, acimaRiscado ? "atencao" : null],
+            ].map(([k, rot, m]) => (
+              <button key={k} type="button" role="tab" aria-selected={aba === k} className={`aba-rampa${aba === k ? " ativa" : ""}`} onClick={() => setAba(k)}>
+                {rot}
+                <MarcaAba tipo={m} />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {mostra("plano") && (
+      <>
       <div className="gr-topo">
         <ol className="gr-steps" aria-label="Degraus da rampa">
           {degraus.map((d, k) => (
@@ -292,6 +365,9 @@ function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar }) {
         </div>
       )}
 
+      </>
+      )}
+      {mostra("digitar") && (
       <div className="gr-tabela-cartao">
         <div className="gr-tabela-cab">
           <b>O que digitar no canal</b>
@@ -335,6 +411,9 @@ function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar }) {
         </div>
       </div>
 
+      )}
+
+      {mostra("plano") && (
       <div className="gr-rodape">
         <div className="acoes-ads" style={{ margin: 0 }}>
           {proxIdx != null && proxIdx > i && (
@@ -364,6 +443,7 @@ function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar }) {
           .
         </span>
       </div>
+      )}
     </div>
   );
 }

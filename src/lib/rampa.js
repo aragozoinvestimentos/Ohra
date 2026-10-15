@@ -23,6 +23,7 @@ export const REGRAS_PADRAO = {
   notaAlerta: 4.5, // abaixo disso: alerta pra revisar o produto
   roasInviavel: 8, // ROAS mínimo acima disso = Ads inviável no degrau
   revisarDias: 14, // dias no lançamento com < metade das vendas → revisar anúncio
+  semVendaDias: 7, // dias no degrau sem NENHUMA venda → aviso âmbar "conferir anúncio" (antes do diagnóstico completo)
   maxDegraus: 8, // máximo de degraus do 1º ao alvo (passo cresce se a distância for grande)
   saltoVendas: 2, // vendas desde o degrau ≥ 2× o portão → sugere subir 2 degraus
   diasAposSalto: 14, // depois de salto duplo ou de voltar: dias mínimos até a próxima mudança
@@ -801,6 +802,8 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     lancamento: revisarPorLancamento ? { dias, vendas: vendasDesde } : null,
   });
   const revisar = !!anuncio;
+  // Aviso mais cedo (out/2026): N dias no degrau sem nenhuma venda (fora conhecidos).
+  const semVenda = !noAlvo && !acimaAtivo && dias >= num(regras.semVendaDias ?? 7) && vendasDesde === 0 ? { dias } : null;
 
   // Sugestão — rampa normal: voltar (lucro) > revisar anúncio > sinaliza >
   // subir (1º degrau: portões OU atalho pelo ritmo; depois: portões + lucro
@@ -832,6 +835,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   } else if (noAlvo) sugestao = acima?.pronto ? { chave: "testar-acima", tom: "good", rotulo: "Testar acima do alvo" } : { chave: "alvo", tom: "good", rotulo: "No alvo" };
   else if (lucroCheck?.status === "voltar") sugestao = { chave: "voltar", tom: "bad", rotulo: "Voltar degrau" };
   else if (revisar) sugestao = { chave: "revisar", tom: "bad", rotulo: "Revisar anúncio" };
+  else if (semVenda) sugestao = { chave: "sem-venda", tom: "warn", rotulo: `${semVenda.dias} dias sem venda` };
   else if (lucroCheck?.status === "sinaliza") sugestao = { chave: "segurar", tom: "warn", rotulo: lucroCheck.ultima?.ruim ? "Segurar (semana abaixo)" : "Lucrando menos" };
   else if (podeSubir && salto(portoesOk)) sugestao = { chave: "subir", tom: "good", rotulo: "Subir 2 degraus", saltos: 2 };
   else if (podeSubir) sugestao = { chave: "subir", tom: "good", rotulo: !portoesOk && atalho?.ok ? "Subir degrau (vendendo rápido)" : "Subir degrau", saltos: 1, peloRitmo: !portoesOk && !!atalho?.ok };
@@ -854,7 +858,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     zero: ctx.lucroEm ? precoComLucro(0, alvo) : ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
     avaliacoesTotal, nota, vendasDesde, vendasTotal, vendasTotalDecisao, conhecidosTotal, avaliacoesDesde, dias, ruins7,
     portoes, portoesOk, roasMin, roas, organico, organicoAntes, ultAds,
-    revisar, revisarPorAds, revisarPorLancamento, revisarPorTeste, anuncio, alertaNota, sugestao, ultimaSemana, diasMin, campanhaAviso,
+    revisar, semVenda, revisarPorAds, revisarPorLancamento, revisarPorTeste, anuncio, alertaNota, sugestao, ultimaSemana, diasMin, campanhaAviso,
     segmentos: segs, lucroCheck, lucroSubir, atalho, ritmo, ehPrimeiro, sazonal, podePerder,
     lucroSemana, lucroSemanaAds, lucroSemanaAlvo, semanas, registros: regs, funil,
   };

@@ -170,9 +170,10 @@ export function montarPendencias({
   // sazonal — decididos em lib/rampa.js (estadoRampa().sugestao).
   for (const l of rampas) {
     const sg = l.est.sugestao;
-    if (!sg || !["voltar", "descer", "atrasado"].includes(sg.chave)) continue;
+    if (!sg || !["voltar", "descer", "atrasado", "sem-venda"].includes(sg.chave)) continue;
     const textos = {
       voltar: [`${l.produto.nome}: voltar degrau`, `${l.canal.nome} · o preço novo derrubou o lucro por 2 semanas`],
+      "sem-venda": [`${l.produto.nome}: ${l.est.semVenda?.dias || 7} dias sem venda`, `${l.canal.nome} · confira se o anúncio aparece na busca, o preço e a foto de capa`],
       descer: [`${l.produto.nome}: descer o preço (entressafra)`, `${l.canal.nome} · ${brl(l.est.preco)} → ${brl(sg.preco)} — a temporada passou`],
       atrasado: [`${l.produto.nome}: atrasado no cronograma`, `${l.canal.nome} · ${l.est.sazonal?.nome || "temporada"}: no alvo até ${String(l.est.sazonal?.limite || "").slice(8, 10)}/${String(l.est.sazonal?.limite || "").slice(5, 7)}`],
     }[sg.chave];
@@ -458,7 +459,7 @@ export function statusInicio({ caixa, rampas = [], semana = [], afAtivo = false,
         ? { tom: "warn", frase: !caixa.temSaldoInicial ? `Falta o saldo inicial · saldo ${brl(caixa.saldoHoje)}` : `A receber atrasado · saldo ${brl(caixa.saldoHoje)}` }
         : { tom: "good", frase: `Saldo ${brl(caixa.saldoHoje)} · menor em 3 meses ${brl(caixa.menor?.saldoFinal)}` };
 
-  const revisar = rampas.filter((l) => l.est.anuncio || ["voltar", "descer", "atrasado"].includes(l.est.sugestao?.chave));
+  const revisar = rampas.filter((l) => l.est.anuncio || ["voltar", "descer", "atrasado", "sem-venda"].includes(l.est.sugestao?.chave));
   const vendas = !rampas.length && !afAtivo
     ? { tom: "neu", frase: "Nenhum produto em rampa nem afiliado" }
     : revisar.length
