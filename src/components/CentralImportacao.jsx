@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { BRL } from "../lib/format.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { lerXls } from "../lib/lerXls.js";
-import { andamentoDoCsv, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioParaGuardar } from "../lib/relatorioShopee.js";
+import { andamentoDoCsv, juntarAds, juntarDesempenho, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioParaGuardar } from "../lib/relatorioShopee.js";
 import { PLATAFORMAS, caixaDosPedidos, interpretarPedidosOlist, ligarSku, plataformaDoNumero, tipoEIdDoItem, normSku } from "../lib/pedidos.js";
 import { excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
 import { estenderPeriodoAds, iniciarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
@@ -155,18 +155,24 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
         .map(({ g, ficha }) => ({ id: g.id, nome: g.nome, opcoes: ficha.opcoes.map((o, idx) => ({ idx, skus: ficha.linhas.filter((l) => l.opcao === o).map((l) => l.sku) })) }))
     );
   }
-  async function enviarShopee(tipo, arquivo) {
+  async function enviarShopee(tipo, arquivos) {
     const rel = `shopee:${tipo}`;
     setOcupado(rel);
     try {
-      const r = await lerRelatorio(arquivo);
-      if (r.tipo !== tipo) throw new Error(tipo === "desempenho" ? "Isto é o CSV do Shopee Ads — suba no botão “Ads (CSV)”. Nada foi importado." : "Isto é o relatório de Desempenho — suba no botão “Desempenho do produto”. Nada foi importado.");
+      const lidos = [];
+      for (const a of arquivos) lidos.push(await lerRelatorio(a));
+      if (lidos.some((x) => x.tipo !== tipo)) throw new Error(tipo === "desempenho" ? "Isto é o CSV do Shopee Ads — suba no botão “Ads (CSV)”. Nada foi importado." : "Isto é o relatório de Desempenho — suba no botão “Desempenho do produto”. Nada foi importado.");
+      // A Shopee separa os anúncios em listas (melhor desempenho, recém-cadastrados…):
+      // os arquivos escolhidos juntos viram um relatório só.
+      const r = tipo === "ads" ? juntarAds(lidos) : juntarDesempenho(lidos);
+      if (r.periodosDiferentes) throw new Error(`Os arquivos têm períodos diferentes — exporte todas as listas com o mesmo período${tipo === "ads" ? " (do início do período de Ads até ontem)" : ""}. Nada foi importado.`);
+      const arquivo = { name: r.arquivo || arquivos[0].name };
       lembrarIdsShopee([r]);
       aprenderGrupos([r]);
       let resumo = "";
       if (tipo === "desempenho") {
         const lig = (r.itens || []).filter((i) => ligarSku(i.sku, itens)).length;
-        resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)} · ${(r.itens || []).length} anúncios lidos, ${lig} ligados ao app — o Registrar semana já vem preenchido`;
+        resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${r.arquivos > 1 ? ` · ${r.arquivos} listas juntas` : ""} · ${(r.itens || []).length} anúncios lidos, ${lig} ligados ao app — o Registrar semana já vem preenchido`;
       } else {
         const res = andamentoDoCsv([r], linhasAds?.linhas || []);
         let n = 0;
@@ -179,7 +185,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
         }
         setPerguntas(res.perguntas || []);
         setAvisos((a) => ({ ...a, [rel]: res.avisos || [] }));
-        resumo = `${dm(res.periodo?.de)} a ${dm(res.periodo?.ate)} · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado`;
+        resumo = `${dm(res.periodo?.de)} a ${dm(res.periodo?.ate)}${r.arquivos > 1 ? ` · ${r.arquivos} listas juntas` : ""} · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado`;
         window.dispatchEvent(new Event("focus"));
       }
       const g = await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivo.name, periodo: r.periodo, ok: true, resumo, dados: relatorioParaGuardar(r) });
@@ -218,14 +224,14 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
     const quando = d === 0 ? "hoje" : d === 1 ? "ontem" : `há ${d} dias`;
     return { t: d > limiteDias ? "velho" : "ok", txt: `${u.resumo || ""} · enviado ${quando}${d > limiteDias ? " — hora de atualizar" : ""}` };
   }
-  const Relat = ({ rel, nome, onde, limite, onArquivo, aceita = ".xls,.xlsx,.csv" }) => {
+  const Relat = ({ rel, nome, onde, limite, onArquivo, aceita = ".xls,.xlsx,.csv", multiplo = false }) => {
     const st = status(rel, limite);
     return (
       <div className="ana-relat">
         <div className="ana-relat-nome">{nome}</div>
         <label className={`btn btn-mini${st.t === "velho" || st.t === "nunca" ? " primary" : ""}${ocupado ? " disabled" : ""}`}>
           {ocupado === rel ? "Lendo…" : "Enviar arquivo"}
-          <input type="file" accept={aceita} hidden disabled={!!ocupado} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onArquivo(f); }} />
+          <input type="file" accept={aceita} hidden multiple={multiplo} disabled={!!ocupado} onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (fs.length) onArquivo(multiplo ? fs : fs[0]); }} />
         </label>
         <div className="ana-relat-onde">De onde puxar: {onde}</div>
         <div className={`ana-status ${st.t}`}>
@@ -365,16 +371,18 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
               nome="Desempenho do produto (funil)"
               limite={7}
               aceita=".xlsx"
-              onde={<>Shopee → Dados → Informações Gerenciais → Produto → Performance do produto → <b>Exportar</b> (Últimos 7 dias)</>}
-              onArquivo={(f) => enviarShopee("desempenho", f)}
+              multiplo
+              onde={<>Shopee → Dados → Informações Gerenciais → Produto → Performance do produto → <b>Exportar</b> (Últimos 7 dias). Se aparecer mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período e escolha os arquivos juntos</b></>}
+              onArquivo={(fs) => enviarShopee("desempenho", fs)}
             />
             <Relat
               rel="shopee:ads"
               nome="Ads (CSV)"
               limite={3}
               aceita=".csv"
-              onde={<>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem)</>}
-              onArquivo={(f) => enviarShopee("ads", f)}
+              multiplo
+              onde={<>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem). Se tiver mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período e escolha os arquivos juntos</b></>}
+              onArquivo={(fs) => enviarShopee("ads", fs)}
             />
             {perguntas.map((q) => (
               <div key={q.chave} className="ana-pend">

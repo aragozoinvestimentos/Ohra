@@ -256,6 +256,48 @@ export function interpretarAds(linhas, nomeArquivo) {
   return { tipo: "ads", periodo, porItem, total };
 }
 
+// Shopee Ads exporta UMA lista por tipo de campanha ("produto com melhor
+// desempenho", "produtos recém-cadastrados"…): vários CSVs do MESMO período
+// viram um relatório só (soma por ID do item; arquivo repetido conta uma vez).
+export function juntarAds(relatorios) {
+  const vistos = new Set();
+  const lista = (relatorios || []).filter((r) => r?.tipo === "ads" && !(r.arquivo && vistos.has(r.arquivo)) && (vistos.add(r.arquivo), true));
+  if (lista.length <= 1) return lista[0] || null;
+  const porItem = new Map();
+  const total = { gasto: 0, cliques: 0, vendas: 0 };
+  for (const r of lista)
+    for (const [id, a] of r.porItem) {
+      const t = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, nome: a.nome };
+      t.gasto = Math.round((t.gasto + a.gasto) * 100) / 100;
+      t.cliques += a.cliques;
+      t.vendas += a.vendas;
+      porItem.set(id, t);
+      total.gasto += a.gasto;
+      total.cliques += a.cliques;
+      total.vendas += a.vendas;
+    }
+  total.gasto = Math.round(total.gasto * 100) / 100;
+  const pers = lista.map((r) => r.periodo).filter(Boolean);
+  const iguais = pers.every((p) => p.de === pers[0]?.de && p.ate === pers[0]?.ate);
+  const periodo = pers.length ? { de: pers.map((p) => p.de).sort()[0], ate: pers.map((p) => p.ate).sort().pop() } : null;
+  return { tipo: "ads", periodo, porItem, total, arquivo: lista.map((r) => r.arquivo).join(" + "), arquivos: lista.length, periodosDiferentes: !iguais };
+}
+
+// Desempenho do produto: a Shopee separa os anúncios em listas ("produto com
+// melhor desempenho", "produtos recém-cadastrados"…), cada uma com o seu
+// Exportar. Vários arquivos do MESMO período viram um relatório só (anúncio
+// que aparece em mais de uma lista conta uma vez).
+export function juntarDesempenho(relatorios) {
+  const vistos = new Set();
+  const lista = (relatorios || []).filter((r) => r?.tipo === "desempenho" && !(r.arquivo && vistos.has(r.arquivo)) && (vistos.add(r.arquivo), true));
+  if (lista.length <= 1) return lista[0] || null;
+  const porId = new Map();
+  for (const r of lista) for (const i of r.itens || []) if (!porId.has(i.itemId)) porId.set(i.itemId, i);
+  const pers = lista.map((r) => r.periodo).filter(Boolean);
+  const iguais = pers.every((p) => p.de === pers[0]?.de && p.ate === pers[0]?.ate);
+  return { tipo: "desempenho", periodo: pers[0] || null, itens: [...porId.values()], arquivo: lista.map((r) => r.arquivo).join(" + "), arquivos: lista.length, periodosDiferentes: !iguais };
+}
+
 // Lê um arquivo escolhido (File) e diz o que ele é.
 export async function lerRelatorio(arquivo) {
   const nome = arquivo.name || "";
@@ -275,8 +317,8 @@ export async function lerRelatorio(arquivo) {
 // Devolve { periodo, porChave: { chave: { vendas, impressoes, cliquesProduto,
 // pedidos, gasto, cliques, adsVendas, mistura } }, semPar: [...], adsSemPar, avisos }.
 export function cruzarRelatorios(relatorios, itensApp) {
-  const desemp = relatorios.find((r) => r.tipo === "desempenho") || null;
-  const ads = relatorios.find((r) => r.tipo === "ads") || null;
+  const desemp = juntarDesempenho(relatorios);
+  const ads = juntarAds(relatorios);
   const avisos = [];
   const periodo = desemp?.periodo || ads?.periodo || null;
   if (desemp?.periodo && ads?.periodo && (desemp.periodo.de !== ads.periodo.de || desemp.periodo.ate !== ads.periodo.ate))
@@ -343,7 +385,7 @@ export function idsShopeeLembrados() {
   }
 }
 export function lembrarIdsShopee(relatorios) {
-  const desemp = (relatorios || []).find((r) => r?.tipo === "desempenho");
+  const desemp = juntarDesempenho(relatorios);
   if (!desemp) return;
   const m = idsShopeeLembrados();
   for (const i of desemp.itens) if (i.itemId && i.sku) m[i.itemId] = i.sku;
@@ -378,7 +420,7 @@ function lembrarGrupoShopee(itemId, grupoId) {
 // Ads por item do app: itensApp = [{ chave, sku, grupoId? }] (grupoId = anúncio com vários itens). Números do período do CSV
 // (o andamento é ACUMULADO: exporte do início do período de Ads até ontem).
 export function adsPorItemApp(relatorios, itensApp) {
-  const ads = (relatorios || []).find((r) => r?.tipo === "ads") || null;
+  const ads = juntarAds(relatorios);
   if (!ads) return { periodo: null, porChave: {}, adsSemPar: [], avisos: ["Escolha o CSV do Shopee Ads (Marketing → Shopee Ads → Exportar dados)."] };
   lembrarIdsShopee(relatorios);
   const idSku = idsShopeeLembrados();
@@ -436,8 +478,8 @@ export function adsPorItemApp(relatorios, itensApp) {
 //      unidades, porOpcao: { idx: unidades }, semOpcao: [{sku, unidades}], ads } },
 //    idsUsados: Set }
 export function cruzarGrupos(relatorios, grupos) {
-  const desemp = relatorios.find((r) => r.tipo === "desempenho") || null;
-  const ads = relatorios.find((r) => r.tipo === "ads") || null;
+  const desemp = juntarDesempenho(relatorios);
+  const ads = juntarAds(relatorios);
   const porGrupo = {};
   const idsUsados = new Set();
   if (!desemp) return { porGrupo, idsUsados };
