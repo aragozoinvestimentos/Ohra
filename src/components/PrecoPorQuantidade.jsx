@@ -26,6 +26,8 @@ import CanalTag from "./CanalTag.jsx";
 import Kpis from "./Kpis.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import { EditorVariacao } from "./VariacoesProduto.jsx";
+import { EmbalagemOrganicoDialog } from "./EmbalagemOrganico.jsx";
+import { canalComEmbalagem, configOrganicoDoItem } from "../lib/embalagemCanal.js";
 
 const NOME_CANAL = { shopee: "Shopee", ml: "Mercado Livre", tiktok: "TikTok Shop", shein: "Shein" };
 const nomeCanal = (c) => c?.nome || NOME_CANAL[c?.tipo] || "Canal";
@@ -104,9 +106,10 @@ const CAMPOS_MARGEM = [
 
 export default function PrecoPorQuantidade({ onToast, onSub }) {
   const { lojaId, atualizar } = useLoja();
-  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe, clientePagaHoje, publicacoesCanal, mapaRampa, alertaDe, agoraDe } = useEscada();
+  const { itens, canais, produtos, kits: kitsCat, precos: precosEsc, concorrentes: concorrentesEsc, cfgLoja, cfgDoProduto, escada, variacoes: variacoesRaw, produtoEmbalagens, embalagens, materiais, estrategiaDe, clientePagaHoje, publicacoesCanal, mapaRampa, alertaDe, agoraDe, itemNoCanal } = useEscada();
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // diálogo "Manter assim" do avulso
   const [selPQ, setSelPQ] = useState(null); // linha com o detalhe aberto ("base" ou "n<qtd>")
+  const [embOrgAberto, setEmbOrgAberto] = useState(false); // janela "embalagem no orgânico" do produto (v56)
   const [revisar, setRevisar] = useState(null); // linha de produto_variacoes aberta na tela suspensa (revisar insumos)
   const [produtoId, setProdutoId] = useState("");
   const [canalId, setCanalId] = useState("");
@@ -152,6 +155,9 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
   const e = dados?.escada;
   const refs = dados ? referenciasAvulso(canal, dados.custo1, dados.peso1, cfg, dados.concorrente1) : null;
   const itemPai = pid ? itens.find((i) => i.id === `p:${pid}`) || null : null;
+  // Canal próprio com embalagem própria (v56): a escada já usa o custo do canal
+  // (useEscada → itensNoCanal); aqui só mostra qual embalagem está valendo.
+  const embOrg = itemPai && canalComEmbalagem(canal) ? itemNoCanal(itemPai, canal)?.embalagemCanal || null : null;
   // Estratégia do avulso nesse canal (estrategia.js) — decide se "parece atração" vira sugestão.
   const estrategiaAvulso = itemPai && canal ? estrategiaDe(itemPai, canal) : null;
   const alertas = dados ? alertasAvulso({ canal, p1: dados.p1, base1: { custo: dados.custo1, peso: dados.peso1 }, cfg, escada: e, concorrente: dados.concorrente1, estrategia: estrategiaAvulso }) : [];
@@ -573,6 +579,25 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
             </div>
           </div>
         </div>
+        {embOrg && (
+          <div className="emb-org-linha">
+            <span>
+              Embalagem no {canal.nome}: <b>{embOrg.nomes}</b> ({BRL(embOrg.valor)}) ·{" "}
+              {embOrg.origem === "produto" ? "deste produto" : embOrg.definido ? "a do canal (confirmada)" : "a do canal"}
+              {embOrg.freteZero ? " · frete R$ 0" : ""} — vale pra todas as quantidades (variações seguem o produto)
+            </span>
+            {embOrg.dono && (
+              <button type="button" className="link-btn" onClick={() => setEmbOrgAberto(true)}>
+                trocar neste produto (grava no cadastro)
+              </button>
+            )}
+          </div>
+        )}
+        {pid && canal?.tipo === "custom" && !embOrg && (
+          <div className="hint" style={{ marginBottom: 0 }}>
+            Este canal usa a embalagem do produto (a dos marketplaces). Pra usar outra embalagem nele: Configuração → Canais → Embalagem.
+          </div>
+        )}
         {refs && (
           <div className="refs-linha">
             Referências: <b>margem desejada {BRL(refs.margemDesejada)}</b> · <b>{rotuloMinimo(cfg)} {BRL(refs.margemMinima)}</b> · <b>sem prejuízo {BRL(refs.semPrejuizo)}</b>
@@ -827,6 +852,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                               <div className="kv-cel">
                                 <small>Custo</small>
                                 <b>{BRL(l.custo)}</b>
+                                {embOrg && <span>com a embalagem do {canal.nome} ({BRL(embOrg.valor)})</span>}
                                 <span>lucro {BRL(e.l1)} no avulso (base da curva = preço do avulso)</span>
                               </div>
                               <div className="kv-cel">
@@ -929,6 +955,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                             <div className="kv-cel">
                               <small>Custo</small>
                               <b>{BRL(l.custo)}</b>
+                              {embOrg && <span>com a embalagem do {canal.nome} ({BRL(embOrg.valor)})</span>}
                               <span>{l.estimado ? "estimado — crie a variação pro custo real" : `curva: ${Math.round(l.descontoAlvo * 100)}% → ${Math.round(l.desconto * 100)}% aplicado`}</span>
                             </div>
                             <div className="kv-cel">
@@ -1027,6 +1054,16 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
         </div>
       )}
 
+      {embOrgAberto && embOrg?.dono && (
+        <EmbalagemOrganicoDialog
+          dono={embOrg.dono}
+          config={configOrganicoDoItem(itemPai, { produtos, kits: kitsCat }).config}
+          canal={canal}
+          embalagens={embalagens}
+          onClose={() => setEmbOrgAberto(false)}
+          onToast={onToast}
+        />
+      )}
       {revisar && produto && (
         <EditorVariacao
           key={revisar.id}
