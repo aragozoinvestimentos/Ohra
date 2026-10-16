@@ -12,7 +12,8 @@ import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { saldoReserva, vendasDoMes } from "../lib/vendasMes.js";
 import { trocarSubAba } from "../lib/subAbas.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
-import { regrasAds, tetoDaLoja } from "../lib/ads.js";
+import { gastoAdsNaJanela, regrasAds, tetoDaLoja } from "../lib/ads.js";
+import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { hojeISO, mesDe, rotuloMes } from "../lib/fluxoCaixa.js";
 import { BRL, PCT } from "../lib/format.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -60,6 +61,30 @@ export default function VendasMes({ mes, onToast }) {
   const jaSeparado = res.porMes.get(mes) || 0;
   const falta = Math.max(0, Math.round((v.total.repor - jaSeparado) * 100) / 100);
   const t = v.total;
+  // Ads do mês AO VIVO (16/10/2026, mesma conta do teto da aba Ads): por
+  // período, o maior entre as semanas registradas e o andamento (CSV) —
+  // inclui a campanha da loja (GMV Max da Loja).
+  const adsH = useAdsPeriodos();
+  const adsMes = useMemo(() => {
+    const de = `${mes}-01`;
+    const ate = fimDoMes(mes) < hoje ? fimDoMes(mes) : hoje;
+    const porItem = new Map();
+    for (const p of adsH.periodos || []) {
+      const k = `${p.item_tipo}|${p.item_id}|${p.canal_id}`;
+      if (!porItem.has(k)) porItem.set(k, []);
+      porItem.get(k).push(p);
+    }
+    let total = 0;
+    for (const [k, pers] of porItem) {
+      const [tipo, id, canalId] = k.split("|");
+      const rampa = tipo === "produto" ? (rampas || []).find((r) => r.produto_id === id && r.canal_id === canalId) : null;
+      const semanas = rampa
+        ? (registros || []).filter((g) => g.rampa_id === rampa.id && g.tipo === "semana")
+        : (af.registros || []).filter((g) => g.item_tipo === tipo && g.item_id === id && g.canal_id === canalId && g.vendas_total != null);
+      total += gastoAdsNaJanela(pers, semanas, de, ate);
+    }
+    return Math.round(Math.max(total, t.ads) * 100) / 100;
+  }, [adsH.periodos, mes, hoje, rampas, registros, af.registros, t.ads]);
 
   async function gravar(registro, msg) {
     setSalvando(true);
@@ -183,10 +208,10 @@ export default function VendasMes({ mes, onToast }) {
       />
       {t.unidades > 0 && (() => {
         // Teto de Ads da loja (mesma conta da aba Ads) com os números deste mês.
-        const tt = tetoDaLoja({ faturamento: t.faturamento, lucro: t.lucro, gasto: t.ads, regras: regrasAds(cfgLoja) });
+        const tt = tetoDaLoja({ faturamento: t.faturamento, lucro: t.lucro, gasto: adsMes, regras: regrasAds(cfgLoja) });
         return (
           <div className={`linha-info${tt.acimaTeto ? " atencao-txt" : ""}`}>
-            Ads do mês: <b>{BRL(t.ads)}</b> de {BRL(tt.teto)} (teto da fase {tt.fase}
+            Ads do mês: <b>{BRL(adsMes)}</b> de {BRL(tt.teto)} (teto da fase {tt.fase}
             {tt.limitadoPelaTrava ? ", limitado pela metade do lucro" : ""}){tt.acimaTeto ? " — acima do teto" : ""}
           </div>
         );

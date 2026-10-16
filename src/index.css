@@ -2135,3 +2135,8 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .passo-n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; font-size: 12px; display: grid; place-items: center; }
 .linha-loja-ads > td { background: var(--surface-2); }
 .linha-loja-ads > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+/* Início agrupado por anúncio (16/10/2026) */
+.inicio-anuncio-cab { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.inicio-anuncio-cab .seta { color: var(--ink-soft); }
+.inicio-anuncio-lista { margin: 6px 0 4px; padding-left: 0; }
+.inicio-anuncio-lista .inicio-item { background: var(--surface-2); }

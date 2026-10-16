@@ -91,7 +91,7 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, loja =
           : auto
           ? "Na Shopee: Shopee Ads → Criar → GMV Max – Lance Automático → este produto → orçamento baixo. Dia 3 sem venda = pare e arrume o anúncio; dia 7 = troque pra meta de ROAS."
           : "Registre o que você configurou na plataforma. Os 7 primeiros dias são de aprendizado: o app não sugere mexer."}
-        {av?.empate ? ` ROAS de equilíbrio: ${um(av.empate)} · meta sugerida ${um(metaSugerida(refMeta, regrasA))} (equilíbrio × 1,3).` : ""}
+        {av?.empate && !loja ? ` ROAS de equilíbrio: ${um(av.empate)} · meta sugerida ${um(metaSugerida(refMeta, regrasA))} (equilíbrio × 1,3).` : ""}
       </p>
       <div className="grid-auto">
         <div className="field"><label>Início</label><input type="date" value={f.inicio} onChange={set("inicio")} /></div>

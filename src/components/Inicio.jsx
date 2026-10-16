@@ -24,7 +24,7 @@ import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { sugestoesAfiliado, vendasPorOrigem } from "../lib/afiliados.js";
 import { calcTaxaFalhaAtual, TAXA_FALHA_PRIOR_PCT } from "../lib/registroImpressao.js";
-import { AREAS_PENDENCIA, GRUPOS_PENDENCIA, areaPendencia, montarPendencias, statusInicio } from "../lib/inicio.js";
+import { AREAS_PENDENCIA, GRUPOS_PENDENCIA, agruparPorAnuncio, areaPendencia, montarPendencias, statusInicio } from "../lib/inicio.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
 import { contarMarcas, publicarMarcas } from "../lib/marcas.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -162,6 +162,7 @@ export default function Inicio({ onIrPara, onToast }) {
   }
   const gestao = useDadosGestao();
   const [verTodos, setVerTodos] = useState(false);
+  const [anunciosAbertos, setAnunciosAbertos] = useState(() => new Set()); // cards de anúncio abertos
   // Filtro do "Pra fazer" por área (lembrado neste aparelho). Urgentes aparecem sempre.
   const [filtro, setFiltroEstado] = useState(() => {
     try {
@@ -325,12 +326,18 @@ export default function Inicio({ onIrPara, onToast }) {
   // limite (repartirTarefas): Resolver / topo de Atenção e rotina / Minhas tarefas.
   // Urgentes (Resolver) ficam fora do limite e de qualquer filtro.
   const avisos = pendencias.filter((p) => !p.tarefa);
+  // Agrupado por anúncio (produto + variações × canal): avisos do mesmo
+  // anúncio viram um card; o limite de 5 conta cards.
+  const nomesCanais = (dados.canais || []).map((c) => c.nome);
   const urgAvisos = avisos.filter((p) => p.grupo === "resolver");
   const contagemArea = AREAS_PENDENCIA.map((a) => ({ ...a, n: pendencias.filter((p) => areaPendencia(p) === a.chave).length })).filter((a) => a.n > 0);
   const filtroAtivo = filtro !== "todos" && contagemArea.some((a) => a.chave === filtro) ? filtro : "todos";
   const resto = avisos.filter((p) => p.grupo !== "resolver" && (filtroAtivo === "todos" || areaPendencia(p) === filtroAtivo));
-  const restoVis = filtroAtivo !== "todos" || verTodos ? resto : resto.slice(0, VISIVEIS);
-  const avisosVis = [...urgAvisos, ...restoVis];
+  const entradas = agruparPorAnuncio([...urgAvisos, ...resto], nomesCanais);
+  const urgEnt = entradas.filter((e) => e.grupo === "resolver");
+  const restoEnt = entradas.filter((e) => e.grupo !== "resolver");
+  const restoVis = filtroAtivo !== "todos" || verTodos ? restoEnt : restoEnt.slice(0, VISIVEIS);
+  const avisosVis = [...urgEnt, ...restoVis];
   const tf = repartirTarefas(
     pendencias.filter((p) => p.tarefa),
     { todas: verTodasTarefas }
@@ -350,7 +357,7 @@ export default function Inicio({ onIrPara, onToast }) {
   useEffect(() => {
     if (!carregando) publicarMarcas(marcas);
   }, [marcas, carregando]);
-  const totalGrupo = (g) => [...urgAvisos, ...resto].filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : g === "rotina" && mostraTarefas ? tf.n.topo : 0);
+  const totalGrupo = (g) => entradas.filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : g === "rotina" && mostraTarefas ? tf.n.topo : 0);
 
   const CARDS = [
     { k: "dinheiro", n: 1, titulo: "Dinheiro" },
@@ -360,8 +367,32 @@ export default function Inicio({ onIrPara, onToast }) {
   ];
 
 
+  // Card do anúncio: avisos do mesmo produto × canal juntos (clicar abre todos).
+  const linhaAnuncio = (g) => {
+    const aberto = anunciosAbertos.has(g.id);
+    const areasCom = new Set(g.itens.map(areaPendencia));
+    const semAviso = ["preco", "crescimento", "ads", "afiliados"].filter((a) => !areasCom.has(a)).map((a) => AREAS_PENDENCIA.find((x) => x.chave === a)?.rotulo);
+    return (
+      <li key={g.id} className={`inicio-item inicio-anuncio st-${estadoPendencia(g.itens[0]) || "info"}`}>
+        <Bolinha tipo={estadoPendencia(g.itens[0])} />
+        <div className="inicio-item-txt">
+          <button type="button" className="inicio-anuncio-cab" onClick={() => setAnunciosAbertos((s) => { const n = new Set(s); if (n.has(g.id)) n.delete(g.id); else n.add(g.id); return n; })} aria-expanded={aberto}>
+            <span className="seta">{aberto ? "▾" : "▸"}</span> <b>{g.nome}</b> <span className="muted-cel">· {g.canal} — {g.itens.length} avisos</span>
+          </button>
+          {!aberto && <span>{g.itens.map((p) => p.titulo.replace(/^(?:Anúncio:\s)?.+?:\s/, "")).join(" · ")}</span>}
+          {aberto && (
+            <>
+              <ul className="inicio-lista inicio-anuncio-lista">{g.itens.map(linhaPendencia)}</ul>
+              {semAviso.length > 0 && <span className="muted-cel">✓ sem aviso: {semAviso.join(" · ")}</span>}
+            </>
+          )}
+        </div>
+      </li>
+    );
+  };
+
   // Uma linha do "Pra fazer" (aviso automático ou tarefa manual).
-  const linhaPendencia = (p) => (
+  const linhaPendencia = (p) => p.anuncio ? linhaAnuncio(p) : (
     <li key={p.id} className={`inicio-item${estadoPendencia(p) ? ` st-${estadoPendencia(p)}` : ""}${p.tarefa ? " inicio-tarefa" : ""}`}>
       <Bolinha tipo={estadoPendencia(p)} />
       {p.tarefa ? (
@@ -497,7 +528,7 @@ export default function Inicio({ onIrPara, onToast }) {
                 </div>
               );
             })}
-            {filtroAtivo === "todos" && resto.length > VISIVEIS && (
+            {filtroAtivo === "todos" && restoEnt.length > VISIVEIS && (
               <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodos((v) => !v)}>
                 {verTodos ? "ver menos" : `ver todos (${avisos.length})`}
               </button>

@@ -509,3 +509,47 @@ export function statusInicio({ caixa, rampas = [], semana = [], afAtivo = false,
 
   return { dinheiro, vendas, catalogo, producao };
 }
+
+// Início agrupado por ANÚNCIO (16/10/2026, pedido do Gustavo): os avisos do
+// mesmo produto (com as variações dele) no mesmo canal viram UM card — pelo
+// título "<Nome>: …" e o canal no começo do texto ("Shopee · …"). Só junta
+// quando há 2+ avisos; caixa, farm, importação e tarefas ficam soltos (não
+// têm canal no texto). O card fica no grupo do aviso mais grave.
+const ORDEM_GRUPO = { resolver: 0, rotina: 1, oportunidade: 2 };
+export function chaveAnuncioDe(p, nomesCanais) {
+  if (!p || p.tarefa) return null;
+  const m = /^(?:Anúncio:\s)?(.+?):\s/.exec(p.titulo || "");
+  if (!m) return null;
+  const canal = String(p.texto || "").split(" · ")[0].trim();
+  if (!nomesCanais.includes(canal)) return null;
+  const nome = m[1].replace(/\s+[—–-]\s+.*$/, "").replace(/\s*\((kit|variação)[^)]*\)\s*$/i, "").trim();
+  if (!nome) return null;
+  return { chave: `${nome.toLowerCase()}|${canal}`, nome, canal };
+}
+export function agruparPorAnuncio(avisos, nomesCanais) {
+  const porChave = new Map();
+  const ordem = [];
+  for (const p of avisos) {
+    const k = chaveAnuncioDe(p, nomesCanais);
+    if (!k) {
+      ordem.push({ p });
+      continue;
+    }
+    let g = porChave.get(k.chave);
+    if (!g) {
+      g = { anuncio: true, id: `anuncio|${k.chave}`, nome: k.nome, canal: k.canal, itens: [] };
+      porChave.set(k.chave, g);
+      ordem.push({ g });
+    }
+    g.itens.push(p);
+  }
+  return ordem.map((x) => {
+    if (x.p) return x.p;
+    const g = x.g;
+    if (g.itens.length === 1) return g.itens[0];
+    g.itens.sort((a, b) => (ORDEM_GRUPO[a.grupo] ?? 3) - (ORDEM_GRUPO[b.grupo] ?? 3));
+    g.grupo = g.itens[0].grupo;
+    g.tom = g.itens[0].tom;
+    return g;
+  });
+}
