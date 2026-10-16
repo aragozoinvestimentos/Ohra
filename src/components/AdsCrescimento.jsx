@@ -61,7 +61,7 @@ function acaoDoAds(av) {
   const n = av.numeros || {};
   const DEPOIS_AJ = "Depois de mudar na Shopee: registre aqui — o app espera uns dias pra decidir de novo.";
   if (av.ativo) {
-    if (av.chave === "sem-venda-dia3") return { k: "abrir", botao: "Ver o que fazer", depois: "Pause na Shopee e arrume o anúncio; depois marque aqui." };
+    if (av.chave === "sem-venda-dia3" || av.chave === "ads-prejuizo") return { k: "abrir", botao: "Ver o que fazer", depois: "Pause na Shopee e arrume o anúncio; depois marque aqui." };
     if (av.chave === "pausado" || av.chave === "despausar" || av.chave === "pausa-longa") return { k: "despausar", botao: "Despausei", depois: "Depois de religar na Shopee: marque aqui — a conferência recomeça 3 dias depois." };
     if (av.chave === "conferir-dia3") return { k: "andamento", botao: "Atualizar andamento", depois: "Envie o CSV do Shopee Ads (ou o número à mão) pra saber se já vendeu." };
     if (av.chave === "virar-meta" && av.novaMeta) return { k: "ajuste", botao: `Já troquei — meta ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "fim do lance automático: virou meta de ROAS" }, depois: "Na Shopee: editar a campanha → GMV Max – Meta de ROAS. Depois registre aqui." };
@@ -621,7 +621,7 @@ function passosSemVenda(l) {
   const anuncio = (l.rampa || l.rampaGrupo)?.est?.anuncio || null;
   const passos = [{ t: "Pause o Ads na Shopee", d: "Marketing → Shopee Ads → este produto → Pausar." }];
   if (anuncio?.porOnde) passos.push({ t: `Arrume o anúncio: ${anuncio.porOnde}`, d: anuncio.titulo || "pelo funil da Rampa" });
-  else if (sv.cliques >= 15) passos.push({ t: "Clicam mas não compram: preço, descrição, medidas e fotos de uso", d: `${sv.cliques} cliques pagos sem venda — compare o preço com o concorrente (ou um substituto).` });
+  else if (sv.cliques >= 15) passos.push({ t: "Clicam mas não compram: preço, descrição, medidas e fotos de uso", d: `${sv.cliques} cliques pagos ${sv.prejuizo ? "e quase nenhuma venda" : "sem venda"} — compare o preço com o concorrente (ou um substituto) e confira frete e prazo.` });
   else passos.push({ t: "Pouca gente clica: troque a foto de capa e confira o título", d: "Fundo limpo, produto grande, uso real; a palavra que o cliente busca no começo do título." });
   passos.push({ t: "Volte aqui e escolha", d: "Pausei pra revisar (o período continua com as métricas) · Revisei — dar até o 7º dia · ou encerrar." });
   return passos;
@@ -652,7 +652,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           />
         );
       })()}
-      {av.chave === "sem-venda-dia3" && (
+      {(av.chave === "sem-venda-dia3" || av.chave === "ads-prejuizo") && (
         <div className="ads-dia3">
           <ol className="passos-ads">
             {passosSemVenda(l).map((p, i) => (

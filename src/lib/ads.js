@@ -43,6 +43,8 @@ export const REGRAS_ADS = {
   aumentoMax: 0.3, // retorno ≥ 2× → +30% no máximo (sem +50%/dobrar)
   diaConferencia: 3, // dia 3: sem venda via Ads = parar e arrumar o anúncio
   pausaLembrarDias: 3, // pausado pra revisar há 3 dias → lembrar de despausar
+  prejuizoRetorno: 0.5, // ROAS < metade do equilíbrio a partir do dia 3 = Ads no prejuízo (decisão imediata)
+  prejuizoGastoMin: 15, // …com pelo menos R$ 15 gastos (ou 1,5 dia de orçamento)
   pausaLongaDias: 21, // pausado há 21 dias → a Shopee começa a perder o aprendizado
   lojaGastoMinDia: 1, // campanha da loja gastando < R$ 1/dia por 7 dias = meta alta demais
   lojaMetaFator: 2, // campanha da loja: meta alta = 2× o equilíbrio da loja
@@ -413,6 +415,25 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
         return sitA("sem-venda-dia3", "resolver", `${diasDesdeVolta} dias pagando Ads sem venda — pare e arrume o anúncio`, `O Ads só traz gente até o anúncio; se em ${diasDesdeVolta} dias ninguém comprou, mais dinheiro não resolve. Pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"} antes de gastar mais.`, { numeros, semVenda: { dias: diasDesdeVolta, gasto: a00?.gasto ?? r.gasto, cliques: Math.max(r.cliques, a00?.cliques || 0), podeEsperar: diasRodando < regras.aprendizadoDias && !revisouSemVenda(ativo) } });
       if (diasRodando < regras.aprendizadoDias)
         return sitA("conferir-dia3", "atencao", `Dia ${diasRodando + 1}: atualize o andamento`, `Pra saber se o Ads já vendeu: envie o CSV do Shopee Ads (Análise → Importar dados) ou o número à mão em "Atualizar andamento". Sem venda em 3 dias = parar e arrumar o anúncio.`, { numeros });
+    }
+    // Ads no PREJUÍZO (16/10/2026, Gustavo: "anúncio no prejuízo precisa
+    // aparecer — a decisão é imediata"): a partir do 3º dia (desde o início ou
+    // a última volta), gastou de verdade e o ROAS não chega à METADE do
+    // equilíbrio → resolver JÁ, sem esperar os 7 dias de aprendizado nem os 3
+    // depois do ajuste. Mesmas saídas do dia 3 sem venda.
+    {
+      const gastoTot = Math.max(r.gasto, a00?.gasto || 0);
+      const roasTot = gastoTot > 0 ? (vendasTot * preco) / gastoTot : null;
+      const retTot = retornoAds(roasTot, empate);
+      const gastoMin = Math.max(num(regras.prejuizoGastoMin || 15), (orcamento || 0) * 1.5);
+      if (diasDesdeVolta >= dia3 && !limiteRevisao && gastoTot >= gastoMin && empate && retTot != null && retTot < num(regras.prejuizoRetorno || 0.5))
+        return sitA(
+          "ads-prejuizo",
+          "resolver",
+          `Ads no prejuízo — ${moeda(gastoTot)} gastos, ${vendasTot} venda${vendasTot === 1 ? "" : "s"} via Ads`,
+          `ROAS ${um(roasTot)} contra um equilíbrio de ${um(empate)}: cada R$ 1 de Ads voltou ${moeda(roasTot)} em vendas — o Ads está tirando lucro. Pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"} antes de gastar mais (não precisa esperar os 7 dias).`,
+          { numeros, semVenda: { dias: diasDesdeVolta, gasto: gastoTot, cliques: Math.max(r.cliques, a00?.cliques || 0), podeEsperar: diasRodando < regras.aprendizadoDias && !revisouSemVenda(ativo), prejuizo: true } }
+        );
     }
     // Lance automático: aprende 7 dias (dias rodando), depois vira meta de ROAS.
     if (automatico) {

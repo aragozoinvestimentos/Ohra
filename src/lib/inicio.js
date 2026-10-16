@@ -246,6 +246,10 @@ export function montarPendencias({
       add({ id: `ads|${l.chave}|dia3`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: ${av.semVenda?.dias || 3} dias pagando Ads sem venda`, texto: `${l.canal.nome} · pause e arrume o anúncio antes de gastar mais`, ir: irL, rotulo: "Ver o que fazer" });
       continue;
     }
+    if (av.chave === "ads-prejuizo") {
+      add({ id: `ads|${l.chave}|prejuizo`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads no prejuízo`, texto: `${l.canal.nome} · ${av.titulo.replace(/^Ads no prejuízo — /, "")} · pause e arrume o anúncio`, ir: irL, rotulo: "Ver o que fazer" });
+      continue;
+    }
     if (av.chave === "despausar") {
       add({ id: `ads|${l.chave}|despausar`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: já revisou? Despause o Ads`, texto: `${l.canal.nome} · pausado desde ${av.pausado?.desde ? `${av.pausado.desde.slice(8, 10)}/${av.pausado.desde.slice(5, 7)}` : "—"}`, ir: irL, rotulo: "Abrir Ads" });
       continue;
