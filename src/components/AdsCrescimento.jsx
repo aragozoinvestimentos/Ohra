@@ -62,7 +62,7 @@ function acaoDoAds(av) {
   const DEPOIS_AJ = "Depois de mudar na Shopee: registre aqui — o app espera uns dias pra decidir de novo.";
   if (av.ativo) {
     if (av.chave === "sem-venda-dia3") return { k: "abrir", botao: "Ver o que fazer", depois: "Pause na Shopee e arrume o anúncio; depois marque aqui." };
-    if (av.chave === "pausado" || av.chave === "despausar") return { k: "despausar", botao: "Despausei", depois: "Depois de religar na Shopee: marque aqui — a conferência recomeça 3 dias depois." };
+    if (av.chave === "pausado" || av.chave === "despausar" || av.chave === "pausa-longa") return { k: "despausar", botao: "Despausei", depois: "Depois de religar na Shopee: marque aqui — a conferência recomeça 3 dias depois." };
     if (av.chave === "conferir-dia3") return { k: "andamento", botao: "Atualizar andamento", depois: "Envie o CSV do Shopee Ads (ou o número à mão) pra saber se já vendeu." };
     if (av.chave === "virar-meta" && av.novaMeta) return { k: "ajuste", botao: `Já troquei — meta ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "fim do lance automático: virou meta de ROAS" }, depois: "Na Shopee: editar a campanha → GMV Max – Meta de ROAS. Depois registre aqui." };
     if (av.chave === "loja-abaixo" && av.novaMeta) return { k: "ajuste", botao: `Subi a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "campanha da loja abaixo do equilíbrio" }, depois: DEPOIS_AJ };
@@ -93,6 +93,52 @@ function proximaAds(av, hoje) {
   const ult = av.ativo.parcial?.em ? String(av.ativo.parcial.em).slice(0, 10) : null;
   if (!ult || diasEntre(ult, hoje) > 3) return { texto: ult ? `Atualizar o andamento (último ${dm(ult)})` : "Atualizar o andamento", atrasada: true };
   return { texto: `Atualizar o andamento em ${dm(somarDias(ult, 3))}` };
+}
+
+// "ver por produto" do teto (16/10/2026): onde foi o gasto dos 30 dias,
+// curto — até 5 linhas + "outros". Retorno = lucro que cada R$ 1 trouxe;
+// etiqueta cinza quando a Shopee não gasta nem metade do orçamento/dia.
+function GastoPorItem({ T, onAbrir }) {
+  const lista = T.porItem;
+  const top = lista.slice(0, 5);
+  const resto = lista.slice(5);
+  const somaResto = resto.reduce((t, x) => t + x.gasto, 0);
+  return (
+    <div className="panel gasto-por-item">
+      <h3>
+        Onde foi o gasto · 30 dias <span className="dir">{T.ate ? `pelo CSV até ${dm(T.ate)}` : ""}</span>
+      </h3>
+      <table className="tabela-mini">
+        <tbody>
+          {top.map((x) => (
+            <tr key={x.chave} className={x.loja ? undefined : "clicavel"} onClick={x.loja ? undefined : () => onAbrir(x.chave)}>
+              <td>
+                <b>{x.nome}</b>
+                {x.orcamentoUso != null && x.orcamentoUso < 0.5 && <span className="chip-cel" title="A Shopee não está gastando o orçamento por dia programado — só informativo.">gastou {Math.round(x.orcamentoUso * 100)}% do orçamento/dia</span>}
+                <div className="muted-cel">{x.fonte === "csv" ? `CSV até ${dm(x.ate)}` : "semanas registradas"}</div>
+              </td>
+              <td className="num">{BRL(x.gasto)}</td>
+              <td className="num">
+                {x.retorno == null ? <span className="muted-cel">—</span> : x.retorno >= 1 ? <span title="lucro que cada R$ 1 investido trouxe">retorno {um(x.retorno)}×</span> : <Estado tipo="atencao">retorno {um(x.retorno)}×</Estado>}
+              </td>
+            </tr>
+          ))}
+          {resto.length > 0 && (
+            <tr>
+              <td className="muted-cel">+ {resto.length} outro{resto.length > 1 ? "s" : ""}</td>
+              <td className="num">{BRL(somaResto)}</td>
+              <td />
+            </tr>
+          )}
+          <tr className="total">
+            <td>Total</td>
+            <td className="num">{BRL(T.gasto)}</td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function Situacao({ av, compacto }) {
@@ -144,6 +190,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   const L = linhasAds.loja;
   const T = linhasAds.teto; // teto de Ads da loja (30 dias, tabela progressiva + metade do lucro)
   const [verTabela, setVerTabela] = useState(false);
+  const [verPorItem, setVerPorItem] = useState(false);
 
   if (!adsH.disponivel)
     return (
@@ -277,19 +324,40 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
     <>
       <Kpis
         itens={[
-          { label: "Ads na semana (loja)", valor: BRL(L.gasto), sub: "últimos 7 dias registrados" },
+          {
+            label: "Ads na semana (loja)",
+            valor: BRL(L.gasto),
+            sub: L.fonte === "csv" ? `últimos 7 dias · pelo CSV até ${dm(L.ate)}` : L.fonte === "semanas" ? "últimos 7 dias · semanas registradas" : "últimos 7 dias",
+          },
           {
             label: "Teto de Ads (30 dias)",
-            valor: T ? `${BRL(T.gasto)} de ${BRL(T.teto)}` : "—",
+            valor: (
+              <span className="kpi-v-com-acao">
+                <span>
+                  {T ? BRL(T.gasto) : "—"}
+                  {T && <span className="kpi-v-de"> de {BRL(T.teto)}</span>}
+                </span>
+                {T && (
+                  <button type="button" className="btn btn-mini" onClick={() => setVerTabela((v) => !v)}>
+                    {verTabela ? "esconder tabela" : "ver tabela"}
+                  </button>
+                )}
+              </span>
+            ),
             tom: T?.acimaTeto ? "bad" : undefined,
             sub: T ? `fase ${T.fase} · faturamento ${BRL(T.faturamento)}${T.limitadoPelaTrava ? " · limitado pela metade do lucro" : ""}` : "",
-            extra: (
-              <button type="button" className="btn btn-mini kpi-acao" onClick={() => setVerTabela((v) => !v)}>
-                {verTabela ? "esconder tabela" : "ver tabela"}
+            extra: T?.porItem?.length ? (
+              <button type="button" className="btn btn-mini kpi-acao" onClick={() => setVerPorItem((v) => !v)}>
+                {verPorItem ? "esconder por produto" : "ver por produto"}
               </button>
-            ),
+            ) : null,
           },
-          { label: "Vendas via Ads", valor: pct(L.pctVendasAds), tom: L.dependente ? "bad" : undefined, sub: L.dependente ? "mais da metade das vendas — dependência" : "das vendas da semana" },
+          {
+            label: "Vendas via Ads",
+            valor: pct(L.pctVendasAds),
+            tom: L.dependente ? "bad" : undefined,
+            sub: L.dependente ? "mais da metade das vendas — dependência" : L.vendas > 0 ? `${virg(Math.round(L.vendasAds * 10) / 10)} de ${L.vendas} vendas · 7 dias` : "das vendas dos últimos 7 dias",
+          },
           { label: "Com Ads ligado", valor: String(ligados), sub: `de ${linhasAds.linhas.length} produto${linhasAds.linhas.length === 1 ? "" : "s"} × canal` },
         ]}
       />
@@ -297,6 +365,18 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
         <div className="alerta alerta-warn">
           <b>Ads acima do teto da loja</b>Nos últimos 30 dias o Ads gastou {BRL(T.gasto)}; o teto é {BRL(T.teto)} (fase {T.fase}). Antes de aumentar algum produto, reduza os que estão abaixo do mínimo.
         </div>
+      )}
+      {verPorItem && T?.porItem?.length > 0 && (
+        <GastoPorItem
+          T={T}
+          onAbrir={(chave) => {
+            const l = linhasAds.linhas.find((x) => x.chave === chave);
+            if (l && l.canal.id !== canal?.id) setCanalId(l.canal.id);
+            setFiltro("todos");
+            setSoLigados(false);
+            setAberta(chave);
+          }}
+        />
       )}
       {verTabela && T && <TabelaTeto regrasA={regrasA} T={T} salvando={salvando} onSalvar={(faixasTeto) => salvarRegras({ faixasTeto })} />}
 

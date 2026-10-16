@@ -2140,3 +2140,20 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .inicio-anuncio-cab .seta { color: var(--ink-soft); }
 .inicio-anuncio-lista { margin: 6px 0 4px; padding-left: 0; }
 .inicio-anuncio-lista .inicio-item { background: var(--surface-2); }
+
+/* Ads ao vivo (16/10/2026): botão "ver tabela" ao lado do valor do teto e a
+   lista curta "ver por produto". */
+.kpi-v-com-acao { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kpi-v-com-acao .btn-mini { font-size: 11px; font-weight: 600; }
+.gasto-por-item { max-width: 680px; }
+.gasto-por-item table { width: 100%; border-collapse: collapse; }
+.gasto-por-item td { padding: 6px 12px; border-top: 1px solid var(--border); vertical-align: top; }
+.gasto-por-item td.num { text-align: right; white-space: nowrap; }
+.gasto-por-item tr.clicavel { cursor: pointer; }
+.gasto-por-item tr.clicavel:hover td { background: var(--surface-2, rgba(0,0,0,0.03)); }
+.gasto-por-item tr.total td { font-weight: 700; }
+.gasto-por-item .chip-cel { margin-left: 6px; }
+.kpi .v:has(.kpi-v-com-acao) { white-space: normal; overflow: visible; }
+.kpi-v-com-acao .kpi-v-de { font-size: 15px; font-weight: 600; color: var(--ink-soft); }
+.kpi:has(.kpi-v-com-acao) { position: relative; }
+.kpi-v-com-acao > .btn-mini { position: absolute; top: 8px; right: 10px; }

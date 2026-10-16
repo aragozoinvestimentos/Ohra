@@ -3,6 +3,7 @@ import { BRL } from "../lib/format.js";
 import { agruparPorItem, evolucaoSemanal, metricas, porDiaDaSemana, precoVsVendas, ultimasSemanas, PLATAFORMAS, somarDias } from "../lib/pedidos.js";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
+import { adsNaJanela } from "../lib/ads.js";
 
 // Análise → 3 · Evolução e métricas. Só leitura e só informativo: nenhuma
 // regra de Rampa/Ads lê daqui (o "dia que mais vende" não sobe degrau nem
@@ -49,20 +50,16 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
   const mA = useMemo(() => metricas(antes, { precoAlvoDe }), [antes, precoAlvoDe]);
   const lucro = atual.filter((l) => l.valido).reduce((t, l) => t + (l.lucro || 0), 0);
 
-  // Ads registrado no período (semanas do Crescimento — rampa, afiliado/só Ads e anúncio com vários itens).
+  // Ads do período AO VIVO (16/10/2026): por período, o andamento do CSV ou as
+  // semanas, o maior — a mesma conta do teto (lib/ads.js adsNaJanela), inclui
+  // o anúncio com vários itens e a GMV Max da Loja.
   const ads = useMemo(() => {
+    if (f.plat === "fisico") return 0;
     let t = 0;
-    const vistos = new Set();
-    for (const l of cres.linhasAds?.linhas || []) {
-      if (f.plat && f.plat !== "fisico" && PLATAFORMAS.find((p) => p.id === f.plat)?.tipo !== l.canal?.tipo) continue;
-      if (f.plat === "fisico") continue;
-      for (const s of l.semanas || []) {
-        const k = s.id || `${l.chave}|${s.data}`;
-        if (vistos.has(k)) continue;
-        vistos.add(k);
-        const fim = somarDias(String(s.data).slice(0, 10), -1);
-        if (fim >= de && fim <= hoje) t += Number(s.ads_gasto) || 0;
-      }
+    const L = cres.linhasAds;
+    for (const l of [...(L?.lojaLinha ? [L.lojaLinha] : []), ...(L?.linhas || [])]) {
+      if (f.plat && PLATAFORMAS.find((p) => p.id === f.plat)?.tipo !== l.canal?.tipo) continue;
+      t += adsNaJanela(l.periodos, l.semanas, de, hoje).gasto;
     }
     return t;
   }, [cres.linhasAds, f.plat, de, hoje]);
@@ -142,7 +139,7 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
         </div>
         <div className="kpi">
           <div className="l">
-            TACoS <Ajuda texto="Ads ÷ faturamento TOTAL (orgânico + Ads). Mostra quanto do que entra vai pro Ads. Ads = o gasto das semanas registradas no Crescimento." />
+            TACoS <Ajuda texto="Ads ÷ faturamento TOTAL (orgânico + Ads). Mostra quanto do que entra vai pro Ads. Ads = gasto ao vivo (CSV do Shopee Ads ou semanas registradas, o maior), igual ao teto do Ads." />
           </div>
           <div className="v">{m.faturamento > 0 ? pct(ads / m.faturamento) : "—"}</div>
           <div className="s">

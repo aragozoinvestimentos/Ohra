@@ -43,6 +43,7 @@ export const REGRAS_ADS = {
   aumentoMax: 0.3, // retorno ≥ 2× → +30% no máximo (sem +50%/dobrar)
   diaConferencia: 3, // dia 3: sem venda via Ads = parar e arrumar o anúncio
   pausaLembrarDias: 3, // pausado pra revisar há 3 dias → lembrar de despausar
+  pausaLongaDias: 21, // pausado há 21 dias → a Shopee começa a perder o aprendizado
   lojaGastoMinDia: 1, // campanha da loja gastando < R$ 1/dia por 7 dias = meta alta demais
   lojaMetaFator: 2, // campanha da loja: meta alta = 2× o equilíbrio da loja
   decisaoDias: 4, // depois de cada ajuste: decide de novo em no mínimo 4 dias
@@ -395,6 +396,8 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const pz = pausasDoPeriodo(ativo, hoje);
     if (pz.pausado) {
       const dp = diasEntre(pz.pausado.desde, hoje);
+      if (dp >= num(regras.pausaLongaDias || 21))
+        return sitA("pausa-longa", "atencao", `Pausado há ${dp} dias — a Shopee começa a perder o aprendizado`, `Pausado desde ${dm(pz.pausado.desde)}. Despause (e marque "Despausei") ou, se não vai voltar, encerre o período.`, { numeros, pausado: pz.pausado });
       return dp >= num(regras.pausaLembrarDias || 3)
         ? sitA("despausar", "atencao", "Já revisou? Despause o Ads", `Pausado pra revisar desde ${dm(pz.pausado.desde)} (${dp} dias). Se já arrumou o anúncio, despause na Shopee e marque "Despausei" — a conferência recomeça 3 dias depois da volta.`, { numeros, pausado: pz.pausado })
         : sitA("pausado", "decisao", `Pausado pra revisar desde ${dm(pz.pausado.desde)}`, 'O período continua com as métricas. Depois de arrumar o anúncio, despause na Shopee e marque "Despausei".', { numeros, pausado: pz.pausado });
@@ -585,53 +588,52 @@ export function andamentoAtrasado(periodos, hoje, regras = REGRAS_ADS) {
   return pior && pior.dias > num(regras.andamentoAvisoDias || 3) ? pior : null;
 }
 
-// Loja: Ads da semana (últimos 7 dias de registros) × faturamento da semana.
-export function adsDaLoja(semanasTodas, hoje, regras = REGRAS_ADS) {
-  const desde = somarDiasIso(hoje, -7);
-  const ss = semanasTodas.map(porSemana).filter((s) => s.data > desde);
-  const gasto = ss.reduce((t, s) => t + num(s.ads_gasto), 0);
-  const faturamento = ss.reduce((t, s) => t + num(s.vendas_total ?? s.vendas) * num(s.preco), 0);
-  const vendas = ss.reduce((t, s) => t + num(s.vendas_total ?? s.vendas), 0);
-  const vendasAds = ss.reduce((t, s) => t + num(s.ads_vendas), 0);
-  const pct = faturamento > 0 ? gasto / faturamento : null;
-  const teto = regras.tetoLoja * faturamento;
-  return {
-    gasto,
-    faturamento,
-    pct,
-    pctVendasAds: vendas > 0 ? vendasAds / vendas : null,
-    acimaTeto: pct != null && pct > regras.tetoLoja,
-    dependente: vendas > 0 && vendasAds / vendas > 0.5,
-    passaria: (extra) => faturamento > 0 && gasto + extra > teto,
-  };
-}
-
-// Gasto de Ads numa janela [de, ate] (teto da loja, Vendas do mês — 16/10/2026,
-// "gasto ao vivo"): por período, o MAIOR entre as semanas registradas que caem
-// na janela e o ANDAMENTO (CSV/à mão) — só a parte dentro da janela: tira as
-// semanas do período que terminaram antes; sem elas e começando antes da
-// janela, conta proporcional aos dias. `semanas` = registros do item.
-export function gastoAdsNaJanela(periodos, semanas, de, ate) {
+// Ads numa janela [de, ate] (teto da loja, Ads na semana, Vendas do mês,
+// TACoS — 16/10/2026, "ao vivo"): por período, o MAIOR entre as semanas
+// registradas que caem na janela e o ANDAMENTO (CSV/à mão) — só a parte
+// dentro da janela: tira as semanas do período que terminaram antes; sem elas
+// e começando antes da janela, conta proporcional aos dias. `semanas` =
+// registros do item. → { gasto, vendas (via Ads), fonte 'csv'|'semanas'|null, ate }.
+export function adsNaJanela(periodos, semanas, de, ate) {
   const noJanela = (semanas || []).filter((s) => {
     const fim = somarDiasIso(String(s.data).slice(0, 10), -1);
     return fim >= de && fim <= ate;
   });
-  const pelasSemanas = noJanela.reduce((t, s) => t + num(s.ads_gasto), 0);
-  let pelosAndamentos = 0;
+  const sem = { gasto: noJanela.reduce((t, s) => t + num(s.ads_gasto), 0), vendas: noJanela.reduce((t, s) => t + num(s.ads_vendas), 0) };
+  const csv = { gasto: 0, vendas: 0, ate: null };
   for (const p of periodos || []) {
     const par = p?.parcial;
     if (!par?.ate || !(num(par.gasto) > 0) || par.ate < de || p.inicio > ate) continue;
     const antes = semanasNoPeriodo(semanas || [], p).filter((s) => somarDiasIso(String(s.data).slice(0, 10), -1) < de);
     let g = num(par.gasto);
-    if (antes.length) g = Math.max(0, g - antes.reduce((t, s) => t + num(s.ads_gasto), 0));
-    else if (p.inicio < de) {
+    let v = num(par.vendas);
+    if (antes.length) {
+      g = Math.max(0, g - antes.reduce((t, s) => t + num(s.ads_gasto), 0));
+      v = Math.max(0, v - antes.reduce((t, s) => t + num(s.ads_vendas), 0));
+    } else if (p.inicio < de) {
       const total = diasEntre(p.inicio, par.ate) + 1;
-      const dentro = diasEntre(de, par.ate) + 1;
-      g = total > 0 ? (g * Math.max(0, dentro)) / total : 0;
+      const dentro = Math.max(0, diasEntre(de, par.ate) + 1);
+      g = total > 0 ? (g * dentro) / total : 0;
+      v = total > 0 ? (v * dentro) / total : 0;
     }
-    pelosAndamentos += g;
+    csv.gasto += g;
+    csv.vendas += v;
+    if (!csv.ate || par.ate > csv.ate) csv.ate = par.ate;
   }
-  return Math.round(Math.max(pelasSemanas, pelosAndamentos) * 100) / 100;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  if (csv.gasto >= sem.gasto && csv.gasto > 0) return { gasto: r2(csv.gasto), vendas: r2(csv.vendas), fonte: "csv", ate: csv.ate };
+  if (sem.gasto > 0) return { gasto: r2(sem.gasto), vendas: r2(sem.vendas), fonte: "semanas", ate: null };
+  return { gasto: 0, vendas: 0, fonte: null, ate: null };
+}
+export const gastoAdsNaJanela = (periodos, semanas, de, ate) => adsNaJanela(periodos, semanas, de, ate).gasto;
+
+// Pausa longa (16/10/2026): pausado há ≥ `pausaLongaDias` (21) a Shopee
+// começa a perder o aprendizado do anúncio → aviso simples (despause ou encerre).
+export function pausaLonga(periodo, hoje, regras = REGRAS_ADS) {
+  const pz = pausasDoPeriodo(periodo, hoje);
+  if (!pz.pausado) return null;
+  const dias = diasEntre(pz.pausado.desde, hoje);
+  return dias >= num(regras.pausaLongaDias || 21) ? { dias, desde: pz.pausado.desde } : null;
 }
 
 // ---- GMV Max da Loja (16/10/2026, schema v57: item_tipo 'loja') ----
@@ -656,6 +658,8 @@ export function avaliarAdsLoja({ periodos = [], equilibrio, hoje, regras = REGRA
   const roas = gasto > 0 ? receita / gasto : null;
   const retorno = retornoAds(roas, equilibrio);
   const numeros = { dias, gasto, receita, vendas: num(par?.vendas), cliques: num(par?.cliques), roas, retorno, ate: par?.ate || null, meta };
+  if (pz.pausado && diasEntre(pz.pausado.desde, hoje) >= num(regras.pausaLongaDias || 21))
+    return sit("pausa-longa", "atencao", `Pausada há ${diasEntre(pz.pausado.desde, hoje)} dias — a Shopee começa a perder o aprendizado`, 'Despause (e marque "Despausei") ou, se não vai voltar, encerre o período.', { numeros, pausado: pz.pausado });
   if (pz.pausado) return sit("pausado", "decisao", `Pausada desde ${dm(pz.pausado.desde)}`, 'Quando religar na Shopee, marque "Despausei".', { numeros, pausado: pz.pausado });
   if (dias < regras.aprendizadoDias)
     return sit("aprendendo", "decisao", `Aprendendo · dia ${dias + 1} de ${regras.aprendizadoDias}`, `Não mexa na meta até ${dm(somarDiasIso(ativo.inicio, regras.aprendizadoDias + pz.diasPausados))}.`, { numeros, decideEm: somarDiasIso(ativo.inicio, regras.aprendizadoDias + pz.diasPausados) });
