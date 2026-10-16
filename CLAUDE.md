@@ -313,6 +313,17 @@ Plano fechado com o Gustavo (vídeo "Ads não é milagre, é método", @luanalve
 5. **"Não usar Ads por enquanto"** (botão ao lado do "+ Novo período"; `lembretes` chave `ads-nao|<chave da linha>`, tipo 'sem-ads', sem SQL): vai pra seção Sem Ads com "sem Ads por escolha · desde dd/mm", sai de Oportunidade/Início/marcas; sugestão só como texto; "Voltar a sugerir".
 6. **Início agrupado por anúncio**: avisos do mesmo anúncio (produto + variações × canal; anúncio com vários itens) viram UM card ("Chaveiro Gato · Shopee — 3 avisos", cor do pior; urgente sempre aparece); clicar abre todos os avisos com os botões + linha da situação das outras áreas (✓). Limite de 5 conta anúncios. Caixa/farm/manutenção/importação/tarefas continuam soltos.
 
+7. **Teto de Ads com gasto ao vivo** (aprovado 16/10/2026): o gasto dos 30 dias = por período, o maior entre as semanas registradas e o andamento (CSV), só a parte dentro da janela (proporcional se começou antes e não há semanas pra descontar); GMV Max da Loja entra junto; "Ads do mês" de Vendas do mês usa a mesma conta.
+
+## Centralizar tudo na Análise → Importar dados (aprovado 16/10/2026, DEPOIS do Ads; mandar PRÉVIA antes de implementar)
+
+1. **Semana automática**: cada importação monta e GRAVA as semanas dos produtos em rampa e com Ads (vendas = pedidos, funil = Desempenho, Ads = CSV); fecha quando os arquivos cobrem 7 dias seguidos desde a última; reenviar o mesmo período atualiza (não duplica).
+2. **Gasto ao vivo** (= item 7 do Ads acima).
+3. **Bloco "Avaliações" na Importar dados**: escolhe a PLATAFORMA primeiro e depois o produto (a lista do produto já filtra pelos que VENDERAM naquela plataforma desde a última atualização — pedidos importados —, mas dá pra escolher qualquer produto, em rampa ou não). Digita o TOTAL acumulado de cada estrela que a plataforma mostra (5★…1★); o app tira a diferença pra saber as novas e de quantas estrelas. **Modo simples** depois de ≥ 30 avaliações com nota ≥ 4,7 (volta ao completo se a nota cair abaixo): só registra quando aparecer avaliação de **3★ ou menos** (decisão do Gustavo).
+4. **Afiliados**: PENDENTE (vendas via afiliado não vêm no arquivo; Gustavo ainda não sabe se vai usar).
+5. **"Registrar semana" sai** do Crescimento e do Início, SEM link "lançar à mão". No lugar, avisos no Início quando algo importante ficar velho (pedidos/Desempenho > 7 dias, Ads > 3 dias, avaliações de produto que vendeu > 7 dias) → Importar dados.
+- ML/TikTok/Shein: só pedidos (Olist) por enquanto; funil/Ads deles ficam sem dado — Gustavo está focando na Shopee e pensa em vender por live no TikTok; resolver quando começar a vender lá.
+
 ## Pendências combinadas com o Gustavo (não esquecer)
 
 - Importar vendas: FEITO na aba Análise (v55). Falta conferir com arquivo real o formato do nº do pedido de ML/TikTok/Shein e o relatório de Ads do ML. Data de conferência das taxas: Gustavo acha desnecessário por enquanto.
