@@ -43,7 +43,9 @@ import { estadoDoAlerta, estadoDoStatusSalvo, piorEstado } from "../lib/estados.
 // foram simplificadas pra só o formulário.
 export default function Historico({ onEditarCompleto, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, pareceAtracaoDe, clientePagaHoje, agoraDe, anunciadoNoCanal, noCanal } = useEscada();
+  const { itens, canais, carregando, escada, precos: precosVivos, precosBrutos: precos, cfgLoja, cfgDoProduto, estrategiaDe, alertaDe, pareceAtracaoDe, clientePagaHoje, agoraDe, anunciadoNoCanal, noCanal, itemNoCanal, itensNoCanal } = useEscada();
+  // Custo do item no canal (orgânico com embalagem própria — lib/embalagemCanal.js).
+  const custoNo = (item, canalObj) => Number(itemNoCanal(item, canalObj)?.custoTotal ?? item.custoTotal) || 0;
   const [estrategiaAlvo, setEstrategiaAlvo] = useState(null); // { alvo, inicial } — diálogo "Manter assim"
   const [aplicarAlvo, setAplicarAlvo] = useState(null);
   const [filamentosAlvo, setFilamentosAlvo] = useState(null);
@@ -166,7 +168,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const cfgKit = configEscada(cfgLoja, null);
     for (const k of itens.filter((i) => i.id.startsWith("k:"))) {
       for (const c of canais) {
-        const sug = sugestaoKit({ canal: c, kitItem: k, itens, precos: precosVivos, cfg: cfgKit });
+        const sug = sugestaoKit({ canal: c, kitItem: itemNoCanal(k, c), itens: itensNoCanal(c), precos: precosVivos, cfg: cfgKit });
         if (!sug) continue;
         const salvo = precosVivos.find((p) => p.item_tipo === "kit" && p.item_id === k.id.slice(2) && p.canal_id === c.id);
         let st = salvo ? statusPrecoSalvo(Number(salvo.preco), sug, null, { silenciarPiso: estrategiaDe(k, c).chave !== "normal" }) : null;
@@ -176,7 +178,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     }
     return mapa;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itens, canais, escada, precosVivos, cfgLoja, estrategiaDe]);
+  }, [itens, canais, escada, precosVivos, cfgLoja, estrategiaDe, itemNoCanal, itensNoCanal]);
 
   // "Manter assim": abre o diálogo de estratégia pro preço salvo do item no canal.
   function abrirEstrategia(item, canalObj, inicial) {
@@ -237,7 +239,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const linha = precos.find((p) => p.item_tipo === itemTipo && p.item_id === id && p.canal_id === canalObj.id) || null;
     // Lucro/margem sempre recalculados com o custo de HOJE do item e as
     // taxas atuais do canal — nunca o número congelado no dia do "Salvar".
-    return linha ? precoSalvoAoVivo(linha, item.custoTotal, canalObj, item.peso) : null;
+    return linha ? precoSalvoAoVivo(linha, custoNo(item, canalObj), canalObj, item.peso) : null;
   }
 
   // Custo de hoje × custo gravado no dia do "Salvar" (mudou a fabricação, a
@@ -245,7 +247,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   function mudancaCusto(item, canalObj) {
     const p = precoDe(item, canalObj);
     if (!p || p.custo_salvo == null || p.lucro_salvo == null) return null;
-    const dCusto = Number(item.custoTotal) - Number(p.custo_salvo);
+    const dCusto = custoNo(item, canalObj) - Number(p.custo_salvo);
     if (Math.abs(dCusto) < 0.05) return null;
     // só o efeito do custo (mudança de taxa do canal fica de fora — essa já aparece no ↻)
     return { dCusto, dLucro: -dCusto };
@@ -258,7 +260,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   function mudancaTaxa(item, canalObj) {
     const p = precoDe(item, canalObj);
     if (!p || p.lucro_salvo == null || p.lucro == null) return null;
-    const efeitoCusto = p.custo_salvo != null ? -(Number(item.custoTotal) - Number(p.custo_salvo)) : 0;
+    const efeitoCusto = p.custo_salvo != null ? -(custoNo(item, canalObj) - Number(p.custo_salvo)) : 0;
     const dLucro = Number(p.lucro) - Number(p.lucro_salvo) - efeitoCusto;
     return Math.abs(dLucro) >= 0.05 ? { dLucro } : null;
   }
@@ -334,8 +336,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
           )}
           <div className="kv-cel">
             <small>Repor o produto</small>
-            <b>{BRL(item.custoTotal)}</b>
-            <span>{p?.custo_salvo != null ? `no dia do salvar: ${BRL(Number(p.custo_salvo))}` : "fabricação + embalagem + frete"}</span>
+            <b>{BRL(custoNo(item, canalObj))}</b>
+            <span>
+              {p?.custo_salvo != null ? `no dia do salvar: ${BRL(Number(p.custo_salvo))}` : "fabricação + embalagem + frete"}
+              {itemNoCanal(item, canalObj)?.embalagemCanal ? ` · embalagem do orgânico: ${itemNoCanal(item, canalObj).embalagemCanal.nomes} (${BRL(itemNoCanal(item, canalObj).embalagemCanal.valor)})` : ""}
+            </span>
           </div>
           {al?.minimo != null && (
             <div className="kv-cel">
@@ -478,7 +483,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
     const precoOrigem = canalOrigem ? precoDe(clonarPrecoAlvo.item, canalOrigem) : null;
     if (!precoOrigem) return null;
     const base = {
-      custoProduto: clonarPrecoAlvo.item.custoTotal,
+      custoProduto: custoNo(clonarPrecoAlvo.item, clonarPrecoAlvo.canalDestino),
       frete: 0,
       embalagem: 0,
       imposto: clonarPrecoAlvo.canalDestino.imposto_pct || 0,
@@ -539,7 +544,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   }
 
   function iniciarEdicao(p, item, canalObj) {
-    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: item.custoTotal, canal: canalObj, pecas: item.pecas || 1, peso: item.peso || null, produtoId: item.produtoId || (item.id.startsWith("p:") ? item.id.slice(2) : null), linha: p });
+    setEditAlvo({ id: p.id, nomeItem: item.nome, nomeCanal: canalObj.nome, custoTotal: custoNo(item, canalObj), canal: canalObj, pecas: item.pecas || 1, peso: item.peso || null, produtoId: item.produtoId || (item.id.startsWith("p:") ? item.id.slice(2) : null), linha: p });
     setEdicao({ preco: Number(p.preco || 0).toFixed(2) });
   }
 

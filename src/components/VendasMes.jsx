@@ -8,6 +8,7 @@ import { recarregarReserva, useReservaProducao } from "../hooks/useReservaProduc
 import { recarregarVendasOrganicas, useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
 import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
 import BuscaItem from "./BuscaItem.jsx";
+import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { saldoReserva, vendasDoMes } from "../lib/vendasMes.js";
 import { trocarSubAba } from "../lib/subAbas.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
@@ -35,7 +36,7 @@ const fimDoMes = (mes) => {
 // num envelope (não é saída — o dinheiro fica na conta, só deixa de estar livre).
 export default function VendasMes({ mes, onToast }) {
   const { lojaId } = useLoja();
-  const { itens, canais, precos, cfgDoProduto, cfgLoja } = useEscada();
+  const { itens, canais, precos, cfgDoProduto, cfgLoja, itemNoCanal, produtos: produtosEsc, kits: kitsEsc, embalagens: embalagensEsc = [] } = useEscada();
   const { rampas, rampasGrupo, registros } = useRampas({ comRegistros: true });
   const af = useAfiliados();
   const reserva = useReservaProducao();
@@ -52,8 +53,8 @@ export default function VendasMes({ mes, onToast }) {
   const hoje = hojeISO();
 
   const v = useMemo(
-    () => vendasDoMes({ mes, rampas, rampasGrupo, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura }),
-    [mes, rampas, rampasGrupo, registros, af.registros, org.registros, itens, canais, cfgDoProduto, reais.linhas, reais.cobertura]
+    () => vendasDoMes({ mes, rampas, rampasGrupo, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura, itemNoCanal }),
+    [itemNoCanal, mes, rampas, rampasGrupo, registros, af.registros, org.registros, itens, canais, cfgDoProduto, reais.linhas, reais.cobertura]
   );
   const res = useMemo(() => saldoReserva(reserva.registros), [reserva.registros]);
   const jaSeparado = res.porMes.get(mes) || 0;
@@ -457,6 +458,17 @@ export default function VendasMes({ mes, onToast }) {
                 <div className="alerta alerta-warn">Esse item não tem preço salvo em nenhum canal — salve o preço em Precificação antes.</div>
               )}
             </div>
+          )}
+          {vendaOrg.itemId && vendaOrg.canalId && (
+            <EmbalagemOrganicoVenda
+              item={itens.find((i) => i.id === vendaOrg.itemId)}
+              canal={canais.find((c) => c.id === vendaOrg.canalId) || null}
+              itemNoCanal={itemNoCanal}
+              produtos={produtosEsc}
+              kits={kitsEsc}
+              embalagens={embalagensEsc}
+              onToast={onToast}
+            />
           )}
           {emRampaNoCanal(vendaOrg.itemId, vendaOrg.canalId) && (
             <div className="alerta alerta-warn">

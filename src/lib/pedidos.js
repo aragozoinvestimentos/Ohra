@@ -5,6 +5,7 @@
 // ABC, XYZ com estoque sugerido, comprados juntos, evolução, métricas e o que
 // vai pro Fluxo de Caixa (só ENTREGUES — enviado é "a receber", fora do saldo).
 // Nunca guarda nome, CPF, endereço nem telefone do cliente.
+import { canalComEmbalagem } from "./embalagemCanal.js";
 import { lucroNoPreco } from "./escada.js";
 
 const num = (v) => {
@@ -145,12 +146,15 @@ export const idItemDoPedido = (p) => (p.item_tipo && p.item_id ? `${PREF[p.item_
  * Linhas "ricas" (valor pago, lucro e recebe com custo e taxas de HOJE).
  * ctx = { itens, canais, cfgDoProduto }. Venda física: sem taxa (lucro = pago − custo).
  */
-export function enriquecer(pedidos, { itens, canais, cfgDoProduto }) {
+export function enriquecer(pedidos, { itens, canais, cfgDoProduto, itemNoCanal = null }) {
   const porId = new Map((itens || []).map((i) => [i.id, i]));
+  // Venda física = canal orgânico: usa a embalagem dele (v56, lib/embalagemCanal.js).
+  const canalFisico = (canais || []).find((c) => canalComEmbalagem(c)) || null;
   return (pedidos || []).map((p) => {
     const id = idItemDoPedido(p);
-    const item = id ? porId.get(id) || null : null;
     const canal = p.canal_id ? (canais || []).find((c) => c.id === p.canal_id) || null : null;
+    const item0 = id ? porId.get(id) || null : null;
+    const item = item0 && itemNoCanal ? itemNoCanal(item0, canal || (p.origem === "fisico" ? canalFisico : null)) : item0;
     const q = num(p.quantidade) || 1;
     const pago = valorPago(p);
     const custo = item ? num(item.custoTotal) * q : 0;

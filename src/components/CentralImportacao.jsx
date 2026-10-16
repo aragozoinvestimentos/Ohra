@@ -5,6 +5,8 @@ import { lerXls } from "../lib/lerXls.js";
 import { andamentoDoCsv, juntarAds, juntarDesempenho, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioDoGuardado, relatorioParaGuardar } from "../lib/relatorioShopee.js";
 import { PLATAFORMAS, caixaDosPedidos, interpretarPedidosOlist, ligarSku, plataformaDoNumero, tipoEIdDoItem, normSku } from "../lib/pedidos.js";
 import { excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
+import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
+import { canalComEmbalagem } from "../lib/embalagemCanal.js";
 import { estenderPeriodoAds, iniciarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
 import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
 import { recarregarPedidos } from "../hooks/usePedidos.js";
@@ -63,7 +65,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
   const ignorados = useMemo(() => new Set((ped.ignorados || []).map((g) => normSku(g.sku))), [ped.ignorados]);
   const okOrdenadas = useMemo(() => (ped.importacoes || []).filter((i) => i.ok).sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em))), [ped.importacoes]);
   const ultimaImp = (rel) => [...okOrdenadas].reverse().find((i) => i.relatorio === rel) || null;
-  const ctx = { itens, canais, cfgDoProduto };
+  const ctx = { itens, canais, cfgDoProduto, itemNoCanal: esc.itemNoCanal };
 
   // ---------- Pedidos da Olist ----------
   async function enviarPedidos(plat, canal, arquivo) {
@@ -442,6 +444,19 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
             <label>Produto (nome ou SKU)</label>
             <BuscaItem grupos={gruposBusca} value={fisico.itemId} onChange={(id) => setFisico((f) => ({ ...f, itemId: id, preco: f.preco || precoSugerido(id) }))} vazio="— escolha o item —" />
           </div>
+          {fisico.itemId && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <EmbalagemOrganicoVenda
+                item={itens.find((i) => i.id === fisico.itemId)}
+                canal={canais.find((c) => canalComEmbalagem(c)) || null}
+                itemNoCanal={esc.itemNoCanal}
+                produtos={produtos}
+                kits={kits}
+                embalagens={esc.embalagens || []}
+                onToast={onToast}
+              />
+            </div>
+          )}
           <div className="field"><label>Quantidade</label><input type="number" min="1" value={fisico.qtd} onChange={(e) => setFisico((f) => ({ ...f, qtd: e.target.value }))} /></div>
           <div className="field">
             <label>Preço de venda (R$)</label>

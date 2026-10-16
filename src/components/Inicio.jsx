@@ -257,11 +257,11 @@ export default function Inicio({ onIrPara, onToast }) {
   // Repor a produção do mês = a MESMA conta da Reserva de produção do Fluxo de
   // Caixa (Vendas do mês, lib/vendasMes.js) + o saldo da reserva (v51).
   const reservaMes = useMemo(() => {
-    const v = vendasDoMes({ mes: mesDe(hoje), rampas: rampasH.rampas, rampasGrupo: rampasH.rampasGrupo, rampaRegistros: rampasH.registros, afRegistros: af.registros, organicas: organicasH.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura });
+    const v = vendasDoMes({ mes: mesDe(hoje), rampas: rampasH.rampas, rampasGrupo: rampasH.rampasGrupo, rampaRegistros: rampasH.registros, afRegistros: af.registros, organicas: organicasH.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura, itemNoCanal: dados.itemNoCanal });
     if (!v.total.unidades) return null;
     const res = saldoReserva(reservaH.registros);
     return { repor: v.total.repor, unidades: v.total.unidades, saldo: res.saldo, separado: res.porMes.get(mesDe(hoje)) || 0, temReserva: reservaH.disponivel };
-  }, [hoje, rampasH.rampas, rampasH.rampasGrupo, rampasH.registros, af.registros, organicasH.registros, itens, canais, cfgDoProduto, reservaH.registros, reservaH.disponivel, reais.linhas, reais.cobertura]);
+  }, [hoje, rampasH.rampas, rampasH.rampasGrupo, rampasH.registros, af.registros, organicasH.registros, itens, canais, cfgDoProduto, reservaH.registros, reservaH.disponivel, reais.linhas, reais.cobertura, dados.itemNoCanal]);
 
   // --- Pra fazer + status ---
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"

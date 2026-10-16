@@ -9,6 +9,9 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
 import { MARKUP_PADRAO, descontoPadraoCanal } from "../lib/escada.js";
 import { ordenarCanais } from "../lib/canais.js";
+import { BRL } from "../lib/format.js";
+import { nomesReceita, receitaDoCanal, totalReceita } from "../lib/embalagemCanal.js";
+import { EmbalagemCanalDialog } from "./EmbalagemOrganico.jsx";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
 
@@ -214,7 +217,8 @@ function CampoModoPreco({ canal, onToast }) {
 
 export default function Canais({ onToast }) {
   const { lojaId } = useLoja();
-  const { canaisTodos: canais, carregando } = useCatalogo();
+  const { canaisTodos: canais, carregando, embalagens = [] } = useCatalogo();
+  const [embCanal, setEmbCanal] = useState(null); // canal próprio com a janela de embalagem aberta
   const [novo, setNovo] = useState(NOVO_VAZIO);
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [edicoes, setEdicoes] = useState({});
@@ -347,6 +351,7 @@ export default function Canais({ onToast }) {
 
   return (
     <div>
+      {embCanal && <EmbalagemCanalDialog canal={embCanal} embalagens={embalagens} onClose={() => setEmbCanal(null)} onToast={onToast} />}
       <div className="panel">
         <h3>
           Canais cadastrados
@@ -369,6 +374,7 @@ export default function Canais({ onToast }) {
                   <th className="num">Desconto no anúncio</th>
                   <th className="num" title="Pedido mínimo p/ frete grátis (R$) — vazio = não se aplica">Pedido mín. frete grátis</th>
                   <th title="Canal próprio: precificar por markup sobre o custo (venda direta)">Preço</th>
+                  <th title="Canal próprio: embalagem própria (ex.: venda na loja) — marketplaces usam a do produto">Embalagem</th>
                   <th></th>
                 </tr>
               </thead>
@@ -410,6 +416,32 @@ export default function Canais({ onToast }) {
                       <CampoFreteGratis canal={c} onToast={onToast} />
                     </td>
                     <td>{c.tipo === "custom" ? <CampoModoPreco canal={c} onToast={onToast} /> : <span className="muted-cel">pela margem</span>}</td>
+                    <td>
+                      {c.tipo === "custom" ? (
+                        (() => {
+                          const rc = receitaDoCanal(c);
+                          return (
+                            <>
+                              {rc ? (
+                                <b style={{ fontSize: 12.5 }}>
+                                  {rc.sem ? "sem embalagem" : nomesReceita(rc.itens, embalagens)} · {BRL(totalReceita(rc.itens, embalagens))}
+                                </b>
+                              ) : (
+                                <span className="muted-cel">a do produto</span>
+                              )}
+                              {rc?.freteZero && <div className="sub-num">frete R$ 0</div>}
+                              <div>
+                                <button type="button" className="link-btn" onClick={() => setEmbCanal(c)}>
+                                  {rc ? "mudar" : "usar embalagem própria"}
+                                </button>
+                              </div>
+                            </>
+                          );
+                        })()
+                      ) : (
+                        <span className="muted-cel">a do produto</span>
+                      )}
+                    </td>
                     <td>
                       {(c.tipo === "custom" || c.tipo === "tiktok" || c.tipo === "shein") && (
                         <button className="del" title="Excluir" onClick={() => setExcluirAlvo(c)}>×</button>

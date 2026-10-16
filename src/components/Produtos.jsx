@@ -17,6 +17,7 @@ import DetalhamentoCusto from "./DetalhamentoCusto.jsx";
 import Ajuda from "./Ajuda.jsx";
 import VariacoesProduto from "./VariacoesProduto.jsx";
 import QuandoVende from "./QuandoVende.jsx";
+import { EmbalagemOrganicoBloco } from "./EmbalagemOrganico.jsx";
 
 const VAZIO = {
   nome: "",
@@ -39,7 +40,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   // Produtos (crus, como estão no banco — o formulário edita os valores
   // gravados), embalagens e materiais (receita e detalhamento) e kits (SKU
   // duplicado) vêm do catálogo compartilhado: uma busca + um realtime.
-  const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, impressoras, farmConfig, carregando } = useCatalogo();
+  const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, impressoras, farmConfig, carregando, canais: canaisCat = [] } = useCatalogo();
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [detalheSalvo, setDetalheSalvo] = useState(null); // snapshot carregado do banco, só pra comparar "valor anterior"
@@ -590,6 +591,13 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           <>
             <h3 className="section-title">Quando vende</h3>
             <QuandoVende produtoId={editandoId} onToast={onToast} />
+            <h3 className="section-title">Embalagem no orgânico (venda na loja)</h3>
+            {(() => {
+              const p = produtos.find((x) => x.id === editandoId);
+              return p ? (
+                <EmbalagemOrganicoBloco key={`${p.id}-${JSON.stringify(p.embalagem_organico || null)}`} dono={{ tipo: "produto", id: p.id, nome: p.nome }} config={p.embalagem_organico || null} canais={canaisCat} embalagens={embalagensCatalogo} onToast={onToast} />
+              ) : null;
+            })()}
           </>
         )}
 

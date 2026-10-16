@@ -3,6 +3,7 @@ import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useCatalogo } from "../hooks/useCatalogo.js";
+import { EmbalagemOrganicoBloco } from "./EmbalagemOrganico.jsx";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { trocarLinhas } from "../lib/trocarLinhas.js";
 import SeletorItens, { totalItens } from "./SeletorItens.jsx";
@@ -26,6 +27,7 @@ export default function Kits({ abrirKitId, onToast }) {
     kitProdutos: kitProdutosTodos,
     kitEmbalagens: kitEmbalagensTodos,
     carregando,
+    canais: canaisCat = [],
   } = useCatalogo();
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
@@ -363,6 +365,18 @@ export default function Kits({ abrirKitId, onToast }) {
           <div className="kv"><span className="k">Custo de embalagem do kit</span><span className="v">{BRL(custoEmbalagemKit)}</span></div>
           <div className="kv total"><span className="k">Custo total do kit</span><span className="v">{BRL(custoTotal)}</span></div>
         </div>
+
+        {editandoId && (
+          <>
+            <h3 className="section-title">Embalagem no orgânico (venda na loja)</h3>
+            {(() => {
+              const k = kits.find((x) => x.id === editandoId);
+              return k ? (
+                <EmbalagemOrganicoBloco key={`${k.id}-${JSON.stringify(k.embalagem_organico || null)}`} dono={{ tipo: "kit", id: k.id, nome: k.nome }} config={k.embalagem_organico || null} canais={canaisCat} embalagens={embalagensCatalogo} onToast={onToast} />
+              ) : null;
+            })()}
+          </>
+        )}
 
         <h3 className="section-title">
           Preço sugerido por canal

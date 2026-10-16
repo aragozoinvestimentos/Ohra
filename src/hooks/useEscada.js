@@ -31,8 +31,9 @@ export function useEscada() {
   const emRampa = useMemo(() => produtosEmRampa(rampas, precos), [rampas, precos]);
   const escada = useCallback(
     (produtoId, canal, opcoes = {}) =>
-      escadaDoProduto({ produtoId, canal, itens, precos, concorrentes, cfg: cfgDoProduto(produtoId), emRampa: !!canal && emRampa.has(`${produtoId}|${canal.id}`), ...opcoes }),
-    [itens, precos, concorrentes, cfgDoProduto, emRampa]
+      // canal orgânico com embalagem própria: custos com a embalagem dele (lib/embalagemCanal.js)
+      escadaDoProduto({ produtoId, canal, itens: dados.itensNoCanal(canal), precos, concorrentes, cfg: cfgDoProduto(produtoId), emRampa: !!canal && emRampa.has(`${produtoId}|${canal.id}`), ...opcoes }),
+    [dados, precos, concorrentes, cfgDoProduto, emRampa]
   );
 
   // "O que digitar" da Rampa (riscado fixo + promo do degrau) pros itens em
@@ -57,22 +58,24 @@ export function useEscada() {
   // recebe → repor → lucro (lib/precoAgora.js). Tudo que mostra resultado
   // usa o `agora`.
   const agoraDe = useCallback(
-    (item, canal) => {
-      if (!item || !canal) return null;
+    (item0, canal) => {
+      if (!item0 || !canal) return null;
+      const item = dados.itemNoCanal(item0, canal);
       const tipo = { p: "produto", v: "variacao", k: "kit" }[item.id[0]];
       const linha = precos.find((p) => p.item_tipo === tipo && p.item_id === item.id.slice(2) && p.canal_id === canal.id) || null;
       const cfg = cfgDoProduto(item.produtoId || (tipo === "produto" ? item.id.slice(2) : null));
       return alvoEAgora({ item, canal, linha, rampa: mapaRampa.get(`${item.id}|${canal.id}`) || null, cfg });
     },
-    [precos, cfgDoProduto, mapaRampa]
+    [dados, precos, cfgDoProduto, mapaRampa]
   );
 
   const estrategiaDe = useCallback((item, canal, opcoes = {}) => estrategiaEfetiva(item, canal, { precos, emRampa, ...opcoes }), [precos, emRampa]);
 
   // Alerta do preço SALVO do item no canal (com custo, taxas e estratégia de hoje).
   const alertaDe = useCallback(
-    (item, canal) => {
-      if (!item || !canal) return null;
+    (item0, canal) => {
+      if (!item0 || !canal) return null;
+      const item = dados.itemNoCanal(item0, canal);
       const tipo = { p: "produto", v: "variacao", k: "kit" }[item.id[0]];
       const linha = precos.find((p) => p.item_tipo === tipo && p.item_id === item.id.slice(2) && p.canal_id === canal.id);
       if (!linha) return null;
@@ -86,7 +89,7 @@ export function useEscada() {
       const preco = aa?.emRampa ? aa.agora.preco : Number(linha.preco);
       return { linha, minimo, estrategia, agora: aa, ...alertaPreco({ lucro, preco, minimo, estrategia, canal, valorCliente: clientePagaHoje(item, canal) }) };
     },
-    [precos, cfgDoProduto, emRampa, clientePagaHoje, mapaRampa]
+    [dados, precos, cfgDoProduto, emRampa, clientePagaHoje, mapaRampa]
   );
 
   // Avulso abaixo do mínimo que "parece atração" (margem abaixo da desejada,

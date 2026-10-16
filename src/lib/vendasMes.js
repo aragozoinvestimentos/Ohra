@@ -37,7 +37,7 @@ const ID_PREFIXO = { produto: "p", variacao: "v", kit: "k" };
  * → { linhas: [{ chave, item, canal, unidades, faturamento, recebe, repor, lucro, ads, comissao, semanas }],
  *     total: { unidades, faturamento, recebe, repor, lucro, ads, comissao, sobra }, semanas }
  */
-export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros = [], afRegistros = [], organicas = [], itens = [], canais = [], cfgDoProduto = () => null, pedidos = [], cobertura = null }) {
+export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros = [], afRegistros = [], organicas = [], itens = [], canais = [], cfgDoProduto = () => null, pedidos = [], cobertura = null, itemNoCanal = null }) {
   const porChave = new Map();
   const itemDe = (tipo, id) => itens.find((i) => i.id === `${ID_PREFIXO[tipo] || "p"}:${id}`) || null;
   const novaLinha = (chave, item, canal) => porChave.get(chave) || { chave, item, canal, unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, ads: 0, comissao: 0, semanas: 0, aMao: 0, real: 0 };
@@ -56,8 +56,9 @@ export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros
       return;
     }
     if (!item || !canal || !(unidades > 0) || !(preco > 0)) return;
+    const itemC = itemNoCanal ? itemNoCanal(item, canal) : item; // orgânico: embalagem dele (v56)
     const cfg = cfgDoProduto(item.produtoId || (tipo === "produto" ? id : null));
-    const custo = num(item.custoTotal);
+    const custo = num(itemC.custoTotal);
     const lucroUn = lucroNoPreco(canal, preco, custo, num(item.peso), cfg) ?? 0;
     const chave = `${item.id}|${canal.id}`;
     const l = novaLinha(chave, item, canal);

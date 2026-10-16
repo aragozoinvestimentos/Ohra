@@ -1,5 +1,5 @@
 import { ordenarCanais } from "../lib/canais.js";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import {
   resolverFaixaShopee,
   resolverFaixaML,
@@ -13,6 +13,7 @@ import { calcVariacao, itemTipoDoId, resumoProduto } from "../lib/variacoes.js";
 
 import { LUCRATIVIDADE_PADRAO, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../lib/constantesCanal.js";
 import { produtoAoVivo, precoSalvoAoVivo } from "../lib/aoVivo.js";
+import { canalComEmbalagem, itemNoCanal } from "../lib/embalagemCanal.js";
 import { useCatalogo } from "./useCatalogo.js";
 export { LUCRATIVIDADE_PADRAO, ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO };
 
@@ -178,6 +179,11 @@ export function useRankingData() {
       // nº de peças do kit (soma das quantidades dos produtos) — usado no "lucro por peça"
       pecas: kitProdutosTodos.filter((r) => r.kit_id === k.id).reduce((s, r) => s + (Number(r.quantidade) || 0), 0),
       custoTotal: arredondarPreco(custoKitTotal(k)),
+      // embalagem própria do kit (o canal orgânico pode trocar — lib/embalagemCanal.js)
+      embalagem: totalItens(
+        catalogoEmbalagensBase,
+        kitEmbalagensTodos.filter((r) => r.kit_id === k.id).map((r) => ({ itemId: r.embalagem_id, quantidade: r.quantidade }))
+      ),
       // produtos que compõem o kit — pra comparar com as peças vendidas separadas
       componentes: kitProdutosTodos.filter((r) => r.kit_id === k.id).map((r) => ({ produtoId: r.produto_id, quantidade: Number(r.quantidade) || 0 })),
       // peso de envio do kit = peças (peso de cada produto × qtd) + embalagem própria do kit
@@ -221,15 +227,26 @@ export function useRankingData() {
   // Preços salvos com lucro/margem recalculados pro custo de HOJE de cada
   // item e as taxas atuais do canal (o que foi gravado no dia do "Salvar"
   // fica em lucro_salvo/margem_salva, e `desatualizado` marca a diferença).
+  const ctxEmb = useMemo(() => ({ produtos: produtosVivos, kits, embalagens: embalagensCatalogo }), [produtosVivos, kits, embalagensCatalogo]);
   const precosVivos = useMemo(() => {
     const porId = new Map(itens.map((i) => [i.id, i]));
     const prefixo = { produto: "p", kit: "k", variacao: "v" };
     return precos.map((linha) => {
       const item = porId.get(`${prefixo[linha.item_tipo] || "p"}:${linha.item_id}`);
       const canal = canais.find((c) => c.id === linha.canal_id);
-      return item ? precoSalvoAoVivo(linha, item.custoTotal, canal, item.peso) : linha;
+      // canal orgânico com embalagem própria: custo com a embalagem dele
+      const it = item ? itemNoCanal(item, canal, ctxEmb) : null;
+      return it ? precoSalvoAoVivo(linha, it.custoTotal, canal, it.peso) : linha;
     });
-  }, [precos, itens, canais]);
+  }, [precos, itens, canais, ctxEmb]);
+
+  // Itens com o custo de um canal (embalagem do orgânico). Fora de canal
+  // próprio configurado devolve a mesma lista (nada muda).
+  const itensNoCanal = useCallback(
+    (canal) => (canalComEmbalagem(canal) ? itens.map((i) => itemNoCanal(i, canal, ctxEmb)) : itens),
+    [itens, ctxEmb]
+  );
+  const itemDoCanal = useCallback((item, canal) => itemNoCanal(item, canal, ctxEmb), [ctxEmb]);
 
   // Shopee primeiro, depois ML, TikTok, Shein e canais próprios (lib/canais.js).
   const canaisOrdenados = useMemo(() => ordenarCanais(canais), [canais]);
@@ -251,5 +268,7 @@ export function useRankingData() {
     contagemProdutos: produtos.length,
     contagemKits: kits.length,
     composicaoDoKit,
+    itensNoCanal,
+    itemNoCanal: itemDoCanal,
   };
 }

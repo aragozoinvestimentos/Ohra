@@ -19,6 +19,8 @@ import TopbarAcoes from "./TopbarAcoes.jsx";
 import { useSincronizarAoVivo } from "../hooks/useSincronizarAoVivo.js";
 import { itemTipoDoId, formatarPeso, gruposDoSeletor } from "../lib/variacoes.js";
 import { canalEmMarkup, markupDoCanal, precoPorMarkup } from "../lib/escada.js";
+import { canalComEmbalagem, configOrganicoDoItem } from "../lib/embalagemCanal.js";
+import { EmbalagemOrganicoDialog } from "./EmbalagemOrganico.jsx";
 import { configAtacado, personalizacaoDoPedido } from "../lib/vendaDireta.js";
 import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMinimo, sugestaoAncora, calcularAnuncio, descontoDoItem, descontoPadraoCanal } from "../lib/escada.js";
 import { useRampas } from "../hooks/useRampas.js";
@@ -62,9 +64,10 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
 
   const [confirmarKit, setConfirmarKit] = useState(false);
   const [verFilamentos, setVerFilamentos] = useState(false);
+  const [embOrgAberto, setEmbOrgAberto] = useState(false); // janela "embalagem no orgânico" do produto
   // Personalização (venda direta no canal próprio): só simulação do pedido.
   const [pers, setPers] = useState({ ativa: false, qtd: 1, porPeca: null, arte: null });
-  const { itens: baseItens, canais, produtos, kits: kitsCat, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje, agoraDe, publicacoesCanal } = useEscada();
+  const { itens: baseItens, canais, produtos, kits: kitsCat, precos, composicaoDoKit, materiais, concorrentes, clientePagaHoje, agoraDe, publicacoesCanal, itemNoCanal, embalagens: embalagensCat = [] } = useEscada();
   // Passos (1º→5º): aplica a seleção vinda do "Próximo →".
   if (pedidoPasso && pedidoPasso.para === "avulso" && pedidoPasso.seq !== pedidoVisto) {
     setPedidoVisto(pedidoPasso.seq);
@@ -101,9 +104,20 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   // Custo/frete/embalagem do item escolhido — AO VIVO: se o custo do produto
   // mudar (preço do filamento, embalagem, variação editada…), os campos
   // acompanham sozinhos, a não ser que você tenha digitado outro valor na mão.
+  // Canal orgânico (próprio com embalagem configurada, v56): embalagem/frete dele.
+  const canalOrg = f.canal === "outro" && canalProprioId ? canais.find((x) => x.id === canalProprioId && canalComEmbalagem(x)) || null : null;
   const valoresDoItem = useMemo(() => {
     if (!baseSelecionada) return null;
     const [tipo, id] = baseSelecionada.split(":");
+    if (canalOrg) {
+      const it0 = baseItens.find((x) => x.id === baseSelecionada);
+      const it = it0 ? itemNoCanal(it0, canalOrg) : null;
+      if (it?.embalagemCanal) {
+        if (tipo === "p") return { custoProduto: arredondarPreco(it.custoProducao), frete: arredondarPreco(it.freteProduto || 0), embalagem: it.embalagem };
+        if (tipo === "v") return { custoProduto: it.custoProducao, frete: it.frete, embalagem: it.embalagem };
+        return { custoProduto: arredondarPreco((it0.custoTotal || 0) - (it0.embalagem || 0)), frete: 0, embalagem: it.embalagem };
+      }
+    }
     if (tipo === "p") {
       const p = produtos.find((x) => x.id === id);
       if (!p) return null;
@@ -113,7 +127,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
     if (!item) return null;
     if (tipo === "v") return { custoProduto: item.custoProducao, frete: item.frete, embalagem: item.embalagem };
     return { custoProduto: arredondarPreco(item.custoTotal || 0), frete: 0, embalagem: 0 };
-  }, [baseSelecionada, produtos, baseItens]);
+  }, [baseSelecionada, produtos, baseItens, canalOrg, itemNoCanal]);
   useSincronizarAoVivo(baseSelecionada, valoresDoItem, setF);
 
   // Quando "Usar este custo" é clicado na aba de Produção, aplica o valor aqui.
@@ -314,6 +328,14 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       .filter((c) => c.ativo !== false)
       .map((canal) => {
         const b = { ...base, imposto: canal.imposto_pct || 0, custosFixosPct: canal.custos_fixos_pct || 0 };
+        // embalagem/frete do canal orgânico (v56): troca pela diferença entre este canal e o da tela
+        const it0 = baseSelecionada ? baseItens.find((x) => x.id === baseSelecionada) : null;
+        if (it0 && (canalComEmbalagem(canal) || canalOrg) && canal.id !== canalOrg?.id) {
+          const aqui = itemNoCanal(it0, canalOrg);
+          const la = itemNoCanal(it0, canal);
+          b.embalagem = Math.max(0, b.embalagem + (Number(la.embalagem) || 0) - (Number(aqui.embalagem) || 0));
+          b.frete = Math.max(0, b.frete + (Number(la.freteProduto ?? la.frete) || 0) - (Number(aqui.freteProduto ?? aqui.frete) || 0));
+        }
         let r;
         if (canal.tipo === "shopee") r = resolverFaixaShopee(b).resultado;
         else if (canal.tipo === "ml") r = resolverFaixaML(f.mlCategoria, b, f.mlTipoAnuncio, pesoSel).resultado;
@@ -338,7 +360,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
       })
       .sort((a, b) => (b.confiavel && b.r.lucro != null ? b.r.lucro : -Infinity) - (a.confiavel && a.r.lucro != null ? a.r.lucro : -Infinity));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, lucratividadeEf, f.mlCategoria, f.mlTipoAnuncio, pesoSel, cfgLojaAtual, produtoEscolhido, canalMk, markupAtual]);
+  }, [canais, precos, baseSelecionada, f.custoProduto, f.frete, f.embalagem, lucratividadeEf, f.mlCategoria, f.mlTipoAnuncio, pesoSel, cfgLojaAtual, produtoEscolhido, canalMk, markupAtual, canalOrg, baseItens, itemNoCanal]);
 
   const canalLabel =
     f.canal === "shopee" ? "Shopee" : f.canal === "ml" ? "Mercado Livre" : f.canal === "tiktok" ? "TikTok Shop" : f.canal === "shein" ? "Shein" : canaisProprios.find((c) => c.id === canalProprioId)?.nome || "Outro canal";
@@ -384,6 +406,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   const composicaoKit = kitSelecionadoId ? composicaoDoKit(kitSelecionadoId) : null;
 
   const itemSel = baseSelecionada ? baseItens.find((x) => x.id === baseSelecionada) || null : null;
+  const embOrgAqui = itemSel && canalOrg ? itemNoCanal(itemSel, canalOrg)?.embalagemCanal || null : null;
   // nº de peças do item (variação = quantidade; kit = soma dos produtos) — "lucro por peça"
   const qtdSel = itemSel?.pecas || itemSel?.quantidade || 1;
 
@@ -933,6 +956,25 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
               Preenchido automaticamente com o custo já cadastrado desse {baseSelecionada.startsWith("k:") ? "kit" : "produto"} — ajuste aqui só pra simular um cenário diferente.
             </div>
           )}
+          {baseSelecionada && canalOrg && embOrgAqui && (
+            <div className="emb-org-linha">
+              <span>
+                Embalagem no {canalOrg.nome}: <b>{embOrgAqui.nomes}</b> ({BRL(embOrgAqui.valor)}) ·{" "}
+                {embOrgAqui.origem === "produto" ? "deste produto" : embOrgAqui.definido ? "a do canal (confirmada)" : "a do canal"}
+                {embOrgAqui.freteZero ? " · frete R$ 0" : ""}
+              </span>
+              {embOrgAqui.dono && (
+                <button type="button" className="link-btn" onClick={() => setEmbOrgAberto(true)}>
+                  trocar neste {embOrgAqui.dono.tipo === "kit" ? "kit" : "produto"} (grava no cadastro)
+                </button>
+              )}
+            </div>
+          )}
+          {baseSelecionada && f.canal === "outro" && canalProprioId && !canalOrg && (
+            <div className="hint" style={{ marginBottom: 0 }}>
+              Este canal usa a embalagem do produto (a dos marketplaces). Pra usar outra embalagem nele: Configuração → Canais → Embalagem.
+            </div>
+          )}
         </div>
 
         {composicaoKit && (composicaoKit.produtos.length > 0 || composicaoKit.embalagens.length > 0) && (
@@ -1145,6 +1187,16 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         </div>
       </div>
     </div>
+    {embOrgAberto && embOrgAqui?.dono && (
+      <EmbalagemOrganicoDialog
+        dono={embOrgAqui.dono}
+        config={configOrganicoDoItem(itemSel, { produtos, kits: kitsCat }).config}
+        canal={canalOrg}
+        embalagens={embalagensCat}
+        onClose={() => setEmbOrgAberto(false)}
+        onToast={onToast}
+      />
+    )}
     {verFilamentos && itemSel && (
       <CustoFilamentosDialog itemId={itemSel.id} canalIdInicial={canalIdAtual || undefined} onToast={onToast} onClose={() => setVerFilamentos(false)} />
     )}
