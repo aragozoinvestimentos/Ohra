@@ -13,8 +13,14 @@
 //    trouxe — Ads é investimento). Gastou ≥ 80% do orçamento: < 1× → 3 saídas
 //    (muitos cliques sem venda → arrumar o anúncio; já no mínimo de R$ 10/dia
 //    → subir a meta ou pausar; senão → reduzir); 1–1,2× → manter; 1,2–2× →
-//    +20%; 2–3× → +50%; ≥ 3× → dobrar. Gastou pouco → baixar a meta;
+//    +20%; ≥ 2× → +30% (máximo — 16/10/2026, "não dá estouro de uma vez").
+//    Gastou pouco → baixar a meta;
 // 3) Ads da loja ≤ teto (tabela progressiva de 30 dias).
+// Método do Luan (16/10/2026, schema v57): produto novo = LANCE AUTOMÁTICO
+// (tipo 'auto', sem meta) e orçamento baixo; dia 3 sem venda = parar e
+// arrumar o anúncio (vale pra todo período); dia 7 = virar meta de ROAS com o
+// ROAS que bateu. Pausar pra revisar mantém o período (ajustes {tipo:'pausa'|
+// 'volta'}); GMV Max da Loja = período item_tipo 'loja' (avaliarAdsLoja).
 import { porSemana, vendasParaDecisao } from "./rampa.js";
 
 const num = (v) => {
@@ -34,10 +40,15 @@ const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 export const REGRAS_ADS = {
   aprendizadoDias: 7, // Shopee: até 7 dias de aprendizado (GMV Max)
   aumento: 0.2, // 1º degrau da escada de aumento (retorno 1,2–2×)
+  aumentoMax: 0.3, // retorno ≥ 2× → +30% no máximo (sem +50%/dobrar)
+  diaConferencia: 3, // dia 3: sem venda via Ads = parar e arrumar o anúncio
+  pausaLembrarDias: 3, // pausado pra revisar há 3 dias → lembrar de despausar
+  lojaGastoMinDia: 1, // campanha da loja gastando < R$ 1/dia por 7 dias = meta alta demais
+  lojaMetaFator: 2, // campanha da loja: meta alta = 2× o equilíbrio da loja
   decisaoDias: 4, // depois de cada ajuste: decide de novo em no mínimo 4 dias
   metaFator: 1.3, // meta sugerida = equilíbrio × 1,3
   metaAltaFator: 2, // meta > 2× o equilíbrio = alta pra começar
-  escada: { manterAte: 1.2, dobroAte: [2, 3] }, // retorno: < 1,2 manter · < 2 +20% · < 3 +50% · ≥ 3 dobrar
+  escada: { manterAte: 1.2, dobroAte: [2, 3] }, // retorno: < 1,2 manter · < 2 +20% · ≥ 2 +30% (aumentoMax)
   cliquesConversao: 30, // cliques no período pra julgar a conversão
   conversaoMin: 0.01, // vendas ÷ cliques abaixo disso = problema é o anúncio
   constanciaDias: 3, // média de 3 dias × os 3 anteriores
@@ -168,14 +179,38 @@ export const metaAltaDemais = (meta, empate, regras = REGRAS_ADS) => !!(num(meta
 export const retornoAds = (roas, empate) => (roas != null && empate ? roas / empate : null);
 export const textoRetorno = (ret) => (ret == null ? "" : `cada R$ 1 investido voltou ${moeda(ret)} de lucro`);
 export const valorAumento = (orc, regras = REGRAS_ADS) => Math.ceil(num(orc) * (1 + regras.aumento));
-// Escada do aumento pelo retorno: 1,2–2× → +20% · 2–3× → +50% · ≥ 3× → dobrar.
+// Escada do aumento pelo retorno: 1,2–2× → +20% · ≥ 2× → +30% (máximo).
 export function passoDaEscada(retorno, regras = REGRAS_ADS) {
   const e = regras.escada || REGRAS_ADS.escada;
   if (retorno == null || retorno < e.manterAte) return 0;
-  if (retorno < e.dobroAte[0]) return num(regras.aumento) || 0.2;
-  if (retorno < e.dobroAte[1]) return 0.5;
-  return 1;
+  const base = num(regras.aumento) || 0.2;
+  if (retorno < e.dobroAte[0]) return base;
+  return Math.max(base, num(regras.aumentoMax) || 0.3);
 }
+
+// Pausas do período (método do Luan, 16/10/2026): "Pausei pra revisar" grava
+// um ajuste {tipo:'pausa', data} e "Despausei" um {tipo:'volta', data,
+// vendas (andamento na hora)}. O período continua ligado; os dias pausados
+// não contam. → { pausado: {desde} | null, diasPausados, ultimaVolta }.
+export function pausasDoPeriodo(periodo, hoje) {
+  const aj = Array.isArray(periodo?.ajustes) ? periodo.ajustes : [];
+  let desde = null;
+  let diasPausados = 0;
+  let ultimaVolta = null;
+  for (const a of aj) {
+    if (a?.tipo === "pausa" && !desde) desde = a.data;
+    else if (a?.tipo === "volta" && desde) {
+      diasPausados += Math.max(0, diasEntre(desde, a.data));
+      desde = null;
+      ultimaVolta = a;
+    }
+  }
+  if (desde && hoje) diasPausados += Math.max(0, diasEntre(desde, hoje));
+  return { pausado: desde ? { desde } : null, diasPausados, ultimaVolta };
+}
+// "Revisei o anúncio — dar até o 7º dia": ajuste {tipo:'revisei'} silencia o
+// aviso de dia 3 sem venda até o 7º dia rodando.
+const revisouSemVenda = (periodo) => (Array.isArray(periodo?.ajustes) ? periodo.ajustes : []).some((a) => a?.tipo === "revisei");
 
 const roasDe = (s, preco) => (num(s.ads_gasto) > 0 ? (num(s.ads_vendas) * (num(s.preco) || preco)) / num(s.ads_gasto) : null);
 
@@ -192,13 +227,18 @@ export const periodoAtivo = (lista, hoje) => (lista || []).find((p) => periodoLi
 
 // Ajustes do período (aumentou/reduziu orçamento, mudou a meta): o orçamento
 // e a meta "de agora" são os do último ajuste.
+// Pausa/volta/revisei não mudam orçamento nem meta (ficam fora daqui).
 export function valoresAtuais(periodo) {
-  const aj = Array.isArray(periodo?.ajustes) ? periodo.ajustes : [];
+  const aj = (Array.isArray(periodo?.ajustes) ? periodo.ajustes : []).filter((a) => a && !["pausa", "volta", "revisei"].includes(a.tipo));
+  const ultOrc = [...aj].reverse().find((a) => a.orcamento != null);
+  const ultMeta = [...aj].reverse().find((a) => a.meta != null);
   const ult = aj[aj.length - 1] || {};
   return {
-    orcamento: num(ult.orcamento ?? periodo?.orcamento_diario) || null,
-    meta: num(ult.meta ?? periodo?.meta_roas) || null,
+    orcamento: num(ultOrc?.orcamento ?? periodo?.orcamento_diario) || null,
+    meta: num(ultMeta?.meta ?? periodo?.meta_roas) || null,
     ultimoAjuste: ult.data || null,
+    // lance automático: vira meta quando um ajuste grava a meta (dia 7)
+    automatico: periodo?.tipo === "auto" && !ultMeta,
   };
 }
 
@@ -341,7 +381,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     // Meta alta pra começar (> 2× o equilíbrio) num período sem ajuste: avisa
     // junto de qualquer situação, com o botão "Registrar ajuste: meta X".
     const nAjustes = Array.isArray(ativo.ajustes) ? ativo.ajustes.length : 0;
-    const avisoMeta = ativo.tipo !== "teste" && !nAjustes && metaAltaDemais(meta, minimo, regras) ? { meta, sugerida } : null;
+    const avisoMeta = ativo.tipo !== "teste" && ativo.tipo !== "auto" && !nAjustes && metaAltaDemais(meta, minimo, regras) ? { meta, sugerida } : null;
     const sitA = (chave, estado, titulo, texto, extra = {}) => sit(chave, estado, titulo, texto, { avisoMeta, ...extra });
     // Teste de lançamento: orçamento fechado, regras e resultado na Rampa.
     if (ativo.tipo === "teste") {
@@ -350,6 +390,45 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     }
     if (sazonal && (sazonal.fase === "corte" || sazonal.fase === "depois"))
       return sitA("pausar-corte", "atencao", sazonal.fase === "corte" ? "Corte: pausar o Ads" : "Depois da data: desligar o Ads", sazonal.fase === "corte" ? `A partir de ${dm(sazonal.inicio)} a entrega não chega mais a tempo de ${sazonal.nome}: pause o Ads (Encerrar período).` : `${sazonal.nome} já passou: desligue o Ads até a próxima temporada.`, { numeros });
+    // ---- Método do Luan (16/10/2026): pausa, dia 3 sem venda, lance automático ----
+    const { automatico } = valoresAtuais(ativo);
+    const pz = pausasDoPeriodo(ativo, hoje);
+    if (pz.pausado) {
+      const dp = diasEntre(pz.pausado.desde, hoje);
+      return dp >= num(regras.pausaLembrarDias || 3)
+        ? sitA("despausar", "atencao", "Já revisou? Despause o Ads", `Pausado pra revisar desde ${dm(pz.pausado.desde)} (${dp} dias). Se já arrumou o anúncio, despause na Shopee e marque "Despausei" — a conferência recomeça 3 dias depois da volta.`, { numeros, pausado: pz.pausado })
+        : sitA("pausado", "decisao", `Pausado pra revisar desde ${dm(pz.pausado.desde)}`, 'O período continua com as métricas. Depois de arrumar o anúncio, despause na Shopee e marque "Despausei".', { numeros, pausado: pz.pausado });
+    }
+    const a00 = andamentoValido(ativo, ss);
+    // Dias RODANDO (sem as pausas) e vendas desde a última volta.
+    const refVolta = pz.ultimaVolta?.data || ativo.inicio;
+    const diasRodando = diasEntre(ativo.inicio, hoje) - pz.diasPausados;
+    const diasDesdeVolta = diasEntre(refVolta, hoje);
+    const vendasTot = Math.max(r.vendas, a00?.vendas || 0);
+    const vendasDesdeVolta = pz.ultimaVolta ? Math.max(0, vendasTot - num(pz.ultimaVolta.vendas)) : vendasTot;
+    const dia3 = num(regras.diaConferencia || 3);
+    // Tem número cobrindo os 3 dias? (andamento até ≥ ref + 2, ou semana registrada depois)
+    const temDado = (a00 && a00.ate >= somarDiasIso(refVolta, dia3 - 1)) || semanasNoPeriodo(ss, ativo).some((x) => x.data > somarDiasIso(refVolta, dia3 - 1));
+    const limiteRevisao = diasRodando < regras.aprendizadoDias && revisouSemVenda(ativo);
+    if (diasDesdeVolta >= dia3 && vendasDesdeVolta === 0 && !limiteRevisao) {
+      if (temDado)
+        return sitA("sem-venda-dia3", "resolver", `${diasDesdeVolta} dias pagando Ads sem venda — pare e arrume o anúncio`, `O Ads só traz gente até o anúncio; se em ${diasDesdeVolta} dias ninguém comprou, mais dinheiro não resolve. Pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"} antes de gastar mais.`, { numeros, semVenda: { dias: diasDesdeVolta, gasto: a00?.gasto ?? r.gasto, cliques: Math.max(r.cliques, a00?.cliques || 0), podeEsperar: diasRodando < regras.aprendizadoDias && !revisouSemVenda(ativo) } });
+      if (diasRodando < regras.aprendizadoDias)
+        return sitA("conferir-dia3", "atencao", `Dia ${diasRodando + 1}: atualize o andamento`, `Pra saber se o Ads já vendeu: envie o CSV do Shopee Ads (Análise → Importar dados) ou o número à mão em "Atualizar andamento". Sem venda em 3 dias = parar e arrumar o anúncio.`, { numeros });
+    }
+    // Lance automático: aprende 7 dias (dias rodando), depois vira meta de ROAS.
+    if (automatico) {
+      if (diasRodando < regras.aprendizadoDias)
+        return sitA("auto-aprendendo", "decisao", `Lance automático · dia ${diasRodando + 1} de ${regras.aprendizadoDias}`, `Produto novo no automático: não mexa até o 7º dia. ${vendasTot > 0 ? `Já vendeu ${vendasTot} via Ads ✓.` : "O app confere no dia 3 se vendeu."}`, { numeros, decideEm: somarDiasIso(ativo.inicio, regras.aprendizadoDias + pz.diasPausados) });
+      const gastoA = Math.max(r.gasto, a00?.gasto || 0);
+      if (!(gastoA > 0)) return sitA("aguardando", "info", "Aguardando números do automático", 'Use "Atualizar andamento" (CSV do Shopee Ads) pra o app dizer a meta de ROAS.', { numeros });
+      const roasA = (vendasTot * preco) / gastoA;
+      if (minimo && roasA >= minimo) {
+        const novaMeta = Math.floor(roasA * 10) / 10;
+        return sitA("virar-meta", "oportunidade", `Trocar pra meta de ROAS ${um(novaMeta)}`, `Fim dos ${regras.aprendizadoDias} dias no automático: a Shopee bateu ROAS ${um(roasA)} (${textoRetorno(retornoAds(roasA, empate))}). Na Shopee: editar a campanha → GMV Max – Meta de ROAS → ${um(novaMeta)}, mantendo o orçamento. Daí em diante ele vira "campeão".`, { numeros, novaMeta, roasAuto: roasA });
+      }
+      return sitA("virar-meta", "atencao", `Não se pagou no aprendizado — meta ${um(sugerida)} ou pause`, `No automático o ROAS ficou ${um(roasA)}, abaixo de ${nomeMin}. Troque pra meta de ROAS ${um(sugerida)} (equilíbrio × 1,3 — nunca uma meta que dê prejuízo) ou pause e arrume o anúncio.`, { numeros, novaMeta: sugerida, roasAuto: roasA });
+    }
     // Ritmo (plano 14/10/2026): 7 dias de aprendizado no começo do período;
     // depois de cada ajuste, decide de novo em no mínimo 4 dias (Alavancar: 3).
     const refDecisao = ultimoAjuste && ultimoAjuste > ativo.inicio ? ultimoAjuste : ativo.inicio;
@@ -422,16 +501,16 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const caiu = const3 && const3.variacao <= -num(regras.constanciaQueda || 0.3);
     const cheio = usoOrc == null || usoOrc >= regras.gastoCheio;
     if (passo > 0 && (cheio || caiu)) {
-      // Escada: +20% / +50% / dobrar — sempre dentro do teto da loja.
-      let p = alavancar ? Math.min(passo, rAum.aumento) : passo;
+      // Escada: +20% / +30% (máximo) — sempre dentro do teto da loja.
+      let p = alavancar ? Math.max(passo, rAum.aumento) : passo;
       let novo = Math.ceil(num(orcamento) * (1 + p));
-      while (tetoLoja && tetoLoja.passaria((novo - orcamento) * 30) && p > (num(rAum.aumento) || 0.2) + 1e-9) {
-        p = p > 0.5 ? 0.5 : num(rAum.aumento) || 0.2;
+      if (tetoLoja && tetoLoja.passaria((novo - orcamento) * 30) && p > (num(regras.aumento) || 0.2) + 1e-9) {
+        p = num(regras.aumento) || 0.2;
         novo = Math.ceil(num(orcamento) * (1 + p));
       }
       if (tetoLoja && tetoLoja.passaria((novo - orcamento) * 30))
         return sitA("teto", "info", "Bom resultado, mas no teto da loja", `ROAS ${um(roas)} ${quando}${retTxt}, mas aumentar passaria do teto de Ads da loja (${moeda(tetoLoja.teto)} no mês, fase ${tetoLoja.fase}). Mantenha ${moeda(orcamento)}/dia.`, { numeros: semana });
-      const rotulo = p >= 1 ? "Dobrar" : `Aumentar ${Math.round(p * 100)}%`;
+      const rotulo = `Aumentar ${Math.round(p * 100)}%`;
       const motivo = caiu && !cheio ? ` As vendas via Ads caíram ${Math.round(-const3.variacao * 100)}% nos últimos 3 dias com o retorno bom: mais verba recupera o ritmo.` : ` Gastou ${Math.round((usoOrc ?? 1) * 100)}% do orçamento.`;
       return sitA("aumentar", "oportunidade", `${rotulo} → ${moeda(novo)}/dia`, `ROAS ${um(roas)} ${quando} = ${um(retorno)}× ${naTemporada ? "o mínimo da temporada" : "o equilíbrio"}${retTxt}.${motivo} Suba de ${moeda(orcamento)} pra ${moeda(novo)}/dia e reavalie em ${alavancar ? 3 : num(regras.decisaoDias) || 4} dias.`, { numeros: semana, novoOrcamento: novo, passo: p });
     }
