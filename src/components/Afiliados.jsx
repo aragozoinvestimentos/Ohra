@@ -39,7 +39,7 @@ const dataBR = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—")
 const TIPO_ROTULO = { produto: "produto", variacao: "variação", kit: "kit" };
 const msgV35 = (e) => (/afiliado|schema cache|does not exist/.test(e?.message || "") ? "Falta rodar o supabase/schema_v35.sql no Supabase" : `Não foi possível salvar: ${e?.message}`);
 
-export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf, semana, hoje, podeRegistrar, onRegistrar, onToast }) {
+export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf, semana, hoje, onToast }) {
   const { lojaId } = useLoja();
   const { itens, canais } = dados;
   const { config, parceiros, registros, disponivel, carregando } = af;
@@ -155,9 +155,6 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
         <button type="button" className="btn" onClick={() => setParceiroForm({ inicial: {} })}>
           + Parceiro
         </button>
-        <button type="button" className="btn primary" onClick={onRegistrar} disabled={!podeRegistrar}>
-          Registrar semana
-        </button>
       </TopbarAcoes>
 
       <Kpis
@@ -170,7 +167,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
           {
             label: "Vendas via afiliado",
             valor: s.temRegistro ? String(s.vendasAf) : "—",
-            sub: s.temRegistro ? (s.total > 0 ? `${PCT(s.vendasAf / s.total)} das vendas da semana (${s.total})` : "na semana") : "registre a semana pra ver",
+            sub: s.temRegistro ? (s.total > 0 ? `${PCT(s.vendasAf / s.total)} das vendas da semana (${s.total})` : "na semana") : "sem vendas via afiliado registradas",
           },
           {
             label: "Comissão paga",
@@ -321,7 +318,7 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
                             return (
                               <AgoraRampa
                                 acao={{ tipo, rotulo: ROT[tipo], titulo: a.titulo, porque: textoSituacao(l), acao: a.botao ? "x" : null, botao: a.botao, depois: a.depois }}
-                                proxima={l.conf.ativo ? { texto: "conferir as vendas via afiliado no Registrar semana" } : null}
+                                proxima={l.conf.ativo ? { texto: "vendas via afiliado: pendente (ainda não vêm nos arquivos)" } : null}
                                 onAcao={() => (a.usar != null ? salvarItem(l, { ativo: true, comissao: a.usar }, `${l.item.nome}: comissão ${pct(a.usar)} neste item`) : setEditItem(l))}
                               />
                             );

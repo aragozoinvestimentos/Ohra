@@ -2157,3 +2157,27 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .kpi-v-com-acao .kpi-v-de { font-size: 15px; font-weight: 600; color: var(--ink-soft); }
 .kpi:has(.kpi-v-com-acao) { position: relative; }
 .kpi-v-com-acao > .btn-mini { position: absolute; top: 8px; right: 10px; }
+
+/* Bloco Avaliações (Análise → Importar dados, v58) */
+.ana-aval-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-aval { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; cursor: pointer; color: var(--ink); }
+.chip-aval:hover { border-color: var(--border-strong); }
+.chip-aval.ativo { border-color: var(--accent); background: var(--accent-soft, rgba(210, 98, 43, 0.08)); }
+.chip-aval.chip-outro { border-style: dashed; color: var(--ink-soft); }
+.ana-aval-form { grid-column: 1 / -1; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: grid; gap: 8px; background: var(--surface-2); }
+.ana-aval-estrelas { display: flex; flex-wrap: wrap; gap: 8px; }
+.ana-aval-estrelas label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; font-weight: 700; }
+.ana-aval-estrelas input { width: 72px; }
+.ana-aval-linha { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ana-aval-linha .faint { flex: 1 1 260px; }
+.ana-aval-simples { font-size: 13px; }
+
+/* Semanas · de onde vem cada número (Evolução da Rampa) */
+.semanas-fonte { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; display: grid; gap: 4px; font-size: 12.5px; }
+.semanas-fonte-tit { font-weight: 700; font-size: 12px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.03em; }
+.semana-fonte { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.semana-fonte.em-aberto { color: var(--st-decisao, var(--accent)); }
+.chips-fonte { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.chip-fonte { font-size: 11px; border-radius: 999px; padding: 1px 8px; background: var(--st-info-soft, var(--surface-2)); color: var(--ink-soft); }
+.chip-fonte.antiga { background: var(--surface-2); font-style: italic; }
+.chip-fonte.falta { background: var(--st-atencao-soft); color: var(--st-atencao); }

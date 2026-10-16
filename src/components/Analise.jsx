@@ -34,7 +34,7 @@ export default function Analise({ onToast }) {
   }, []);
   const linhas = useMemo(() => enriquecer(ped.pedidos, { itens: esc.itens, canais: esc.canais, cfgDoProduto: esc.cfgDoProduto }), [ped.pedidos, esc.itens, esc.canais, esc.cfgDoProduto]);
 
-  if (sub === "importar") return <CentralImportacao esc={esc} ped={ped} linhas={linhas} linhasAds={cres.linhasAds} hoje={hoje} onToast={onToast} />;
+  if (sub === "importar") return <CentralImportacao esc={esc} ped={ped} linhas={linhas} linhasAds={cres.linhasAds} cres={cres} hoje={hoje} onToast={onToast} />;
   if (!ped.disponivel)
     return (
       <div className="panel">

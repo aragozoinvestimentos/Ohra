@@ -146,7 +146,7 @@ function Situacao({ av, compacto }) {
   return <Estado tipo={av.estado}>{av.titulo}</Estado>;
 }
 
-export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje, canais, onToast, podeRegistrar, onRegistrar, abrirChave = null }) {
+export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje, canais, onToast, abrirChave = null }) {
   const { lojaId, lojas, atualizar } = useLoja();
   const loja = lojas?.find((l) => l.id === lojaId) || null;
   const canaisComLinha = useMemo(() => canais.filter((c) => linhasAds.linhas.some((l) => l.canal.id === c.id)), [canais, linhasAds]);
@@ -429,9 +429,6 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
               Atualizar andamento
             </button>
           )}
-          {podeRegistrar && (
-            <button type="button" className="btn btn-mini" onClick={onRegistrar}>Registrar semana</button>
-          )}
         </div>
         {verRegras && <RegrasAds regrasA={regrasA} salvando={salvando} onSalvar={salvarRegras} />}
         {!linhas.length && !(linhasAds.lojaLinha && canal?.id === linhasAds.lojaLinha.canal.id) ? (
@@ -696,7 +693,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           <b>Anúncio com vários itens</b>
           {l.mix
             ? `Equilíbrio pelo mix das vendas dos últimos 30 dias (${l.ops.map((o) => `${o.rotulo} ${Math.round((l.mix.pesos.get(o.idx) || 0) * 100)}%`).join(" · ")}).`
-            : `Sem vendas por opção ainda: o equilíbrio é o da opção mais exigente (${l.pior?.rotulo || "—"}). Importe os relatórios da Shopee no Registrar semana pra ter o mix.`}
+            : `Sem vendas por opção ainda: o equilíbrio é o da opção mais exigente (${l.pior?.rotulo || "—"}). O mix vem dos pedidos importados (Análise → Importar dados), pelo SKU de cada opção.`}
         </div>
       )}
       {av.ativo && (
@@ -1082,7 +1079,7 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
     <EditarDialog titulo="Atualizar andamento do Ads" classe="modal-andamento" salvando={salvando} onCancelar={onCancelar} onSalvar={salvar} salvarLabel="Salvar andamento">
       <p className="hint" style={{ marginTop: 0 }}>
         Números <b>acumulados desde o início</b> de cada período de Ads até a data abaixo. Cada envio <b>substitui</b> o anterior (nunca soma). Não encerra o período. Depois do aprendizado, a
-        decisão do Ads usa o andamento mais novo — atualize a cada 3 dias. O Registrar semana já vem com o que faltar.
+        decisão do Ads usa o andamento mais novo — atualize a cada 3 dias. As semanas são montadas sozinhas com os pedidos e esse CSV.
       </p>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 }}>
         <div className="field" style={{ margin: 0 }}>

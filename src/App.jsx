@@ -11,8 +11,6 @@ import Icone from "./components/Icone.jsx";
 import Ajuda from "./components/Ajuda.jsx";
 import { LegendaEstados } from "./components/Estado.jsx";
 import { useLoja } from "./lib/LojaContext.jsx";
-import SemanaPendenteProvider from "./components/SemanaPendenteProvider.jsx";
-import { useSemanaPendente } from "./hooks/useSemanaPendente.js";
 
 // Se um deploy novo saiu com o app aberto, o pedaço antigo da aba não existe
 // mais no servidor — recarrega a página uma vez pra pegar a versão nova.
@@ -406,7 +404,6 @@ export default function App() {
   }
 
   return (
-    <SemanaPendenteProvider onToast={showToast}>
     <div className={`shell ${menuAberto ? "menu-aberto" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
@@ -642,7 +639,6 @@ export default function App() {
 
       <div className={`toast ${toast.show ? "show" : ""}`}>{toast.msg}</div>
     </div>
-    </SemanaPendenteProvider>
   );
 }
 
@@ -665,7 +661,6 @@ function NavCelular({ menuAtual, irParaMenu, menuAberto, abrirMenu }) {
           <button key={n.key} type="button" className={ativo && !menuAberto ? "ativo" : ""} onClick={() => irParaMenu(item)} aria-current={ativo ? "page" : undefined}>
             <Icone nome={item.icone} size={19} />
             <span className="rot">{n.rot}</span>
-            {n.key === "m-crescer" && <BolinhaSemana />}
             {n.key === "m-inicio" && <BolinhaUrgentes />}
           </button>
         );
@@ -678,8 +673,6 @@ function NavCelular({ menuAtual, irParaMenu, menuAberto, abrirMenu }) {
   );
 }
 
-// Bolinha com a contagem de semanas pendentes no item Crescimento do menu
-// (mesmo estado do Início e da faixa no Crescimento).
 // Urgentes (grupo Resolver do Início): bolinha vermelha no menu, de qualquer tela.
 function BolinhaUrgentes() {
   const n = useSyncExternalStore(assinarUrgentes, lerUrgentes, lerUrgentes);
@@ -706,12 +699,3 @@ function Marcas({ filtro }) {
   );
 }
 
-function BolinhaSemana() {
-  const { pendentes } = useSemanaPendente();
-  if (!pendentes.length) return null;
-  return (
-    <span className="bolinha-menu" title={`${pendentes.length} ${pendentes.length === 1 ? "item" : "itens"} com a semana pendente`}>
-      {pendentes.length}
-    </span>
-  );
-}

@@ -18,6 +18,7 @@ import CanalTag from "./CanalTag.jsx";
 import BuscaItem from "./BuscaItem.jsx";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import AvaliacoesBloco from "./AvaliacoesBloco.jsx";
 
 // Aba Análise → 1 · Importar dados (schema v55): UM lugar pra subir todos os
 // arquivos. Um bloco por plataforma (padrão igual pra todas): pedidos da
@@ -52,7 +53,7 @@ async function lerPlanilha(arquivo) {
   return lerXls(buf);
 }
 
-export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, onToast }) {
+export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, hoje, onToast }) {
   const { lojaId } = useLoja();
   const { itens, canais, produtos, kits, precos, cfgDoProduto, gruposAnuncio: grupos = [] } = esc;
   const [resultado, setResultado] = useState({}); // relatorio → { t, txt }
@@ -193,7 +194,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
       let resumo = "";
       if (tipo === "desempenho") {
         const lig = (r.itens || []).filter((i) => ligarSku(i.sku, itens)).length;
-        resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${txtListas} · ${(r.itens || []).length} anúncios no total, ${lig} ligados ao app — o Registrar semana já vem preenchido`;
+        resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${txtListas} · ${(r.itens || []).length} anúncios no total, ${lig} ligados ao app — funil das semanas da Rampa e do Ads`;
       } else {
         const res = andamentoDoCsv([r], linhasAds?.linhas || []);
         let n = 0;
@@ -388,6 +389,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
             )}
           </div>
         )}
+        {canal && cres && <AvaliacoesBloco canal={canal} cres={cres} esc={esc} hoje={hoje} onToast={onToast} />}
         {canal && p.id === "shopee" && (
           <>
             {relat({
@@ -545,7 +547,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, hoje, o
       <div className="panel">
         <h3>Como fica a semana</h3>
         <div className="ana-guia">
-          <div><b>1× por semana (≈ 5 min)</b>Pedidos da Olist de cada plataforma que vendeu + os relatórios de anúncio dela (Shopee: Desempenho e Ads). Depois o Registrar semana curto: avaliações, nota, 1–2★ e conhecidos.</div>
+          <div><b>1× por semana (≈ 5 min)</b>Pedidos da Olist de cada plataforma que vendeu + os relatórios de anúncio dela (Shopee: Desempenho e Ads). E as avaliações de quem vendeu (bloco Avaliações). As semanas da Rampa e do Ads se montam sozinhas.</div>
           <div><b>A cada 3 dias</b>Só o relatório de Ads de cada plataforma com Ads ligado (Shopee hoje).</div>
           <div><b>Venda física</b>Quando vender: “+ Registrar venda física”.</div>
           <div><b>O app faz sozinho</b>Ignora pedido repetido, separa cancelados, liga pelo SKU, lança no caixa e calcula o lucro com as taxas e o custo de hoje. Nome, CPF, endereço e telefone do cliente são ignorados.</div>

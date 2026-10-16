@@ -450,7 +450,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
         depoisDeAjuste ? `Depois do ajuste · dia ${diasDesde + 1} de ${gapDias}` : `Aprendendo · dia ${diasDesde + 1} de ${gapDias}`,
         depoisDeAjuste
           ? `Você mudou orçamento/meta em ${dm(refDecisao)}: espere até ${dm(somarDiasIso(refDecisao, gapDias))} pra decidir de novo (a Shopee se ajusta uns dias).`
-          : `A plataforma ainda está aprendendo: não mexa na meta nem no orçamento até ${dm(somarDiasIso(refDecisao, gapDias))}. Atualize o andamento ou registre a semana normalmente.`,
+          : `A plataforma ainda está aprendendo: não mexa na meta nem no orçamento até ${dm(somarDiasIso(refDecisao, gapDias))}. Envie o CSV do Shopee Ads normalmente.`,
         { numeros, decideEm: somarDiasIso(refDecisao, gapDias) }
       );
     if (!empate || empate > regras.roasInviavel)
@@ -461,7 +461,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
         return sitA("atualizar-andamento", "atencao", "Atualizar o andamento do Ads", `Fase Alavancar (${sazonal.nome}): a decisão é a cada 3–4 dias pelo andamento. ${a0 ? `O último é de ${dm(a0.ate)}.` : "Ainda não tem andamento."} Use "Atualizar andamento" no topo do Ads (gasto, cliques e vendas via Ads desde o início do período).`, { numeros });
     }
     const m = medidaDaDecisao(ativo, ss, refDecisao, gapDias, preco);
-    if (!m) return sitA("aguardando", "info", depoisDeAjuste ? "Aguardando números depois do ajuste" : "Aguardando números depois do aprendizado", 'Use "Atualizar andamento" (CSV do Shopee Ads) ou registre a semana pra avaliar.', { numeros });
+    if (!m) return sitA("aguardando", "info", depoisDeAjuste ? "Aguardando números depois do ajuste" : "Aguardando números depois do aprendizado", 'Envie o CSV do Shopee Ads em Análise → Importar dados pra avaliar.', { numeros });
     const roas = m.roas;
     const retorno = retornoAds(roas, minimo);
     const lucroReal = retornoAds(roas, empate);

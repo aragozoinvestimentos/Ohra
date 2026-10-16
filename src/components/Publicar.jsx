@@ -475,7 +475,7 @@ export default function Publicar({ onToast, onSub }) {
     {lancado && (
       <div className="alerta alerta-good lancado-ok">
         <b>{lancado.nome}: produto lançado ✓</b>
-        {lancado.emRampa ? "Está em rampa: acompanhe e registre a semana no Crescimento." : "Tudo atualizado nas plataformas."}
+        {lancado.emRampa ? "Está em rampa: acompanhe no Crescimento (as semanas se montam com os pedidos importados)." : "Tudo atualizado nas plataformas."}
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           {lancado.emRampa ? (
             <button type="button" className="btn btn-mini primary" onClick={() => irParaAba("crescimento", { sub: "rampa" })}>Acompanhar no Crescimento →</button>

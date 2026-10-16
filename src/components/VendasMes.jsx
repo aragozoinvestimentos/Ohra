@@ -123,7 +123,7 @@ export default function VendasMes({ mes, onToast }) {
     return l && Number(l.preco) > 0 ? Number(l.preco) : null;
   };
   const canaisComPreco = (itemId) => (itemId ? canais.filter((c) => precoSalvo(itemId, c.id) != null) : []);
-  // Produto em rampa (ou variação dele) no canal: as vendas já entram pelo Registrar semana.
+  // Produto em rampa (ou variação dele) no canal: as vendas já entram pelos pedidos importados.
   const emRampaNoCanal = (itemId, canalId) => {
     if (!itemId || !canalId || itemId.startsWith("k:")) return false;
     const pid = itemId.startsWith("p:") ? itemId.slice(2) : itens.find((i) => i.id === itemId)?.produtoId;
@@ -152,7 +152,7 @@ export default function VendasMes({ mes, onToast }) {
     const preco = Number(String(f.preco).replace(",", "."));
     if (!f.itemId) return onToast?.("Escolha o produto, variação ou kit");
     if (!f.canalId) return onToast?.("Escolha o canal");
-    if (emRampaNoCanal(f.itemId, f.canalId)) return onToast?.("Esse produto está em rampa nesse canal — as vendas dele entram pelo Registrar semana do Crescimento");
+    if (emRampaNoCanal(f.itemId, f.canalId)) return onToast?.("Esse produto está em rampa nesse canal — as vendas dele entram pelos pedidos importados (Análise → Importar dados)");
     if (!(unidades > 0)) return onToast?.("Informe quantas unidades vendeu");
     if (!(preco > 0)) return onToast?.("Informe o preço de venda");
     if (!f.ate) return onToast?.("Informe a data (Até)");
@@ -301,7 +301,7 @@ export default function VendasMes({ mes, onToast }) {
           <span>
           Vendas por produto
           <span className="badge info" style={{ marginLeft: 8 }}>{t.real > 0 ? (t.real >= t.unidades ? "real" : "real + estimado") : "estimado"}</span>
-          <Ajuda texto="REAL: pedidos importados na aba Análise (Olist) e vendas físicas — o valor pago de verdade, com o custo e as taxas de hoje; nas semanas com pedidos importados a estimativa daquela plataforma sai. ESTIMADO (onde ainda não há pedidos): das semanas registradas no Crescimento (Registrar semana): produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Produto fora de rampa sem Ads e sem afiliado: use “+ Registrar venda orgânica” (só financeiro — no preço que você digitar, no mês da data Até)." />
+          <Ajuda texto="REAL: pedidos importados na aba Análise (Olist) e vendas físicas — o valor pago de verdade, com o custo e as taxas de hoje; nas semanas com pedidos importados a estimativa daquela plataforma sai. ESTIMADO (onde ainda não há pedidos): das semanas registradas antes no Crescimento: produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Produto fora de rampa sem Ads e sem afiliado: use “+ Registrar venda orgânica” (só financeiro — no preço que você digitar, no mês da data Até)." />
           </span>
           <button type="button" className="btn btn-mini primary" onClick={novaVendaOrg} disabled={!org.disponivel} title={org.disponivel ? "Venda de produto fora de rampa — só pro fechamento do mês" : "Rode o supabase/schema_v52.sql no Supabase"}>
             + Registrar venda orgânica
@@ -314,9 +314,9 @@ export default function VendasMes({ mes, onToast }) {
         )}
         {!v.linhas.length ? (
           <div className="empty">
-            Nenhuma venda registrada em {rotuloMes(mes)}. Use “+ Registrar venda orgânica” ou{" "}
-            <button type="button" className="link-btn" onClick={() => irParaAba("crescimento", { registrar: true })}>
-              registre a semana no Crescimento →
+            Nenhuma venda registrada em {rotuloMes(mes)}. Importe os pedidos em{" "}
+            <button type="button" className="link-btn" onClick={() => irParaAba("analise", { sub: "importar" })}>
+              Análise → Importar dados →
             </button>
           </div>
         ) : (
@@ -497,14 +497,14 @@ export default function VendasMes({ mes, onToast }) {
           )}
           {emRampaNoCanal(vendaOrg.itemId, vendaOrg.canalId) && (
             <div className="alerta alerta-warn">
-              <b>Produto em rampa nesse canal</b> As vendas dele já entram pelo Registrar semana do Crescimento — registrar aqui contaria duas vezes.{" "}
-              <button type="button" className="link-btn" onClick={() => { setVendaOrg(null); irParaAba("crescimento", { registrar: true }); }}>
-                ir pro Registrar semana →
+              <b>Produto em rampa nesse canal</b> As vendas dele já entram pelos pedidos importados — registrar aqui contaria duas vezes.{" "}
+              <button type="button" className="link-btn" onClick={() => { setVendaOrg(null); irParaAba("analise", { sub: "importar" }); }}>
+                ir pra Importar dados →
               </button>
             </div>
           )}
           {!emRampaNoCanal(vendaOrg.itemId, vendaOrg.canalId) && jaNoRegistrarSemana(vendaOrg.itemId, vendaOrg.canalId) && (
-            <div className="alerta alerta-warn">Esse item já tem vendas deste mês registradas pelo Registrar semana (Ads/afiliado) — confira pra não contar duas vezes.</div>
+            <div className="alerta alerta-warn">Esse item já tem vendas deste mês em semanas registradas antes (Ads/afiliado) — confira pra não contar duas vezes.</div>
           )}
           {(() => {
             const canal = canais.find((c) => c.id === vendaOrg.canalId);

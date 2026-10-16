@@ -10,6 +10,7 @@ import { acaoDaRampa, proximaConferencia, sinaisDaRampa } from "../lib/rampaAgor
 import { AgoraRampa, MarcaAba, OlhandoRampa } from "./RampaAgora.jsx";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
+import SemanasFonte from "./SemanasFonte.jsx";
 import Estado from "./Estado.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
@@ -164,8 +165,8 @@ export default function RampaGrupo({ linhasGrupo, dados, hoje, onToast, selId, s
           texto={
             <>
               O anúncio inteiro sobe junto: cada degrau é um % do <b>preço salvo de cada opção</b> (ex.: 90% → 95% → 100%). Só a promo muda — o preço original (riscado) fica fixo — e a opção mais barata
-              nunca fica abaixo do que a regra de 4× da Shopee permite. Os portões (vendas, avaliações, nota, dias, lucro) usam o anúncio inteiro, registrado no Registrar semana (a importação da
-              Shopee preenche). Produto “só na época de…” segue o cronograma da temporada. Itens que só existem dentro do anúncio saem dos avisos de rampa e da lista de Ads individuais.
+              nunca fica abaixo do que a regra de 4× da Shopee permite. Os portões (vendas, avaliações, nota, dias, lucro) usam o anúncio inteiro, montado sozinho pelas importações (pedidos pelo SKU de cada
+              opção, Desempenho e CSV do Ads). Produto “só na época de…” segue o cronograma da temporada. Itens que só existem dentro do anúncio saem dos avisos de rampa e da lista de Ads individuais.
             </>
           }
         />
@@ -364,6 +365,7 @@ function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar, comAgora = f
           ))}
         </div>
       )}
+      <SemanasFonte e={e} n={4} />
 
       </>
       )}

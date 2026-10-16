@@ -157,7 +157,7 @@ export function sugerirDegrausGrupo(inicio = PCT_INICIO_GRUPO, passo = PASSO_GRU
  * (pct × ticket no alvo) e chama a MESMA estadoRampa com o lucro médio por
  * venda. Registros guardam o pct em `preco`. → { est, pct, ticket100, ops, linhas (preços por opção no degrau atual) }
  */
-export function estadoRampaGrupo({ rampa, registros, regras, grupo, canal, itens, produtos, kits, precos, publicacoes, cfgDoProduto, organicas, hoje, sazonal = null, funilLoja = null, adsAtivo = null, proximaCampanha = null }) {
+export function estadoRampaGrupo({ rampa, registros, regras, grupo, canal, itens, produtos, kits, precos, publicacoes, cfgDoProduto, organicas, hoje, sazonal = null, funilLoja = null, adsAtivo = null, proximaCampanha = null, parcial = null }) {
   const ops = opcoesNoCanal({ grupo, canal, itens, precos, cfgDoProduto });
   if (!ops.length) return null;
   const mix = mixDoGrupo({ grupo, organicas, itens, hoje, ops });
@@ -169,7 +169,7 @@ export function estadoRampaGrupo({ rampa, registros, regras, grupo, canal, itens
   const rampaV = { ...rampa, degraus: (rampa.degraus || []).map((d) => paraPreco(d)) };
   const regsV = (registros || []).map((g) => (g.preco != null ? { ...g, preco: paraPreco(g.preco) } : g));
   const lucroEm = (p) => (p > 0 ? econ((p / t100) * 100)?.lucro ?? null : null);
-  const ctx = { canal, lucroEm, alvo: t100, funilLoja, adsAtivo, sazonal, proximaCampanha, grupo: true };
+  const ctx = { canal, lucroEm, alvo: t100, funilLoja, adsAtivo, sazonal, proximaCampanha, grupo: true, parcial };
   const est = estadoRampa(rampaV, regsV, regras, ctx, hoje);
   const pctDe = (p) => (p != null && t100 > 0 ? Math.round((p / t100) * 1000) / 10 : null);
   const pctAtual = num((rampa.degraus || [])[est.i]);

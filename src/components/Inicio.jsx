@@ -10,8 +10,8 @@ import { infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.j
 import { dataSP } from "../lib/datas.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { vendeuSemAvaliacao } from "../lib/semanasAuto.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
-import { useSemanaPendente } from "../hooks/useSemanaPendente.js";
 import { hojeISO, loadEstimativas, mesDe, resumoCaixa, rotuloMes } from "../lib/fluxoCaixa.js";
 import { linhasAnunciar } from "../lib/anunciar.js";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
@@ -115,7 +115,7 @@ function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
 // Única coisa gravada aqui: as tarefas manuais (schema v42, tabela tarefas).
 export default function Inicio({ onIrPara, onToast }) {
   const { lojaId } = useLoja();
-  const { dados, rampasH, af, regras, hoje, linhas: linhasTodas, linhasGrupo, linhasAf, semanaAf, linhasAds, calendario } = useCrescimento();
+  const { dados, rampasH, af, regras, hoje, linhas: linhasTodas, linhasGrupo, linhasAf, semanaAf, linhasAds, calendario, avalH, pedidosValidos, anuncioDoPedido } = useCrescimento();
   // Rampas de produtos que só existem dentro de um anúncio com vários itens
   // saem dos avisos (decide a rampa do anúncio inteiro, que entra no lugar).
   const linhas = useMemo(() => [...linhasTodas.filter((l) => !l.soNoGrupo), ...(linhasGrupo || [])], [linhasTodas, linhasGrupo]);
@@ -125,9 +125,19 @@ export default function Inicio({ onIrPara, onToast }) {
   const cfgDoProduto = dados.cfgDoProduto;
   const reais = useVendasReais({ itens: dados.itens, canais: dados.canais, cfgDoProduto });
   // Central da aba Análise: plataformas com canal cadastrado (aviso de pedidos atrasados).
+  // Avaliações (v58): anúncio que vendeu há mais de 7 dias sem atualizar as avaliações.
+  const avaliacoesPend = useMemo(() => {
+    if (!avalH?.disponivel || avalH.carregando) return [];
+    const out = [];
+    for (const c of dados.canais || []) {
+      if (!PLATAFORMAS.some((p) => p.tipo === c.tipo)) continue;
+      for (const v of vendeuSemAvaliacao({ pedidos: pedidosValidos, canalId: c.id, anuncioDoPedido, avaliacoes: avalH.registros, hoje })) if (v.dias > 7) out.push({ ...v, canal: c });
+    }
+    return out;
+  }, [avalH, dados.canais, pedidosValidos, anuncioDoPedido, hoje]);
   const impCentral = useMemo(
-    () => (reais.carregando ? null : { disponivel: reais.disponivel, lista: reais.importacoes, plataformas: PLATAFORMAS.filter((p) => (dados.canais || []).some((c) => c.tipo === p.tipo)) }),
-    [reais.carregando, reais.disponivel, reais.importacoes, dados.canais]
+    () => (reais.carregando ? null : { disponivel: reais.disponivel, lista: reais.importacoes, plataformas: PLATAFORMAS.filter((p) => (dados.canais || []).some((c) => c.tipo === p.tipo)), avaliacoes: avaliacoesPend }),
+    [reais.carregando, reais.disponivel, reais.importacoes, dados.canais, avaliacoesPend]
   );
   // Lembrete de temporada (Quando vende = pico/época): 60 dias antes da data.
   const temporadas = useMemo(
@@ -141,7 +151,6 @@ export default function Inicio({ onIrPara, onToast }) {
   // Itens de anúncio com vários itens (Ficha etapa 2) contam como anunciados.
   const { grupos: gruposAnuncio } = useAnunciosGrupo();
   const mapaGrupos = useMemo(() => gruposPorItem(gruposAnuncio), [gruposAnuncio]);
-  const semana = useSemanaPendente();
   // Minha farm (v47): custo que subiu (farm_alteracoes) e desgaste das impressoras.
   const { impressoras, farmConfig } = useCatalogo();
   const { alteracoes: farmAlteracoes } = useFarmAlteracoes();
@@ -268,14 +277,14 @@ export default function Inicio({ onIrPara, onToast }) {
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
   const revisoes = useMemo(() => revisoesPrecoDireto({ itens, canais, precos, hoje }), [itens, canais, precos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, semana: semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, hoje }),
-    [precosAlerta, caixa, linhas, semana.pendentes, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, hoje }),
+    [precosAlerta, caixa, linhas, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.
   const { lembretes, disponivel: lembretesOk } = useLembretes();
   const adiadoAte = useMemo(() => new Map(lembretes.filter((l) => String(l.chave).startsWith("inicio|")).map((l) => [l.chave.slice(7), l.adiado_ate])), [lembretes]);
-  const podeAdiar = (p) => !p.tarefa && !p.semana && p.grupo !== "resolver";
+  const podeAdiar = (p) => !p.tarefa && p.grupo !== "resolver";
   const pendencias = todasPendencias.filter((p) => !(podeAdiar(p) && adiadoAte.get(p.id) > hoje));
   const adiados = todasPendencias.filter((p) => podeAdiar(p) && adiadoAte.get(p.id) > hoje);
   const [verAdiados, setVerAdiados] = useState(false);
@@ -298,7 +307,6 @@ export default function Inicio({ onIrPara, onToast }) {
   const status = statusInicio({
     caixa,
     rampas: linhas,
-    semana: semana.pendentes,
     afAtivo,
     precosAlerta,
     anunciosAtualizar,
@@ -409,16 +417,6 @@ export default function Inicio({ onIrPara, onToast }) {
       <div className="inicio-item-txt">
         <b>{p.titulo}</b>
         <span>{p.texto}</span>
-        {p.semana && (
-          <span className="inicio-item-sec">
-            <button type="button" className="link-btn" onClick={() => semana.adiar(p.semana, "pular")} title="Some até a semana que vem. Nada é gravado: o período fica em aberto e entra no próximo registro.">
-              não registrar esta semana
-            </button>
-            <button type="button" className="link-btn" onClick={() => semana.adiar(p.semana, "amanha")}>
-              lembrar amanhã
-            </button>
-          </span>
-        )}
         {podeAdiar(p) && (
           <span className="inicio-item-sec">
             <button type="button" className="link-btn" onClick={() => adiar30(p)} title="Some do Pra fazer por 30 dias e volta sozinho se ainda valer. Nada mais muda.">
@@ -650,8 +648,8 @@ export default function Inicio({ onIrPara, onToast }) {
       <Area k="vendas" tom={status.vendas.tom} aberta={aberta("vendas")} onAlternar={() => alternar("vendas")} n={2} titulo="Vendas e crescimento" resumo={status.vendas.frase}>
         <Kpis
           itens={[
-            { label: "Lucro da semana", valor: lucroSemana != null ? BRL(lucroSemana) : "—", sub: lucroSemana != null ? "produtos em rampa (últimos 7 dias)" : "registre a semana no Crescimento" },
-            { label: "Ads da semana", valor: semanaAf.adsGasto > 0 ? BRL(semanaAf.adsGasto) : "—", sub: semanaAf.adsGasto > 0 ? `${semanaAf.adsVendas} vendas via Ads` : "sem Ads registrado" },
+            { label: "Lucro da semana", valor: lucroSemana != null ? BRL(lucroSemana) : "—", sub: lucroSemana != null ? "produtos em rampa (última semana fechada)" : "importe os pedidos da semana" },
+            { label: "Ads da semana", valor: linhasAds?.loja?.gasto > 0 ? BRL(linhasAds.loja.gasto) : "—", sub: linhasAds?.loja?.gasto > 0 ? `${Math.round(linhasAds.loja.vendasAds)} vendas via Ads · 7 dias${linhasAds.loja.ate ? ` (CSV até ${linhasAds.loja.ate.slice(8, 10)}/${linhasAds.loja.ate.slice(5, 7)})` : ""}` : "sem gasto de Ads nos últimos 7 dias" },
             { label: "Produtos em rampa", valor: String(linhas.length), sub: linhas.length ? `${linhas.filter((l) => l.est.sugestao?.chave === "subir").length} prontos pra subir` : "nenhum ainda" },
             ...(afAtivo
               ? [{ label: "Afiliados na semana", valor: String(semanaAf.vendasAf), sub: semanaAf.comissao > 0 ? `comissão ${BRL(semanaAf.comissao)}` : "vendas via afiliado" }]

@@ -1,6 +1,6 @@
 import { trocarSubAba, useSubAba } from "../lib/subAbas.js";
 import { canalDireto } from "../lib/canais.js";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { alertaPreco } from "../lib/estrategia.js";
 import { menorFinalComFreteGratis } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
@@ -41,21 +41,10 @@ import { iniciarRampaGrupo } from "../lib/grupoRampa.js";
 import { acaoDaRampa, proximaConferencia, sinaisDaRampa } from "../lib/rampaAgora.js";
 import { AgoraRampa, MarcaAba, OlhandoRampa } from "./RampaAgora.jsx";
 import { useCrescimento } from "../hooks/useCrescimento.js";
-import { irParaAba, pegarPedido } from "../lib/navegar.js";
-import { useSemanaPendente } from "../hooks/useSemanaPendente.js";
-import SemanaPendenteFaixa from "./SemanaPendenteFaixa.jsx";
-import { chaveSemanaRampa, periodoEmAberto, somarDiasIso, ultimoRegistroAf, ultimoRegistroRampa } from "../lib/semanaPendente.js";
+import { pegarPedido } from "../lib/navegar.js";
+import SemanasFonte from "./SemanasFonte.jsx";
 import Estado, { PontoSaude } from "./Estado.jsx";
 import { saudeRampa } from "../lib/estados.js";
-import { useRankingData } from "../hooks/useRankingData.js";
-import { cruzarGrupos, cruzarRelatorios, lembrarIdsShopee, lerRelatorio, normSku, relatorioDoGuardado, textoMistura } from "../lib/relatorioShopee.js";
-import { useVendasReais } from "../hooks/useVendasReais.js";
-import { unidadesNoPeriodo } from "../lib/pedidos.js";
-import { useEscada } from "../hooks/useEscada.js";
-import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
-import { recarregarVendasOrganicas, useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
-import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
-import { andamentoParaSemana } from "../lib/ads.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -94,7 +83,6 @@ function Copiavel({ valor, texto }) {
 export default function Crescimento({ onToast }) {
   const { dados, rampasH, af, regras, hoje, linhas, linhasGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds } = useCrescimento();
   const [sub, setSub] = useSubAba("ohra:crescimento-sub", "rampa", ["rampa", "ads", "afiliados"]);
-  const [semanaAberta, setSemanaAberta] = useState(false);
   const [selId, setSelId] = useState(null); // rampa aberta no Detalhe
   const [adsChave, setAdsChave] = useState(null); // linha do Ads aberta (pedido do Início)
 
@@ -105,7 +93,6 @@ export default function Crescimento({ onToast }) {
       if (p.sub) trocarSubAba("ohra:crescimento-sub", p.sub);
       if (p.rampaId) setSelId(p.rampaId);
       if (p.adsChave) setAdsChave(p.adsChave);
-      if (p.registrar) setSemanaAberta(true);
     };
     aplicar(pegarPedido("crescimento"));
     const ouvir = (e) => e.detail.aba === "crescimento" && aplicar(pegarPedido("crescimento"));
@@ -114,12 +101,10 @@ export default function Crescimento({ onToast }) {
   }, []);
 
 
-  const podeRegistrar = linhas.length > 0 || linhasGrupo.length > 0 || linhasAf.some((l) => l.conf.ativo) || linhasAds.linhas.some((l) => l.av.ativo);
 
   return (
     <>
       <OndeSeDecide />
-      <SemanaPendenteFaixa onRegistrar={() => podeRegistrar && setSemanaAberta(true)} />
       {sub === "rampa" ? (
         <RampaPreco
           dados={dados}
@@ -131,8 +116,6 @@ export default function Crescimento({ onToast }) {
           linhasGrupo={linhasGrupo}
           hoje={hoje}
           comissaoSemana={semanaAf.comissaoRampa}
-          podeRegistrar={podeRegistrar}
-          onRegistrar={() => setSemanaAberta(true)}
           onToast={onToast}
           selId={selId}
           setSelId={setSelId}
@@ -146,8 +129,6 @@ export default function Crescimento({ onToast }) {
           hoje={hoje}
           canais={dados.canais}
           onToast={onToast}
-          podeRegistrar={podeRegistrar}
-          onRegistrar={() => setSemanaAberta(true)}
           abrirChave={adsChave}
         />
       ) : (
@@ -160,19 +141,14 @@ export default function Crescimento({ onToast }) {
           mapaAf={mapaAf}
           semana={semanaAf}
           hoje={hoje}
-          podeRegistrar={podeRegistrar}
-          onRegistrar={() => setSemanaAberta(true)}
           onToast={onToast}
         />
-      )}
-      {semanaAberta && (
-        <RegistrarSemanaDialog linhas={linhas} linhasGrupo={linhasGrupo} linhasAf={linhasAf} linhasAds={linhasAds} af={af} onToast={onToast} onClose={() => setSemanaAberta(false)} />
       )}
     </>
   );
 }
 
-function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linhasGrupo = [], hoje, comissaoSemana, podeRegistrar, onRegistrar, onToast, selId, setSelId }) {
+function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linhasGrupo = [], hoje, comissaoSemana, onToast, selId, setSelId }) {
   const { lojas, lojaId, atualizar } = useLoja();
   const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal } = dados;
   const { rampas, disponivel, carregando } = rampasH;
@@ -193,12 +169,9 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
   const sel = selEhGrupo ? null : linhas.find((l) => l.r.id === selId) || (selId ? null : linhas[0]) || null;
   const [filtroLista, setFiltroLista] = useState("todos");
   const [abaPedida, setAbaPedida] = useState(null); // botão da linha que abre uma aba do Detalhe
-  // Semana pendente (estado único com o Início): adiada não mostra etiqueta.
-  const semanaPend = useSemanaPendente();
-  const pendDe = (l) => {
-    const x = semanaPend.porChave.get(chaveSemanaRampa(l.r.id));
-    return x && x.pendente && !x.lembrete ? x : null;
-  };
+  // As semanas são montadas sozinhas pelas importações (lib/semanasAuto.js):
+  // não existe mais "semana pendente".
+  const pendDe = () => null;
   // Lista única "Em rampa" (out/2026): produtos + anúncios com vários itens,
   // separada pelo que pedir ação — a ação vem de lib/rampaAgora.js (só lê o
   // que a rampa decidiu). Semana pendente sem outra ação = "Registrar a semana".
@@ -212,7 +185,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
     };
     return [...linhas.map((l) => um(l, false)), ...linhasGrupo.map((l) => um(l, true))];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linhas, linhasGrupo, semanaPend]);
+  }, [linhas, linhasGrupo]);
   const itensVis = useMemo(() => {
     const t = busca.trim().toLowerCase();
     return itensLista.filter((x) => {
@@ -488,9 +461,6 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
             + Rampa de anúncio com vários itens
           </button>
         )}
-        <button type="button" className="btn primary" onClick={onRegistrar} disabled={!podeRegistrar}>
-          Registrar semana
-        </button>
       </TopbarAcoes>
 
       <Kpis
@@ -504,7 +474,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
               if (!f.length) return "nada pendente ✓";
               const c = {};
               for (const x of f) {
-                const k = x.acao.tipo === "info" && x.pend ? "registrar a semana" : (x.l.est.sugestao?.rotulo || x.acao.titulo).toLowerCase();
+                const k = (x.l.est.sugestao?.rotulo || x.acao.titulo).toLowerCase();
                 c[k] = (c[k] || 0) + 1;
               }
               return Object.entries(c).map(([k, n]) => `${n} ${k}`).join(" · ");
@@ -526,7 +496,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
             valor: temSemana ? BRL(lucroSemana) : "—",
             sub: temSemana
               ? `${BRL(lucroSemanaAds)} depois de Ads${comissaoSemana > 0 ? ` · já sem ${BRL(comissaoSemana)} de comissão` : ""} · no alvo seria ${BRL(lucroSemanaAlvo)}`
-              : "registre a semana pra ver",
+              : "fecha com os pedidos importados",
           },
         ]}
       />
@@ -608,7 +578,6 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
                                 const k = x.acao.acao;
                                 if (x.grupo || !k) {
                                   setSelId(x.l.r.id);
-                                  if (!k && x.pend && podeRegistrar) onRegistrar();
                                   return;
                                 }
                                 if (k === "subir") setMudar({ linha: x.l, dir: 1 });
@@ -624,7 +593,6 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
                                   if (detalheRecolhido === "1") setDetalheRecolhido("0");
                                 }
                               }}
-                              onRegistrar={podeRegistrar ? onRegistrar : null}
                             />
                           ))}
                         </Fragment>
@@ -1024,15 +992,14 @@ function CronogramaSazonal({ e, onDescer }) {
 }
 
 // Uma linha da lista "Em rampa" (produto ou anúncio com vários itens).
-function LinhaEmRampa({ x, atual, onAbrir, onAcao, onRegistrar }) {
+function LinhaEmRampa({ x, atual, onAbrir, onAcao }) {
   const { l, grupo, pend, proxima } = x;
   const e = l.est;
   // Produto que só vende dentro do anúncio com vários itens: a rampa do anúncio decide.
   const acao = !grupo && l.soNoGrupo ? { tipo: "info", titulo: "Segue a rampa do anúncio inteiro", porque: "Pode encerrar esta rampa (⋯ Mais no detalhe)." } : x.acao;
   const pctTxt = (v) => `${String(Math.round(Number(v) * 10) / 10).replace(".", ",")}%`;
-  const registrar = acao.tipo === "info" && pend;
   const ic = { resolver: "!", atencao: "⚠", oportunidade: "↑", decisao: "◆" }[acao.tipo];
-  const botao = registrar ? (onRegistrar ? "Registrar semana" : null) : grupo ? (acao.acao ? "Abrir" : null) : acao.botao;
+  const botao = grupo ? (acao.acao ? "Abrir" : null) : acao.botao;
   const botaoCurto = botao && botao.length > 26 ? "Abrir" : botao;
   return (
     <tr className={`linha-clicavel${atual ? " linha-atual" : ""}`} onClick={onAbrir}>
@@ -1090,9 +1057,7 @@ function LinhaEmRampa({ x, atual, onAbrir, onAcao, onRegistrar }) {
       </td>
       <td className="o-que-fazer">
         <div className="oqf">
-          {registrar ? (
-            <Estado tipo="atencao" icone="↻">Registrar a semana</Estado>
-          ) : acao.tipo === "info" ? (
+          {acao.tipo === "info" ? (
             <span className="muted-cel">{acao.titulo}</span>
           ) : (
             <Estado tipo={acao.tipo} icone={ic}>
@@ -1102,7 +1067,7 @@ function LinhaEmRampa({ x, atual, onAbrir, onAcao, onRegistrar }) {
           {botaoCurto && (
             <button
               type="button"
-              className={`btn btn-mini ${acao.tipo === "oportunidade" && !registrar ? "btn-verde" : registrar || ["resolver", "atencao"].includes(acao.tipo) ? "primary" : ""}`}
+              className={`btn btn-mini ${acao.tipo === "oportunidade" ? "btn-verde" : ["resolver", "atencao"].includes(acao.tipo) ? "primary" : ""}`}
               title={botao}
               onClick={(ev) => {
                 ev.stopPropagation();
@@ -1113,9 +1078,7 @@ function LinhaEmRampa({ x, atual, onAbrir, onAcao, onRegistrar }) {
             </button>
           )}
         </div>
-        {(registrar ? `Último registro em ${diaMes(pend.ultimo)} — ${pend.dias} dias sem registrar` : acao.porque) && (
-          <div className="sub-num oqf-porque">{registrar ? `Último registro em ${diaMes(pend.ultimo)} — ${pend.dias} dias sem registrar` : acao.porque}</div>
-        )}
+        {acao.porque && <div className="sub-num oqf-porque">{acao.porque}</div>}
       </td>
       <td>
         <span className={proxima.atrasada ? "prox-atrasada" : "muted-cel"}>{proxima.texto}</span>
@@ -1541,7 +1504,7 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
                   </div>
                   {t.status === "andamento" ? (
                     <p className="teste-texto">
-                      {t.diasRestantes} dia(s) restante(s) · registre gasto, cliques e vendas via Ads no “Registrar semana” (pode ser todo dia). O teste acaba sozinho ao bater {t.meta} vendas, gastar o orçamento, passar {t.prazo} dias ou chegar a {regras.testeCliquesSemVenda} cliques sem venda.
+                      {t.diasRestantes} dia(s) restante(s) · envie o CSV do Shopee Ads em Análise → Importar dados (pode ser todo dia). O teste acaba sozinho ao bater {t.meta} vendas, gastar o orçamento, passar {t.prazo} dias ou chegar a {regras.testeCliquesSemVenda} cliques sem venda.
                     </p>
                   ) : (
                     t.resultado &&
@@ -1704,6 +1667,7 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
           )}
         </h4>
         <GraficoRampa est={e} ajustes={l.r.checklist?.ajustesDegrau} regras={regras} />
+        <SemanasFonte e={e} />
       </div>
       )}
 
@@ -1796,10 +1760,10 @@ function FunilAnuncio({ funil }) {
     <div className="secao-rampa">
       <h4 className="sub-h">
         Funil do anúncio <span className="muted-cel">· 2 semanas no preço atual</span>
-        <Ajuda texto="Do painel de desempenho do produto na Shopee, informado no Registrar semana (+ impressões, cliques e pedidos). CTR = Cliques ÷ Impressões; Taxa de Conversão de Pedidos = Pedidos ÷ Cliques (sem pedidos informados, usa as vendas). Usa as 2 últimas semanas no preço atual, de preferência sem Ads (o Ads infla as impressões). Diagnóstico na ordem: pouca exibição → pouca gente clica → clicam mas não compram. Com 5+ produtos com funil, a referência é a média (mediana) da loja: abaixo da metade dela é problema. Os limites ficam em Regras dos portões." />
+        <Ajuda texto="Do relatório de Desempenho do produto da Shopee, importado em Análise → Importar dados (impressões, cliques e pedidos). CTR = Cliques ÷ Impressões; Taxa de Conversão de Pedidos = Pedidos ÷ Cliques (sem pedidos informados, usa as vendas). Usa as 2 últimas semanas no preço atual, de preferência sem Ads (o Ads infla as impressões). Diagnóstico na ordem: pouca exibição → pouca gente clica → clicam mas não compram. Com 5+ produtos com funil, a referência é a média (mediana) da loja: abaixo da metade dela é problema. Os limites ficam em Regras dos portões." />
       </h4>
       {funil.status === "sem-dados" ? (
-        <div className="empty">Informe visualizações e visitas no Registrar semana pra ver onde o anúncio trava (Impressões de Produto e Cliques Por Produto, do painel da Shopee).</div>
+        <div className="empty">Importe o relatório de Desempenho do produto da Shopee em Análise → Importar dados pra ver onde o anúncio trava (Impressões e Cliques Por Produto).</div>
       ) : (
         <>
           <div className="funil-anuncio">
@@ -2261,882 +2225,6 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
       )}
       {produtoId && canal && !(alvo > 0) && <div className="alerta alerta-warn"><b>Sem preço salvo</b>Salve o preço final desejado no 1º Avulso — ele é o alvo da rampa.</div>}
       {!produtoId && !opcoesProduto[0].itens.length && <p className="hint">Nenhum produto com preço salvo disponível (ou todos já estão em rampa).</p>}
-    </EditarDialog>
-  );
-}
-
-const VAZIO_RAMPA = { vendas: "", avaliacoes: "", nota: "", ruins: "", gasto: "", cliques: "", adsVendas: "", conhecidos: "" };
-const DICA_CONHECIDOS = "Vendas de pessoas próximas (amigos/família) — contam no caixa, não no orgânico. Entram nas vendas totais, no lucro da semana e nas avaliações, mas não nos portões, no funil nem no teste de lançamento. Em branco = nenhuma.";
-const VAZIO_FUNIL = { impressoes: "", cliquesProduto: "", pedidos: "" };
-
-const somaDias = (iso, n) => {
-  const d = new Date(`${iso}T12:00:00`);
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-};
-const diasEntreIso = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
-
-// Período a puxar no painel da Shopee pro registro na data `data`: um registro
-// cobre até a véspera. Em dia = os 7 dias antes ("Últimos 7 dias"); atrasou =
-// "Por dia" (somando) começando no dia seguinte ao período anterior (sem pular
-// nem repetir dias). Lacuna muito grande (> 13 dias) volta pros últimos 7.
-function periodoFunil(registros, data) {
-  const fim = somaDias(data, -1);
-  const ant = [...(registros || [])].reverse().find((g) => g.tipo === "semana" && g.visualizacoes != null && g.data < data);
-  let inicio = ant ? ant.data : somaDias(data, -7);
-  if (diasEntreIso(inicio, fim) + 1 > 13 || inicio > fim) inicio = somaDias(data, -7);
-  const dias = diasEntreIso(inicio, fim) + 1;
-  return { inicio, fim, dias, modo: dias === 7 ? "Últimos 7 Dias" : "Por dia" };
-}
-const VAZIO_AF = { afVendas: "", afComissao: "", parceiro: "" };
-const VAZIO_TODOS = { ...VAZIO_RAMPA, ...VAZIO_FUNIL, ...VAZIO_AF };
-
-// Cada "Registrar semana" conta como UMA semana nas contas (funil, ROAS, check
-// da subida, acima do alvo, afiliados) — registrar antes de ~7 dias distorce.
-// Devolve o aviso (ou null) pra data escolhida, a partir do último registro
-// (ou do início da rampa). Teste em andamento: Ads pode ser diário.
-const DIAS_MIN_SEMANA = 6;
-function avisoIntervalo(datasAnteriores, data, { inicio = null, teste = false } = {}) {
-  const antes = (datasAnteriores || []).filter((d) => d && d <= data).sort();
-  const ult = antes[antes.length - 1] || null;
-  const ref = ult || (inicio && inicio <= data ? inicio : null);
-  if (!ref) return null;
-  const dias = diasEntreIso(ref, data);
-  if (dias >= DIAS_MIN_SEMANA) return null;
-  const desde = ult ? `o último registro (${diaMes(ult)})` : `o início da rampa (${diaMes(ref)})`;
-  const quando = diaMes(somaDias(ref, 7));
-  if (teste)
-    return { tom: "neutro", texto: `Teste em andamento: pode registrar o Ads (gasto, cliques, vendas via Ads) todo dia. Vendas, avaliações e impressões da semana, só a partir de ${quando}.` };
-  return {
-    tom: "warn",
-    texto:
-      dias === 0
-        ? `Já existe registro neste dia (${diaMes(ref)}). Um novo registro conta como mais uma semana inteira.`
-        : `Faz só ${dias} dia${dias === 1 ? "" : "s"} desde ${desde}: este registro vai contar como uma semana inteira (funil, ROAS, check da subida). Melhor registrar a partir de ${quando}. Dá pra registrar mesmo assim.`,
-  };
-}
-const AvisoIntervalo = ({ aviso }) =>
-  aviso ? <div className={`alerta alerta-${aviso.tom === "warn" ? "warn" : "neutro"} aviso-intervalo`}>{aviso.texto}</div> : null;
-
-// Uma janela só pra semana: produtos em rampa (vendas, avaliações, nota, 1–2★,
-// Ads) + bloco Afiliado nos itens com comissão ativa — e os itens com
-// afiliado fora de rampa (kits, variações, produtos no alvo sem rampa).
-function RegistrarSemanaDialog({ linhas, linhasGrupo = [], linhasAf, linhasAds, af, onToast, onClose }) {
-  const { lojaId } = useLoja();
-  const [data, setData] = useState(hojeISO());
-  const afDe = (l) => linhasAf.find((x) => x.chave === `produto|${l.r.produto_id}|${l.r.canal_id}` && x.conf.ativo) || null;
-  const foraRampa = linhasAf.filter((x) => x.conf.ativo && !x.rampa);
-  // Itens só com Ads ligado (Crescimento → Ads), fora de rampa e sem afiliado.
-  // (anúncio com vários itens em rampa registra no bloco da rampa dele)
-  const soAds = (linhasAds?.linhas || []).filter((x) => x.av.ativo && !x.rampa && !x.rampaGrupo && !foraRampa.some((y) => y.chave === x.chave));
-  const chaveAdsGrupo = (lg) => `grupo|${lg.grupo.id}|${lg.canal.id}`;
-  // Andamento do Ads (v48): o que foi informado no meio do período e ainda não
-  // está em semana registrada já vem nos campos de Ads (acumulado − registrado).
-  const [andamentos] = useState(() => {
-    const m = {};
-    const de = (chaveAds, id) => {
-      const la = (linhasAds?.linhas || []).find((x) => x.chave === chaveAds);
-      const a = la?.av.ativo ? andamentoParaSemana(la.av.ativo, la.semanas) : null;
-      if (a) m[id] = a;
-    };
-    for (const l of linhas) de(`produto|${l.r.produto_id}|${l.r.canal_id}`, l.r.id);
-    for (const l of linhasGrupo) de(chaveAdsGrupo(l), l.r.id);
-    for (const x of foraRampa) de(x.chave, x.chave);
-    for (const x of soAds) de(x.chave, x.chave);
-    return m;
-  });
-  const comAndamento = (id, base) => {
-    const a = andamentos[id];
-    if (!a) return base;
-    const t = (v) => String(v).replace(".", ",");
-    return { ...base, gasto: t(a.gasto), cliques: t(a.cliques), adsVendas: t(a.adsVendas) };
-  };
-  const [f, setF] = useState(() => ({
-    ...Object.fromEntries(soAds.map((x) => [x.chave, comAndamento(x.chave, { ...VAZIO_RAMPA })])),
-    ...Object.fromEntries(linhas.map((l) => [l.r.id, comAndamento(l.r.id, { ...VAZIO_RAMPA, ...VAZIO_FUNIL, ...VAZIO_AF })])),
-    ...Object.fromEntries(linhasGrupo.map((l) => [l.r.id, comAndamento(l.r.id, { ...VAZIO_RAMPA, ...VAZIO_FUNIL })])),
-    ...Object.fromEntries(foraRampa.map((x) => [x.chave, comAndamento(x.chave, { ...VAZIO_RAMPA, ...VAZIO_AF })])),
-  }));
-  const notaAndamento = (id) =>
-    andamentos[id] && !importado?.porChave[id] ? (
-      <div className="importar-linha">
-        📈 Ads do andamento até {diaMes(andamentos[id].ate)}: {BRL(andamentos[id].gasto)} · {andamentos[id].cliques} cliques · {andamentos[id].adsVendas} venda{andamentos[id].adsVendas === 1 ? "" : "s"} via Ads (o que ainda não estava em semana registrada) — confira com o relatório
-      </div>
-    ) : null;
-  const [salvando, setSalvando] = useState(false);
-  const [funilAberto, setFunilAberto] = useState(() => new Set());
-  // Importar relatórios da Shopee (lib/relatorioShopee.js): só PREENCHE os
-  // campos — nada é gravado até "Registrar".
-  const { produtos: catProdutos, kits: catKits } = useRankingData();
-  const [importado, setImportado] = useState(null);
-  const [lendo, setLendo] = useState(false);
-  // Anúncio com vários itens (3º Ficha): vendas separadas por opção pelo SKU
-  // das variações → vendas_organicas (SÓ financeiro; não conta pra rampa).
-  const esc = useEscada();
-  const { grupos } = useAnunciosGrupo();
-  const vendasOrg = useVendasOrganicas();
-  const [vendasGrupo, setVendasGrupo] = useState({}); // { grupoId: { canal, periodo, anuncio, linhas: [{ idx, rotulo, item, preco, unidades }] } }
-  const setUnidGrupo = (gid, idx) => (e) =>
-    setVendasGrupo((p) => ({ ...p, [gid]: { ...p[gid], linhas: p[gid].linhas.map((x) => (x.idx === idx ? { ...x, unidades: e.target.value } : x)) } }));
-  const alternarFunil = (id) =>
-    setFunilAberto((s) => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-  // Item que ainda não estava carregado quando o diálogo abriu (ex.: "Registrar
-  // agora" vindo do Início) começa em branco.
-  const fv = (id) => f[id] || VAZIO_TODOS;
-  const set = (id, k) => (e) => setF((p) => ({ ...p, [id]: { ...VAZIO_TODOS, ...p[id], [k]: e.target.value } }));
-  const doRelatorio = (id, k) =>
-    (k === "vendas" && doPedido[id] && !doPedido[id].falta) ||
-    importado?.marcados.has(`${id}|${k}`) || (andamentos[id] && !importado?.porChave[id] && ["gasto", "cliques", "adsVendas"].includes(k)) ? "campo-importado" : undefined;
-
-  async function importarRelatorios(e) {
-    const arquivos = Array.from(e.target.files || []);
-    e.target.value = "";
-    if (!arquivos.length) return;
-    setLendo(true);
-    try {
-      const lidos = [];
-      for (const a of arquivos) lidos.push(await lerRelatorio(a));
-      const novaData = aplicarLidos(lidos);
-      aplicarPedidos(novaData || data);
-    } catch (err) {
-      onToast?.(err.message || "Não foi possível ler o arquivo");
-    } finally {
-      setLendo(false);
-    }
-  }
-  // Relatórios lidos (do arquivo ou guardados na central) → preenche os campos.
-  // Devolve a data nova do registro (dia seguinte ao fim do relatório) ou null.
-  function aplicarLidos(lidos) {
-    {
-      lembrarIdsShopee(lidos); // o andamento do Ads usa essa ligação ID do item → SKU
-      const ehShopee = (canal) => canal?.tipo === "shopee";
-      const skuDoProduto = (id) => catProdutos.find((p) => p.id === id)?.sku || "";
-      const itensApp = [
-        ...linhas.filter((l) => ehShopee(l.canal)).map((l) => ({ chave: l.r.id, sku: l.produto.sku, tipo: "produto", rampa: true })),
-        ...foraRampa
-          .filter((x) => ehShopee(x.canal))
-          .map((x) => ({ chave: x.chave, sku: x.item.sku, tipo: x.tipo, skuPai: x.tipo === "variacao" ? skuDoProduto(x.item.produtoId) : "", quantidade: x.item.quantidade })),
-        ...soAds.filter((x) => ehShopee(x.canal) && x.tipo !== "grupo").map((x) => ({ chave: x.chave, sku: x.item.sku, tipo: x.tipo })),
-      ];
-      const res = cruzarRelatorios(lidos, itensApp);
-      // Anúncios com vários itens: SKUs de cada opção (× cor) como a Ficha gerou.
-      const canalShopee = (esc.canais || []).find((c) => c.tipo === "shopee") || null;
-      const fichas = canalShopee
-        ? grupos
-            .map((g) => ({ g, ficha: fichaDoGrupo({ grupo: g, canal: canalShopee, itens: esc.itens, precos: esc.precos, produtos: esc.produtos, kits: esc.kits, mapaRampa: esc.mapaRampa, publicacoes: esc.publicacoesCanal, clientePagaHoje: esc.clientePagaHoje }) }))
-            .filter((x) => x.ficha)
-        : [];
-      const rg = cruzarGrupos(
-        lidos,
-        fichas.map(({ g, ficha }) => ({
-          id: g.id,
-          nome: g.nome,
-          opcoes: ficha.opcoes.map((o, idx) => ({ idx, skus: ficha.linhas.filter((l) => l.opcao === o).map((l) => l.sku) })),
-        }))
-      );
-      const novasGrupo = {};
-      for (const { g, ficha } of fichas) {
-        const r = rg.porGrupo[g.id];
-        if (!r) continue;
-        novasGrupo[g.id] = {
-          canal: canalShopee,
-          grupo: g,
-          periodo: res.periodo,
-          anuncio: r,
-          linhas: ficha.opcoes.map((o, idx) => {
-            const l = ficha.linhas.find((x) => x.opcao === o);
-            return { idx, rotulo: l?.rotulo || o.rotulo, item: l?.item || null, preco: l?.an ? Number(l.an.real ?? l.an.clientePaga) : null, vitrine: !!l?.vitrine, unidades: String(r.porOpcao[idx] || 0) };
-          }),
-        };
-      }
-      setVendasGrupo(novasGrupo);
-      // O anúncio inteiro (total de vendas, funil e Ads) vai pro bloco dele:
-      // rampa do anúncio ou "só Ads" do anúncio.
-      for (const g of grupos) {
-        const r = rg.porGrupo[g.id];
-        if (!r) continue;
-        const lg = linhasGrupo.find((l) => l.grupo.id === g.id && ehShopee(l.canal));
-        const sa = soAds.find((x) => x.tipo === "grupo" && x.id === g.id && ehShopee(x.canal));
-        const chave = lg ? lg.r.id : sa ? sa.chave : null;
-        if (!chave) continue;
-        res.porChave[chave] = {
-          vendas: r.unidades ?? null,
-          impressoes: r.impressoes ?? null,
-          cliquesProduto: r.cliques ?? null,
-          pedidos: r.pedidos ?? null,
-          ...(r.ads ? { gasto: r.ads.gasto, cliques: r.ads.cliques, adsVendas: r.ads.vendas } : {}),
-        };
-        itensApp.push({ chave, rampa: !!lg, grupo: true });
-      }
-      res.semPar = res.semPar.filter((i) => !rg.idsUsados.has(i.itemId));
-      res.adsSemPar = res.adsSemPar.filter((a) => !rg.idsUsados.has(a.itemId));
-      const marcados = new Set();
-      const novaData = res.periodo?.ate ? somarDiasIso(res.periodo.ate, 1) : null;
-      setF((prev) => {
-        const nf = { ...prev };
-        for (const it of itensApp) {
-          const n = res.porChave[it.chave];
-          if (!n) continue;
-          const campos = it.rampa ? ["vendas", "impressoes", "cliquesProduto", "pedidos", "gasto", "cliques", "adsVendas"] : ["vendas", "gasto", "cliques", "adsVendas"];
-          const v = { ...VAZIO_TODOS, ...nf[it.chave] };
-          for (const k of campos)
-            if (n[k] != null) {
-              v[k] = String(Math.round(n[k] * 100) / 100).replace(".", ",");
-              marcados.add(`${it.chave}|${k}`);
-            }
-          // Período em aberto: De/Até = o do relatório.
-          if (res.periodo) {
-            v.de = res.periodo.de;
-            v.ate = res.periodo.ate;
-          }
-          nf[it.chave] = v;
-        }
-        return nf;
-      });
-      setFunilAberto((s) => new Set([...s, ...itensApp.filter((it) => it.rampa && res.porChave[it.chave]).map((it) => it.chave)]));
-      if (novaData && novaData !== data) setData(novaData);
-      const skusApp = new Set([...catProdutos, ...catKits].map((i) => normSku(i.sku)).filter(Boolean));
-      setImportado({
-        ...res,
-        arquivos: lidos.map((r) => r.arquivo),
-        marcados,
-        n: Object.keys(res.porChave).length,
-        dataAjustada: novaData && novaData !== data ? novaData : null,
-        semPar: res.semPar.map((i) => ({ ...i, existe: !!i.sku && skusApp.has(i.sku) })),
-      });
-      return novaData;
-    }
-  }
-
-  // ---- Central de importação (aba Análise, v55) ----
-  // Vendas da semana = pedidos REAIS importados da Olist (portões da Rampa,
-  // afiliado e Ads) quando a plataforma tem pedidos em todos os dias do
-  // período; o Desempenho guardado na central preenche o funil. Só PREENCHE.
-  const reais = useVendasReais({ itens: esc.itens, canais: esc.canais, cfgDoProduto: esc.cfgDoProduto });
-  const [doPedido, setDoPedido] = useState({}); // id → { un, de, ate } | { falta: true, de, ate }
-  const idsDoBloco = (tipo, id) => {
-    if (tipo === "produto") return [`p:${id}`, ...esc.itens.filter((i) => i.id.startsWith("v:") && i.produtoId === id).map((i) => i.id)];
-    return [`${tipo === "variacao" ? "v" : "k"}:${id}`];
-  };
-  function aplicarPedidos(dataAlvo) {
-    if (!reais.cobertura.tem) return;
-    const blocos = [
-      ...linhas.map((l) => ({ id: l.r.id, canal: l.canal, ids: idsDoBloco("produto", l.r.produto_id), ultimo: ultimoRegistroRampa(l.r, l.est.registros) })),
-      ...foraRampa.map((x) => ({ id: x.chave, canal: x.canal, ids: idsDoBloco(x.tipo, x.id), ultimo: ultimoRegistroAf(x.tipo, x.id, x.canal.id, af.registros, x.conf.row) })),
-      ...soAds.filter((x) => x.tipo !== "grupo").map((x) => ({ id: x.chave, canal: x.canal, ids: idsDoBloco(x.tipo, x.id), ultimo: ultimoRegistroAf(x.tipo, x.id, x.canal.id, af.registros) || String(x.av.ativo.inicio).slice(0, 10) })),
-    ];
-    const notas = {};
-    setF((prev) => {
-      const nf = { ...prev };
-      for (const b of blocos) {
-        const v = { ...VAZIO_TODOS, ...nf[b.id] };
-        const per = periodoEmAberto(b.ultimo, dataAlvo);
-        const de = v.de || (per?.pendente ? per.de : null) || somarDiasIso(dataAlvo, -7);
-        const ate = v.ate || (per?.pendente ? per.ate : null) || somarDiasIso(dataAlvo, -1);
-        if (!reais.cobertura.cobre(b.canal, de, ate)) {
-          if (reais.cobertura.platDoCanal(b.canal)) notas[b.id] = { falta: true, de, ate };
-          continue;
-        }
-        const un = unidadesNoPeriodo(reais.linhas, { ids: b.ids, canalId: b.canal.id, de, ate });
-        v.vendas = String(un);
-        nf[b.id] = v;
-        notas[b.id] = { un, de, ate };
-      }
-      return nf;
-    });
-    setDoPedido(notas);
-  }
-  const notaPedidos = (id) => {
-    const n = doPedido[id];
-    if (!n) return null;
-    return n.falta ? (
-      <div className="importar-linha muted-cel">📦 Sem pedidos importados de todos os dias {diaMes(n.de)} a {diaMes(n.ate)} — importe os pedidos da Olist em Análise → Importar dados (ou preencha à mão).</div>
-    ) : (
-      <div className="importar-linha">📦 Vendas dos pedidos (Olist) de {diaMes(n.de)} a {diaMes(n.ate)}: {n.un} un. — é o que conta nos portões</div>
-    );
-  };
-  function aplicarCentral() {
-    const des = [...(reais.importacoes || [])].filter((i) => i.ok && i.relatorio === "shopee:desempenho" && i.dados).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0];
-    let novaData = null;
-    if (des) {
-      const r = relatorioDoGuardado(des.dados);
-      if (r) novaData = aplicarLidos([{ ...r, arquivo: des.arquivo || "Desempenho (central)" }]);
-    }
-    aplicarPedidos(novaData || data);
-  }
-  const autoCentral = useRef(false);
-  useEffect(() => {
-    if (autoCentral.current || reais.carregando || !esc.itens.length) return;
-    autoCentral.current = true;
-    aplicarCentral();
-  });
-  const preenchido = (v, campos) => campos.some((k) => v[k] !== "");
-  // Registro por período (v40): sem registro há mais de 7 dias → De (início
-  // do período em aberto) e Até (véspera da data), editáveis. Grava
-  // periodo_inicio = De e data = Até + 1 (o registro cobre até a véspera).
-  const periodoDe = (id, ultimo) => {
-    const per = periodoEmAberto(ultimo, data);
-    if (!per || !per.pendente) return null;
-    const v = fv(id);
-    const de = v.de || per.de;
-    const ate = v.ate || per.ate;
-    const dias = de && ate ? Math.round((new Date(`${ate}T12:00:00`) - new Date(`${de}T12:00:00`)) / 86400000) + 1 : 0;
-    return { ...per, ultimo: per.de, de, ate, diasPeriodo: dias };
-  };
-  const perRampa = (l) => periodoDe(l.r.id, ultimoRegistroRampa(l.r, l.est.registros));
-  const perAf = (x) => periodoDe(x.chave, ultimoRegistroAf(x.tipo, x.id, x.canal.id, af.registros, x.conf.row));
-  const perAds = (x) => periodoDe(x.chave, ultimoRegistroAf(x.tipo, x.id, x.canal.id, af.registros) || String(x.av.ativo.inicio).slice(0, 10));
-  const dataDoPeriodo = (per) => (per ? { data: somarDiasIso(per.ate, 1), periodo_inicio: per.de } : { data });
-  const intOuNull = (x) => (x === "" ? null : Math.round(num(x)));
-
-  async function salvar() {
-    const rampaSalvar = [];
-    const afSalvar = [];
-    for (const l of linhas) {
-      const v = fv(l.r.id);
-      if (preenchido(v, [...Object.keys(VAZIO_RAMPA), ...Object.keys(VAZIO_FUNIL)]))
-        rampaSalvar.push({
-          loja_id: lojaId || null,
-          rampa_id: l.r.id,
-          tipo: "semana",
-          ...dataDoPeriodo(perRampa(l)),
-          degrau: l.est.i,
-          preco: l.est.preco,
-          vendas: v.vendas === "" ? 0 : Math.round(num(v.vendas)),
-          avaliacoes: intOuNull(v.avaliacoes),
-          nota: v.nota === "" ? null : num(v.nota),
-          avaliacoes_ruins: Math.round(num(v.ruins)),
-          ads_gasto: v.gasto === "" ? null : num(v.gasto),
-          ads_vendas: intOuNull(v.adsVendas),
-          ...(v.cliques !== "" ? { ads_cliques: Math.round(num(v.cliques)) } : {}),
-          // Conhecidos (schema v39): em branco = não vai (null).
-          ...(v.conhecidos !== "" ? { conhecidos: Math.round(num(v.conhecidos)) } : {}),
-          // Funil (schema v36): só vai pro banco quando preenchido — em branco = null, nunca 0.
-          ...(v.impressoes !== "" ? { visualizacoes: Math.round(num(v.impressoes)) } : {}),
-          ...(v.cliquesProduto !== "" ? { visitas: Math.round(num(v.cliquesProduto)) } : {}),
-          ...(v.pedidos !== "" ? { pedidos: Math.round(num(v.pedidos)) } : {}),
-        });
-      const la = afDe(l);
-      if (la && preenchido(v, ["afVendas", "afComissao"]))
-        afSalvar.push({
-          loja_id: lojaId || null,
-          item_tipo: "produto",
-          item_id: l.r.produto_id,
-          canal_id: l.r.canal_id,
-          ...dataDoPeriodo(perRampa(l)),
-          preco: l.est.preco,
-          vendas: Math.round(num(v.afVendas)),
-          comissao: v.afComissao === "" ? cent(num(v.afVendas) * l.est.preco * la.conf.comissao) : num(v.afComissao),
-          parceiro_id: v.parceiro || null,
-        });
-    }
-    // Rampa do anúncio com vários itens: preço do registro = % do degrau.
-    const grupoRampaSalvar = [];
-    for (const l of linhasGrupo) {
-      const v = fv(l.r.id);
-      if (!preenchido(v, [...Object.keys(VAZIO_RAMPA), ...Object.keys(VAZIO_FUNIL)])) continue;
-      grupoRampaSalvar.push({
-        loja_id: lojaId || null,
-        rampa_id: l.r.id,
-        tipo: "semana",
-        ...dataDoPeriodo(perRampa(l)),
-        degrau: l.est.i,
-        preco: l.g.pctAtual,
-        vendas: v.vendas === "" ? 0 : Math.round(num(v.vendas)),
-        avaliacoes: intOuNull(v.avaliacoes),
-        nota: v.nota === "" ? null : num(v.nota),
-        avaliacoes_ruins: Math.round(num(v.ruins)),
-        ads_gasto: v.gasto === "" ? null : num(v.gasto),
-        ads_vendas: intOuNull(v.adsVendas),
-        ...(v.cliques !== "" ? { ads_cliques: Math.round(num(v.cliques)) } : {}),
-        ...(v.conhecidos !== "" ? { conhecidos: Math.round(num(v.conhecidos)) } : {}),
-        ...(v.impressoes !== "" ? { visualizacoes: Math.round(num(v.impressoes)) } : {}),
-        ...(v.cliquesProduto !== "" ? { visitas: Math.round(num(v.cliquesProduto)) } : {}),
-        ...(v.pedidos !== "" ? { pedidos: Math.round(num(v.pedidos)) } : {}),
-      });
-    }
-    for (const x of foraRampa) {
-      const v = fv(x.chave);
-      if (!preenchido(v, ["vendas", "gasto", "cliques", "adsVendas", "conhecidos", "afVendas", "afComissao"])) continue;
-      afSalvar.push({
-        loja_id: lojaId || null,
-        item_tipo: x.tipo,
-        item_id: x.id,
-        canal_id: x.canal.id,
-        ...dataDoPeriodo(perAf(x)),
-        preco: x.preco,
-        vendas: Math.round(num(v.afVendas)),
-        comissao: v.afComissao === "" ? cent(num(v.afVendas) * x.preco * x.conf.comissao) : num(v.afComissao),
-        vendas_total: v.vendas === "" ? null : Math.round(num(v.vendas)),
-        ads_gasto: v.gasto === "" ? null : num(v.gasto),
-        ads_cliques: intOuNull(v.cliques),
-        ads_vendas: intOuNull(v.adsVendas),
-        ...(v.conhecidos !== "" ? { conhecidos: Math.round(num(v.conhecidos)) } : {}),
-        parceiro_id: v.parceiro || null,
-      });
-    }
-    for (const x of soAds) {
-      const v = fv(x.chave);
-      if (!preenchido(v, ["vendas", "gasto", "cliques", "adsVendas", "conhecidos"])) continue;
-      afSalvar.push({
-        loja_id: lojaId || null,
-        item_tipo: x.tipo,
-        item_id: x.id,
-        canal_id: x.canal.id,
-        ...dataDoPeriodo(perAds(x)),
-        preco: x.preco,
-        vendas: 0,
-        comissao: 0,
-        vendas_total: v.vendas === "" ? null : Math.round(num(v.vendas)),
-        ads_gasto: v.gasto === "" ? null : num(v.gasto),
-        ads_cliques: intOuNull(v.cliques),
-        ads_vendas: intOuNull(v.adsVendas),
-        ...(v.conhecidos !== "" ? { conhecidos: Math.round(num(v.conhecidos)) } : {}),
-        parceiro_id: null,
-      });
-    }
-    // Vendas do anúncio com vários itens → vendas_organicas (SÓ financeiro). O
-    // mesmo anúncio × período já importado não é gravado de novo.
-    const grupoSalvar = [];
-    const grupoRepetido = [];
-    for (const vg of Object.values(vendasGrupo)) {
-      const per = vg.periodo;
-      if (!per?.de || !per?.ate) continue;
-      if ((vendasOrg.registros || []).some((r) => r.grupo_id === vg.grupo.id && String(r.data).slice(0, 10) === per.ate && String(r.periodo_inicio || "").slice(0, 10) === per.de)) {
-        grupoRepetido.push(vg.grupo.nome);
-        continue;
-      }
-      for (const x of vg.linhas) {
-        const u = Math.round(num(x.unidades));
-        if (!(u > 0) || !x.item || !(x.preco > 0)) continue;
-        grupoSalvar.push({
-          loja_id: lojaId || null,
-          item_tipo: x.item.id.startsWith("k:") ? "kit" : x.item.id.startsWith("v:") ? "variacao" : "produto",
-          item_id: x.item.id.slice(2),
-          canal_id: vg.canal.id,
-          periodo_inicio: per.de,
-          data: per.ate,
-          unidades: u,
-          preco: Math.round(x.preco * 100) / 100,
-          observacao: `Anúncio “${vg.grupo.nome}” · ${x.rotulo} · importado da Shopee`,
-          grupo_id: vg.grupo.id,
-        });
-      }
-    }
-    if (!rampaSalvar.length && !grupoRampaSalvar.length && !afSalvar.length && !grupoSalvar.length) return onToast?.(grupoRepetido.length ? `Vendas de “${grupoRepetido.join(", ")}” desse período já foram registradas` : "Preencha pelo menos um item");
-    if ([...rampaSalvar, ...grupoRampaSalvar, ...afSalvar].some((g) => g.periodo_inicio && g.periodo_inicio >= g.data)) return onToast?.("Período inválido: o “De” precisa ser antes do “Até”");
-    const semAf = afSalvar.find((g) => g.vendas_total != null && g.vendas > g.vendas_total);
-    if (semAf) return onToast?.("Vendas via afiliado não podem passar das vendas da semana");
-    // Ads + afiliado + conhecidos ≤ vendas totais da semana.
-    const somaPassa = (total, partes) => total != null && partes.reduce((t, x) => t + num(x), 0) > total;
-    for (const r of rampaSalvar) {
-      const l = linhas.find((x) => x.r.id === r.rampa_id);
-      const afV = afSalvar.find((g) => g.item_tipo === "produto" && g.item_id === l.r.produto_id && g.canal_id === l.r.canal_id && g.vendas_total == null);
-      if (somaPassa(r.vendas, [r.ads_vendas, afV?.vendas, r.conhecidos]))
-        return onToast?.(`${l.produto.nome}: Ads + afiliado + conhecidos passam das ${r.vendas} vendas da semana`);
-    }
-    for (const r of grupoRampaSalvar)
-      if (somaPassa(r.vendas, [r.ads_vendas, r.conhecidos])) return onToast?.(`${linhasGrupo.find((x) => x.r.id === r.rampa_id)?.produto.nome}: Ads + conhecidos passam das ${r.vendas} vendas da semana`);
-    for (const g of afSalvar.filter((x) => x.vendas_total != null))
-      if (somaPassa(g.vendas_total, [g.ads_vendas, g.vendas, g.conhecidos])) {
-        const x = [...foraRampa, ...soAds].find((y) => y.tipo === g.item_tipo && y.id === g.item_id && y.canal.id === g.canal_id);
-        return onToast?.(`${x?.item.nome || "Item"}: Ads + afiliado + conhecidos passam das ${g.vendas_total} vendas da semana`);
-      }
-    setSalvando(true);
-    // Sem o v39 (conhecidos) / v40 (periodo_inicio): grava sem a coluna e avisa.
-    const faltou = new Set();
-    const inserir = async (tabela, lista) => {
-      let atual = lista;
-      let res = await supabase.from(tabela).insert(atual);
-      for (const col of ["conhecidos", "periodo_inicio"]) {
-        if (!res.error || !new RegExp(col).test(res.error.message) || !atual.some((x) => x[col] !== undefined)) continue;
-        faltou.add(col);
-        atual = atual.map((x) => {
-          const y = { ...x };
-          delete y[col];
-          return y;
-        });
-        res = await supabase.from(tabela).insert(atual);
-      }
-      return res;
-    };
-    if (rampaSalvar.length || grupoRampaSalvar.length) {
-      const { error } = await inserir("rampa_registros", [...rampaSalvar, ...grupoRampaSalvar]);
-      if (error) {
-        setSalvando(false);
-        if (/visualizacoes|visitas|pedidos/.test(error.message)) return onToast?.("Falta rodar o supabase/schema_v36.sql no Supabase");
-        return onToast?.(/ads_cliques/.test(error.message) ? "Falta rodar o supabase/schema_v34.sql no Supabase (coluna de cliques)" : `Não foi possível salvar: ${error.message}`);
-      }
-    }
-    if (afSalvar.length) {
-      const { error } = await inserir("afiliado_registros", afSalvar);
-      if (error) {
-        setSalvando(false);
-        return onToast?.(/afiliado_registros|schema cache|does not exist/.test(error.message) ? "Falta rodar o supabase/schema_v35.sql no Supabase (afiliados)" : `Não foi possível salvar o afiliado: ${error.message}`);
-      }
-    }
-    let avisoGrupo = "";
-    if (grupoSalvar.length) {
-      let r = await supabase.from("vendas_organicas").insert(grupoSalvar);
-      if (r.error && /grupo_id/.test(r.error.message)) {
-        r = await supabase.from("vendas_organicas").insert(grupoSalvar.map(({ grupo_id: _g, ...x }) => x));
-        if (!r.error) avisoGrupo = " · vendas do anúncio do kit salvas sem o vínculo do anúncio — falta rodar o supabase/schema_v53.sql";
-      }
-      if (r.error) avisoGrupo = /vendas_organicas|schema cache|does not exist/.test(r.error.message) ? " · vendas do anúncio do kit NÃO salvas: falta rodar o supabase/schema_v52.sql" : ` · vendas do anúncio do kit NÃO salvas: ${r.error.message}`;
-      else {
-        if (!avisoGrupo) avisoGrupo = ` · anúncio com vários itens: ${grupoSalvar.reduce((t, g) => t + g.unidades, 0)} un. em Vendas do mês`;
-        recarregarVendasOrganicas();
-      }
-    }
-    if (grupoRepetido.length) avisoGrupo += ` · “${grupoRepetido.join(", ")}” já tinha esse período (não gravado de novo)`;
-    setSalvando(false);
-    // Recarrega rampas/afiliados já (semana pendente some no Início e no menu sem esperar o realtime).
-    window.dispatchEvent(new Event("focus"));
-    const n = new Set([
-      ...grupoRampaSalvar.map((r) => r.rampa_id),
-      ...rampaSalvar.map((r) => {
-        const l = linhas.find((x) => x.r.id === r.rampa_id);
-        return `produto|${l.r.produto_id}|${l.r.canal_id}`;
-      }),
-      ...afSalvar.map((g) => `${g.item_tipo}|${g.item_id}|${g.canal_id}`),
-    ]).size;
-    onToast?.(
-      faltou.size
-        ? `Semana registrada (${n} item${n > 1 ? "s" : ""}) sem ${[...faltou].map((c) => (c === "conhecidos" ? "o campo Conhecidos (schema_v39)" : "o período (schema_v40)")).join(" e ")} — falta rodar o SQL no Supabase`
-        : n
-          ? `Semana registrada (${n} item${n > 1 ? "s" : ""})${avisoGrupo}`
-          : `Vendas registradas${avisoGrupo}`
-    );
-    onClose();
-  }
-
-  const blocoPeriodo = (id, per) =>
-    per ? (
-      <div className="alerta alerta-neutro bloco-periodo">
-        <b>
-          Sem registro desde {diaMes(per.ultimo)} ({per.dias} dias)
-        </b>
-        No painel da Shopee use “Por dia” (somando os dias) ou importe o relatório desse período. Nas regras semanais os números entram por semana (× 7 ÷ dias).
-        <div className="grid-semana" style={{ marginTop: 6 }}>
-          <div className="field"><label>De</label><input type="date" value={per.de} onChange={set(id, "de")} /></div>
-          <div className="field"><label>Até</label><input type="date" value={per.ate} onChange={set(id, "ate")} /></div>
-          <div className="field">
-            <label>Período</label>
-            <div className="periodo-dias">{per.diasPeriodo} dias ≈ {(per.diasPeriodo / 7).toFixed(1).replace(".", ",")} semanas</div>
-          </div>
-        </div>
-      </div>
-    ) : null;
-
-  const blocoAfiliado = (chave, la, preco) => {
-    const v = fv(chave);
-    const parceiros = (af.parceiros || []).filter((p) => !p.canal_id || p.canal_id === la.canal.id);
-    const estimada = num(v.afVendas) > 0 ? cent(num(v.afVendas) * preco * la.conf.comissao) : null;
-    return (
-      <div className="bloco-afiliado">
-        <div className="bloco-afiliado-titulo">Afiliado · comissão {Math.round(la.conf.comissao * 100)}%</div>
-        <div className="grid-semana">
-          <div className="field"><label>Vendas via afiliado</label><input type="number" min="0" value={v.afVendas} onChange={set(chave, "afVendas")} /></div>
-          <div className="field">
-            <label>Comissão paga (R$)</label>
-            <input type="text" inputMode="decimal" value={v.afComissao} placeholder={estimada != null ? virgula(estimada) : ""} onChange={set(chave, "afComissao")} />
-          </div>
-          <div className="field">
-            <label>Parceiro (opcional)</label>
-            <select value={v.parceiro} onChange={set(chave, "parceiro")}>
-              <option value="">campanha aberta</option>
-              {parceiros.map((p) => (
-                <option key={p.id} value={p.id}>{p.nome}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <EditarDialog titulo="Registrar semana" salvando={salvando} onSalvar={salvar} onCancelar={onClose} salvarLabel="Registrar" classe="modal-box-md">
-      <p className="hint" style={{ marginTop: 0 }}>
-        Do painel do canal: vendas da semana (unidades vendidas do anúncio), o total de avaliações que aparece no anúncio, a nota, quantas avaliações de 1–2★
-        chegaram na semana e, se usou Ads, o gasto e as vendas via Ads. Vendas de amigos/família vão em “Conhecidos” (contam no caixa, não no orgânico). Itens com afiliado ganham o bloco Afiliado (vendas e comissão do painel de afiliados;
-        comissão em branco = estimada pelo %). Deixe em branco o que não quiser registrar.
-      </p>
-      <div className="importar-shopee">
-        <span className="muted-cel">📥 Já vem preenchido pela central (Análise → Importar dados): vendas = pedidos da Olist · funil = Desempenho da Shopee · Ads = andamento. Complete avaliações, nota, 1–2★ e conhecidos.</span>
-        <button type="button" className="btn btn-mini" onClick={aplicarCentral} disabled={lendo}>
-          ↺ Preencher de novo
-        </button>
-        <button
-          type="button"
-          className="btn btn-mini"
-          onClick={() => {
-            onClose();
-            trocarSubAba("ohra:analise-sub", "importar");
-            irParaAba("analise");
-          }}
-        >
-          Abrir a central →
-        </button>
-        <label className={`btn btn-mini${lendo ? " disabled" : ""}`} title="Se preferir, ainda dá pra escolher os arquivos da Shopee aqui (Desempenho .xlsx + Ads .csv)">
-          {lendo ? "Lendo…" : "📄 arquivo"}
-          <input type="file" accept=".xlsx,.csv" multiple hidden onChange={importarRelatorios} disabled={lendo} />
-        </label>
-        {importado && (
-          <div className="importar-resumo">
-            <b>
-              {importado.n ? `${importado.n} ite${importado.n > 1 ? "ns" : "m"} preenchido${importado.n > 1 ? "s" : ""}` : "Nenhum item preenchido"}
-            </b>
-            {importado.periodo && ` · período ${diaMes(importado.periodo.de)} a ${diaMes(importado.periodo.ate)}`}
-            {importado.temAds && importado.totalAds && ` · Ads da loja: ${BRL(importado.totalAds.gasto)}, ${importado.totalAds.cliques} cliques, ${importado.totalAds.vendas} venda${importado.totalAds.vendas === 1 ? "" : "s"}`}
-            {!importado.temAds && " · sem o arquivo do Ads (campos de Ads ficam como estão)"}
-            {importado.dataAjustada && <div>Data do registro ajustada pra {diaMes(importado.dataAjustada)} (o relatório vai até {diaMes(importado.periodo.ate)}).</div>}
-            {importado.avisos.map((a) => (
-              <div key={a} className="importar-aviso">⚠ {a}</div>
-            ))}
-            {importado.semPar.map((i) => (
-              <div key={i.itemId} className="importar-aviso">
-                ⚠ {i.sku || "sem SKU"} · {i.nome.slice(0, 50)}
-                {i.nome.length > 50 ? "…" : ""} ({i.unidades || 0} venda{i.unidades === 1 ? "" : "s"}):{" "}
-                {i.existe ? "não está em rampa nem com afiliado na Shopee — fica fora do registro" : "SKU não encontrado no app — confira o SKU em Cadastros"}
-              </div>
-            ))}
-            {importado.adsSemPar
-              .filter((a) => !importado.semPar.some((i) => i.itemId === a.itemId))
-              .map((a) => (
-                <div key={a.itemId} className="importar-aviso">⚠ Ads de “{a.nome.slice(0, 50)}” ({BRL(a.gasto)}) sem produto ligado — confira o SKU em Cadastros</div>
-              ))}
-            <div className="muted-cel">Confira os campos marcados “do relatório” e complete avaliações, nota, 1–2★ e conhecidos.</div>
-          </div>
-        )}
-      </div>
-      <div className="field" style={{ maxWidth: 200 }}>
-        <label>Data</label>
-        <input type="date" value={data} onChange={(e) => setData(e.target.value)} />
-      </div>
-      {linhas.map((l) => {
-        const la = afDe(l);
-        return (
-          <div key={l.r.id} className="bloco-semana">
-            <div className="bloco-semana-titulo">
-              <b>{l.produto.nome}</b> <CanalTag canal={l.canal} /> <span className="muted-cel">em rampa · vendendo {BRL(l.est.preco)} · {l.est.avaliacoesTotal} avaliações até agora</span>
-            </div>
-            {notaAndamento(l.r.id)}
-            {notaPedidos(l.r.id)}
-            {importado?.porChave[l.r.id] && (
-              <div className="importar-linha">
-                📄 do relatório: {importado.porChave[l.r.id].vendas ?? 0} venda{importado.porChave[l.r.id].vendas === 1 ? "" : "s"}
-                {importado.porChave[l.r.id].mistura ? ` (${textoMistura(importado.porChave[l.r.id].mistura)})` : ""}
-                {importado.temAds ? (importado.porChave[l.r.id].gasto != null ? ` · Ads ${BRL(importado.porChave[l.r.id].gasto)}` : " · sem Ads") : ""}
-              </div>
-            )}
-            {perRampa(l) ? (
-              blocoPeriodo(l.r.id, perRampa(l))
-            ) : (
-              <AvisoIntervalo
-                aviso={avisoIntervalo(
-                  l.est.registros.filter((g) => g.tipo === "semana").map((g) => g.data),
-                  data,
-                  { inicio: l.est.registros.find((g) => g.tipo === "inicio")?.data || null, teste: l.est.teste.status === "andamento" }
-                )}
-              />
-            )}
-            <div className="grid-semana">
-              <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={fv(l.r.id).vendas} onChange={set(l.r.id, "vendas")} className={doRelatorio(l.r.id, "vendas")} /></div>
-              <div className="field"><label>Avaliações (total)</label><input type="number" min="0" value={fv(l.r.id).avaliacoes} onChange={set(l.r.id, "avaliacoes")} /></div>
-              <div className="field"><label>Nota</label><input type="text" inputMode="decimal" value={fv(l.r.id).nota} onChange={set(l.r.id, "nota")} /></div>
-              <div className="field"><label>1–2★ na semana</label><input type="number" min="0" value={fv(l.r.id).ruins} onChange={set(l.r.id, "ruins")} /></div>
-              <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(l.r.id).gasto} onChange={set(l.r.id, "gasto")} className={doRelatorio(l.r.id, "gasto")} /></div>
-              <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(l.r.id).cliques} onChange={set(l.r.id, "cliques")} className={doRelatorio(l.r.id, "cliques")} /></div>
-              <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(l.r.id).adsVendas} onChange={set(l.r.id, "adsVendas")} className={doRelatorio(l.r.id, "adsVendas")} /></div>
-              <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={fv(l.r.id).conhecidos} onChange={set(l.r.id, "conhecidos")} placeholder="amigos/família" title="vendas de pessoas próximas — contam no caixa, não no orgânico" /></div>
-            </div>
-            <button type="button" className={`variacoes-toggle${funilAberto.has(l.r.id) ? " aberto" : ""}`} onClick={() => alternarFunil(l.r.id)}>
-              <span className="seta">▸</span> {funilAberto.has(l.r.id) ? "impressões, cliques e pedidos" : "+ impressões, cliques e pedidos"}
-            </button>
-            {funilAberto.has(l.r.id) && (
-              <div className="bloco-funil">
-                {(() => {
-                  const pr = perRampa(l);
-                  const per = pr ? { inicio: pr.de, fim: pr.ate, dias: pr.diasPeriodo, modo: "Por dia" } : periodoFunil(l.est.registros, data);
-                  return (
-                    <p className="hint" style={{ margin: "0 0 6px" }}>
-                      Da Shopee: Dados → Informações Gerenciais → Produto (colunas Impressão do Produto, Cliques Por Produto e Produto Pago). Período:{" "}
-                      <b>
-                        {per.modo} — {diaMes(per.inicio)} a {diaMes(per.fim)}
-                      </b>
-                      {per.modo === "Por dia" ? ` (${per.dias} dias somados, emendando no registro anterior, sem pular dias)` : ""} — termina ontem porque o dia de hoje ainda não fechou na Shopee. Opcional — o que ficar em branco não é gravado.
-                    </p>
-                  );
-                })()}
-                <div className="grid-semana">
-                  <div className="field"><label>Impressões de Produto</label><input type="number" min="0" value={fv(l.r.id).impressoes} onChange={set(l.r.id, "impressoes")} className={doRelatorio(l.r.id, "impressoes")} /></div>
-                  <div className="field"><label>Cliques Por Produto</label><input type="number" min="0" value={fv(l.r.id).cliquesProduto} onChange={set(l.r.id, "cliquesProduto")} className={doRelatorio(l.r.id, "cliquesProduto")} /></div>
-                  <div className="field"><label>Pedidos</label><input type="number" min="0" value={fv(l.r.id).pedidos} onChange={set(l.r.id, "pedidos")} className={doRelatorio(l.r.id, "pedidos")} /></div>
-                </div>
-              </div>
-            )}
-            {la && blocoAfiliado(l.r.id, la, l.est.preco)}
-          </div>
-        );
-      })}
-      {linhasGrupo.map((l) => {
-        const id = l.r.id;
-        const imp = importado?.porChave[id];
-        return (
-          <div key={id} className="bloco-semana">
-            <div className="bloco-semana-titulo">
-              <b>{l.produto.nome}</b> <CanalTag canal={l.canal} /> <span className="muted-cel">rampa do anúncio inteiro · {l.g.pctAtual}% do preço salvo · {l.est.avaliacoesTotal} avaliações até agora</span>
-            </div>
-            {notaAndamento(id)}
-            {imp && (
-              <div className="importar-linha">
-                📄 do relatório: {imp.vendas ?? 0} venda{imp.vendas === 1 ? "" : "s"} no anúncio inteiro{imp.gasto != null ? ` · Ads ${BRL(imp.gasto)}` : ""}
-              </div>
-            )}
-            {perRampa(l) ? (
-              blocoPeriodo(id, perRampa(l))
-            ) : (
-              <AvisoIntervalo aviso={avisoIntervalo(l.est.registros.filter((g) => g.tipo === "semana").map((g) => g.data), data, { inicio: l.est.registros.find((g) => g.tipo === "inicio")?.data || null })} />
-            )}
-            <div className="grid-semana">
-              <div className="field"><label>Vendas (todas as opções)</label><input type="number" min="0" value={fv(id).vendas} onChange={set(id, "vendas")} className={doRelatorio(id, "vendas")} /></div>
-              <div className="field"><label>Avaliações (total)</label><input type="number" min="0" value={fv(id).avaliacoes} onChange={set(id, "avaliacoes")} /></div>
-              <div className="field"><label>Nota</label><input type="text" inputMode="decimal" value={fv(id).nota} onChange={set(id, "nota")} /></div>
-              <div className="field"><label>1–2★ na semana</label><input type="number" min="0" value={fv(id).ruins} onChange={set(id, "ruins")} /></div>
-              <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(id).gasto} onChange={set(id, "gasto")} className={doRelatorio(id, "gasto")} /></div>
-              <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(id).cliques} onChange={set(id, "cliques")} className={doRelatorio(id, "cliques")} /></div>
-              <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(id).adsVendas} onChange={set(id, "adsVendas")} className={doRelatorio(id, "adsVendas")} /></div>
-              <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={fv(id).conhecidos} onChange={set(id, "conhecidos")} placeholder="amigos/família" /></div>
-              <div className="field"><label>Impressões de Produto</label><input type="number" min="0" value={fv(id).impressoes} onChange={set(id, "impressoes")} className={doRelatorio(id, "impressoes")} /></div>
-              <div className="field"><label>Cliques Por Produto</label><input type="number" min="0" value={fv(id).cliquesProduto} onChange={set(id, "cliquesProduto")} className={doRelatorio(id, "cliquesProduto")} /></div>
-              <div className="field"><label>Pedidos</label><input type="number" min="0" value={fv(id).pedidos} onChange={set(id, "pedidos")} className={doRelatorio(id, "pedidos")} /></div>
-            </div>
-            <p className="hint" style={{ margin: "4px 0 0" }}>Vendas e avaliações do anúncio inteiro (todas as opções) — são os portões da rampa do anúncio. As vendas por opção vão pro dinheiro pelo bloco “Anúncio” da importação.</p>
-          </div>
-        );
-      })}
-      {foraRampa.map((x) => (
-        <div key={x.chave} className="bloco-semana">
-          <div className="bloco-semana-titulo">
-            <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">fora de rampa · vendendo {BRL(x.preco)}</span>
-          </div>
-          {notaAndamento(x.chave)}
-          {notaPedidos(x.chave)}
-          {importado?.porChave[x.chave] && (
-            <div className="importar-linha">
-              📄 do relatório: {importado.porChave[x.chave].vendas ?? 0} venda{importado.porChave[x.chave].vendas === 1 ? "" : "s"}
-              {importado.porChave[x.chave].mistura ? ` (${textoMistura(importado.porChave[x.chave].mistura)})` : ""}
-            </div>
-          )}
-          {perAf(x) ? (
-            blocoPeriodo(x.chave, perAf(x))
-          ) : (
-            <AvisoIntervalo
-              aviso={avisoIntervalo(
-                (af.registros || []).filter((g) => g.item_tipo === x.tipo && g.item_id === x.id && g.canal_id === x.canal.id).map((g) => g.data),
-                data
-              )}
-            />
-          )}
-          <div className="grid-semana">
-            <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={fv(x.chave).vendas} onChange={set(x.chave, "vendas")} className={doRelatorio(x.chave, "vendas")} /></div>
-            <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(x.chave).gasto} onChange={set(x.chave, "gasto")} className={doRelatorio(x.chave, "gasto")} /></div>
-            <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(x.chave).cliques} onChange={set(x.chave, "cliques")} className={doRelatorio(x.chave, "cliques")} /></div>
-            <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(x.chave).adsVendas} onChange={set(x.chave, "adsVendas")} className={doRelatorio(x.chave, "adsVendas")} /></div>
-            <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={fv(x.chave).conhecidos} onChange={set(x.chave, "conhecidos")} placeholder="amigos/família" title="vendas de pessoas próximas — contam no caixa, não no orgânico" /></div>
-          </div>
-          {blocoAfiliado(x.chave, x, x.preco)}
-        </div>
-      ))}
-      {soAds.map((x) => (
-        <div key={x.chave} className="bloco-semana">
-          <div className="bloco-semana-titulo">
-            <b>{x.item.nome}</b> <CanalTag canal={x.canal} /> <span className="muted-cel">só Ads · vendendo {BRL(x.preco)}</span>
-          </div>
-          {notaAndamento(x.chave)}
-          {notaPedidos(x.chave)}
-          {importado?.porChave[x.chave] && (
-            <div className="importar-linha">
-              📄 do relatório: {importado.porChave[x.chave].vendas ?? 0} venda{importado.porChave[x.chave].vendas === 1 ? "" : "s"}
-              {importado.porChave[x.chave].mistura ? ` (${textoMistura(importado.porChave[x.chave].mistura)})` : ""}
-              {importado.temAds ? (importado.porChave[x.chave].gasto != null ? ` · Ads ${BRL(importado.porChave[x.chave].gasto)}` : " · sem Ads") : ""}
-            </div>
-          )}
-          {perAds(x) ? (
-            blocoPeriodo(x.chave, perAds(x))
-          ) : (
-            <AvisoIntervalo
-              aviso={avisoIntervalo(
-                (af.registros || []).filter((g) => g.item_tipo === x.tipo && g.item_id === x.id && g.canal_id === x.canal.id).map((g) => g.data),
-                data
-              )}
-            />
-          )}
-          <div className="grid-semana">
-            <div className="field"><label>Vendas na semana</label><input type="number" min="0" value={fv(x.chave).vendas} onChange={set(x.chave, "vendas")} className={doRelatorio(x.chave, "vendas")} /></div>
-            <div className="field"><label>Ads: gasto (R$)</label><input type="text" inputMode="decimal" value={fv(x.chave).gasto} onChange={set(x.chave, "gasto")} className={doRelatorio(x.chave, "gasto")} /></div>
-            <div className="field"><label>Ads: cliques</label><input type="number" min="0" value={fv(x.chave).cliques} onChange={set(x.chave, "cliques")} className={doRelatorio(x.chave, "cliques")} /></div>
-            <div className="field"><label>Ads: vendas</label><input type="number" min="0" value={fv(x.chave).adsVendas} onChange={set(x.chave, "adsVendas")} className={doRelatorio(x.chave, "adsVendas")} /></div>
-            <div className="field"><label>Conhecidos <Ajuda texto={DICA_CONHECIDOS} /></label><input type="number" min="0" value={fv(x.chave).conhecidos} onChange={set(x.chave, "conhecidos")} placeholder="amigos/família" /></div>
-          </div>
-        </div>
-      ))}
-      {Object.values(vendasGrupo).map((vg) => {
-        const a = vg.anuncio;
-        const total = vg.linhas.reduce((t, x) => t + num(x.unidades), 0);
-        return (
-          <div key={vg.grupo.id} className="bloco-semana">
-            <div className="bloco-semana-titulo">
-              <b>Anúncio: {vg.grupo.nome}</b> <CanalTag canal={vg.canal} /> <span className="muted-cel">vários itens · {vg.periodo ? `${diaMes(vg.periodo.de)} a ${diaMes(vg.periodo.ate)}` : ""}</span>
-            </div>
-            <div className="importar-linha">
-              📄 do relatório: {a.unidades ?? total} venda{(a.unidades ?? total) === 1 ? "" : "s"}
-              {a.impressoes != null ? ` · ${a.impressoes} impressões · ${a.cliques ?? 0} cliques · ${a.pedidos ?? 0} pedidos` : ""}
-              {a.ads ? ` · Ads ${BRL(a.ads.gasto)} (${a.ads.vendas} vendas via Ads)` : ""}
-            </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Opção</th>
-                    <th className="num">Preço</th>
-                    <th className="num">Vendas</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vg.linhas.map((x) => (
-                    <tr key={x.idx}>
-                      <td>
-                        {x.rotulo}
-                        <div className="muted-cel">{x.item ? x.item.nome : "item não encontrado"}</div>
-                      </td>
-                      <td className="num">
-                        {x.preco ? BRL(x.preco) : "—"}
-                        {x.vitrine && <div className="muted-cel">vitrine</div>}
-                      </td>
-                      <td className="num">
-                        <input type="number" min="0" style={{ width: 80 }} value={x.unidades} onChange={setUnidGrupo(vg.grupo.id, x.idx)} className="campo-importado" />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {a.semOpcao.length > 0 && (
-              <div className="importar-aviso">⚠ Variações do anúncio com SKU que não bate com nenhuma opção: {a.semOpcao.map((v) => `${v.sku} (${v.unidades})`).join(", ")} — confira os SKUs na Shopee (copie da 3º Ficha)</div>
-            )}
-            <p className="hint" style={{ margin: "6px 0 0" }}>
-              Por opção, entra no dinheiro (Fluxo de Caixa → Vendas do mês, cada opção no preço dela). O total do anúncio, o funil e o Ads vão pro bloco do anúncio (rampa do anúncio inteiro ou Ads), quando ele tem rampa ou Ads ligado.
-            </p>
-          </div>
-        );
-      })}
     </EditarDialog>
   );
 }

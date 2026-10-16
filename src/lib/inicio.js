@@ -1,6 +1,6 @@
 // Início — SÓ LÊ. Nenhuma regra de decisão nova: cada pendência vem da aba que
 // decide (alertaDe/estrategia.js, estadoRampa/diagnosticoAnuncio/alvo mudou,
-// semanaPendente, linhasAnunciar, sugestoesAfiliado, pareceAtracaoDe,
+// linhasAnunciar, sugestoesAfiliado, pareceAtracaoDe,
 // resumoCaixa) e só é agrupada/ordenada aqui. O botão leva pra aba que decide.
 
 import { pendenciasDeTarefas } from "./tarefas.js";
@@ -21,7 +21,7 @@ export const GRUPOS_PENDENCIA = [
   { chave: "oportunidade", titulo: "Oportunidades" },
 ];
 
-// → [{ id, grupo, ordem, tom, titulo, texto, ir: { aba, pedido }, rotulo, semana? }]
+// → [{ id, grupo, ordem, tom, titulo, texto, ir: { aba, pedido }, rotulo }]
 // Áreas do filtro do "Pra fazer" (pela aba pra onde o aviso leva). Os
 // urgentes (grupo Resolver) aparecem SEMPRE, com qualquer filtro.
 export const AREAS_PENDENCIA = [
@@ -50,7 +50,6 @@ export function montarPendencias({
   precosAlerta = [], // [{ item, canal, al }] anunciados com al.tipo prejuizo | abaixo-minimo (alertaDe)
   caixa = null, // resumoCaixa (fluxoCaixa.js)
   rampas = [], // linhas do Crescimento ({ r, produto, canal, est })
-  semana = [], // semanasPendentes().pendentes
   anunciosAtualizar = [], // [{ item, canal, x }] linhasAnunciar: mudou e já marcado feito antes
   afSugestoes = [], // sugestoesAfiliado: "pode|…" e "amostra|…"
   atracao = [], // [{ item, canal }] pareceAtracaoDe
@@ -292,9 +291,9 @@ export function montarPendencias({
         ordem: 2,
         tom: "warn",
         titulo: `Atualizar o andamento do Ads — ${atr.semEnvio ? `${atr.periodo._nome} sem envio há ${atr.dias} dias` : `último envio há ${atr.dias} dias`}`,
-        texto: "CSV do Shopee Ads desde o início de cada período — as decisões do Ads usam o andamento",
-        ir: irAds,
-        rotulo: "Abrir Ads",
+        texto: "CSV do Shopee Ads (do início de cada período até ontem) em Análise → Importar dados — as decisões do Ads e as semanas usam ele",
+        ir: { aba: "analise", pedido: { sub: "importar" } },
+        rotulo: "Abrir a central",
       });
   }
   // Central de importação (aba Análise, v55): pedidos da Olist há mais de 7
@@ -327,6 +326,21 @@ export function montarPendencias({
       });
   }
 
+  // Avaliações (v58): anúncio que vendeu há mais de 7 dias sem atualizar (bloco Avaliações da central).
+  if (importacoes?.avaliacoes?.length) {
+    const n = importacoes.avaliacoes.length;
+    add({
+      id: "analise|avaliacoes",
+      grupo: "rotina",
+      ordem: 2,
+      tom: "warn",
+      titulo: `Atualizar as avaliações — ${n} anúncio${n > 1 ? "s venderam" : " vendeu"} sem conferir`,
+      texto: `${importacoes.avaliacoes.slice(0, 3).map((v) => v.canal.nome).filter((x, i, a) => a.indexOf(x) === i).join(", ")} · os portões da Rampa (avaliações, nota, 1–2★) usam o bloco Avaliações`,
+      ir: { aba: "analise", pedido: { sub: "importar" } },
+      rotulo: "Abrir a central",
+    });
+  }
+
   if (ads?.teto?.acimaTeto)
     add({ id: "ads|teto", grupo: "rotina", ordem: 2, tom: "warn", titulo: "Ads acima do teto da loja", texto: `${brl(ads.teto.gasto)} em 30 dias · teto ${brl(ads.teto.teto)} (fase ${ads.teto.fase})`, ir: irAds, rotulo: "Abrir Ads" });
 
@@ -353,18 +367,6 @@ export function montarPendencias({
       ir: { aba: "farm" },
       rotulo: "Abrir Minha farm",
       ciente: { impressoraId: w.imp.id, campo: w.tipo === "fim" ? "aviso_fim_visto" : "aviso_desgaste_visto" },
-    });
-  for (const x of semana)
-    add({
-      id: `semana|${x.chave}`,
-      grupo: "rotina",
-      ordem: 1,
-      tom: "warn",
-      titulo: `${x.nome}: semana pendente`,
-      texto: `${x.canal.nome} · ${x.tipo === "rampa" ? "em rampa" : "afiliado/Ads"} · sem registro desde ${diaMes(x.ultimo)} (${x.dias} dias)`,
-      ir: { aba: "crescimento", pedido: { registrar: true } },
-      rotulo: "Registrar agora",
-      semana: x.chave,
     });
   for (const l of rampas) {
     const t = l.est.teste;
@@ -476,7 +478,7 @@ export function montarPendencias({
 }
 
 // Faixa de status — só resume o que as pendências/números já dizem.
-export function statusInicio({ caixa, rampas = [], semana = [], afAtivo = false, precosAlerta = [], anunciosAtualizar = [], anunciados = 0, taxa = null, taxaRef = 0.125, lucroSemana = null }) {
+export function statusInicio({ caixa, rampas = [], afAtivo = false, precosAlerta = [], anunciosAtualizar = [], anunciados = 0, taxa = null, taxaRef = 0.125, lucroSemana = null }) {
   const dinheiro = !caixa || !caixa.temLancamentos
     ? { tom: "neu", frase: "Sem lançamentos no Fluxo de Caixa" }
     : caixa.atrasados.some((l) => l.tipo === "saida") || (caixa.menor && caixa.menor.saldoFinal < 0)
@@ -490,8 +492,8 @@ export function statusInicio({ caixa, rampas = [], semana = [], afAtivo = false,
     ? { tom: "neu", frase: "Nenhum produto em rampa nem afiliado" }
     : revisar.length
       ? { tom: revisar.some((l) => l.est.anuncio?.motivo === "teste") ? "bad" : "warn", frase: `${plural(revisar.length, "produto pede", "produtos pedem")} ${revisar.every((l) => !l.est.anuncio) ? "ajuste de preço" : "revisão"}` }
-      : semana.length || rampas.some((l) => l.est.sugestao?.chave === "segurar" && l.est.sugestao.tom === "warn")
-        ? { tom: "warn", frase: semana.length ? `${plural(semana.length, "semana pendente", "semanas pendentes")}` : "Rampa segurando" }
+      : rampas.some((l) => l.est.sugestao?.chave === "segurar" && l.est.sugestao.tom === "warn")
+        ? { tom: "warn", frase: "Rampa segurando" }
         : { tom: "good", frase: lucroSemana != null ? `Lucro da semana ${brl(lucroSemana)}` : `${plural(rampas.length, "produto", "produtos")} em rampa` };
 
   const prejuizo = precosAlerta.filter((a) => a.al?.tipo === "prejuizo" && !a.al.discreto);

@@ -476,10 +476,13 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const comNota = [...regs].reverse().find((r) => r.nota != null && r.nota !== "");
   const nota = comNota ? num(comNota.nota) : null;
   const desde = rampa.desde || hoje;
-  const vendasDesde = semanas.filter((s) => s.data >= desde).reduce((s, r) => s + vendasParaDecisao(r), 0);
+  // Dias depois da última semana fechada (pedidos importados até hoje — semanas
+  // automáticas, lib/semanasAuto.js): contam nas vendas desde o degrau e no ritmo.
+  const parcialV = ctx.parcial && ctx.parcial.de >= desde ? num(ctx.parcial.vendas) : 0;
+  const vendasDesde = semanas.filter((s) => s.data >= desde).reduce((s, r) => s + vendasParaDecisao(r), 0) + parcialV;
   const conhecidosDesde = semanas.filter((s) => s.data >= desde).reduce((s, r) => s + conhecidosDe(r), 0);
-  const vendasTotal = num(rampa.vendas_iniciais) + semanas.reduce((s, r) => s + num(r.vendas), 0);
-  const vendasTotalDecisao = num(rampa.vendas_iniciais) + semanas.reduce((s, r) => s + vendasParaDecisao(r), 0);
+  const vendasTotal = num(rampa.vendas_iniciais) + semanas.reduce((s, r) => s + num(r.vendas), 0) + (ctx.parcial ? num(ctx.parcial.vendas) : 0);
+  const vendasTotalDecisao = num(rampa.vendas_iniciais) + semanas.reduce((s, r) => s + vendasParaDecisao(r), 0) + (ctx.parcial ? num(ctx.parcial.vendas) : 0);
   const conhecidosTotal = semanas.reduce((s, r) => s + conhecidosDe(r), 0);
   const avaliacoesDesde = Math.max(0, avaliacoesTotal - num(rampa.base_avaliacoes));
   const dias = Math.max(0, diasEntre(desde, hoje));
@@ -856,6 +859,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
     degraus, i, preco, alvo, proximo, fase, acimaAtivo, noAlvo, teste, acima, diasRampa,
     lucroAtual, lucroAlvo: lucroEm(alvo), lucroProximo: lucroEm(proximo), lucroEm,
     zero: ctx.lucroEm ? precoComLucro(0, alvo) : ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,
+    parcial: ctx.parcial || null,
     avaliacoesTotal, nota, vendasDesde, vendasTotal, vendasTotalDecisao, conhecidosTotal, avaliacoesDesde, dias, ruins7,
     portoes, portoesOk, roasMin, roas, organico, organicoAntes, ultAds,
     revisar, semVenda, revisarPorAds, revisarPorLancamento, revisarPorTeste, anuncio, alertaNota, sugestao, ultimaSemana, diasMin, campanhaAviso,

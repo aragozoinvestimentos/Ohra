@@ -9,7 +9,7 @@ import { BRL, PCT } from "../lib/format.js";
 import { nomeCanal } from "../lib/canais.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
 import { LIMITE_NOME_OPCAO, MIN_VENDAS_SUGESTAO, fichaDoGrupo, idDoItemOpcao, opcoesDoGrupo, variacao2DoGrupo, vendasPorOpcao } from "../lib/anunciosGrupo.js";
-import { useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
+import { useCrescimento } from "../hooks/useCrescimento.js";
 import { hojeSP } from "../lib/datas.js";
 import BuscaItem from "./BuscaItem.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -40,14 +40,15 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
   const [copiado, setCopiado] = useState(null);
   const grupo = grupos.find((g) => g.id === grupoId) || null;
 
-  // "Qual opção vende": vendas do anúncio importadas da Shopee (vendas_organicas.grupo_id).
-  const vendasOrg = useVendasOrganicas();
+  // "Qual opção vende": vendas do anúncio pelos pedidos importados (SKU de cada
+  // opção) + as lançadas antes em vendas_organicas.grupo_id — useCrescimento.
+  const { organicasVivas } = useCrescimento();
   const vendasOp = useMemo(
     () =>
       grupo
         ? vendasPorOpcao({
             grupo,
-            registros: vendasOrg.registros,
+            registros: organicasVivas,
             itens,
             hoje: hojeSP(),
             lucroDe: (item, canalId, preco) => {
@@ -56,7 +57,7 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
             },
           })
         : null,
-    [grupo, vendasOrg.registros, itens, canais, cfgDoProduto]
+    [grupo, organicasVivas, itens, canais, cfgDoProduto]
   );
   const ficha = useMemo(
     () => (grupo && canal ? fichaDoGrupo({ grupo, canal, itens, precos, produtos, kits, mapaRampa, publicacoes: publicacoesCanal, clientePagaHoje }) : null),
@@ -211,10 +212,10 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
         <div className="panel qual-opcao">
           <h3>
             Qual opção vende <small>últimos {vendasOp.dias} dias{vendasOp.ultima ? ` · importado até ${vendasOp.ultima.split("-").reverse().slice(0, 2).join("/")}` : ""}</small>
-            <Ajuda texto="Vendas deste anúncio por opção, vindas do relatório de desempenho da Shopee importado em Crescimento → Registrar semana (o app reconhece o anúncio pelo SKU de cada variação — use os SKUs desta Ficha na Shopee). Entram só no dinheiro (Vendas do mês); não contam pra rampa dos produtos." />
+            <Ajuda texto="Vendas deste anúncio por opção, vindas dos pedidos importados em Análise → Importar dados (o app reconhece o anúncio pelo SKU de cada variação — use os SKUs desta Ficha na Shopee). Entram só no dinheiro (Vendas do mês); não contam pra rampa dos produtos." />
           </h3>
           {!vendasOp.temRegistros ? (
-            <div className="empty">Nenhuma venda importada ainda. Exporte o relatório de desempenho da Shopee e importe em Crescimento → Registrar semana.</div>
+            <div className="empty">Nenhuma venda importada ainda. Importe os pedidos da Olist em Análise → Importar dados.</div>
           ) : (
             <>
               <div className="table-wrap">
