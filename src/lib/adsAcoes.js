@@ -8,7 +8,9 @@ import { supabase } from "./supabaseClient.js";
 
 const diasEntre = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
 const msgErro = (error) =>
-  /item_tipo_check/.test(error.message)
+  /ads_periodos_tipo_check/.test(error.message) || (/item_tipo_check/.test(error.message) && /loja/.test(error.message))
+    ? "Falta rodar o supabase/schema_v57.sql no Supabase (lance automático e campanha da loja)"
+    : /item_tipo_check/.test(error.message)
     ? "Falta rodar o supabase/schema_v54.sql no Supabase (Ads do anúncio com vários itens)"
     : /ads_periodos|schema cache|does not exist/.test(error.message) && !/tipo/.test(error.message)
     ? "Falta rodar o supabase/schema_v44.sql no Supabase"
@@ -18,7 +20,7 @@ const msgErro = (error) =>
 async function inserirPeriodo(linha) {
   let r = await supabase.from("ads_periodos").insert(linha).select().single();
   let semTipo = false;
-  if (r.error && /tipo/.test(r.error.message) && !/item_tipo/.test(r.error.message)) {
+  if (r.error && /tipo/.test(r.error.message) && !/item_tipo/.test(r.error.message) && !/tipo_check/.test(r.error.message)) {
     const { tipo: _tipo, ...sem } = linha;
     semTipo = true;
     r = await supabase.from("ads_periodos").insert(sem).select().single();
@@ -27,7 +29,9 @@ async function inserirPeriodo(linha) {
 }
 
 // { lojaId, tipo: 'produto'|'kit'|'grupo' (anúncio com vários itens, v54), id, canalId, inicio, fim, orcamento, meta, nota, teste: bool, rampa?, regras? }
-export async function iniciarPeriodoAds({ lojaId, tipo, id, canalId, inicio, fim = null, orcamento = null, meta = null, nota = null, teste = false, rampa = null, regras = null }) {
+// `auto` = produto novo no lance automático (v57, tipo 'auto', meta vazia);
+// tipo 'loja' = campanha GMV Max da Loja (id = loja).
+export async function iniciarPeriodoAds({ lojaId, tipo, id, canalId, inicio, fim = null, orcamento = null, meta = null, nota = null, teste = false, auto = false, rampa = null, regras = null }) {
   const linha = {
     loja_id: lojaId || null,
     item_tipo: tipo,
@@ -36,9 +40,9 @@ export async function iniciarPeriodoAds({ lojaId, tipo, id, canalId, inicio, fim
     inicio,
     fim: fim || null,
     orcamento_diario: orcamento,
-    meta_roas: meta,
-    nota: nota || (teste ? "teste de lançamento" : null),
-    tipo: teste ? "teste" : "normal",
+    meta_roas: auto ? null : meta,
+    nota: nota || (teste ? "teste de lançamento" : auto ? "lance automático (produto novo)" : null),
+    tipo: teste ? "teste" : auto ? "auto" : "normal",
   };
   const r = await inserirPeriodo(linha);
   if (r.error) return { ok: false, msg: msgErro(r.error) };
@@ -93,13 +97,20 @@ export async function excluirPeriodoAds(periodo, { rampa = null, hoje } = {}) {
 // Andamento do período (v48): substitui o anterior (nunca soma). Os envios
 // anteriores ficam em `parcial.historico` (até 12, um por data) — a
 // constância do Ads (média de 3 dias × os 3 anteriores) lê daqui.
-export async function salvarAndamentoAds(periodo, { ate, gasto, cliques, vendas }) {
+// Pausa pra revisar sem encerrar (método do Luan): o período continua com as
+// métricas; "Despausei" grava as vendas do andamento na hora (a conferência
+// do dia 3 recomeça contando dali).
+export const pausarPeriodoAds = (periodo, data) => ajustarPeriodoAds(periodo, { tipo: "pausa", data, motivo: "pausei pra revisar o anúncio" });
+export const despausarPeriodoAds = (periodo, data) => ajustarPeriodoAds(periodo, { tipo: "volta", data, vendas: Number(periodo?.parcial?.vendas) || 0, motivo: "despausei" });
+export const reviseiSemVendaAds = (periodo, data) => ajustarPeriodoAds(periodo, { tipo: "revisei", data, motivo: "revisei o anúncio — dar até o 7º dia" });
+
+export async function salvarAndamentoAds(periodo, { ate, gasto, cliques, vendas, receita }) {
   const ant = periodo?.parcial;
-  const hist = [...(Array.isArray(ant?.historico) ? ant.historico : []), ...(ant?.ate ? [{ ate: ant.ate, gasto: ant.gasto, cliques: ant.cliques, vendas: ant.vendas }] : [])]
+  const hist = [...(Array.isArray(ant?.historico) ? ant.historico : []), ...(ant?.ate ? [{ ate: ant.ate, gasto: ant.gasto, cliques: ant.cliques, vendas: ant.vendas, ...(ant.receita != null ? { receita: ant.receita } : {}) }] : [])]
     .filter((h) => h && h.ate && h.ate < ate)
     .reduce((m, h) => m.set(h.ate, h), new Map());
   const historico = [...hist.values()].sort((a, b) => a.ate.localeCompare(b.ate)).slice(-12);
-  const parcial = { ate, gasto, cliques, vendas, em: new Date().toISOString(), historico };
+  const parcial = { ate, gasto, cliques, vendas, ...(receita != null ? { receita } : {}), em: new Date().toISOString(), historico };
   const { error } = await supabase.from("ads_periodos").update({ parcial }).eq("id", periodo.id);
   if (!error) return { ok: true };
   return { ok: false, msg: /parcial/.test(error.message) ? "Falta rodar o supabase/schema_v48.sql no Supabase" : msgErro(error) };

@@ -238,26 +238,48 @@ export function montarPendencias({
 
   // ---- Ads (decisão em lib/ads.js; aqui só lê) ----
   const irAds = { aba: "crescimento", pedido: { sub: "ads" } };
-  for (const l of ads?.linhas || []) {
+  for (const l of [...(ads?.lojaLinha ? [ads.lojaLinha] : []), ...(ads?.linhas || [])]) {
     const av = l.av;
     if (!av.ativo) continue;
+    const irL = { aba: "crescimento", pedido: { sub: "ads", adsChave: l.chave } };
+    // Método do Luan (16/10/2026): dia 3 sem venda, pausado, conferir, virar meta, campanha da loja.
+    if (av.chave === "sem-venda-dia3") {
+      add({ id: `ads|${l.chave}|dia3`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: ${av.semVenda?.dias || 3} dias pagando Ads sem venda`, texto: `${l.canal.nome} · pause e arrume o anúncio antes de gastar mais`, ir: irL, rotulo: "Ver o que fazer" });
+      continue;
+    }
+    if (av.chave === "despausar") {
+      add({ id: `ads|${l.chave}|despausar`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: já revisou? Despause o Ads`, texto: `${l.canal.nome} · pausado desde ${av.pausado?.desde ? `${av.pausado.desde.slice(8, 10)}/${av.pausado.desde.slice(5, 7)}` : "—"}`, ir: irL, rotulo: "Abrir Ads" });
+      continue;
+    }
+    if (av.chave === "conferir-dia3") {
+      add({ id: `ads|${l.chave}|conferir`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()} do Ads`, texto: `${l.canal.nome} · pra saber se já vendeu (sem venda em 3 dias = parar e arrumar o anúncio)`, ir: { aba: "analise", pedido: { sub: "importar" } }, rotulo: "Abrir importação" });
+      continue;
+    }
+    if (av.chave === "virar-meta") {
+      add({ id: `ads|${l.chave}|virar-meta`, grupo: av.estado === "oportunidade" ? "oportunidade" : "rotina", ordem: 1, tom: av.estado === "oportunidade" ? "good" : "warn", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · fim dos 7 dias no lance automático`, ir: irL, rotulo: "Ver" });
+      continue;
+    }
+    if (["loja-abaixo", "loja-nao-gasta"].includes(av.chave) || (av.loja && av.chave === "aguardando")) {
+      add({ id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `Campanha da loja: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · GMV Max da Loja`, ir: irL, rotulo: "Abrir Ads" });
+      continue;
+    }
     if (av.chave === "pausar-revisar")
-      add({ id: `ads|${l.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads com cliques sem venda`, texto: `${l.canal.nome} · ${av.titulo}`, ir: irAds, rotulo: "Abrir Ads" });
+      add({ id: `ads|${l.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads com cliques sem venda`, texto: `${l.canal.nome} · ${av.titulo}`, ir: irL, rotulo: "Abrir Ads" });
     else if (["pausar", "reduzir", "inviavel-ativo", "subir-meta", "arrumar-anuncio"].includes(av.chave))
-      add({ id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo ${av.sazonal && av.minimo !== av.empate ? "do mínimo da temporada" : "do ROAS de equilíbrio"} (${(av.minimo ?? av.empate) ? (av.minimo ?? av.empate).toFixed(1).replace(".", ",") : "—"})`, ir: irAds, rotulo: "Abrir Ads" });
+      add({ id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo ${av.sazonal && av.minimo !== av.empate ? "do mínimo da temporada" : "do ROAS de equilíbrio"} (${(av.minimo ?? av.empate) ? (av.minimo ?? av.empate).toFixed(1).replace(".", ",") : "—"})`, ir: irL, rotulo: "Abrir Ads" });
     else if (av.chave === "segurar-producao")
-      add({ id: `ads|${l.chave}|producao`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: segurar o Ads`, texto: `${l.canal.nome} · as vendas subiram e a produção não acompanha`, ir: irAds, rotulo: "Abrir Ads" });
+      add({ id: `ads|${l.chave}|producao`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: segurar o Ads`, texto: `${l.canal.nome} · as vendas subiram e a produção não acompanha`, ir: irL, rotulo: "Abrir Ads" });
     else if (["pausar-corte", "atualizar-andamento"].includes(av.chave))
-      add({ id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · ${av.chave === "pausar-corte" ? "último dia de entrega passou" : "fase Alavancar decide a cada 3–4 dias"}`, ir: irAds, rotulo: "Abrir Ads" });
+      add({ id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · ${av.chave === "pausar-corte" ? "último dia de entrega passou" : "fase Alavancar decide a cada 3–4 dias"}`, ir: irL, rotulo: "Abrir Ads" });
     else if (["aumentar", "meta-alta"].includes(av.chave))
-      add({ id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? `retorno ${av.numeros?.retorno != null ? av.numeros.retorno.toFixed(1).replace(".", ",") : "—"}× o equilíbrio` : "a Shopee gastou pouco do orçamento"}`, ir: irAds, rotulo: "Abrir Ads" });
+      add({ id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? `retorno ${av.numeros?.retorno != null ? av.numeros.retorno.toFixed(1).replace(".", ",") : "—"}× o equilíbrio` : "a Shopee gastou pouco do orçamento"}`, ir: irL, rotulo: "Abrir Ads" });
     if (av.avisoMeta)
-      add({ id: `ads|${l.chave}|meta-alta-inicio`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: meta de ROAS alta pra começar`, texto: `${l.canal.nome} · meta ${av.avisoMeta.meta.toFixed(1).replace(".", ",")} — comece com ${av.avisoMeta.sugerida.toFixed(1).replace(".", ",")}`, ir: irAds, rotulo: "Abrir Ads" });
+      add({ id: `ads|${l.chave}|meta-alta-inicio`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: meta de ROAS alta pra começar`, texto: `${l.canal.nome} · meta ${av.avisoMeta.meta.toFixed(1).replace(".", ",")} — comece com ${av.avisoMeta.sugerida.toFixed(1).replace(".", ",")}`, ir: irL, rotulo: "Abrir Ads" });
   }
   // Andamento do Ads (plano 14/10/2026): UM aviso quando o envio mais antigo
   // entre os itens com Ads ligado tem mais de 3 dias.
   {
-    const per = (ads?.linhas || []).filter((l) => l.av.ativo).map((l) => ({ ...l.av.ativo, _nome: l.item.nome }));
+    const per = [...(ads?.lojaLinha ? [ads.lojaLinha] : []), ...(ads?.linhas || [])].filter((l) => l.av.ativo).map((l) => ({ ...l.av.ativo, _nome: l.item.nome }));
     const atr = andamentoAtrasado(per, hoje);
     if (atr)
       add({

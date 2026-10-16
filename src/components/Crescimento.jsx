@@ -96,6 +96,7 @@ export default function Crescimento({ onToast }) {
   const [sub, setSub] = useSubAba("ohra:crescimento-sub", "rampa", ["rampa", "ads", "afiliados"]);
   const [semanaAberta, setSemanaAberta] = useState(false);
   const [selId, setSelId] = useState(null); // rampa aberta no Detalhe
+  const [adsChave, setAdsChave] = useState(null); // linha do Ads aberta (pedido do Início)
 
   // Pedidos vindos do Início (lib/navegar.js): sub-aba, rampa e "Registrar agora".
   useEffect(() => {
@@ -103,6 +104,7 @@ export default function Crescimento({ onToast }) {
       if (!p) return;
       if (p.sub) trocarSubAba("ohra:crescimento-sub", p.sub);
       if (p.rampaId) setSelId(p.rampaId);
+      if (p.adsChave) setAdsChave(p.adsChave);
       if (p.registrar) setSemanaAberta(true);
     };
     aplicar(pegarPedido("crescimento"));
@@ -146,6 +148,7 @@ export default function Crescimento({ onToast }) {
           onToast={onToast}
           podeRegistrar={podeRegistrar}
           onRegistrar={() => setSemanaAberta(true)}
+          abrirChave={adsChave}
         />
       ) : (
         <Afiliados

@@ -6,7 +6,9 @@ import { estadoRampa, metricasFunil, referenciaFunilLoja, regrasDaLoja } from ".
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
-import { adsDaLoja, avaliarAds, capacidadeDoItem, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, tetoDaLoja } from "../lib/ads.js";
+import { adsDaLoja, avaliarAds, avaliarAdsLoja, capacidadeDoItem, faseAdsSazonal, gastoAdsNaJanela, periodoAtivo, periodosDoItem, regrasAds, roasEmpate, tetoDaLoja } from "../lib/ads.js";
+import { useLembretes } from "./useLembretes.js";
+import { useLoja } from "../lib/LojaContext.jsx";
 import { equilibrioDoGrupo, estadoRampaGrupo, itensSoNoGrupo, mixDoGrupo, opcoesNoCanal } from "../lib/grupoRampa.js";
 import { idGrupo, idDoItemOpcao, opcoesDoGrupo } from "../lib/anunciosGrupo.js";
 import { useCatalogo } from "./useCatalogo.js";
@@ -45,6 +47,9 @@ export function useCrescimento() {
   // Pedidos reais (aba Análise, v55): no teto do Ads, o faturamento dos dias
   // com pedidos importados vem deles (a estimativa das semanas sai).
   const reais = useVendasReais({ itens, canais, cfgDoProduto });
+  // "Não usar Ads por enquanto" (16/10/2026): lembretes chave ads-nao|<chave da linha>.
+  const lembretesH = useLembretes();
+  const { lojaId } = useLoja();
 
   // Referência do funil: mediana de CTR e conversão dos produtos da loja
   // (só com 5+ produtos com funil calculável; senão, referência geral).
@@ -219,18 +224,17 @@ export function useCrescimento() {
     let fat30 = 0;
     let lucro30 = 0;
     let gasto30 = 0;
-    for (const b of base)
+    for (const b of base) {
       for (const s of b.semanas) {
         if (!(String(s.data).slice(0, 10) > desde30)) continue;
-        if (b.semFaturamento || reais.cobertura.cobre(b.canal, somarDias(String(s.data).slice(0, 10), -1))) {
-          gasto30 += num(s.ads_gasto);
-          continue;
-        }
+        if (b.semFaturamento || reais.cobertura.cobre(b.canal, somarDias(String(s.data).slice(0, 10), -1))) continue;
         const p = num(s.preco) || b.preco;
         fat30 += num(s.vendas) * p;
         lucro30 += num(s.vendas) * (b.lucroEm(p) ?? 0);
-        gasto30 += num(s.ads_gasto);
       }
+      // Gasto AO VIVO (16/10/2026): semanas registradas ou o andamento (CSV), o maior.
+      gasto30 += gastoAdsNaJanela(b.periodos, b.semanas, somarDias(desde30, 1), hoje);
+    }
     // + vendas orgânicas lançadas à mão em Vendas do mês (faturamento TOTAL da loja).
     const PRE = { produto: "p", variacao: "v", kit: "k" };
     for (const o of organicasH.registros || []) {
@@ -247,6 +251,30 @@ export function useCrescimento() {
       if (!p.valido || !(String(p.data) > desde30) || String(p.data) > hoje) continue;
       fat30 += p.pago;
       lucro30 += p.lucro ?? 0;
+    }
+    // GMV Max da Loja (v57, item_tipo 'loja'): linha fixa no topo da aba Ads.
+    // Equilíbrio da loja = faturamento ÷ lucro antes do Ads dos pedidos dos
+    // últimos 30 dias (sem pedidos: mediana do equilíbrio das linhas).
+    const canalLoja = canais.find((c) => c.tipo === "shopee") || null;
+    let lojaLinha = null;
+    if (canalLoja && lojaId) {
+      let fatP = 0;
+      let lucP = 0;
+      for (const p of reais.linhas) {
+        if (!p.valido || p.origem === "fisico" || !(String(p.data) > desde30) || String(p.data) > hoje) continue;
+        fatP += p.pago;
+        lucP += p.lucro ?? 0;
+      }
+      let equilibrio = roasEmpate(fatP, lucP);
+      let origemEq = "pedidos dos últimos 30 dias";
+      if (!equilibrio) {
+        const eqs = base.map((b) => roasEmpate(b.preco, b.lucro)).filter((x) => x != null).sort((a, b) => a - b);
+        equilibrio = eqs.length ? eqs[Math.floor(eqs.length / 2)] : null;
+        origemEq = "média dos produtos (sem pedidos importados)";
+      }
+      const periodosL = periodosDoItem(adsH.periodos, "loja", lojaId, canalLoja.id);
+      gasto30 += gastoAdsNaJanela(periodosL, [], somarDias(desde30, 1), hoje);
+      lojaLinha = { chave: `loja|${lojaId}|${canalLoja.id}`, tipo: "loja", id: lojaId, canal: canalLoja, item: { id: `loja:${lojaId}`, nome: "Loja inteira · GMV Max da Loja" }, periodos: periodosL, semanas: [], equilibrio, origemEq, av: avaliarAdsLoja({ periodos: periodosL, equilibrio, hoje, regras: regrasA }) };
     }
     const teto = tetoDaLoja({ faturamento: fat30, lucro: lucro30, gasto: gasto30, regras: regrasA });
     const linhasA = base.map((b) => ({
@@ -268,8 +296,13 @@ export function useCrescimento() {
         aviso: { id: z.fase, grupo: z.fase === "aquecer" ? "oportunidade" : "rotina", titulo: `Ads ${z.nome} — ${z.titulo}`, texto: `${z.texto}${z.fim ? ` (até ${dm(z.fim)})` : ""}` },
       });
     }
-    return { loja, teto, sazonal, linhas: linhasA };
-  }, [itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura]);
+    // "Não usar Ads por enquanto": vai pra Sem Ads e sai de Oportunidade/Início.
+    for (const l of linhasA) {
+      const lb = (lembretesH.lembretes || []).find((x) => x.chave === `ads-nao|${l.chave}`);
+      if (lb && !l.av.ativo) l.semAds = { desde: lb.adiado_ate || null };
+    }
+    return { loja, teto, sazonal, linhas: linhasA, lojaLinha, lembretesOk: lembretesH.disponivel };
+  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura]);
 
   return { dados, rampasH, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH };
 }

@@ -2119,3 +2119,19 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .emb-org-total { text-align: right; font-size: 12px; color: var(--ink-faint); }
 .emb-org-linha { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-soft); margin-top: 6px; }
 .emb-org-aviso { margin-top: 8px; }
+
+/* Ads pelo método do Luan (16/10/2026): tipo do período, passos do dia 3, linha da loja */
+.opcoes-ads-tipo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+@media (max-width: 760px) { .opcoes-ads-tipo { grid-template-columns: 1fr; } }
+.opcoes-ads-tipo label { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; cursor: pointer; position: relative; }
+.opcoes-ads-tipo label.sel { border-color: var(--accent); background: var(--accent-soft, var(--surface-2)); }
+.opcoes-ads-tipo input { position: absolute; opacity: 0; pointer-events: none; }
+.opcoes-ads-tipo span { font-size: 12.5px; color: var(--ink-soft); }
+.ads-dia3 { border: 1px solid var(--border); border-left: 4px solid var(--st-resolver); border-radius: 12px; padding: 10px 12px; margin: 8px 0; }
+.passos-ads { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; gap: 6px; }
+.passos-ads li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.passos-ads li > span:last-child { display: flex; flex-direction: column; }
+.passos-ads small { color: var(--ink-soft); font-size: 12.5px; }
+.passo-n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; font-size: 12px; display: grid; place-items: center; }
+.linha-loja-ads > td { background: var(--surface-2); }
+.linha-loja-ads > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }

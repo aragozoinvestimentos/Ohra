@@ -576,7 +576,7 @@ export function capacidadeDoItem(item, produtos, impressoras, farmConfig) {
 export function andamentoAtrasado(periodos, hoje, regras = REGRAS_ADS) {
   let pior = null;
   for (const p of periodos || []) {
-    if (!periodoLigado(p, hoje) || p.tipo === "teste") continue;
+    if (!periodoLigado(p, hoje) || p.tipo === "teste" || pausasDoPeriodo(p, hoje).pausado) continue;
     const ref = p.parcial?.ate || p.inicio;
     if (!ref) continue;
     const dias = diasEntre(ref, hoje) - (p.parcial?.ate ? 1 : 0);
@@ -604,4 +604,74 @@ export function adsDaLoja(semanasTodas, hoje, regras = REGRAS_ADS) {
     dependente: vendas > 0 && vendasAds / vendas > 0.5,
     passaria: (extra) => faturamento > 0 && gasto + extra > teto,
   };
+}
+
+// Gasto de Ads numa janela [de, ate] (teto da loja, Vendas do mês — 16/10/2026,
+// "gasto ao vivo"): por período, o MAIOR entre as semanas registradas que caem
+// na janela e o ANDAMENTO (CSV/à mão) — só a parte dentro da janela: tira as
+// semanas do período que terminaram antes; sem elas e começando antes da
+// janela, conta proporcional aos dias. `semanas` = registros do item.
+export function gastoAdsNaJanela(periodos, semanas, de, ate) {
+  const noJanela = (semanas || []).filter((s) => {
+    const fim = somarDiasIso(String(s.data).slice(0, 10), -1);
+    return fim >= de && fim <= ate;
+  });
+  const pelasSemanas = noJanela.reduce((t, s) => t + num(s.ads_gasto), 0);
+  let pelosAndamentos = 0;
+  for (const p of periodos || []) {
+    const par = p?.parcial;
+    if (!par?.ate || !(num(par.gasto) > 0) || par.ate < de || p.inicio > ate) continue;
+    const antes = semanasNoPeriodo(semanas || [], p).filter((s) => somarDiasIso(String(s.data).slice(0, 10), -1) < de);
+    let g = num(par.gasto);
+    if (antes.length) g = Math.max(0, g - antes.reduce((t, s) => t + num(s.ads_gasto), 0));
+    else if (p.inicio < de) {
+      const total = diasEntre(p.inicio, par.ate) + 1;
+      const dentro = diasEntre(de, par.ate) + 1;
+      g = total > 0 ? (g * Math.max(0, dentro)) / total : 0;
+    }
+    pelosAndamentos += g;
+  }
+  return Math.round(Math.max(pelasSemanas, pelosAndamentos) * 100) / 100;
+}
+
+// ---- GMV Max da Loja (16/10/2026, schema v57: item_tipo 'loja') ----
+// Campanha da loja inteira (produtos "reserva"): meta alta, orçamento
+// ilimitado. O app só acompanha se vende e se vale a pena: ROAS (vendas em
+// R$ ÷ gasto, pelo andamento — parcial.receita) × EQUILÍBRIO DA LOJA
+// (faturamento ÷ lucro antes do Ads dos últimos 30 dias). Proporcional: vale
+// igual pra loja pequena ou grande.
+export function avaliarAdsLoja({ periodos = [], equilibrio, hoje, regras = REGRAS_ADS }) {
+  const ativo = periodoAtivo(periodos, hoje);
+  const base = { ativo, empate: equilibrio || null, minimo: equilibrio || null, loja: true };
+  const sit = (chave, estado, titulo, texto, extra = {}) => ({ ...base, chave, estado, titulo, texto, ...extra });
+  const metaAlta = equilibrio ? Math.ceil(equilibrio * num(regras.lojaMetaFator || 2) * 10) / 10 : null;
+  if (!ativo)
+    return sit("loja-desligada", "info", "Desligada", `Campanha da loja (GMV Max da Loja) pros produtos sem Ads próprio: meta alta${metaAlta ? ` (≈ ${um(metaAlta)}, 2× o equilíbrio da loja ${um(equilibrio)})` : ""} e orçamento ilimitado — a Shopee só gasta quando acha venda boa.`, { metaSugerida: metaAlta });
+  const { meta } = valoresAtuais(ativo);
+  const pz = pausasDoPeriodo(ativo, hoje);
+  const dias = diasEntre(ativo.inicio, hoje) - pz.diasPausados;
+  const par = ativo.parcial?.ate ? ativo.parcial : null;
+  const gasto = num(par?.gasto);
+  const receita = num(par?.receita);
+  const roas = gasto > 0 ? receita / gasto : null;
+  const retorno = retornoAds(roas, equilibrio);
+  const numeros = { dias, gasto, receita, vendas: num(par?.vendas), cliques: num(par?.cliques), roas, retorno, ate: par?.ate || null, meta };
+  if (pz.pausado) return sit("pausado", "decisao", `Pausada desde ${dm(pz.pausado.desde)}`, 'Quando religar na Shopee, marque "Despausei".', { numeros, pausado: pz.pausado });
+  if (dias < regras.aprendizadoDias)
+    return sit("aprendendo", "decisao", `Aprendendo · dia ${dias + 1} de ${regras.aprendizadoDias}`, `Não mexa na meta até ${dm(somarDiasIso(ativo.inicio, regras.aprendizadoDias + pz.diasPausados))}.`, { numeros, decideEm: somarDiasIso(ativo.inicio, regras.aprendizadoDias + pz.diasPausados) });
+  if (!par) return sit("aguardando", "atencao", "Atualizar o andamento da campanha da loja", 'Informe gasto e vendas (R$) da campanha da loja desde o início em "Atualizar andamento" (CSV do Shopee Ads ou à mão).', { numeros });
+  const diasPar = Math.max(1, diasEntre(ativo.inicio, par.ate) + 1);
+  if (diasPar >= 7 && gasto / diasPar < num(regras.lojaGastoMinDia || 1)) {
+    const novaMeta = meta ? Math.max(equilibrio || 0, Math.round(meta * 0.9 * 10) / 10) : null;
+    return sit("loja-nao-gasta", "info", novaMeta ? `Quase não gasta — baixe a meta pra ${um(novaMeta)}` : "Quase não gasta", `Gastou ${moeda(gasto)} em ${diasPar} dias: a meta está alta demais e a Shopee quase não entrega. Baixe ~10% (nunca abaixo do equilíbrio da loja ${um(equilibrio)}).`, { numeros, novaMeta });
+  }
+  if (!equilibrio) return sit("manter", "ok", "Acompanhando", `ROAS ${um(roas)} — sem vendas importadas pra calcular o equilíbrio da loja.`, { numeros });
+  if (roas == null || roas < equilibrio) {
+    if (diasPar >= 14) {
+      const novaMeta = meta ? Math.ceil(Math.max(meta * 1.2, equilibrio * 1.3) * 10) / 10 : Math.ceil(equilibrio * 1.3 * 10) / 10;
+      return sit("loja-abaixo", "atencao", `Abaixo do equilíbrio — suba a meta pra ${um(novaMeta)} ou pause`, `ROAS ${um(roas)} em ${diasPar} dias, abaixo do equilíbrio da loja (${um(equilibrio)}): a campanha está tirando lucro.`, { numeros, novaMeta });
+    }
+    return sit("manter", "info", "Abaixo do equilíbrio — acompanhe", `ROAS ${um(roas)} em ${diasPar} dias, abaixo do equilíbrio da loja (${um(equilibrio)}). Com 2 semanas abaixo, o app sugere subir a meta ou pausar.`, { numeros });
+  }
+  return sit("loja-vale", "ok", "Vale a pena", `ROAS ${um(roas)} · equilíbrio da loja ${um(equilibrio)} · ${textoRetorno(retorno)}.`, { numeros });
 }

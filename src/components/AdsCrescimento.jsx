@@ -16,7 +16,8 @@ import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import { EncerrarAdsDialog, NAO_RECOMENDA, PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
-import { ajustarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
+import { ajustarPeriodoAds, despausarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, reviseiSemVendaAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
+import { supabase } from "../lib/supabaseClient.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import { AgoraRampa } from "./RampaAgora.jsx";
 
@@ -47,7 +48,8 @@ const SECOES_ADS = [
   ["acomp", "Acompanhando"],
   ["sem", "Sem Ads"],
 ];
-function secaoAds(av) {
+function secaoAds(av, l) {
+  if (l?.semAds && !av.ativo) return "sem"; // "não usar Ads por enquanto"
   if (["resolver", "atencao"].includes(av.estado) || av.avisoMeta) return "fazer";
   if (av.estado === "oportunidade") return "oport";
   return av.ativo ? "acomp" : "sem";
@@ -59,6 +61,13 @@ function acaoDoAds(av) {
   const n = av.numeros || {};
   const DEPOIS_AJ = "Depois de mudar na Shopee: registre aqui — o app espera uns dias pra decidir de novo.";
   if (av.ativo) {
+    if (av.chave === "sem-venda-dia3") return { k: "abrir", botao: "Ver o que fazer", depois: "Pause na Shopee e arrume o anúncio; depois marque aqui." };
+    if (av.chave === "pausado" || av.chave === "despausar") return { k: "despausar", botao: "Despausei", depois: "Depois de religar na Shopee: marque aqui — a conferência recomeça 3 dias depois." };
+    if (av.chave === "conferir-dia3") return { k: "andamento", botao: "Atualizar andamento", depois: "Envie o CSV do Shopee Ads (ou o número à mão) pra saber se já vendeu." };
+    if (av.chave === "virar-meta" && av.novaMeta) return { k: "ajuste", botao: `Já troquei — meta ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "fim do lance automático: virou meta de ROAS" }, depois: "Na Shopee: editar a campanha → GMV Max – Meta de ROAS. Depois registre aqui." };
+    if (av.chave === "loja-abaixo" && av.novaMeta) return { k: "ajuste", botao: `Subi a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "campanha da loja abaixo do equilíbrio" }, depois: DEPOIS_AJ };
+    if (av.chave === "loja-nao-gasta" && av.novaMeta) return { k: "ajuste", botao: `Baixei a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "campanha da loja quase não gasta" }, depois: DEPOIS_AJ };
+    if (av.chave === "aguardando" && av.loja) return { k: "andamento", botao: "Atualizar andamento", depois: null };
     if ((av.chave === "aumentar" || av.chave === "reduzir") && av.novoOrcamento)
       return {
         k: "ajuste",
@@ -72,6 +81,7 @@ function acaoDoAds(av) {
     if (PAUSAR.has(av.chave)) return { k: "encerrar", botao: "Pausei — encerrar período", depois: "Depois de pausar na Shopee: encerre o período aqui (o histórico fica guardado)." };
     return { k: "abrir", botao: null };
   }
+  if (av.chave === "loja-desligada") return { k: "novo", botao: "+ Ligar campanha da loja", depois: "Depois de ligar na Shopee (GMV Max da Loja, meta alta, orçamento ilimitado): registre aqui." };
   if (["pode", "ligar-sazonal"].includes(av.chave)) return { k: "novo", botao: "+ Novo período", depois: "Depois de ligar na Shopee: registre o período aqui com o orçamento e a meta que usou." };
   if (av.chave === "arrumar") return { k: "abrir", botao: null };
   return { k: "abrir", botao: null };
@@ -90,7 +100,7 @@ function Situacao({ av, compacto }) {
   return <Estado tipo={av.estado}>{av.titulo}</Estado>;
 }
 
-export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje, canais, onToast, podeRegistrar, onRegistrar }) {
+export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje, canais, onToast, podeRegistrar, onRegistrar, abrirChave = null }) {
   const { lojaId, lojas, atualizar } = useLoja();
   const loja = lojas?.find((l) => l.id === lojaId) || null;
   const canaisComLinha = useMemo(() => canais.filter((c) => linhasAds.linhas.some((l) => l.canal.id === c.id)), [canais, linhasAds]);
@@ -98,7 +108,13 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   const canal = canaisComLinha.find((c) => c.id === canalId) || canaisComLinha.find((c) => c.tipo === "shopee") || canaisComLinha[0] || null;
   const [soLigados, setSoLigados] = useState(false);
   const [filtro, setFiltro] = useState("todos");
-  const [aberta, setAberta] = useState(null);
+  const [aberta, setAberta] = useState(abrirChave);
+  // Pedido do Início (ohra:ir-para → Crescimento): abre o detalhe da linha.
+  const [pedidoVisto, setPedidoVisto] = useState(abrirChave);
+  if (abrirChave && abrirChave !== pedidoVisto) {
+    setPedidoVisto(abrirChave);
+    setAberta(abrirChave);
+  }
   const [periodoDlg, setPeriodoDlg] = useState(null); // { linha }
   const [ajusteDlg, setAjusteDlg] = useState(null); // { linha, orcamento, meta }
   const [encerrarDlg, setEncerrarDlg] = useState(null); // { linha }
@@ -110,7 +126,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   const linhas = useMemo(
     () =>
       linhasAds.linhas
-        .filter((l) => l.canal.id === canal?.id && (!soLigados || l.av.ativo) && (filtro === "todos" || secaoAds(l.av) === filtro))
+        .filter((l) => l.canal.id === canal?.id && (!soLigados || l.av.ativo) && (filtro === "todos" || secaoAds(l.av, l) === filtro))
         .sort((a, b) => (b.av.ativo ? 1 : 0) - (a.av.ativo ? 1 : 0) || ORDEM[a.av.estado] - ORDEM[b.av.estado] || a.item.nome.localeCompare(b.item.nome)),
     [linhasAds, canal, soLigados, filtro]
   );
@@ -118,7 +134,9 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   const doCanal = linhasAds.linhas.filter((l) => l.canal.id === canal?.id);
   const fazerLinha = (l) => {
     const a = acaoDoAds(l.av);
-    if (a.k === "ajuste") setAjusteDlg({ linha: l, ...a.ajuste });
+    if (a.k === "despausar") rodar(() => despausarPeriodoAds(l.av.ativo, hoje), "Despausado — a conferência recomeça em 3 dias");
+    else if (a.k === "andamento") setAndamentoDlg(true);
+    else if (a.k === "ajuste") setAjusteDlg({ linha: l, ...a.ajuste });
     else if (a.k === "encerrar") setEncerrarDlg({ linha: l });
     else if (a.k === "novo") setPeriodoDlg({ linha: l });
     else setAberta(l.chave);
@@ -168,10 +186,11 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
           meta: f.meta === "" ? null : num(f.meta),
           nota: f.nota || null,
           teste: f.comoTeste,
+          auto: !f.comoTeste && f.modo === "auto",
           rampa: l.rampa?.r || null,
           regras,
         }),
-      f.comoTeste ? `Teste de lançamento iniciado: ${l.item.nome}` : `Período de Ads iniciado: ${l.item.nome}`
+      f.comoTeste ? `Teste de lançamento iniciado: ${l.item.nome}` : f.modo === "auto" && !f.comoTeste ? `Lance automático iniciado: ${l.item.nome} — o app confere no dia 3` : `Período de Ads iniciado: ${l.item.nome}`
     );
     if (ok) setPeriodoDlg(null);
   }
@@ -226,6 +245,24 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
     return true;
   }
 
+  // "Não usar Ads por enquanto" (lembretes, sem SQL): tira de Oportunidade/Início.
+  async function semAdsPorEscolha(l, marcar) {
+    if (!supabase) return;
+    const chave = `ads-nao|${l.chave}`;
+    setSalvando(true);
+    let r;
+    if (marcar) r = await supabase.from("lembretes").upsert({ loja_id: lojaId || null, chave, adiado_ate: hoje, tipo: "sem-ads" }, { onConflict: "loja_id,chave" });
+    else {
+      let q = supabase.from("lembretes").delete().eq("chave", chave);
+      if (lojaId) q = q.eq("loja_id", lojaId);
+      r = await q;
+    }
+    setSalvando(false);
+    if (r.error) return onToast?.(/lembretes|does not exist/.test(r.error.message) ? "Falta rodar o supabase/schema_v40.sql no Supabase" : `Não foi possível salvar: ${r.error.message}`);
+    window.dispatchEvent(new Event("ohra:lembretes"));
+    onToast?.(marcar ? `${l.item.nome}: sem Ads por enquanto — saiu das sugestões` : `${l.item.nome}: volta a aparecer nas sugestões`);
+  }
+
   async function salvarRegras(f) {
     if (!loja) return;
     const novo = { ...(loja.config_escada?.ads || {}), ...(f.aumento != null ? { aumento: num(f.aumento) / 100 } : {}), ...(f.faixasTeto ? { faixasTeto: f.faixasTeto } : {}) };
@@ -273,8 +310,10 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                 <br />• <b>ROAS de equilíbrio</b> = preço de agora ÷ lucro por venda (antes do Ads): abaixo dele, o Ads tira lucro. <b>Meta sugerida</b> = equilíbrio × 1,3.
                 <br />• <b>Retorno</b> = ROAS ÷ equilíbrio = quanto de lucro cada R$ 1 investido trouxe.
                 <br />• <b>7 dias de aprendizado</b> no começo do período; depois de cada ajuste, nova decisão em no mínimo <b>{regrasA.decisaoDias || 4} dias</b>.
-                <br />• Com a Shopee gastando ≥ 80% do orçamento: retorno 1–1,2× → manter; 1,2–2× → <b>+{Math.round(regrasA.aumento * 100)}%</b>; 2–3× → <b>+50%</b>; ≥ 3× → <b>dobrar</b> (sempre dentro do teto da loja e perguntando se a produção dá conta). Vendas via Ads caíram mais de 30% em 3 dias com retorno bom → também sugere aumentar.
+                <br />• Com a Shopee gastando ≥ 80% do orçamento: retorno 1–1,2× → manter; 1,2–2× → <b>+{Math.round(regrasA.aumento * 100)}%</b>; ≥ 2× → <b>+{Math.round((regrasA.aumentoMax || 0.3) * 100)}%</b> (máximo — sem estouro de uma vez) (sempre dentro do teto da loja e perguntando se a produção dá conta). Vendas via Ads caíram mais de 30% em 3 dias com retorno bom → também sugere aumentar.
                 <br />• Abaixo do equilíbrio: muitos cliques e poucas vendas → arrumar o anúncio; já no mínimo de {BRL(regrasA.minDiario)}/dia → subir a meta (mais seletivo) ou pausar; senão → reduzir o orçamento. A Shopee não gasta o orçamento → baixar a meta (mais alcance).
+                <br />• <b>Produto novo — lance automático</b> (método do Luan): sem meta, orçamento baixo. <b>Dia 3 sem venda</b> (vale pra todo período) → pare e arrume o anúncio: “Pausei pra revisar” mantém o período e as métricas. <b>Dia 7</b> → troque pra meta de ROAS = o ROAS que bateu (nunca abaixo do equilíbrio).
+                <br />• <b>Loja inteira · GMV Max da Loja</b> (linha fixa no topo): produtos sem Ads próprio, meta alta e orçamento ilimitado — o app compara o ROAS com o equilíbrio da loja.
                 <br />• <b>Anúncio com vários itens</b> = uma linha só: equilíbrio pelo mix de vendas das opções (sem vendas, pela opção mais exigente).
                 <br />• Sem Ads: o app diz se vale impulsionar, se o anúncio precisa ser arrumado antes ou se o Ads não se paga neste preço.
                 <br />• <b>Produto “só na época de…”</b>: Aquecer (45 dias antes da data-limite, R$ 10/dia) → Ajustar (21 dias antes) → Alavancar (da data-limite em diante: a cada 3 dias pelo andamento, aumento até 30%, só com lucro) → Corte (7 dias antes da data: pausar). Na temporada o Ads tem que deixar pelo menos metade do lucro de cada venda (mínimo = 2× o equilíbrio).
@@ -293,7 +332,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
           )}
           <div className="filtros-lista" role="group" aria-label="Filtrar a lista">
             {[["todos", "Todos"], ...SECOES_ADS.map(([k, t]) => [k, k === "fazer" ? "Pra fazer" : t])]
-              .map(([k, rot]) => [k, rot, k === "todos" ? doCanal.length : doCanal.filter((l) => secaoAds(l.av) === k).length])
+              .map(([k, rot]) => [k, rot, k === "todos" ? doCanal.length : doCanal.filter((l) => secaoAds(l.av, l) === k).length])
               .filter(([k, , n]) => k === "todos" || n > 0)
               .map(([k, rot, n]) => (
                 <button key={k} type="button" className={`filtro-btn${filtro === k ? " ativo" : ""}${k === "oport" ? " filtro-subir" : ""}`} onClick={() => setFiltro(k)}>
@@ -305,7 +344,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
             <input type="checkbox" checked={soLigados} onChange={(e) => setSoLigados(e.target.checked)} /> só com Ads ligado
           </label>
           <button type="button" className="btn btn-mini" onClick={() => setVerRegras((v) => !v)}>Regras do Ads</button>
-          {linhasAds.linhas.length > 0 && (
+          {(linhasAds.linhas.length > 0 || linhasAds.lojaLinha?.av.ativo) && (
             <button type="button" className="btn btn-mini" onClick={() => setAndamentoDlg(true)} title="Ver como está o Ads no meio do período, sem encerrar nada">
               Atualizar andamento
             </button>
@@ -315,7 +354,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
           )}
         </div>
         {verRegras && <RegrasAds regrasA={regrasA} salvando={salvando} onSalvar={salvarRegras} />}
-        {!linhas.length ? (
+        {!linhas.length && !(linhasAds.lojaLinha && canal?.id === linhasAds.lojaLinha.canal.id) ? (
           <div className="empty">{soLigados ? "Nenhum produto com Ads ligado neste canal." : "Nenhum produto com preço salvo neste canal."}</div>
         ) : (
           <div className="table-wrap">
@@ -332,8 +371,48 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                 </tr>
               </thead>
               <tbody>
+                {linhasAds.lojaLinha && canal?.id === linhasAds.lojaLinha.canal.id && (() => {
+                  const l = linhasAds.lojaLinha;
+                  const av = l.av;
+                  const ac = acaoDoAds(av);
+                  const vals = av.ativo ? valoresAtuais(av.ativo) : null;
+                  const etiqueta = !av.ativo ? <span className="chip-cel">Desligada · ligar?</span> : ["atencao", "resolver"].includes(av.estado) ? <Estado tipo={av.estado}>{av.titulo}</Estado> : <span className="chip-cel decisao">Acompanhando</span>;
+                  return (
+                    <Fragment key={l.chave}>
+                      <tr className="linha-clicavel linha-loja-ads" onClick={() => setAberta(aberta === l.chave ? null : l.chave)}>
+                        <td>
+                          <b>{l.item.nome}</b> <CanalTag canal={l.canal} />
+                          <div className="muted-cel">produtos sem Ads próprio (reserva) · equilíbrio da loja {um(l.equilibrio)}</div>
+                        </td>
+                        <td className="o-que-fazer">
+                          <div className="oqf">
+                            {etiqueta}
+                            {av.ativo && !["atencao", "resolver"].includes(av.estado) && <span className="muted-cel">{av.titulo}</span>}
+                            {ac.botao && (
+                              <button type="button" className={`btn btn-mini ${["resolver", "atencao"].includes(av.estado) ? "primary" : ""}`} onClick={(ev) => (ev.stopPropagation(), fazerLinha(l))}>
+                                {ac.botao}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="num">{um(av.numeros?.roas)}{av.numeros?.retorno != null && <div className="sub-num">retorno {um(av.numeros.retorno)}×</div>}</td>
+                        <td className="num">{um(l.equilibrio)}</td>
+                        <td className="num">{vals?.meta ? um(vals.meta) : "—"}</td>
+                        <td className="num">{av.ativo ? (vals?.orcamento ? BRL(vals.orcamento) : "ilimitado") : "—"}</td>
+                        <td>{(() => { const prox = proximaAds(av, hoje); return prox ? <span className={prox.atrasada ? "prox-atrasada" : "muted-cel"}>{prox.texto}</span> : <span className="muted-cel">—</span>; })()}</td>
+                      </tr>
+                      {aberta === l.chave && (
+                        <tr className="linha-detalhe">
+                          <td colSpan={7}>
+                            <DetalheLoja l={l} hoje={hoje} onFazer={() => fazerLinha(l)} onNovo={() => setPeriodoDlg({ linha: l })} onAjuste={(sug) => setAjusteDlg({ linha: l, ...sug })} onEncerrar={() => setEncerrarDlg({ linha: l })} onPausar={() => rodar(() => pausarPeriodoAds(l.av.ativo, hoje), "Campanha da loja marcada como pausada")} onExcluir={(periodo) => setExcluirDlg({ periodo })} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })()}
                 {SECOES_ADS.map(([sec, tituloSec]) => {
-                  const doSec = linhas.filter((l) => secaoAds(l.av) === sec);
+                  const doSec = linhas.filter((l) => secaoAds(l.av, l) === sec);
                   if (!doSec.length) return null;
                   return (
                     <Fragment key={sec}>
@@ -366,11 +445,13 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                             {l.tipo === "grupo" && ` · ${l.ops.length} opções${l.rampaGrupo ? ` · rampa ${l.rampaGrupo.g.pctAtual}%` : ""}`}
                           </div>
                           {av.avisoMeta && <span className="chip-cel atencao">meta alta pra começar</span>}
+                          {l.semAds && <span className="chip-cel">sem Ads por escolha{l.semAds.desde ? ` · desde ${dm(l.semAds.desde)}` : ""}</span>}
+                          {vals?.automatico && <span className="chip-cel decisao">lance automático</span>}
                         </td>
                         <td className="o-que-fazer">
                           <div className="oqf">
-                            <Situacao av={av} compacto />
-                            {ac.botao && (
+                            {l.semAds ? <span className="muted-cel">o app sugeriria: {av.titulo}</span> : <Situacao av={av} compacto />}
+                            {ac.botao && !l.semAds && (
                               <button
                                 type="button"
                                 className={`btn btn-mini ${av.estado === "oportunidade" ? "btn-verde" : ["resolver", "atencao"].includes(av.estado) || av.avisoMeta ? "primary" : ""}`}
@@ -405,6 +486,11 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                               onAjuste={(sug) => setAjusteDlg({ linha: l, ...sug })}
                               onEncerrar={() => setEncerrarDlg({ linha: l })}
                               onExcluir={(periodo) => setExcluirDlg({ periodo, rampa: l.rampa?.r || null })}
+                              onPausar={() => rodar(() => pausarPeriodoAds(l.av.ativo, hoje), "Pausado pra revisar — o período continua; marque “Despausei” quando religar")}
+                              onDespausar={() => rodar(() => despausarPeriodoAds(l.av.ativo, hoje), "Despausado — a conferência recomeça em 3 dias")}
+                              onRevisei={() => rodar(() => reviseiSemVendaAds(l.av.ativo, hoje), "Ok — o app espera até o 7º dia")}
+                              onSemAds={(marcar) => semAdsPorEscolha(l, marcar)}
+                              onAndamento={() => setAndamentoDlg(true)}
                             />
                           </td>
                         </tr>
@@ -421,10 +507,10 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
         )}
       </div>
 
-      {periodoDlg && <PeriodoAdsDialog nome={periodoDlg.linha.item.nome} av={periodoDlg.linha.av} teste={testeDe(periodoDlg.linha)} hoje={hoje} regrasA={regrasA} salvando={salvando} onCancelar={() => setPeriodoDlg(null)} onSalvar={salvarPeriodo} />}
+      {periodoDlg && <PeriodoAdsDialog nome={periodoDlg.linha.item.nome} loja={periodoDlg.linha.tipo === "loja"} autoPadrao={periodoDlg.linha.tipo !== "loja" && !(periodoDlg.linha.periodos || []).some((p) => p.tipo !== "teste")} av={periodoDlg.linha.av} teste={testeDe(periodoDlg.linha)} hoje={hoje} regrasA={regrasA} salvando={salvando} onCancelar={() => setPeriodoDlg(null)} onSalvar={salvarPeriodo} />}
       {andamentoDlg && (
         <AndamentoDialog
-          linhas={linhasAds.linhas.filter((l) => l.av.ativo)}
+          linhas={[...(linhasAds.lojaLinha?.av.ativo ? [linhasAds.lojaLinha] : []), ...linhasAds.linhas.filter((l) => l.av.ativo)]}
           todas={linhasAds.linhas}
           onEstender={(l, p, fim) => rodar(() => estenderPeriodoAds(p, fim), `${l.item.nome}: fim do período estendido até ${dm(fim)}`)}
           onCriar={criarPeloCsv}
@@ -451,7 +537,20 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   );
 }
 
-function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, onFazer }) {
+// Passos do "3 dias sem venda" (método do Luan): o que arrumar vem do funil
+// da Rampa (porOnde) ou dos números do Ads — impressões/cliques.
+function passosSemVenda(l) {
+  const sv = l.av.semVenda || {};
+  const anuncio = (l.rampa || l.rampaGrupo)?.est?.anuncio || null;
+  const passos = [{ t: "Pause o Ads na Shopee", d: "Marketing → Shopee Ads → este produto → Pausar." }];
+  if (anuncio?.porOnde) passos.push({ t: `Arrume o anúncio: ${anuncio.porOnde}`, d: anuncio.titulo || "pelo funil da Rampa" });
+  else if (sv.cliques >= 15) passos.push({ t: "Clicam mas não compram: preço, descrição, medidas e fotos de uso", d: `${sv.cliques} cliques pagos sem venda — compare o preço com o concorrente (ou um substituto).` });
+  else passos.push({ t: "Pouca gente clica: troque a foto de capa e confira o título", d: "Fundo limpo, produto grande, uso real; a palavra que o cliente busca no começo do título." });
+  passos.push({ t: "Volte aqui e escolha", d: "Pausei pra revisar (o período continua com as métricas) · Revisei — dar até o 7º dia · ou encerrar." });
+  return passos;
+}
+
+function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, onFazer, onPausar, onDespausar, onRevisei, onSemAds, onAndamento }) {
   const av = l.av;
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
@@ -476,6 +575,31 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           />
         );
       })()}
+      {av.chave === "sem-venda-dia3" && (
+        <div className="ads-dia3">
+          <ol className="passos-ads">
+            {passosSemVenda(l).map((p, i) => (
+              <li key={i}>
+                <span className="passo-n">{i + 1}</span>
+                <span>
+                  <b>{p.t}</b>
+                  <small>{p.d}</small>
+                </span>
+              </li>
+            ))}
+          </ol>
+          <div className="acoes-ads">
+            <button type="button" className="btn btn-mini primary" onClick={onPausar}>Pausei pra revisar</button>
+            {av.semVenda?.podeEsperar && <button type="button" className="btn btn-mini" onClick={onRevisei}>Revisei o anúncio — dar até o 7º dia</button>}
+            <button type="button" className="btn btn-mini" onClick={onEncerrar}>Pausei — encerrar período</button>
+            {l.rampa && (
+              <button type="button" className="link-btn" onClick={() => irParaAba("crescimento", { sub: "rampa", rampaId: l.rampa.r.id })}>
+                abrir o checklist do anúncio
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {av.avisoMeta && (
         <div className="alerta alerta-warn">
           <b>Meta alta pra começar — comece com {um(av.avisoMeta.sugerida)}</b>
@@ -505,7 +629,8 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
               </b>
               <span className="ads-chips">
                 <span className="chip-ads">{vals.orcamento ? `${BRL(vals.orcamento)}/dia` : "sem orçamento"}</span>
-                <span className="chip-ads">meta {um(vals.meta)}</span>
+                <span className="chip-ads">{vals.automatico ? "lance automático" : `meta ${um(vals.meta)}`}</span>
+                {av.pausado && <span className="chip-ads">pausado desde {dm(av.pausado.desde)}</span>}
                 <span className="chip-ads">equilíbrio {um(av.empate)}</span>
                 {vals.meta && av.empate ? <span className="chip-ads">meta sugerida {um(Math.ceil(av.empate * 1.3 * 10 - 1e-9) / 10)}</span> : null}
               </span>
@@ -561,14 +686,29 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
             <button type="button" className="btn btn-mini" onClick={() => onAjuste({ orcamento: vals.orcamento, meta: vals.meta })}>
               Registrar ajuste
             </button>
+            {av.pausado ? (
+              <button type="button" className="btn btn-mini" onClick={onDespausar}>Despausei</button>
+            ) : (
+              av.ativo.tipo !== "teste" && <button type="button" className="btn btn-mini" onClick={onPausar} title="Pausou na Shopee pra arrumar o anúncio, sem encerrar: as métricas continuam no mesmo período">Pausei pra revisar</button>
+            )}
+            <button type="button" className="btn btn-mini" onClick={onAndamento}>Atualizar andamento</button>
             <button type="button" className="btn btn-mini" onClick={onEncerrar}>
               Encerrar período (pausei)
             </button>
           </>
         ) : (
-          <button type="button" className={`btn btn-mini${NAO_RECOMENDA.has(av.chave) ? "" : " primary"}`} onClick={onNovo}>
-            + Novo período de Ads
-          </button>
+          <>
+            <button type="button" className={`btn btn-mini${NAO_RECOMENDA.has(av.chave) || l.semAds ? "" : " primary"}`} onClick={onNovo}>
+              + Novo período de Ads
+            </button>
+            {l.semAds ? (
+              <button type="button" className="btn btn-mini" onClick={() => onSemAds(false)}>Voltar a sugerir</button>
+            ) : (
+              <button type="button" className="btn btn-mini" onClick={() => onSemAds(true)} title="Some de Oportunidade, do Início e das marcas; fica em Sem Ads até você ligar ou voltar a sugerir">
+                Não usar Ads por enquanto
+              </button>
+            )}
+          </>
         )}
       </div>
       {historico.length > 0 && (
@@ -605,6 +745,71 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
             </tbody>
           </table>
           <p className="hint" style={{ margin: "4px 0 0" }}>Os números vêm das semanas registradas: o período que começa no meio da semana é aproximado.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// GMV Max da Loja (v57): campanha da loja inteira, pros produtos sem Ads próprio.
+function DetalheLoja({ l, hoje, onFazer, onNovo, onAjuste, onEncerrar, onPausar, onExcluir }) {
+  const av = l.av;
+  const n = av.numeros || {};
+  const vals = av.ativo ? valoresAtuais(av.ativo) : null;
+  const ac = acaoDoAds(av);
+  const tipo = av.estado === "ok" ? "info" : av.estado;
+  const ROT = { resolver: "Resolver agora", atencao: "Atenção", oportunidade: "Oportunidade", decisao: "Decisão sua em andamento", info: "Acompanhando" };
+  return (
+    <div className="detalhe-cel ads-det">
+      <AgoraRampa acao={{ tipo, rotulo: ROT[tipo], titulo: av.titulo, porque: av.texto, acao: ac.botao ? ac.k : null, botao: ac.botao, depois: ac.depois }} proxima={proximaAds(av, hoje)} onAcao={onFazer} />
+      {av.ativo && (
+        <div className="ads-cartao">
+          <div className="ads-periodo-cab">
+            <span className="ads-rotulo">Campanha da loja</span>
+            <b>{dm(av.ativo.inicio)} → {av.ativo.fim ? dm(av.ativo.fim) : "sem data final"}</b>
+            <span className="ads-chips">
+              <span className="chip-ads">meta {um(vals.meta)}</span>
+              <span className="chip-ads">{vals.orcamento ? `${BRL(vals.orcamento)}/dia` : "orçamento ilimitado"}</span>
+              <span className="chip-ads">equilíbrio da loja {um(l.equilibrio)}</span>
+            </span>
+          </div>
+          <div className="ads-metricas">
+            <div><span>Gasto</span><b>{BRL(n.gasto || 0)}</b></div>
+            <div><span>Vendas da campanha</span><b>{BRL(n.receita || 0)}</b></div>
+            <div><span>ROAS</span><b className={`ads-roas${n.roas == null || !l.equilibrio ? "" : n.roas >= l.equilibrio ? " bom" : " ruim"}`}>{um(n.roas)}</b></div>
+            <div><span>Retorno</span><b>{n.retorno != null ? `${um(n.retorno)}×` : "—"}</b></div>
+            <div><span>Andamento até</span><b>{n.ate ? dm(n.ate) : "—"}</b></div>
+          </div>
+        </div>
+      )}
+      <p className="hint" style={{ margin: "6px 0" }}>
+        Equilíbrio da loja = faturamento ÷ lucro (antes do Ads) — {l.origemEq}. Cobre os produtos <b>sem Ads próprio</b>; os campeões seguem nas linhas deles. Entra no teto de Ads e no Vendas do mês.
+      </p>
+      <div className="acoes-ads">
+        {av.ativo ? (
+          <>
+            <button type="button" className="btn btn-mini" onClick={() => onAjuste({ orcamento: vals.orcamento, meta: vals.meta })}>Registrar ajuste</button>
+            {!av.pausado && <button type="button" className="btn btn-mini" onClick={onPausar}>Pausei</button>}
+            <button type="button" className="btn btn-mini" onClick={onEncerrar}>Encerrar campanha</button>
+          </>
+        ) : (
+          <button type="button" className="btn btn-mini primary" onClick={onNovo}>+ Ligar campanha da loja</button>
+        )}
+      </div>
+      {l.periodos.length > 0 && (
+        <div className="historico-ads">
+          <div className="ads-rotulo">Histórico</div>
+          <table className="tabela-ads">
+            <tbody>
+              {l.periodos.map((p) => (
+                <tr key={p.id}>
+                  <td><b>{dm(p.inicio)}–{p.fim ? dm(p.fim) : "agora"}</b>{periodoLigado(p, hoje) && <span className="chip-ads ligado">ligado</span>}</td>
+                  <td className="muted-cel">{p.parcial?.ate ? `${BRL(p.parcial.gasto || 0)} gastos · ${BRL(p.parcial.receita || 0)} em vendas` : "sem andamento"}</td>
+                  <td className="acao"><button type="button" className="btn-icone" title="Excluir" onClick={() => onExcluir(p)}>×</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -699,7 +904,8 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
     Object.fromEntries(
       linhas.map((l) => {
         const a = andamentoValido(l.av.ativo, l.semanas);
-        return [l.chave, a ? { gasto: virg(a.gasto), cliques: String(a.cliques), vendas: String(a.vendas) } : { gasto: "", cliques: "", vendas: "" }];
+        const rec = l.tipo === "loja" && l.av.ativo?.parcial?.receita != null ? virg(l.av.ativo.parcial.receita) : "";
+        return [l.chave, a ? { gasto: virg(a.gasto), cliques: String(a.cliques), vendas: String(a.vendas), receita: rec } : { gasto: "", cliques: "", vendas: "", receita: "" }];
       })
     )
   );
@@ -786,8 +992,8 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
     const lista = [];
     for (const l of linhas) {
       const v = vals[l.chave];
-      if (!v || [v.gasto, v.cliques, v.vendas].every((x) => x === "")) continue;
-      lista.push({ periodo: l.av.ativo, valores: { ate, gasto: num(v.gasto), cliques: Math.round(num(v.cliques)), vendas: Math.round(num(v.vendas)) } });
+      if (!v || [v.gasto, v.cliques, v.vendas, v.receita].every((x) => x === "" || x == null)) continue;
+      lista.push({ periodo: l.av.ativo, valores: { ate, gasto: num(v.gasto), cliques: Math.round(num(v.cliques)), vendas: Math.round(num(v.vendas)), ...(l.tipo === "loja" ? { receita: num(v.receita) } : {}) } });
     }
     onSalvar(lista);
   }
@@ -849,6 +1055,7 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
               <th className="num">Gasto (R$)</th>
               <th className="num">Cliques</th>
               <th className="num">Vendas via Ads</th>
+              {linhas.some((l) => l.tipo === "loja") && <th className="num">Vendas (R$)</th>}
             </tr>
           </thead>
           <tbody>
@@ -868,6 +1075,11 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
                   <td className="num"><input type="text" inputMode="decimal" className={cls} style={{ width: 90 }} value={v.gasto ?? ""} onChange={set(l.chave, "gasto")} /></td>
                   <td className="num"><input type="text" inputMode="numeric" className={cls} style={{ width: 70 }} value={v.cliques ?? ""} onChange={set(l.chave, "cliques")} /></td>
                   <td className="num"><input type="text" inputMode="numeric" className={cls} style={{ width: 70 }} value={v.vendas ?? ""} onChange={set(l.chave, "vendas")} /></td>
+                  {linhas.some((x) => x.tipo === "loja") && (
+                    <td className="num">
+                      {l.tipo === "loja" ? <input type="text" inputMode="decimal" style={{ width: 90 }} value={v.receita ?? ""} onChange={set(l.chave, "receita")} placeholder="GMV" title="Vendas da campanha da loja em R$ (GMV) desde o início" /> : null}
+                    </td>
+                  )}
                 </tr>
               );
             })}

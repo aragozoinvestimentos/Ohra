@@ -21,12 +21,15 @@ export const NAO_RECOMENDA = new Set(["nao-viavel", "arrumar", "aguardar", "sem-
 // `teste` (opcional, só produto em rampa com o teste ainda não feito):
 // { padrao: bool, dias, orcamentoDia, meta (vendas) } — "contar como teste de
 // lançamento" = orçamento fechado com data de fim, regras do teste na Rampa.
-export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, salvando, onCancelar, onSalvar }) {
+// `loja` = campanha GMV Max da Loja (meta alta, orçamento ilimitado);
+// `autoPadrao` = produto sem período anterior → começa no lance automático.
+export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, loja = false, autoPadrao = false, salvando, onCancelar, onSalvar }) {
   const comoTeste0 = !!teste?.padrao;
   const [f, setF] = useState(() => ({
+    modo: loja ? "meta" : autoPadrao && !comoTeste0 ? "auto" : "meta",
     inicio: hoje,
-    orcamento: virg(comoTeste0 ? teste.orcamentoDia : regrasA.minDiario),
-    meta: av?.empate ? virg(metaSugerida(av.minimo ?? av.empate, regrasA)) : "",
+    orcamento: loja ? "" : virg(comoTeste0 ? teste.orcamentoDia : regrasA.minDiario),
+    meta: loja ? virg(av?.metaSugerida ?? "") : av?.empate ? virg(metaSugerida(av.minimo ?? av.empate, regrasA)) : "",
     fim: comoTeste0 ? somarDiasIso(hoje, teste.dias - 1) : "",
     nota: "",
     comoTeste: comoTeste0,
@@ -39,14 +42,15 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, salvan
       fim: v ? somarDiasIso(p.inicio || hoje, teste.dias - 1) : "",
       orcamento: v ? virg(teste.orcamentoDia) : p.orcamento,
     }));
-  const metaBaixa = av?.empate && f.meta !== "" && num(f.meta) < av.empate;
+  const auto = !loja && !f.comoTeste && f.modo === "auto";
+  const metaBaixa = !auto && av?.empate && f.meta !== "" && num(f.meta) < av.empate;
   // Meta alta pra começar (> 2× o equilíbrio): a Shopee quase não entrega.
   const refMeta = av?.minimo ?? av?.empate;
-  const metaAlta = !f.comoTeste && refMeta && f.meta !== "" && metaAltaDemais(num(f.meta), refMeta, regrasA);
+  const metaAlta = !loja && !auto && !f.comoTeste && refMeta && f.meta !== "" && metaAltaDemais(num(f.meta), refMeta, regrasA);
   const dias = f.fim && f.inicio ? Math.round((new Date(`${f.fim}T12:00:00`) - new Date(`${f.inicio}T12:00:00`)) / 86400000) + 1 : null;
   return (
     <EditarDialog
-      titulo={`${f.comoTeste ? "Teste de lançamento" : "Novo período de Ads"} — ${nome}`}
+      titulo={loja ? "Ligar a campanha da loja (GMV Max da Loja)" : `${f.comoTeste ? "Teste de lançamento" : "Novo período de Ads"} — ${nome}`}
       salvando={salvando}
       onCancelar={onCancelar}
       onSalvar={() => (f.inicio && (!f.comoTeste || f.fim) ? onSalvar(f) : null)}
@@ -59,6 +63,20 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, salvan
           {av.texto} Dá pra iniciar mesmo assim, a decisão é sua.
         </div>
       )}
+      {!loja && !f.comoTeste && (
+        <div className="opcoes-ads-tipo" role="radiogroup" aria-label="Tipo do período">
+          <label className={f.modo === "auto" ? "sel" : ""}>
+            <input type="radio" name="modo-ads" checked={f.modo === "auto"} onChange={() => setF((p) => ({ ...p, modo: "auto" }))} />
+            <b>Produto novo — lance automático</b>
+            <span>Sem meta, orçamento baixo. O app confere no dia 3 se vendeu e diz a meta no dia 7.</span>
+          </label>
+          <label className={f.modo === "meta" ? "sel" : ""}>
+            <input type="radio" name="modo-ads" checked={f.modo === "meta"} onChange={() => setF((p) => ({ ...p, modo: "meta" }))} />
+            <b>Meta de ROAS</b>
+            <span>Pra produto que já vende (campeão). Meta sugerida = equilíbrio × 1,3.</span>
+          </label>
+        </div>
+      )}
       {teste && (
         <label className="check-inline" style={{ marginBottom: 8 }}>
           <input type="checkbox" checked={f.comoTeste} onChange={(e) => alternarTeste(e.target.checked)} /> Contar como <b>teste de lançamento</b> da Rampa
@@ -68,13 +86,17 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, salvan
       <p className="hint" style={{ marginTop: 0 }}>
         {f.comoTeste
           ? "Compra as primeiras vendas e avaliações: é investimento, não lucro. A régua do ROAS não vale durante o teste; o resultado sai na Rampa e no histórico da aba Ads."
+          : loja
+          ? "Na Shopee: Shopee Ads → GMV Max da Loja → meta alta, orçamento ilimitado. Cobre os produtos sem Ads próprio; a Shopee só gasta quando acha venda boa."
+          : auto
+          ? "Na Shopee: Shopee Ads → Criar → GMV Max – Lance Automático → este produto → orçamento baixo. Dia 3 sem venda = pare e arrume o anúncio; dia 7 = troque pra meta de ROAS."
           : "Registre o que você configurou na plataforma. Os 7 primeiros dias são de aprendizado: o app não sugere mexer."}
         {av?.empate ? ` ROAS de equilíbrio: ${um(av.empate)} · meta sugerida ${um(metaSugerida(refMeta, regrasA))} (equilíbrio × 1,3).` : ""}
       </p>
       <div className="grid-auto">
         <div className="field"><label>Início</label><input type="date" value={f.inicio} onChange={set("inicio")} /></div>
-        <div className="field"><label>Orçamento diário (R$)</label><input type="text" inputMode="decimal" value={f.orcamento} onChange={set("orcamento")} /></div>
-        <div className="field"><label>Meta de ROAS {f.comoTeste ? "(opcional)" : ""}</label><input type="text" inputMode="decimal" value={f.meta} onChange={set("meta")} placeholder={av?.empate ? virg(metaSugerida(av.minimo ?? av.empate, regrasA)) : ""} /></div>
+        <div className="field"><label>Orçamento diário (R$){loja ? " — vazio = ilimitado" : ""}</label><input type="text" inputMode="decimal" value={f.orcamento} onChange={set("orcamento")} /></div>
+        <div className="field"><label>Meta de ROAS {f.comoTeste ? "(opcional)" : ""}</label><input type="text" inputMode="decimal" value={auto ? "" : f.meta} disabled={auto} onChange={set("meta")} placeholder={auto ? "automático" : av?.empate ? virg(metaSugerida(av.minimo ?? av.empate, regrasA)) : ""} /></div>
         <div className="field"><label>Fim {f.comoTeste ? "" : "(opcional)"}</label><input type="date" value={f.fim} onChange={set("fim")} /></div>
       </div>
       {f.comoTeste && dias && num(f.orcamento) > 0 && <p className="hint" style={{ margin: "0 0 6px" }}>Total do teste: {BRL(num(f.orcamento) * dias)} em {dias} dias.</p>}
