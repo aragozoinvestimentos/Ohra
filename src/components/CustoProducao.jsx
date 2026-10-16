@@ -1,5 +1,6 @@
 import { pegarPedido } from "../lib/navegar.js";
 import { useEffect, useMemo, useState } from "react";
+import { usePreferencia } from "../hooks/usePreferencia.js";
 import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
 import { salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
 import { BRL } from "../lib/format.js";
@@ -28,14 +29,14 @@ const DEFAULTS = {
   pecasPorPlaca: 1,
 };
 
-function loadInitial() {
+function loadLegado() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) return JSON.parse(raw);
   } catch {
-    // localStorage indisponível — segue com os padrões
+    // localStorage indisponível
   }
-  return DEFAULTS;
+  return undefined;
 }
 
 export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMateriais }) {
@@ -46,7 +47,9 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   const { impressoras, farmConfig } = useCatalogo();
   const impressorasAtivas = farmConfig ? impressoras.filter((i) => i.ativa !== false) : [];
   const usaFarm = impressorasAtivas.length > 0;
-  const [f, setF] = useState(loadInitial);
+  // Simulação da tela: no banco (preferencias_loja, v59) — continua igual em outro aparelho.
+  const [fSalvo, setF] = usePreferencia("custo-producao:simulacao", DEFAULTS, { legado: loadLegado, atraso: 1000 });
+  const f = useMemo(() => ({ ...DEFAULTS, ...(fSalvo || {}) }), [fSalvo]);
   // Produtos cadastrados (pra carregar o detalhamento salvo de um deles e
   // reajustar em vez de simular do zero) — do catálogo compartilhado.
   const produtos = produtosVivos;
@@ -92,13 +95,6 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtoId]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(f));
-    } catch {
-      // sem problema, só não lembra da próxima vez
-    }
-  }, [f]);
 
 
   const set = (key) => (e) => {

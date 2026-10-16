@@ -7,7 +7,7 @@ import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
-import { MARKUP_PADRAO, descontoPadraoCanal } from "../lib/escada.js";
+import { MARKUP_PADRAO } from "../lib/escada.js";
 import { ordenarCanais } from "../lib/canais.js";
 import { BRL } from "../lib/format.js";
 import { nomesReceita, receitaDoCanal, totalReceita } from "../lib/embalagemCanal.js";
@@ -73,11 +73,10 @@ function CampoEditavel({ canal, campo, isPct, sufixo, edicoes, setEdicoes, onSal
 
 // Desconto exibido no anúncio (schema v30) — o app calcula o preço original
 // (riscado) = preço real ÷ (1 − desconto) pra digitar na plataforma
-// (Precificação por Canal → Anunciar). Vazio = sem desconto exibido. Sem a
-// coluna nova, mostra o acréscimo antigo da Olist convertido.
+// (Precificação por Canal → Anunciar). Vazio = sem desconto exibido.
 function CampoDesconto({ canal, onToast }) {
   const [salvo, disparar] = useSalvoFlash();
-  const atual = canal.desconto_anuncio_pct != null ? canal.desconto_anuncio_pct : canal.acrescimo_olist_pct != null ? descontoPadraoCanal(canal) : null;
+  const atual = canal.desconto_anuncio_pct != null ? canal.desconto_anuncio_pct : null;
   const [valor, setValor] = useState(null);
   const exibido = valor ?? (atual == null || atual === "" ? "" : String(Math.round(Number(atual) * 1000) / 10));
   async function salvar() {

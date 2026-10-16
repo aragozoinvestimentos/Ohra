@@ -1,6 +1,7 @@
 import { PASSOS } from "./lib/passosPreco.js";
 import { trocarSubAba, useSubAba } from "./lib/subAbas.js";
 import { assinarMarcas, lerMarcas, somarMarcas } from "./lib/marcas.js";
+import { CrescimentoProvider } from "./hooks/useCrescimento.js";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { assinarUrgentes, lerUrgentes } from "./lib/urgentes.js";
 import logo from "./assets/logo.png";
@@ -166,7 +167,8 @@ const MENU = [
         abas: [
           { tab: "analise", s: "importar", label: "Importar dados", ordem: "1" },
           { tab: "analise", s: "abc", label: "Curva ABC", ordem: "2" },
-          { tab: "analise", s: "evolucao", label: "Evolução e métricas", ordem: "3" },
+          { tab: "analise", s: "xyz", label: "Curva XYZ", ordem: "3" },
+          { tab: "analise", s: "evolucao", label: "Evolução e métricas", ordem: "4" },
         ],
       },
     ],
@@ -404,6 +406,7 @@ export default function App() {
   }
 
   return (
+    <CrescimentoProvider>
     <div className={`shell ${menuAberto ? "menu-aberto" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
@@ -639,6 +642,7 @@ export default function App() {
 
       <div className={`toast ${toast.show ? "show" : ""}`}>{toast.msg}</div>
     </div>
+    </CrescimentoProvider>
   );
 }
 

@@ -116,7 +116,6 @@ export default function VendasMes({ mes, onToast }) {
   // --- Venda orgânica registrada à mão (schema v52) — só financeiro ---
   const organicasMes = org.registros.filter((o) => o.data && mesDe(String(o.data).slice(0, 10)) === mes);
   const gruposBusca = useMemo(() => gruposDoSeletor(itens), [itens]);
-  const ultimoDia = mes === mesDe(hoje) ? hoje : fimDoMes(mes);
   const precoSalvo = (itemId, canalId) => {
     const tipo = itemTipoDoId(itemId);
     const l = precos.find((p) => p.item_tipo === tipo && p.item_id === itemId.slice(2) && p.canal_id === canalId);
@@ -132,9 +131,6 @@ export default function VendasMes({ mes, onToast }) {
   const jaNoRegistrarSemana = (itemId, canalId) =>
     !!itemId && !!canalId && (af.registros || []).some((g) => g.vendas_total != null && g.item_tipo === itemTipoDoId(itemId) && g.item_id === itemId.slice(2) && g.canal_id === canalId && g.data && mesDe(String(g.data).slice(0, 10)) === mes);
 
-  function novaVendaOrg() {
-    setVendaOrg({ id: null, itemId: "", canalId: "", de: `${mes}-01`, ate: ultimoDia, unidades: "", preco: "", conhecidos: "", observacao: "" });
-  }
   function editarVendaOrg(o) {
     setVendaOrg({ id: o.id, itemId: `${PREFIXO[o.item_tipo] || "p"}:${o.item_id}`, canalId: o.canal_id || "", de: o.periodo_inicio || "", ate: String(o.data).slice(0, 10), unidades: String(o.unidades), preco: String(o.preco), conhecidos: o.conhecidos != null ? String(o.conhecidos) : "", observacao: o.observacao || "" });
   }
@@ -301,10 +297,10 @@ export default function VendasMes({ mes, onToast }) {
           <span>
           Vendas por produto
           <span className="badge info" style={{ marginLeft: 8 }}>{t.real > 0 ? (t.real >= t.unidades ? "real" : "real + estimado") : "estimado"}</span>
-          <Ajuda texto="REAL: pedidos importados na aba Análise (Olist) e vendas físicas — o valor pago de verdade, com o custo e as taxas de hoje; nas semanas com pedidos importados a estimativa daquela plataforma sai. ESTIMADO (onde ainda não há pedidos): das semanas registradas antes no Crescimento: produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Produto fora de rampa sem Ads e sem afiliado: use “+ Registrar venda orgânica” (só financeiro — no preço que você digitar, no mês da data Até)." />
+          <Ajuda texto="REAL: pedidos importados na aba Análise (Olist) e vendas físicas — o valor pago de verdade, com o custo e as taxas de hoje; nas semanas com pedidos importados a estimativa daquela plataforma sai. ESTIMADO (onde ainda não há pedidos): das semanas registradas antes no Crescimento: produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Venda fora dos marketplaces: registre em Análise → Importar dados → Venda física. As vendas orgânicas lançadas à mão antes continuam contando aqui." />
           </span>
-          <button type="button" className="btn btn-mini primary" onClick={novaVendaOrg} disabled={!org.disponivel} title={org.disponivel ? "Venda de produto fora de rampa — só pro fechamento do mês" : "Rode o supabase/schema_v52.sql no Supabase"}>
-            + Registrar venda orgânica
+          <button type="button" className="btn btn-mini" onClick={() => irParaAba("analise", { sub: "importar" })} title="Venda fora dos marketplaces (balcão, feira, Pix): um lugar só, na Análise">
+            + Venda física (Análise)
           </button>
         </h3>
         {!org.disponivel && (

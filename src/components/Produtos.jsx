@@ -1,3 +1,4 @@
+import { usePreferencia } from "../hooks/usePreferencia.js";
 import { irParaAba } from "../lib/navegar.js";
 import { useEffect, useMemo, useState } from "react";
 import ImpactoCusto from "./ImpactoCusto.jsx";
@@ -37,6 +38,7 @@ const VAZIO = {
 
 export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onProdutoCriado }) {
   const { lojaId } = useLoja();
+  usePreferencia("producao:ultimos-percentuais", null); // carrega do banco os últimos % de falha/manutenção/acabamento
   // Produtos (crus, como estão no banco — o formulário edita os valores
   // gravados), embalagens e materiais (receita e detalhamento) e kits (SKU
   // duplicado) vêm do catálogo compartilhado: uma busca + um realtime.

@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { lembrarIdsShopee, relatorioDoGuardado } from "../lib/relatorioShopee.js";
 
 // Aba Análise (schema v55): itens de pedidos importados/vendas físicas
 // (pedidos_itens), arquivos enviados na central (importacoes) e SKUs
@@ -45,6 +46,13 @@ async function carregar() {
     }
     const [ri, rg] = await Promise.all([q("importacoes", "criado_em"), q("skus_ignorados", "criado_em")]);
     if (g !== geracao) return;
+    // Ligação ID do item da Shopee → SKU (o CSV do Ads só traz o ID): refeita a
+    // partir dos Desempenhos guardados no BANCO — vale em qualquer aparelho.
+    for (const i of ri.data || []) {
+      if (!i.ok || i.relatorio !== "shopee:desempenho" || !i.dados) continue;
+      const r = relatorioDoGuardado(i.dados);
+      if (r) lembrarIdsShopee([r]);
+    }
     publicar({ pedidos, importacoes: ri.error ? [] : ri.data || [], ignorados: rg.error ? [] : rg.data || [], disponivel: true, carregando: false, lojaId });
   } catch {
     if (g === geracao) publicar({ ...estado, carregando: false });

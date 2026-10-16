@@ -15,19 +15,10 @@ import {
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import Kpis from "./Kpis.jsx";
+import { usePreferencia } from "../hooks/usePreferencia.js";
 
 const TETO_STORAGE_KEY = "ohra:registro-impressao:teto-prejuizo";
 const TETO_PADRAO = 50;
-
-function loadTeto() {
-  try {
-    const raw = localStorage.getItem(TETO_STORAGE_KEY);
-    if (raw != null && raw !== "") return Number(raw);
-  } catch {
-    // sem problema, usa o padrão
-  }
-  return TETO_PADRAO;
-}
 
 const VAZIO_FORM = {
   produtoId: "",
@@ -51,15 +42,15 @@ export default function RegistroImpressoes({ onToast }) {
   const [salvando, setSalvando] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const [produtoSimuladorId, setProdutoSimuladorId] = useState("");
-  const [tetoReais, setTetoReais] = useState(loadTeto);
-
-  useEffect(() => {
+  // Teto de prejuízo por lote: salvo no banco (preferencias_loja, v59) — igual em todo aparelho.
+  const [tetoReais, setTetoReais] = usePreferencia("impressao:teto-prejuizo", TETO_PADRAO, { legado: () => {
     try {
-      localStorage.setItem(TETO_STORAGE_KEY, String(tetoReais));
+      const raw = localStorage.getItem(TETO_STORAGE_KEY);
+      return raw != null && raw !== "" ? Number(raw) : undefined;
     } catch {
-      // sem problema, só não lembra da próxima vez
+      return undefined;
     }
-  }, [tetoReais]);
+  } });
 
   // Troca de loja invalida o que estava selecionado.
   useEffect(() => {

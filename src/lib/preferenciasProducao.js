@@ -1,14 +1,21 @@
+import { gravarPreferencia, lerPreferencia } from "../hooks/usePreferencia.js";
 // Falhas, manutenção e acabamento tendem a se repetir de produto pra produto
 // (mesma impressora, processo parecido) — em vez de sempre voltar pro padrão
 // genérico, lembra o último valor de fato REGISTRADO (salvo) num produto, pra
 // já vir preenchido da próxima vez e evitar ficar reajustando toda hora.
 const CHAVE = "ohra:ultimos-percentuais-producao";
 
+// Desde 16/10/2026 fica no banco (preferencias_loja, v59 — igual em todo
+// aparelho); o localStorage antigo só é lido se o banco ainda não tem.
+const PREF = "producao:ultimos-percentuais";
 export function lerUltimosPercentuais(padrao) {
   try {
-    const raw = localStorage.getItem(CHAVE);
-    if (!raw) return padrao;
-    const obj = JSON.parse(raw);
+    let obj = lerPreferencia(PREF);
+    if (!obj) {
+      const raw = localStorage.getItem(CHAVE);
+      if (!raw) return padrao;
+      obj = JSON.parse(raw);
+    }
     return {
       falhasPct: obj.falhasPct ?? padrao.falhasPct,
       manutencaoPct: obj.manutencaoPct ?? padrao.manutencaoPct,
@@ -20,6 +27,7 @@ export function lerUltimosPercentuais(padrao) {
 }
 
 export function salvarUltimosPercentuais({ falhasPct, manutencaoPct, acabamentoPct }) {
+  gravarPreferencia(PREF, { falhasPct, manutencaoPct, acabamentoPct });
   try {
     localStorage.setItem(CHAVE, JSON.stringify({ falhasPct, manutencaoPct, acabamentoPct }));
   } catch {

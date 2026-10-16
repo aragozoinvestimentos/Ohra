@@ -11,6 +11,7 @@ import { dataSP } from "../lib/datas.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { vendeuSemAvaliacao } from "../lib/semanasAuto.js";
+import { usePreferencia } from "../hooks/usePreferencia.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { hojeISO, loadEstimativas, mesDe, resumoCaixa, rotuloMes } from "../lib/fluxoCaixa.js";
 import { linhasAnunciar } from "../lib/anunciar.js";
@@ -213,9 +214,10 @@ export default function Inicio({ onIrPara, onToast }) {
   }
 
   // --- Dinheiro (mesmas contas do Fluxo de Caixa e de Metas) ---
+  const [estimativasCaixa] = usePreferencia("caixa:estimativas", { vendas: "", custos: "" }, { legado: () => loadEstimativas(lojaId) });
   const caixa = useMemo(
-    () => (gestao.lancamentos.length ? resumoCaixa(gestao.lancamentos, { hoje, estimativas: loadEstimativas(lojaId), meses: 3, dias: 7 }) : null),
-    [gestao.lancamentos, hoje, lojaId]
+    () => (gestao.lancamentos.length ? resumoCaixa(gestao.lancamentos, { hoje, estimativas: estimativasCaixa, meses: 3, dias: 7 }) : null),
+    [gestao.lancamentos, hoje, estimativasCaixa]
   );
   const metaFat = Number(gestao.meta?.faturamento_objetivo) || 0;
 

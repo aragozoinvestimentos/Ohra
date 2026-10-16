@@ -19,6 +19,7 @@ import BuscaItem from "./BuscaItem.jsx";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import AvaliacoesBloco from "./AvaliacoesBloco.jsx";
+import { usePreferencia } from "../hooks/usePreferencia.js";
 
 // Aba Análise → 1 · Importar dados (schema v55): UM lugar pra subir todos os
 // arquivos. Um bloco por plataforma (padrão igual pra todas): pedidos da
@@ -61,6 +62,8 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   const [perguntas, setPerguntas] = useState([]);
   const [avisos, setAvisos] = useState({}); // relatorio → [texto]
   const [ocupado, setOcupado] = useState(null);
+  // Plataformas com o nº do pedido já conferido: no banco (preferencias_loja, v59).
+  const [confs, setConfs] = usePreferencia("importar:plataformas-conferidas", {}, { legado: conferidas });
   const [fisico, setFisico] = useState(null); // form aberto
   const [excluir, setExcluir] = useState(null);
   const ignorados = useMemo(() => new Set((ped.ignorados || []).map((g) => normSku(g.sku))), [ped.ignorados]);
@@ -79,7 +82,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         const nome = PLATAFORMAS.find((p) => p.id === outras[0])?.nome;
         throw new Error(`Os pedidos deste arquivo não parecem da ${plat.nome} (o número ${lidos.find((i) => plataformaDoNumero(i.ordem_compra) === outras[0])?.ordem_compra} é do ${nome}). Nada foi importado.`);
       }
-      if (!plat.conferido && !plataformas.has(plat.id) && !conferidas()[plat.id]) {
+      if (!plat.conferido && !plataformas.has(plat.id) && !confs[plat.id]) {
         setPend({ plat, canal, lidos, periodo, arquivo: arquivo.name, confirmar: true });
         setOcupado(null);
         return;
@@ -332,7 +335,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     const canal = canais.find((c) => c.tipo === p.tipo) || null;
     const aviso = !canal
       ? `Canal ${p.nome} não cadastrado — cadastre em Configuração → Canais pra importar.`
-      : !p.conferido && !conferidas()[p.id]
+      : !p.conferido && !confs[p.id]
         ? `Falta conferir o formato do número do pedido — no 1º envio o app pede confirmação.${p.id === "ml" ? " Relatório de Ads do Mercado Livre: mande um exemplo quando ligar Ads lá." : ""}`
         : null;
     return (
@@ -356,7 +359,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
                 <b>1º envio da {p.nome}: confirme que estes {new Set(pend.lidos.map((i) => i.pedido)).size} pedidos ({dm(pend.periodo.de)} a {dm(pend.periodo.ate)}) são mesmo da {p.nome}.</b>
                 <div className="faint">Ex.: nº no marketplace {pend.lidos[0]?.ordem_compra || "—"}. O app lembra a confirmação.</div>
                 <div className="ana-pend-acoes">
-                  <button type="button" className="btn btn-mini primary" onClick={() => { const c = conferidas(); c[p.id] = true; try { localStorage.setItem(CHAVE_CONFERIDA, JSON.stringify(c)); } catch { /* sem localStorage */ } prepararSkus(p, canal, pend.lidos, pend.periodo, pend.arquivo); }}>Sim, são da {p.nome}</button>
+                  <button type="button" className="btn btn-mini primary" onClick={() => { setConfs((c) => ({ ...(c || {}), [p.id]: true })); prepararSkus(p, canal, pend.lidos, pend.periodo, pend.arquivo); }}>Sim, são da {p.nome}</button>
                   <button type="button" className="btn btn-mini" onClick={() => setPend(null)}>Cancelar</button>
                 </div>
               </>

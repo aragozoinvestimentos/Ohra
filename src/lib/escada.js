@@ -35,7 +35,6 @@ export const ESCADA_PADRAO = {
   margemMin: 0.15,
   margemDesejada: 0.3,
   lucroMinimo: 0, // R$ por venda (0 = sem piso em reais)
-  promoMinOlist: 0.1, // (antigo — Publicar/Olist; sem uso)
 };
 
 const num = (v) => {
@@ -464,14 +463,10 @@ export function alertasAvulso({ canal, p1, base1, cfg, escada, concorrente, estr
 // próprio do produto/kit (`desconto_anuncio` jsonb { canal_id: fração }) —
 // variação usa o do produto pai.
 
-// Desconto padrão do canal. Sem a coluna nova (SQL v30 não rodado), usa o
-// acréscimo antigo da Olist ("por dentro" a = desconto a; "simples" a/(1+a)).
+// Desconto padrão do canal (o acréscimo antigo da Olist foi migrado pra cá no v30/v59).
 export function descontoPadraoCanal(canal) {
-  if (!canal) return 0;
-  if (canal.desconto_anuncio_pct != null && canal.desconto_anuncio_pct !== "") return Math.max(0, Math.min(0.9, num(canal.desconto_anuncio_pct)));
-  const a = canal.acrescimo_olist_pct;
-  if (a == null || a === "") return 0;
-  return Math.max(0, Math.min(0.9, canal.acrescimo_olist_modo === "simples" ? num(a) / (1 + num(a)) : num(a)));
+  if (!canal || canal.desconto_anuncio_pct == null || canal.desconto_anuncio_pct === "") return 0;
+  return Math.max(0, Math.min(0.9, num(canal.desconto_anuncio_pct)));
 }
 
 // Desconto do item (id "p:" | "v:" | "k:") no canal: o próprio do produto/kit

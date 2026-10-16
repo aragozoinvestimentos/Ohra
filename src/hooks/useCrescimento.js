@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { createContext, createElement, useContext, useMemo } from "react";
 import { useEscada } from "./useEscada.js";
 import { useRampas } from "./useRampas.js";
 import { useAfiliados } from "./useAfiliados.js";
@@ -32,7 +32,21 @@ const num = (v) => {
 
 // Tudo da aba Crescimento calculado ao vivo (Rampa + Afiliados) — a MESMA
 // conta pra aba Crescimento e pro Início (que só lê).
+// Calculado UMA vez (CrescimentoProvider no App, 16/10/2026) e lido por todas
+// as telas (Início, Crescimento, Análise, Ficha, Lançamento) — antes cada tela
+// montada refazia a conta inteira.
+const CrescimentoContext = createContext(null);
+export function CrescimentoProvider({ children }) {
+  const valor = useCalculoCrescimento();
+  return createElement(CrescimentoContext.Provider, { value: valor }, children);
+}
 export function useCrescimento() {
+  const v = useContext(CrescimentoContext);
+  if (!v) throw new Error("useCrescimento fora do CrescimentoProvider");
+  return v;
+}
+
+function useCalculoCrescimento() {
   const dados = useEscada();
   const { itens, produtos, kits, canais, precos, cfgDoProduto, cfgLoja, publicacoesCanal, gruposAnuncio: grupos } = dados;
   const rampasH = useRampas({ comRegistros: true });
@@ -537,5 +551,11 @@ export function useCrescimento() {
     return { loja, teto, sazonal, linhas: linhasA, lojaLinha, lembretesOk: lembretesH.disponivel };
   }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { dados, rampasH: rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, anuncioDoPedido, pedidosValidos: reais.linhas };
+  const pedidosValidos = reais.linhas;
+  return useMemo(
+    () => ({ dados, rampasH: rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, anuncioDoPedido, pedidosValidos }),
+    // anuncioDoPedido muda junto com skuGrupo (mesma render)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dados, rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, skuGrupo, pedidosValidos]
+  );
 }

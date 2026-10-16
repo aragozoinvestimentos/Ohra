@@ -10,7 +10,7 @@ import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 
-// Análise → 2 · Curva ABC (+ XYZ com estoque sugerido e comprados juntos).
+// Análise → 2 · Curva ABC (+ comprados juntos) e 3 · Curva XYZ (estoque sugerido) — `parte`.
 // Só leitura: nada aqui muda preço, rampa ou Ads. Vendas = pedidos importados
 // + vendas físicas (pago de verdade: rampa, promo e cupom já dentro); lucro com
 // o custo e as taxas de hoje.
@@ -105,7 +105,7 @@ const Mini = ({ v }) => {
   );
 };
 
-export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToast }) {
+export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToast, parte = "abc" }) {
   const { lojaId, lojas, atualizar } = useLoja();
   const loja = lojas.find((l) => l.id === lojaId) || null;
   const [f, setF] = useState(() => ({ periodo: "30", plat: "", crit: "lucro", pai: false, busca: "" }));
@@ -176,6 +176,8 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
 
   return (
     <>
+      {parte !== "xyz" && (
+      <>
       <div className="kpis">
         <div className="kpi">
           <div className="l">Projeção do mês</div>
@@ -386,6 +388,24 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
         )}
       </div>
 
+      </>
+      )}
+      {parte === "xyz" && (
+      <>
+      <div className="panel">
+        <h3>Filtro</h3>
+        <div className="ana-filtros">
+          <div className="field">
+            <label>Plataforma</label>
+            <select value={f.plat} onChange={set("plat")}>
+              <option value="">Todas</option>
+              {plats.map((p) => (
+                <option key={p} value={p}>{nomePlat(p)}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
       <div className="panel">
         <h3>
           Curva XYZ — regularidade da venda
@@ -459,6 +479,8 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
         </div>
       </div>
 
+      </>
+      )}
       {regrasDlg && (
         <EditarDialog titulo="Regras do estoque sugerido" onCancelar={() => setRegrasDlg(null)} onSalvar={() => salvarRegras(regrasDlg)} salvarLabel="Salvar regras">
           <p className="hint" style={{ marginTop: 0 }}>

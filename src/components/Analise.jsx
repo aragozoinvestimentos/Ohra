@@ -15,7 +15,7 @@ import AnaliseEvolucao from "./AnaliseEvolucao.jsx";
 // e métricas. As vendas vêm SÓ dos pedidos importados (Olist, um arquivo por
 // plataforma) + vendas físicas — `enriquecer` calcula pago/lucro com o custo e
 // as taxas de HOJE (ao vivo). A sub-aba fica no cabeçalho (ohra:analise-sub).
-const SUBABAS_ANALISE = ["importar", "abc", "evolucao"];
+const SUBABAS_ANALISE = ["importar", "abc", "xyz", "evolucao"];
 
 export default function Analise({ onToast }) {
   const [sub] = useSubAba("ohra:analise-sub", "importar", SUBABAS_ANALISE);
@@ -49,6 +49,6 @@ export default function Analise({ onToast }) {
         <div className="empty">Ainda não há vendas pra analisar. Importe os pedidos da Olist (ou registre uma venda física) em Análise → Importar dados.</div>
       </div>
     );
-  if (sub === "abc") return <AnaliseABC esc={esc} cres={cres} linhas={linhas} hoje={hoje} farmConfig={farmConfig} onToast={onToast} />;
+  if (sub === "abc" || sub === "xyz") return <AnaliseABC esc={esc} cres={cres} linhas={linhas} hoje={hoje} farmConfig={farmConfig} onToast={onToast} parte={sub} />;
   return <AnaliseEvolucao esc={esc} cres={cres} linhas={linhas} hoje={hoje} />;
 }

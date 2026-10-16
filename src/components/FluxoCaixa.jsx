@@ -1,3 +1,4 @@
+import { usePreferencia } from "../hooks/usePreferencia.js";
 import { useSubAba } from "../lib/subAbas.js";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
@@ -20,7 +21,6 @@ import {
   projetar,
   statusLancamento,
   loadEstimativas,
-  saveEstimativas,
 } from "../lib/fluxoCaixa.js";
 import Ajuda from "./Ajuda.jsx";
 import Kpis from "./Kpis.jsx";
@@ -50,13 +50,6 @@ function somarDiasISO(iso, n) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function loadIgnorados() {
-  try {
-    return JSON.parse(localStorage.getItem(IGNORAR_COMPRA_KEY) || "[]");
-  } catch {
-    return [];
-  }
-}
 
 // "Compra PLA (2/3)" → "Compra PLA"
 const semSufixoParcela = (d) => String(d || "").replace(/\s*\(\d+\/\d+\)\s*$/, "");
@@ -101,7 +94,7 @@ export default function FluxoCaixa({ onToast }) {
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const [excluirGrupo, setExcluirGrupo] = useState(false); // ao excluir uma parcela: também as outras em aberto
   const [compraDialog, setCompraDialog] = useState(null); // {} nova | { lancamento, grupo } completar | { inicial }
-  const [ignorados, setIgnorados] = useState(loadIgnorados);
+  const [ignorados, setIgnorados] = usePreferencia("caixa:ignorar-compra", [], { legado: IGNORAR_COMPRA_KEY });
   const [verPendentes, setVerPendentes] = useState(false);
   const [verTabela, setVerTabela] = useState(() => {
     try {
@@ -117,15 +110,12 @@ export default function FluxoCaixa({ onToast }) {
   const [mesFiltro, setMesFiltro] = useState(mesAtual);
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [horizonte, setHorizonte] = useState(12);
-  const [estimativas, setEstimativas] = useState(() => loadEstimativas(lojaId));
+  // Estimativas da projeção: no banco (preferencias_loja, v59) — iguais em todo aparelho.
+  const [estimativas, setEstimativas] = usePreferencia("caixa:estimativas", { vendas: "", custos: "" }, { legado: () => loadEstimativas(lojaId) });
   const [sub] = useSubAba("ohra:caixa:sub", "caixa", SUBABAS_CAIXA.map((x) => x.key));
   const [verConfig, setVerConfig] = useState(false);
   const reserva = useReservaProducao();
   const saldoDaReserva = useMemo(() => saldoReserva(reserva.registros).saldo, [reserva.registros]);
-
-  useEffect(() => {
-    saveEstimativas(lojaId, estimativas);
-  }, [lojaId, estimativas]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -249,15 +239,7 @@ export default function FluxoCaixa({ onToast }) {
   }, [lancamentos, grupos, ignorados]);
 
   function ignorarPendente(chave) {
-    setIgnorados((prev) => {
-      const next = [...prev, chave];
-      try {
-        localStorage.setItem(IGNORAR_COMPRA_KEY, JSON.stringify(next));
-      } catch {
-        // sem problema
-      }
-      return next;
-    });
+    setIgnorados((prev) => [...(prev || []), chave]);
   }
   const canalNome = (id) => canais.find((c) => c.id === id)?.nome || "";
 
