@@ -8,7 +8,7 @@
 //    de Anúncios". Uma linha por anúncio com o "ID do produto" (= ID do Item).
 // O anúncio é ligado ao produto/kit do app pelo SKU (SKU Principle = SKU do
 // Cadastros); o Ads chega no SKU pelo ID do Item do relatório de desempenho.
-// Nada é gravado aqui: só devolve os números pro Registrar semana preencher.
+// Nada é gravado aqui: só lê e devolve os números (a central guarda o relatório).
 
 // ---------- leitura de .xlsx (zip + XML) sem biblioteca ----------
 async function inflarRaw(bytes) {
@@ -312,66 +312,6 @@ export async function lerRelatorio(arquivo) {
   return { ...r, arquivo: nome };
 }
 
-// Junta os relatórios lidos e liga cada anúncio a um item do app pelo SKU.
-// `itensApp` = [{ chave, sku, tipo: 'produto'|'kit'|'variacao', skuPai?, quantidade? }]
-// Devolve { periodo, porChave: { chave: { vendas, impressoes, cliquesProduto,
-// pedidos, gasto, cliques, adsVendas, mistura } }, semPar: [...], adsSemPar, avisos }.
-export function cruzarRelatorios(relatorios, itensApp) {
-  const desemp = juntarDesempenho(relatorios);
-  const ads = juntarAds(relatorios);
-  const avisos = [];
-  const periodo = desemp?.periodo || ads?.periodo || null;
-  if (desemp?.periodo && ads?.periodo && (desemp.periodo.de !== ads.periodo.de || desemp.periodo.ate !== ads.periodo.ate))
-    avisos.push("Os dois relatórios são de períodos diferentes — exporte os dois com as mesmas datas.");
-  if (!desemp && ads) avisos.push("Só o Ads não basta: importe junto o relatório de desempenho do produto (é ele que liga o anúncio ao SKU).");
-  const porChave = {};
-  const usados = new Set();
-  const porSku = new Map((desemp?.itens || []).filter((i) => i.sku).map((i) => [i.sku, i]));
-  for (const it of itensApp) {
-    const sku = normSku(it.sku);
-    let num = null;
-    if (it.tipo === "variacao") {
-      // Variação de quantidade: soma as variações da Shopee com o SKU dela
-      // (CH-OC-2 → CH-OC-2-PB, CH-OC-2-BP) ou, sem SKU, pela quantidade no nome.
-      const pai = porSku.get(normSku(it.skuPai));
-      if (!pai) continue;
-      const vs = pai.variacoes.filter((v) => (sku ? v.sku === sku || v.sku.startsWith(`${sku}-`) : v.qtd === it.quantidade));
-      if (!vs.length) continue;
-      num = { vendas: vs.reduce((t, v) => t + v.unidades, 0) };
-    } else {
-      const d = sku ? porSku.get(sku) : null;
-      if (!d) continue;
-      usados.add(d.itemId);
-      const a = ads?.porItem.get(d.itemId);
-      const mistura = {};
-      for (const v of d.variacoes) if (v.unidades > 0 && v.qtd) mistura[v.qtd] = (mistura[v.qtd] || 0) + v.unidades;
-      num = {
-        vendas: d.unidades,
-        impressoes: d.impressoes,
-        cliquesProduto: d.cliques,
-        pedidos: d.pedidos,
-        // Sem linha no Ads = não teve anúncio pago: campos de Ads ficam em branco.
-        ...(a ? { gasto: a.gasto, cliques: a.cliques, adsVendas: a.vendas } : {}),
-        mistura: Object.keys(mistura).length ? mistura : null,
-      };
-    }
-    porChave[it.chave] = num;
-  }
-  const comNumero = (i) => (i.unidades || 0) > 0 || (i.impressoes || 0) > 0 || ads?.porItem.has(i.itemId);
-  const semPar = (desemp?.itens || []).filter((i) => !usados.has(i.itemId) && comNumero(i));
-  const adsSemPar = ads ? [...ads.porItem.entries()].filter(([id]) => !usados.has(id)).map(([id, a]) => ({ itemId: id, ...a })) : [];
-  return { periodo, porChave, semPar, adsSemPar, avisos, temDesempenho: !!desemp, temAds: !!ads, totalAds: ads?.total || null };
-}
-
-// "6 × 1 un. · 2 × kit 2"
-export function textoMistura(m) {
-  if (!m) return "";
-  return Object.entries(m)
-    .sort((a, b) => Number(a[0]) - Number(b[0]))
-    .map(([q, n]) => `${n} × ${Number(q) === 1 ? "1 un." : `kit ${q}`}`)
-    .join(" · ");
-}
-
 // ---- Andamento do Ads (v48) ----
 // O CSV do Ads só traz o ID do Item da Shopee; quem liga ID → SKU é o
 // relatório de desempenho. O app LEMBRA essa ligação (localStorage) toda vez
@@ -523,7 +463,7 @@ export function cruzarGrupos(relatorios, grupos) {
 
 // ---------- Central de importação (aba Análise, v55) ----------
 // O relatório lido vai pra `importacoes.dados` (JSON) e volta igual ao que o
-// lerRelatorio devolve — o Registrar semana preenche sozinho a partir daqui.
+// lerRelatorio devolve — as semanas automáticas (lib/semanasAuto.js) leem daqui.
 export function relatorioParaGuardar(r) {
   if (!r) return null;
   if (r.tipo === "ads") return { ...r, porItem: [...r.porItem.entries()] };

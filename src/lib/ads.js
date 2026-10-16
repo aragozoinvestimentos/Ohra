@@ -270,16 +270,6 @@ export function andamentoValido(periodo, semanas) {
   return { ate: par.ate, em: par.em || null, gasto, cliques: num(par.cliques), vendas, custoPorVenda: vendas > 0 ? gasto / vendas : null };
 }
 
-// O que falta registrar na semana: andamento − o que já está nas semanas do período.
-export function andamentoParaSemana(periodo, semanas) {
-  const a = andamentoValido(periodo, semanas);
-  if (!a) return null;
-  const ss = semanasNoPeriodo(semanas || [], periodo);
-  const soma = (k) => ss.reduce((t, s) => t + num(s[k]), 0);
-  const r = (v) => Math.max(0, Math.round(v * 100) / 100);
-  return { ate: a.ate, gasto: r(a.gasto - soma("ads_gasto")), cliques: r(a.cliques - soma("ads_cliques")), adsVendas: r(a.vendas - soma("ads_vendas")) };
-}
-
 // Constância (plano 14/10/2026): vendas via Ads por dia nos últimos ~3 dias ×
 // os ~3 dias anteriores, pelos envios do andamento (parcial + parcial.historico).
 // Nunca reage a um dia isolado: precisa de 3 envios com ≥ 3 dias entre eles.
@@ -626,15 +616,6 @@ export function adsNaJanela(periodos, semanas, de, ate) {
   return { gasto: 0, vendas: 0, fonte: null, ate: null };
 }
 export const gastoAdsNaJanela = (periodos, semanas, de, ate) => adsNaJanela(periodos, semanas, de, ate).gasto;
-
-// Pausa longa (16/10/2026): pausado há ≥ `pausaLongaDias` (21) a Shopee
-// começa a perder o aprendizado do anúncio → aviso simples (despause ou encerre).
-export function pausaLonga(periodo, hoje, regras = REGRAS_ADS) {
-  const pz = pausasDoPeriodo(periodo, hoje);
-  if (!pz.pausado) return null;
-  const dias = diasEntre(pz.pausado.desde, hoje);
-  return dias >= num(regras.pausaLongaDias || 21) ? { dias, desde: pz.pausado.desde } : null;
-}
 
 // ---- GMV Max da Loja (16/10/2026, schema v57: item_tipo 'loja') ----
 // Campanha da loja inteira (produtos "reserva"): meta alta, orçamento

@@ -550,9 +550,3 @@ export function coberturaPedidos(importacoes) {
   };
   return { cobre, platDoCanal, tem: porPlat.size > 0 };
 }
-
-/** Unidades vendidas (pedidos válidos) de um conjunto de itens num canal e período. */
-export function unidadesNoPeriodo(linhas, { ids, canalId, de, ate }) {
-  const alvo = new Set(ids);
-  return (linhas || []).filter((l) => l.valido && l.canal_id === canalId && l.data >= de && l.data <= ate && alvo.has(l.id_item)).reduce((t, l) => t + l.q, 0);
-}
