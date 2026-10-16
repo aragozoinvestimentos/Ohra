@@ -389,7 +389,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                 Decisão ao vivo pelo andamento (CSV do Shopee Ads) ou pela semana registrada. Ads é investimento: não entra no preço.
                 <br />• <b>ROAS de equilíbrio</b> = preço de agora ÷ lucro por venda (antes do Ads): abaixo dele, o Ads tira lucro. <b>Meta sugerida</b> = equilíbrio × 1,3.
                 <br />• <b>Retorno</b> = ROAS ÷ equilíbrio = quanto de lucro cada R$ 1 investido trouxe.
-                <br />• <b>7 dias de aprendizado</b> no começo do período; depois de cada ajuste, nova decisão em no mínimo <b>{regrasA.decisaoDias || 4} dias</b>.
+                <br />• <b>7 dias de aprendizado</b> no começo do período; depois de cada ajuste, nova decisão em <b>{regrasA.decisaoDias || 3} dias</b>.
                 <br />• Com a Shopee gastando ≥ 80% do orçamento: retorno 1–1,2× → manter; 1,2–2× → <b>+{Math.round(regrasA.aumento * 100)}%</b>; ≥ 2× → <b>+{Math.round((regrasA.aumentoMax || 0.3) * 100)}%</b> (máximo — sem estouro de uma vez) (sempre dentro do teto da loja e perguntando se a produção dá conta). Vendas via Ads caíram mais de 30% em 3 dias com retorno bom → também sugere aumentar.
                 <br />• Abaixo do equilíbrio: muitos cliques e poucas vendas → arrumar o anúncio; já no mínimo de {BRL(regrasA.minDiario)}/dia → subir a meta (mais seletivo) ou pausar; senão → reduzir o orçamento. A Shopee não gasta o orçamento → baixar a meta (mais alcance).
                 <br />• <b>Produto novo — lance automático</b> (método do Luan): sem meta, orçamento baixo. <b>Dia 3 sem venda</b> (vale pra todo período) → pare e arrume o anúncio: “Pausei pra revisar” mantém o período e as métricas. <b>Dia 7</b> → troque pra meta de ROAS = o ROAS que bateu (nunca abaixo do equilíbrio).
@@ -631,7 +631,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
   const av = l.av;
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
-  const historico = [...l.periodos].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).map((p) => ({ p, r: resumoPeriodo(p, l.semanas, l.preco, av.empate, regrasA) }));
+  const historico = [...l.periodos].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).map((p) => ({ p, r: p.id === av.ativo?.id && av.numeros?.fonte === "andamento" ? { ...resumoPeriodo(p, l.semanas, l.preco, av.empate, regrasA), ...av.numeros } : resumoPeriodo(p, l.semanas, l.preco, av.empate, regrasA) }));
   const totalDias = av.ativo?.fim ? diasEntre(av.ativo.inicio, av.ativo.fim) + 1 : null;
   const diaAtual = (n.dias ?? 0) + 1;
   const tomRoas = (r) => (r == null || !av.empate ? "" : r >= av.empate ? " bom" : " ruim");
@@ -821,7 +821,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
               })}
             </tbody>
           </table>
-          <p className="hint" style={{ margin: "4px 0 0" }}>Os números vêm das semanas registradas: o período que começa no meio da semana é aproximado.</p>
+          <p className="hint" style={{ margin: "4px 0 0" }}>Os números vêm do CSV do Shopee Ads (andamento) ou das semanas, o que estiver mais completo.</p>
         </div>
       )}
     </div>
