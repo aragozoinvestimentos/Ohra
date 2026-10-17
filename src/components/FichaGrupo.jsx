@@ -592,6 +592,13 @@ function GrupoDialog({ grupo, itens, canal, canais, salvando, onCancelar, onSalv
       </div>
       <p className="hint">SKU de cada linha = SKU do item + sufixo da opção (+ sufixo da cor). Deixe o sufixo vazio se o item já tem SKU próprio.</p>
       {validas.length < 2 && <div className="hint">Escolha pelo menos 2 itens.</div>}
+      {!montando && validas.length >= 2 && !validas.some((o) => String(o.itemId).startsWith("k:")) && validas.filter((o) => String(o.itemId).startsWith("p:")).length >= 2 && (
+        <div className="alerta alerta-warn">
+          <b>Essas opções vendem cada produto sozinho</b>O cliente escolhe UM dos produtos — nenhuma opção leva os itens juntos. Era pra ser um kit?{" "}
+          <button type="button" className="link-btn" onClick={() => setMontando(true)}>✦ Montar combinações</button> cria o kit e põe como opção · se for vender
+          só os itens juntos, sem escolha, cadastre um kit em Produtos → Kits.
+        </div>
+      )}
       {repetidas && <div className="alerta alerta-warn"><b>Opção repetida</b>O mesmo item com o mesmo sufixo aparece duas vezes.</div>}
 
       <label className="check-inline" style={{ marginTop: 6 }}>
