@@ -412,11 +412,11 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
             })}
             {relat({
               rel: "shopee:ads",
-              nome: "Ads (CSV)",
+              nome: "Ads (CSV) — produtos e GMV Max da Loja",
               limite: 3,
               aceita: ".csv",
               multiplo: true,
-              onde: <>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem). Se tiver mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam</>,
+              onde: <>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem). Se tiver mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam. <b>A GMV Max da Loja vem no mesmo arquivo</b> (linha “GMV Max da Loja”): não precisa de outro envio</>,
               onArquivo: (fs) => enviarShopee("ads", fs),
             })}
             {perguntas.map((q) => (
