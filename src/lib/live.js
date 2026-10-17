@@ -1,4 +1,4 @@
-import { lucroNoPreco } from "./escada.js";
+import { lucroNoPreco, precoParaMargem, r90up } from "./escada.js";
 import { anuncioNoRiscado } from "./rampaAnuncio.js";
 import { pascoa } from "./calendario.js";
 import { dataSP } from "./datas.js";
@@ -61,9 +61,28 @@ export function lucroNaLive(prod, preco, { canal, cfg, cfgDe, taxaExtra = 0 }) {
   return cent(base - brinde - p * num(taxaExtra));
 }
 
+// Preço de referência da cópia: o salvo no canal; sem salvo, o sugerido pela
+// margem desejada (só pra live — nada é gravado no preço salvo).
+export const refDe = (prod) => num(prod?.salvo) || num(prod?.sugerido) || null;
+
+/** Sugerido pela margem desejada no canal (pra item sem preço salvo nele). */
+export function sugeridoNoCanal(prod, ctx) {
+  const cfg = ctx?.cfgDe ? ctx.cfgDe(prod) : ctx?.cfg;
+  if (!ctx?.canal || !cfg) return null;
+  const p = precoParaMargem(ctx.canal, cfg.margemDesejada ?? 0.3, num(prod.custo), num(prod.peso), cfg);
+  return p ? r90up(p) : null;
+}
+
+/** Completa a cópia com o sugerido quando falta o preço salvo (cópias antigas). */
+export function completarCopia(prod, ctx) {
+  if (num(prod.salvo) > 0 || num(prod.sugerido) > 0) return prod;
+  const sug = sugeridoNoCanal(prod, ctx);
+  return sug ? { ...prod, sugerido: sug } : prod;
+}
+
 // Menor preço (final ,49/,99) com pelo menos R$ 0,50 de lucro — piso sugerido.
 export function pisoSugerido(prod, ctx) {
-  const alvo = num(prod.salvo);
+  const alvo = refDe(prod);
   if (!(alvo > 0)) return null;
   for (let p = Math.max(1, alvo * 0.4); p <= alvo; p += 0.5) {
     const x = final4999(p);
@@ -75,9 +94,11 @@ export function pisoSugerido(prod, ctx) {
 
 /** Estratégia nova com os valores padrão a partir da cópia do produto. */
 export function estrategiaPadrao(tipo, prod, ctx) {
-  const alvo = num(prod.salvo) || null;
+  const alvo = refDe(prod);
   const piso = pisoSugerido(prod, ctx) || alvo;
-  if (tipo === "escada") return { tipo, piso, alvo, passo: 0.5, subirPor: "vendas", aCada: 3, minutos: 5 };
+  // Passo: ~8 degraus do piso ao alvo, em múltiplos de R$ 0,50 (mínimo R$ 0,50).
+  const passo = alvo && piso ? Math.max(0.5, Math.round(((alvo - piso) / 8) * 2) / 2) : 0.5;
+  if (tipo === "escada") return { tipo, piso, alvo, passo, subirPor: "vendas", aCada: 3, minutos: 5 };
   if (tipo === "primeiros") return { tipo, preco: piso, n: 10, normal: alvo };
   if (tipo === "relampago") return { tipo, preco: piso, minutos: 5, normal: alvo };
   if (tipo === "brinde") return { tipo, preco: alvo, brindeNome: "", brindeCusto: 0 };
@@ -86,10 +107,10 @@ export function estrategiaPadrao(tipo, prod, ctx) {
 
 export function precoInicial(prod) {
   const e = prod.estrategia || {};
-  if (e.tipo === "escada") return num(e.piso) || num(prod.salvo) || null;
+  if (e.tipo === "escada") return num(e.piso) || refDe(prod);
   if (e.tipo === "primeiros") return num(e.preco) || null;
-  if (e.tipo === "relampago") return num(e.normal) || num(prod.salvo) || null; // o relâmpago só começa quando você solta
-  return num(e.preco) || num(prod.salvo) || null;
+  if (e.tipo === "relampago") return num(e.normal) || refDe(prod); // o relâmpago só começa quando você solta
+  return num(e.preco) || refDe(prod);
 }
 
 const ms = (iso) => new Date(iso).getTime();
@@ -125,7 +146,7 @@ export function estadoProduto(prod, eventos, agora = Date.now(), inicioLive = nu
   const r2 = (x) => Math.round(x);
   let sugestao = null;
   if (e.tipo === "escada") {
-    const alvo = num(e.alvo) || num(prod.salvo);
+    const alvo = num(e.alvo) || refDe(prod);
     const passo = num(e.passo) || 0.5;
     if (alvo > 0 && preco >= alvo - 0.004) sugestao = { tipo: "alvo", texto: "No alvo — foque no próximo produto" };
     else {
@@ -145,13 +166,13 @@ export function estadoProduto(prod, eventos, agora = Date.now(), inicioLive = nu
   } else if (e.tipo === "primeiros") {
     const n = num(e.n) || 10;
     const noEspecial = vendasEv.filter((v) => Math.abs(num(v.preco) - num(e.preco)) < 0.005).reduce((t, v) => t + num(v.quantidade), 0);
-    const normal = num(e.normal) || num(prod.salvo);
+    const normal = num(e.normal) || refDe(prod);
     if (Math.abs(preco - num(e.preco)) < 0.005) {
       if (noEspecial >= n) sugestao = { tipo: "voltar", texto: `Os ${n} primeiros já foram — volte pra R$ ${normal.toFixed(2).replace(".", ",")}`, preco: normal };
       else sugestao = { tipo: "info", texto: `Faltam ${n - noEspecial} no preço especial` };
     } else sugestao = { tipo: "info", texto: "Preço especial encerrado" };
   } else if (e.tipo === "relampago") {
-    const normal = num(e.normal) || num(prod.salvo);
+    const normal = num(e.normal) || refDe(prod);
     if (relampago) {
       const resta = (num(e.minutos) || 5) - minNoPreco;
       sugestao =
@@ -346,5 +367,6 @@ export function copiaDoItem(item, { canal, precos, produtos, riscadoDe, ctx }) {
     riscado: salvo && riscadoDe ? riscadoDe(item, salvo) : null,
     pecas: pecasDoItem(item, produtos),
   };
-  return { ...base, estrategia: estrategiaPadrao("escada", base, ctx) };
+  const completo = completarCopia(base, ctx);
+  return { ...completo, estrategia: estrategiaPadrao("escada", completo, ctx) };
 }

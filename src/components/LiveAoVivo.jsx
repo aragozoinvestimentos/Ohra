@@ -5,7 +5,7 @@ import LiveLista from "./LiveLista.jsx";
 import { SeletorLive } from "./LivePlanejar.jsx";
 import { BRL } from "../lib/format.js";
 import { ESTRATEGIAS, cruzarPedidos, estadoProduto, estrategiaPadrao, lucroNaLive, nomeEstrategia, precoInicial, resumoLive } from "../lib/live.js";
-import { registrarEvento, salvarLive } from "../lib/liveAcoes.js";
+import { excluirLive, registrarEvento, salvarLive } from "../lib/liveAcoes.js";
 import { resumoEstrategia } from "../lib/liveTexto.js";
 
 // Live → 2 · Ao vivo: cronômetro, produto da vez em destaque (preço agora +
@@ -59,6 +59,7 @@ export default function LiveAoVivo({ esc, lv, atual, setAtualId, ctxDaLive, linh
   const [focoKey, setFocoKey] = useState(null);
   const [precoTxt, setPrecoTxt] = useState("");
   const [confirmar, setConfirmar] = useState(false);
+  const [excluir, setExcluir] = useState(false);
   const live = atual;
   const aoVivo = live?.status === "aovivo";
   useEffect(() => {
@@ -162,6 +163,9 @@ export default function LiveAoVivo({ esc, lv, atual, setAtualId, ctxDaLive, linh
         <button type="button" className="btn" onClick={() => setConfirmar(true)}>
           Encerrar a live
         </button>
+        <button type="button" className="btn danger" onClick={() => setExcluir(true)} title="Apaga esta live inteira (ex.: era só um teste)">
+          × Excluir live
+        </button>
       </div>
 
       <div className="live-palco">
@@ -258,6 +262,22 @@ export default function LiveAoVivo({ esc, lv, atual, setAtualId, ctxDaLive, linh
         </div>
       </div>
 
+      {excluir && (
+        <ConfirmDialog
+          titulo="Excluir esta live?"
+          mensagem="Apaga a live inteira — plano e vendas marcadas. Use quando era só um teste. Nada fora da aba Live muda."
+          confirmarLabel="Excluir"
+          perigo
+          onCancel={() => setExcluir(false)}
+          onConfirm={async () => {
+            setExcluir(false);
+            const r = await excluirLive(live.id);
+            if (!r.ok) return onToast(r.msg);
+            setAtualId("");
+            onToast("Live excluída");
+          }}
+        />
+      )}
       {confirmar && (
         <ConfirmDialog
           titulo="Encerrar a live?"

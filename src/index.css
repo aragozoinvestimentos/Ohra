@@ -2262,3 +2262,6 @@ tr.clicavel.ativo td { background: var(--accent-soft); }
   .live-palco { grid-template-columns: 1fr; }
   .live-preco { font-size: 42px; }
 }
+.live-excluir { margin-left: auto; }
+.panel > h3:has(.live-excluir) { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.live-plano-texto { font-size: 13px; margin: 2px 0 4px; padding: 6px 10px; border-radius: 8px; background: var(--st-info-soft); }

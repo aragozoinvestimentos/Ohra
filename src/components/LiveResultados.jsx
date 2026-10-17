@@ -129,6 +129,9 @@ function DetalheLive({ live, esc, lv, ctxDaLive, linhasPedidos, onToast, canaisL
       <div className="panel">
         <h3>
           {live.nome || "Live"} <CanalTag canal={canal} /> <span className="faint">· {diaSemana(live.data)} {dm(live.data)}</span>
+          <button type="button" className="btn btn-sm danger live-excluir" onClick={() => setExcluir(true)}>
+            × Excluir live
+          </button>
         </h3>
         <Kpis
           itens={[
@@ -188,9 +191,6 @@ function DetalheLive({ live, esc, lv, ctxDaLive, linhasPedidos, onToast, canaisL
           </table>
         </div>
         <div className="acoes-form">
-          <button type="button" className="link-btn bad" onClick={() => setExcluir(true)}>
-            Excluir esta live
-          </button>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn" onClick={() => setRepetir(true)}>
             Repetir o plano numa live nova

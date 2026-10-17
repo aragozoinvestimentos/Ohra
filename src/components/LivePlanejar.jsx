@@ -8,10 +8,10 @@ import { hojeSP } from "../lib/datas.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
 import { horasDoItem } from "../lib/pedidos.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
-import { ESTRATEGIAS, PRAZO_PADRAO, copiaDoItem, estrategiaPadrao, historicoDoItem, lucroNaLive, precoInicial, prazoEnvio } from "../lib/live.js";
+import { ESTRATEGIAS, PRAZO_PADRAO, completarCopia, copiaDoItem, estrategiaPadrao, historicoDoItem, lucroNaLive, precoInicial, prazoEnvio } from "../lib/live.js";
 import { anuncioNoRiscado } from "../lib/rampaAnuncio.js";
 import { criarLive, excluirLive, salvarLive } from "../lib/liveAcoes.js";
-import { dm, diaSemana, rotuloLive } from "../lib/liveTexto.js";
+import { dm, diaSemana, planoEmTexto, rotuloLive } from "../lib/liveTexto.js";
 
 // Live → 1 · Planejar: criar a live (plataforma, data), escolher os produtos
 // (cada um vira uma CÓPIA — preço salvo, custo e riscado de hoje), uma
@@ -144,6 +144,18 @@ export function SeletorLive({ lv, esc, atual, setAtualId, filtro, extra }) {
   );
 }
 
+// Estratégia com os campos vazios preenchidos pela sugestão (dá pra editar).
+function estrategiaCompleta(p, ctx) {
+  const padrao = estrategiaPadrao(p.estrategia?.tipo || "escada", p, ctx);
+  const e = { ...(p.estrategia || {}) };
+  for (const [k, v] of Object.entries(padrao)) if (e[k] == null || e[k] === "") e[k] = v;
+  return e;
+}
+const normalizar = (lista, ctx) => lista.map((p0) => {
+  const p = completarCopia(p0, ctx);
+  return { ...p, estrategia: estrategiaCompleta(p, ctx) };
+});
+
 function CamposEstrategia({ e, set }) {
   const campo = (rot, k, opts = {}) => (
     <label className="live-campo" key={k}>
@@ -247,6 +259,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
     if (!rascunho && !Object.keys(extra).length) return true;
     setSalvando(true);
     const { id: _id, ...patch } = rascunho || {};
+    if (patch.produtos) patch.produtos = normalizar(patch.produtos, ctx);
     const r = await salvarLive(atual.id, { ...patch, ...extra });
     setSalvando(false);
     if (!r.ok) {
@@ -258,7 +271,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
   }
   async function comecar() {
     if (!produtos.length) return onToast("Escolha pelo menos um produto pra live");
-    const ok = await salvar({ status: "aovivo", inicio: new Date().toISOString() });
+    const ok = await salvar({ status: "aovivo", inicio: new Date().toISOString(), produtos: normalizar(produtos, ctx).map((p, i) => ({ ...p, ordem: i })) });
     if (ok) {
       onToast("Live começou — boa live!");
       irPara("aovivo");
@@ -298,6 +311,9 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
         <h3>
           {live.nome || "Live"} <CanalTag canal={canal} /> <span className="faint">· {diaSemana(live.data)} {dm(live.data)}</span>
           {bloqueada && <span className="st st-decisao" style={{ marginLeft: 8 }}>{live.status === "aovivo" ? "ao vivo" : "encerrada"}</span>}
+          <button type="button" className="btn btn-sm danger live-excluir" onClick={() => setConfirmar("excluir")}>
+            × Excluir live
+          </button>
         </h3>
         {bloqueada && (
           <div className="alerta alerta-info">
@@ -357,9 +373,10 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
         )}
         {!produtos.length && <div className="empty">Nenhum produto ainda. Adicione os produtos (ou kits) que vai mostrar na live.</div>}
         <div className="live-plano-lista">
-          {produtos.map((p, i) => {
-            const e = p.estrategia || estrategiaPadrao("escada", p, ctx);
-            const ini = precoInicial(p);
+          {produtos.map((p0, i) => {
+            const p = completarCopia(p0, ctx);
+            const e = estrategiaCompleta(p, ctx);
+            const ini = precoInicial({ ...p, estrategia: e });
             const lucroIni = ini ? lucroNaLive(p, ini, ctx) : null;
             const lucroSalvo = p.salvo ? lucroNaLive({ ...p, estrategia: null }, p.salvo, ctx) : null;
             const an = ini && p.riscado ? anuncioNoRiscado(ini, p.riscado) : null;
@@ -371,8 +388,17 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
                   <div className="live-plano-nome">
                     <b>{p.nome}</b> {p.sku && <span className="faint">· {p.sku}</span>}
                     <div className="faint">
-                      salvo {p.salvo ? BRL(p.salvo) : "—"}
-                      {lucroSalvo != null && ` · lucro ${BRL(lucroSalvo)}`} · custo {BRL(p.custo)}
+                      {p.salvo ? (
+                        <>
+                          salvo {BRL(p.salvo)}
+                          {lucroSalvo != null && ` · lucro ${BRL(lucroSalvo)}`}
+                        </>
+                      ) : p.sugerido ? (
+                        <>sem preço salvo em {canal?.nome || "neste canal"} — sugerido {BRL(p.sugerido)} pela sua margem desejada</>
+                      ) : (
+                        <>sem preço salvo em {canal?.nome || "neste canal"}</>
+                      )}{" "}
+                      · custo {BRL(p.custo)}
                     </div>
                   </div>
                   {!bloqueada && (
@@ -392,7 +418,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
                 <fieldset disabled={bloqueada} className="live-fieldset live-estrategia">
                   <label className="live-campo">
                     <span>Estratégia</span>
-                    <select value={e.tipo} onChange={(ev) => setProd(p.key, { estrategia: estrategiaPadrao(ev.target.value, p, ctx) })}>
+                    <select value={e.tipo} onChange={(ev) => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: estrategiaPadrao(ev.target.value, p, ctx) })}>
                       {ESTRATEGIAS.map((x) => (
                         <option key={x.id} value={x.id} title={x.desc}>
                           {x.nome}
@@ -400,12 +426,20 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
                       ))}
                     </select>
                   </label>
-                  <CamposEstrategia e={e} set={(ne) => setProd(p.key, { estrategia: ne })} />
+                  <CamposEstrategia e={e} set={(ne) => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: ne })} />
                   <label className="live-campo">
                     <span>Vou ter pronto</span>
                     <Num valor={p.pronto ?? null} onValor={(x) => setProd(p.key, { pronto: x == null ? null : Math.round(x) })} passo largura={56} placeholder={hist ? String(hist.pronto) : "—"} />
                   </label>
                 </fieldset>
+                <div className="live-plano-texto">
+                  <b>Plano:</b> {planoEmTexto(e, p.salvo || p.sugerido)}{" "}
+                  {!bloqueada && (
+                    <button type="button" className="link-btn" onClick={() => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: estrategiaPadrao(e.tipo, p, ctx) })}>
+                      voltar à sugestão
+                    </button>
+                  )}
+                </div>
                 <div className="live-plano-info">
                   <span>
                     Abre em <b>{ini ? BRL(ini) : "—"}</b>
@@ -441,9 +475,6 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
 
       {!bloqueada && (
         <div className="acoes-form live-acoes-fixas">
-          <button type="button" className="link-btn bad" onClick={() => setConfirmar("excluir")}>
-            Excluir esta live
-          </button>
           <span style={{ flex: 1 }} />
           {sujo && <span className="faint">alterações não salvas</span>}
           <button type="button" className="btn" disabled={!sujo || salvando} onClick={() => salvar().then((ok) => ok && onToast("Plano salvo"))}>

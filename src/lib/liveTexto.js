@@ -25,3 +25,28 @@ export const resumoEstrategia = (e) => {
   return `${nomeEstrategia(e.tipo)}: ${BRL(e.preco)}`;
 };
 
+
+const reais = (v) => BRL(v);
+/** O plano do produto em português, pra saber o que vai acontecer na live. */
+export function planoEmTexto(e, ref) {
+  if (!e) return "";
+  const n = (x) => Number(x) || 0;
+  if (e.tipo === "escada") {
+    if (!(n(e.piso) > 0) || !(n(e.alvo) > 0)) return "Preencha o piso e o alvo.";
+    const passo = n(e.passo) || 0.5;
+    const degraus = Math.max(0, Math.ceil((n(e.alvo) - n(e.piso)) / passo - 1e-9));
+    if (!degraus) return `Piso e alvo iguais (${reais(e.alvo)}): sem espaço pra escada — o preço salvo já é o mínimo com lucro. Prefira "Preço fixo" ou outro produto pra abrir a live.`;
+    const quando = e.subirPor === "tempo" ? `a cada ${n(e.minutos) || 5} min` : e.subirPor === "ambos" ? `a cada ${n(e.aCada) || 3} vendas ou ${n(e.minutos) || 5} min (o que vier primeiro)` : `a cada ${n(e.aCada) || 3} vendas`;
+    const total =
+      e.subirPor === "tempo"
+        ? ` — chega no alvo em ~${degraus * (n(e.minutos) || 5)} min`
+        : e.subirPor === "vendas"
+          ? ` — chega no alvo depois de ~${degraus * (n(e.aCada) || 3)} vendas`
+          : "";
+    return `Abre em ${reais(e.piso)} e sobe ${reais(passo)} ${quando} até ${reais(e.alvo)} (${degraus} degrau${degraus === 1 ? "" : "s"})${total}. Sem venda por 5 min, o app sugere segurar ou voltar um degrau.`;
+  }
+  if (e.tipo === "primeiros") return `Os ${n(e.n) || 10} primeiros pagam ${reais(e.preco)}; depois o app sugere voltar pra ${reais(e.normal || ref)}. Bom pra abrir a live e puxar os primeiros pedidos.`;
+  if (e.tipo === "relampago") return `Fica em ${reais(e.normal || ref)}; quando você soltar, vai pra ${reais(e.preco)} por ${n(e.minutos) || 5} min e o app avisa a hora de voltar. Bom pra reacender a live no meio.`;
+  if (e.tipo === "brinde") return `Vende a ${reais(e.preco)} com ${e.brindeNome || "um brinde"} junto — o custo do brinde (${reais(e.brindeCusto || 0)}) sai do lucro de cada venda.`;
+  return `Um preço só a live toda: ${reais(e.preco)}. Serve pro kit da live (escolha um kit cadastrado).`;
+}
