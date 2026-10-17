@@ -347,6 +347,7 @@ Plano fechado com o Gustavo (vídeo "Ads não é milagre, é método", @luanalve
 
 ## Pendências combinadas com o Gustavo (não esquecer)
 
+- **FUTURO — loja de REVENDA (só conversar quando o Gustavo for criar; NÃO fazer antes)**: o app vai virar plataforma multimercado (a Ohra 3D é a 1ª loja; ele vai criar outra loja de produtos comprados no atacado e revendidos). Ajustes anotados em 17/10/2026: (1) tipo de loja Fabricação × Revenda em Configuração (revenda esconde Produção/Minha farm/Registro de impressões/Custo de produção/Otimização); (2) custo do produto = custo de compra (preço do fornecedor + frete da compra ÷ qtd + impostos) no lugar do detalhamento da impressão; (3) custo médio das últimas compras, recalculado a cada compra (como o filamento); (4) estoque de verdade (quantidade, baixa pelos pedidos importados, aviso de repor, dinheiro parado — Curva ABC/XYZ como base); (5) fornecedores (nome, prazo, pedido mínimo, histórico de preço); (6) compra de mercadoria como saída no caixa (à vista/parcelada); (7) Reserva de produção vira "reposição de estoque"; (8) giro/dias pra vender. Preço por canal, taxas, escada, rampa, Ads, Anunciar, Ficha, pedidos, caixa, metas e curvas valem igual.
 - GMV Max da Loja: CSV recebido e importação ligada em 17/10/2026 (ver 2d no método do Luan). O CSV NÃO separa por produto.
 
 - Importar vendas: FEITO na aba Análise (v55). Falta conferir com arquivo real o formato do nº do pedido de ML/TikTok/Shein e o relatório de Ads do ML. Data de conferência das taxas: Gustavo acha desnecessário por enquanto.
