@@ -4,7 +4,7 @@ import { assinarMarcas, lerMarcas, somarMarcas } from "./lib/marcas.js";
 import { CrescimentoProvider } from "./hooks/useCrescimento.js";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { assinarUrgentes, lerUrgentes } from "./lib/urgentes.js";
-import logo from "./assets/logo.png";
+import MarcaApp from "./components/MarcaApp.jsx";
 import TelaDescanso from "./components/TelaDescanso.jsx";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
 import LojaGate from "./components/LojaGate.jsx";
@@ -222,7 +222,7 @@ function loadTab() {
 }
 
 export default function App() {
-  const { lojas, disponivel: lojasDisponivel, carregando: carregandoLoja, lojaId, precisaPin } = useLoja();
+  const { disponivel: lojasDisponivel, carregando: carregandoLoja, lojaId, precisaPin } = useLoja();
   const [tab, setTab] = useState(loadTab);
   // Abas já abertas nesta sessão: só montam na primeira visita e depois
   // continuam montadas (escondidas) — o que você digitou não se perde.
@@ -394,7 +394,6 @@ export default function App() {
       setMenuAberto(false);
     } else irParaEntrada(entrada);
   }
-  const lojaAtual = lojas.find((l) => l.id === lojaId) || null;
 
   // Nenhuma aba pode montar (e nenhum dado pode ser buscado) enquanto a
   // loja atual não estiver definida e, se tiver PIN, desbloqueada nesta
@@ -410,11 +409,7 @@ export default function App() {
     <div className={`shell ${menuAberto ? "menu-aberto" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
-          {lojaAtual?.icone_url ? (
-            <img className="brand-foto" src={lojaAtual.icone_url} alt="" />
-          ) : (
-            <img className="brand-logo" src={logo} alt="" />
-          )}
+          <MarcaApp tamanho={30} />
           <div>
             <div className="word">MARGEM REAL</div>
             <div className="tagline">o lucro de verdade</div>

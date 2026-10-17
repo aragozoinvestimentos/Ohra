@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import logo from "../assets/logo.png";
+import MarcaApp from "./MarcaApp.jsx";
 import { BRL } from "../lib/format.js";
 import { versiculoDoDia } from "../data/versiculosDoDia.js";
 import { calcularRanking } from "../hooks/useRankingData.js";
@@ -46,7 +46,7 @@ export default function TelaDescanso() {
   const { itens, canais, precos, contagemProdutos, contagemKits, agoraDe } = useEscada();
   const { lojas, lojaId } = useLoja();
   const lojaAtual = lojas.find((l) => l.id === lojaId) || null;
-  const logoAtual = lojaAtual?.icone_url || logo;
+  const logoAtual = lojaAtual?.icone_url || null;
 
   useEffect(() => {
     modoRef.current = modo;
@@ -99,7 +99,7 @@ export default function TelaDescanso() {
   if (modo === "leve") {
     return (
       <div className="tela-descanso tela-descanso-leve">
-        <img className="td-logo" src={logoAtual} alt="" />
+        {logoAtual ? <img className="td-logo" src={logoAtual} alt="" /> : <MarcaApp tamanho={72} className="td-logo" />}
         <div className="td-frase">{versiculo.frase}</div>
         <div className="td-versiculo">
           {versiculo.texto}
@@ -113,7 +113,7 @@ export default function TelaDescanso() {
 
   return (
     <div className="tela-descanso">
-      <img className="td-logo" src={logoAtual} alt="" />
+      {logoAtual ? <img className="td-logo" src={logoAtual} alt="" /> : <MarcaApp tamanho={72} className="td-logo" />}
 
       <div className="td-frase">{versiculo.frase}</div>
       <div className="td-versiculo">

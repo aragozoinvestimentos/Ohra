@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .f { fill: #ffffff; stroke: #e6e4df; stroke-width: 1.5; } .m { fill: #18171a; } .r { fill: #d2622b; }
+    @media (prefers-color-scheme: dark) { .f { fill: #18171a; stroke: #2d2c30; } .m { fill: #ffffff; } .r { fill: #f08a52; } }
+  </style>
+  <rect class="f" x="1" y="1" width="62" height="62" rx="15"/>
+  <text x="32" y="43" text-anchor="middle" font-family="Manrope, Arial, sans-serif" font-weight="800" font-size="28"><tspan class="m">M</tspan><tspan class="r">R</tspan></text>
+</svg>

@@ -3,7 +3,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { IconeLoja } from "./LojaSwitcher.jsx";
 import PinPrompt from "./PinPrompt.jsx";
 import Lojas from "./Lojas.jsx";
-import logo from "../assets/logo.png";
+import MarcaApp from "./MarcaApp.jsx";
 
 // Bloqueia o app inteiro — nenhuma aba monta, nenhum dado é buscado — até
 // uma loja ser escolhida e, se ela tiver PIN, o PIN ser digitado certo.
@@ -31,7 +31,7 @@ export default function LojaGate({ onToast }) {
       <div className="loja-gate">
         <div className="loja-gate-card loja-gate-card-larga">
           <div className="loja-gate-brand">
-            <img src={logo} alt="Margem Real" />
+            <MarcaApp tamanho={40} />
             <div>
               <div className="word">MARGEM REAL</div>
               <div className="tagline">o lucro de verdade de cada venda</div>
@@ -56,7 +56,7 @@ export default function LojaGate({ onToast }) {
     <div className="loja-gate">
       <div className="loja-gate-card">
         <div className="loja-gate-brand">
-          <img src={logo} alt="Margem Real" />
+          <MarcaApp tamanho={40} />
           <div>
             <div className="word">MARGEM REAL</div>
             <div className="tagline">o lucro de verdade de cada venda</div>

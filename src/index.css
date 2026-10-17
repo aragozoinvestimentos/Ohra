@@ -2187,3 +2187,14 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .loja-atual-sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
 .loja-card-atual { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent-soft); }
 .loja-card-aqui { font-size: 12px; font-weight: 700; color: var(--accent-ink); }
+
+/* Ícone do app Margem Real (MarcaApp.jsx, monograma MR — 17/10/2026):
+   escuro = fundo grafite, M branco, R terracota; claro = invertido. */
+:root { --marca-fundo: #ffffff; --marca-borda: #e6e4df; --marca-m: #18171a; --marca-r: #d2622b; }
+:root[data-theme="dark"] { --marca-fundo: #18171a; --marca-borda: #2d2c30; --marca-m: #ffffff; --marca-r: #f08a52; }
+.marca-app { flex-shrink: 0; display: block; }
+.marca-app .marca-fundo { fill: var(--marca-fundo); stroke: var(--marca-borda); stroke-width: 1.5; }
+.marca-app .marca-m { fill: var(--marca-m); }
+.marca-app .marca-r { fill: var(--marca-r); }
+.marca-app.td-logo { filter: none; width: 68px; height: 68px; }
+.tela-descanso-leve .marca-app.td-logo { width: 48px; height: 48px; }
