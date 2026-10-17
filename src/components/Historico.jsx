@@ -28,6 +28,7 @@ import { pegarPedido } from "../lib/navegar.js";
 import OndeSeDecide from "./OndeSeDecide.jsx";
 import { CartoesAlvoAgora, DiferencaAlvoAgora, LinhaAgora } from "./AlvoAgora.jsx";
 import TirarDoCanalDialog from "./TirarDoCanalDialog.jsx";
+import { revisoesPrecoDireto } from "../lib/revisarPreco.js";
 import { excluirVariacaoTodos } from "../lib/tirarDoCanal.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import Estado, { PontoSaude } from "./Estado.jsx";
@@ -269,6 +270,10 @@ export default function Historico({ onEditarCompleto, onToast }) {
   // O que a célula mostra: preço, lucro · margem (cor SÓ do alertaDe) e no
   // máximo UMA etiqueta, por prioridade: prejuízo > abaixo do mínimo > frete
   // grátis > custo mudou > em rampa > estratégia. O resto fica no detalhe.
+  // Venda direta (canal próprio por markup): "vale revisar o preço?" — a MESMA
+  // conta do aviso do Início (preço salvo há 12 meses ou custo +10%).
+  const revisoesDireto = useMemo(() => new Map(revisoesPrecoDireto({ itens, canais, precos, hoje: hojeSP() }).map((r) => [`${r.item.id}|${r.canal.id}`, r])), [itens, canais, precos]);
+
   function infoCelula(item, canalObj) {
     const p = precoDe(item, canalObj);
     if (!p) return null;
@@ -285,12 +290,14 @@ export default function Historico({ onEditarCompleto, onToast }) {
     if (al?.tipo === "prejuizo") chip = { tipo: "resolver", discreto: al.discreto, txt: al.discreto && rotEst ? `prejuízo · ${rotEst}` : "prejuízo" };
     else if (al?.tipo === "abaixo-minimo") chip = { tipo: "atencao", txt: al.estrategia?.vencida ? rotEst : "abaixo do mínimo" };
     else if (al?.frete) chip = { tipo: "atencao", txt: al.frete.curto };
+    else if (revisoesDireto.has(`${item.id}|${canalObj.id}`)) chip = { tipo: "atencao", txt: "vale revisar o preço" };
     else if (m) chip = { tipo: "info", txt: `custo ${sinal(m.dCusto)}`, icone: null };
     else if (rotEst) chip = { tipo: al.estrategia.vencida ? "atencao" : "decisao", txt: rotEst, icone: al.estrategia.vencida ? undefined : null };
     // Saúde da célula (bolinha da linha): o pior entre alerta, rampa e estratégia.
     const estado = piorEstado([
       estadoDoAlerta(al, { rotuloEstrategia: rotEst }),
       al?.estrategia?.vencida && rotEst ? { tipo: "atencao", motivo: rotEst } : null,
+      revisoesDireto.has(`${item.id}|${canalObj.id}`) ? { tipo: "atencao", motivo: "vale revisar o preço" } : null,
       rampa != null ? { tipo: "decisao", motivo: `em rampa · ${BRL(rampa)}` } : null,
       rotEst && !al?.estrategia?.vencida ? { tipo: "decisao", motivo: rotEst } : null,
     ]);
@@ -360,6 +367,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
         </div>
         <div className="detalhe-cel-avisos">
           <DiferencaAlvoAgora aa={info?.aa} />
+          {revisoesDireto.has(`${item.id}|${canalObj.id}`) && (
+            <div className="aviso-cel atencao">
+              <b>Vale revisar o preço?</b> {revisoesDireto.get(`${item.id}|${canalObj.id}`).motivos.map((x) => x.texto).join(" · ")}. Venda direta parte do custo: confira o preço pelo markup no 1º Avulso (o aviso some quando você salvar um preço novo).
+            </div>
+          )}
           {al?.frete && (
             <div className="aviso-cel atencao">
               <b>Cliente paga o frete</b> {al.frete.texto}.{dicaKit(item, canalObj) ? ` Dica: ${dicaKit(item, canalObj)}.` : ""}
