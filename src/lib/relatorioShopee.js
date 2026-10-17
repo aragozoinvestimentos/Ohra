@@ -233,16 +233,38 @@ export function interpretarAds(linhas, nomeArquivo) {
     cli: achar(cab, "Cliques"),
     itens: achar(cab, "Itens Vendidos"),
     conv: achar(cab, "Conversões"),
+    gmv: achar(cab, "GMV"),
+    status: achar(cab, "Status"),
+    inicio: achar(cab, "Data de Início"),
   };
   const porItem = new Map();
   const total = { gasto: 0, cliques: 0, vendas: 0 };
+  // GMV Max da Loja: linha própria, sem ID do produto ("-") e sem separar
+  // por produto (conferido no CSV real de 17/10/2026).
+  let loja = null;
   for (const l of linhas.slice(iCab + 1)) {
     const id = String(l[c.id] || "").trim();
+    if ((!id || id === "-") && /gmv max da loja/i.test(String(l[c.nome] || ""))) {
+      const ini = isoDeBR(String(l[c.inicio] || "").split(" ")[0]);
+      loja = {
+        gasto: Math.round(((loja?.gasto || 0) + (numPonto(l[c.gasto]) || 0)) * 100) / 100,
+        cliques: (loja?.cliques || 0) + (numPonto(l[c.cli]) || 0),
+        vendas: (loja?.vendas || 0) + (numPonto(l[c.itens >= 0 ? c.itens : c.conv]) || 0),
+        receita: Math.round(((loja?.receita || 0) + (c.gmv >= 0 ? numPonto(l[c.gmv]) || 0 : 0)) * 100) / 100,
+        inicio: ini || loja?.inicio || null,
+        status: c.status >= 0 ? String(l[c.status] || "") : "",
+      };
+      continue;
+    }
     if (!id || id === "-") continue;
     const g = numPonto(l[c.gasto]) || 0;
     const cl = numPonto(l[c.cli]) || 0;
     const v = numPonto(l[c.itens >= 0 ? c.itens : c.conv]) || 0;
     const a = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, nome: l[c.nome] || "" };
+    // Status do anúncio na Shopee (Em Andamento / Pausado / Excluído): o que
+    // estiver rodando prevalece quando o mesmo produto tem mais de uma linha.
+    const st = c.status >= 0 ? String(l[c.status] || "").trim() : "";
+    if (st && (!a.status || /andamento/i.test(st))) a.status = st;
     a.gasto += g;
     a.cliques += cl;
     a.vendas += v;
@@ -253,7 +275,7 @@ export function interpretarAds(linhas, nomeArquivo) {
   }
   for (const a of porItem.values()) a.gasto = Math.round(a.gasto * 100) / 100;
   total.gasto = Math.round(total.gasto * 100) / 100;
-  return { tipo: "ads", periodo, porItem, total };
+  return { tipo: "ads", periodo, porItem, total, loja };
 }
 
 // Shopee Ads exporta UMA lista por tipo de campanha ("produto com melhor
@@ -265,9 +287,21 @@ export function juntarAds(relatorios) {
   if (lista.length <= 1) return lista[0] || null;
   const porItem = new Map();
   const total = { gasto: 0, cliques: 0, vendas: 0 };
+  let loja = null;
+  for (const r of lista)
+    if (r.loja)
+      loja = {
+        gasto: Math.round(((loja?.gasto || 0) + r.loja.gasto) * 100) / 100,
+        cliques: (loja?.cliques || 0) + r.loja.cliques,
+        vendas: (loja?.vendas || 0) + r.loja.vendas,
+        receita: Math.round(((loja?.receita || 0) + (r.loja.receita || 0)) * 100) / 100,
+        inicio: [loja?.inicio, r.loja.inicio].filter(Boolean).sort()[0] || null,
+        status: r.loja.status || loja?.status || "",
+      };
   for (const r of lista)
     for (const [id, a] of r.porItem) {
       const t = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, nome: a.nome };
+      if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
       t.gasto = Math.round((t.gasto + a.gasto) * 100) / 100;
       t.cliques += a.cliques;
       t.vendas += a.vendas;
@@ -280,7 +314,7 @@ export function juntarAds(relatorios) {
   const pers = lista.map((r) => r.periodo).filter(Boolean);
   const iguais = pers.every((p) => p.de === pers[0]?.de && p.ate === pers[0]?.ate);
   const periodo = pers.length ? { de: pers.map((p) => p.de).sort()[0], ate: pers.map((p) => p.ate).sort().pop() } : null;
-  return { tipo: "ads", periodo, porItem, total, arquivo: lista.map((r) => r.arquivo).join(" + "), arquivos: lista.length, periodosDiferentes: !iguais };
+  return { tipo: "ads", periodo, porItem, total, loja, arquivo: lista.map((r) => r.arquivo).join(" + "), arquivos: lista.length, periodosDiferentes: !iguais };
 }
 
 // Desempenho do produto: a Shopee separa os anúncios em listas ("produto com
@@ -369,6 +403,7 @@ export function adsPorItemApp(relatorios, itensApp) {
     const sku = normSku(idSku[id]);
     if (!sku) continue;
     const t = porSku.get(sku) || { gasto: 0, cliques: 0, vendas: 0, ids: [] };
+    if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
     t.gasto += a.gasto;
     t.cliques += a.cliques;
     t.vendas += a.vendas;
@@ -384,18 +419,19 @@ export function adsPorItemApp(relatorios, itensApp) {
     const t = { gasto: 0, cliques: 0, vendas: 0 };
     for (const id of ids) {
       const a = ads.porItem.get(id);
+      if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
       t.gasto += a.gasto;
       t.cliques += a.cliques;
       t.vendas += a.vendas;
       usados.add(id);
     }
-    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas };
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "" };
   }
   for (const it of itensApp.filter((x) => !x.grupoId)) {
     const t = porSku.get(normSku(it.sku));
     if (!t) continue;
     t.ids.forEach((id) => usados.add(id));
-    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas };
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "" };
   }
   const adsSemPar = [...ads.porItem.entries()].filter(([id, a]) => !usados.has(id) && a.gasto > 0).map(([id, a]) => ({ itemId: id, ...a, conhecido: !!idSku[id] || !!idGrupo[id] }));
   const avisos = [];
@@ -405,7 +441,7 @@ export function adsPorItemApp(relatorios, itensApp) {
   const skusConhecidos = new Set(Object.values(idSku).map(normSku));
   const gruposConhecidos = new Set(Object.values(idGrupo));
   const zerados = itensApp.filter((it) => !porChave[it.chave] && (it.grupoId ? gruposConhecidos.has(it.grupoId) : skusConhecidos.has(normSku(it.sku)))).map((it) => it.chave);
-  return { periodo: ads.periodo, porChave, zerados, adsSemPar, avisos };
+  return { periodo: ads.periodo, porChave, zerados, adsSemPar, avisos, loja: ads.loja || null };
 }
 
 // ---- Anúncio com vários itens (3º Ficha → anuncios_grupo) ----
@@ -481,7 +517,7 @@ export function relatorioDoGuardado(d) {
  * sem período → criar. Mesma conta da central e da janela "Atualizar andamento".
  * todas = linhasAds.linhas (useCrescimento). → { porChave, zerados, periodo, avisos, perguntas }
  */
-export function andamentoDoCsv(lidos, todas) {
+export function andamentoDoCsv(lidos, todas, lojaLinha = null) {
   const shopee = (todas || []).filter((l) => l.canal?.tipo === "shopee");
   const res = adsPorItemApp(lidos, shopee.map((l) => ({ chave: l.chave, sku: l.item.sku, grupoId: l.tipo === "grupo" ? l.id : null })));
   const avisos = [...(res.avisos || [])];
@@ -503,6 +539,29 @@ export function andamentoDoCsv(lidos, todas) {
     if (ult && ult.fim && ult.fim < res.periodo.ate && ult.fim >= somar(res.periodo.de, -1)) perguntas.push({ chave: l.chave, l, tipo: "estender", periodo: ult, data: res.periodo.ate, valores });
     else if (!ult || !ult.fim || ult.fim < res.periodo.de) perguntas.push({ chave: l.chave, l, tipo: "criar", data: res.periodo.de, ate: res.periodo.ate, valores });
   }
+  // Status na Shopee × app: anúncio pausado/excluído lá e ligado aqui.
+  for (const l of shopee) {
+    const st = res.porChave[l.chave]?.status || "";
+    if (!l.av?.ativo || !st || /andamento/i.test(st)) continue;
+    const pausadoNoApp = ["pausado", "despausar", "pausa-longa"].includes(l.av.chave);
+    if (/exclu/i.test(st)) avisos.push(`${l.item.nome}: na Shopee o Ads está Excluído, mas no app o período continua ligado — use "Pausei — encerrar período" no Ads.`);
+    else if (/pausad/i.test(st) && !pausadoNoApp) avisos.push(`${l.item.nome}: na Shopee o Ads está Pausado, mas no app está ligado — marque "Pausei pra revisar" (ou encerre o período) no Ads.`);
+  }
+  // GMV Max da Loja (linha própria do CSV, sem separar por produto).
+  let loja = null;
+  if (res.loja && lojaLinha && res.periodo?.ate) {
+    const valores = { gasto: res.loja.gasto, cliques: Math.round(res.loja.cliques), vendas: Math.round(res.loja.vendas), receita: res.loja.receita };
+    const ativo = lojaLinha.av?.ativo || null;
+    if (ativo) {
+      loja = { periodo: ativo, ate: res.periodo.ate, valores };
+      if (/pausad/i.test(res.loja.status || "") && !["pausado", "despausar", "pausa-longa"].includes(lojaLinha.av.chave)) avisos.push('GMV Max da Loja: na Shopee está Pausada, mas no app está ligada — marque "Pausei" ou encerre o período.');
+    } else if (res.loja.gasto > 0 && !/exclu/i.test(res.loja.status || "")) {
+      const ini = [res.loja.inicio, res.periodo.de].filter(Boolean).sort().pop();
+      const ult = (lojaLinha.periodos || [])[0] || null;
+      if (ult && ult.fim && ult.fim < res.periodo.ate && ult.fim >= somar(res.periodo.de, -1)) perguntas.push({ chave: lojaLinha.chave, l: lojaLinha, tipo: "estender", periodo: ult, data: res.periodo.ate, valores });
+      else if (!ult || !ult.fim || ult.fim < ini) perguntas.push({ chave: lojaLinha.chave, l: lojaLinha, tipo: "criar", data: ini, ate: res.periodo.ate, valores });
+    }
+  }
   for (const a of (res.adsSemPar || []).filter((x) => x.conhecido)) avisos.push(`Anúncio ${a.nome || a.itemId}: R$ ${a.gasto.toFixed(2).replace(".", ",")} de Ads, mas não está ligado a nenhum produto/anúncio do app com preço salvo.`);
-  return { ...res, avisos, perguntas };
+  return { ...res, avisos, perguntas, lojaAndamento: loja };
 }

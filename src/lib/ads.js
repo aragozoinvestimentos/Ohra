@@ -211,9 +211,35 @@ export function pausasDoPeriodo(periodo, hoje) {
   if (desde && hoje) diasPausados += Math.max(0, diasEntre(desde, hoje));
   return { pausado: desde ? { desde } : null, diasPausados, ultimaVolta };
 }
-// "Revisei o anúncio — dar até o 7º dia": ajuste {tipo:'revisei'} silencia o
-// aviso de dia 3 sem venda até o 7º dia rodando.
-const revisouSemVenda = (periodo) => (Array.isArray(periodo?.ajustes) ? periodo.ajustes : []).some((a) => a?.tipo === "revisei");
+// Última volta ("Despausei") ou revisão ("Revisei"): daí em diante o Ads é
+// conferido DE NOVO — dia 3 sem venda, prejuízo e cliques sem venda contam só
+// o que aconteceu depois dela (17/10/2026, Gustavo: "já pausei, revisei e
+// ativei — não deveria sugerir de novo, deveria esperar os 3 dias").
+export function ultimaRevisao(periodo) {
+  let ult = null;
+  for (const a of Array.isArray(periodo?.ajustes) ? periodo.ajustes : []) if (a?.tipo === "volta" || a?.tipo === "revisei") ult = a;
+  return ult;
+}
+// Acumulado do Ads ATÉ o fim do dia anterior a `data`, pelos envios do
+// andamento (parcial + historico), interpolando gasto/cliques entre o envio
+// de antes e o de depois; vendas = as do envio de antes (venda no meio conta
+// como depois — nunca gera aviso falso de "sem venda").
+export function acumuladoAntesDe(periodo, data) {
+  const par = periodo?.parcial;
+  const zero = { gasto: 0, cliques: 0, vendas: 0 };
+  if (!par?.ate || !data) return zero;
+  const pts = [...(Array.isArray(par.historico) ? par.historico : []), par]
+    .filter((h) => h?.ate)
+    .map((h) => ({ ate: String(h.ate).slice(0, 10), gasto: num(h.gasto), cliques: num(h.cliques), vendas: num(h.vendas) }))
+    .sort((a, b) => a.ate.localeCompare(b.ate));
+  const t = somarDiasIso(data, -1);
+  const p0 = [...pts].reverse().find((x) => x.ate <= t) || { ate: somarDiasIso(periodo.inicio, -1), ...zero };
+  const p1 = pts.find((x) => x.ate > t);
+  if (!p1) return { gasto: p0.gasto, cliques: p0.cliques, vendas: p0.vendas };
+  const tot = diasEntre(p0.ate, p1.ate);
+  const f = tot > 0 ? Math.max(0, Math.min(1, diasEntre(p0.ate, t) / tot)) : 0;
+  return { gasto: p0.gasto + (p1.gasto - p0.gasto) * f, cliques: p0.cliques + (p1.cliques - p0.cliques) * f, vendas: p0.vendas };
+}
 
 const roasDe = (s, preco) => (num(s.ads_gasto) > 0 ? (num(s.ads_vendas) * (num(s.preco) || preco)) / num(s.ads_gasto) : null);
 
@@ -331,12 +357,15 @@ function medidaDaDecisao(ativo, ss, refDecisao, gapDias, preco) {
   const a = andamentoValido(ativo, ss);
   if (a) {
     const antes = noPer.filter((s) => s.data <= refDecisao);
-    const soma = (k) => antes.reduce((t, s) => t + num(s[k]), 0);
-    const ini = antes.length ? antes.reduce((m, s) => (s.data > m ? s.data : m), refDecisao) : ativo.inicio;
+    // Desconta o que veio antes do ajuste/volta: pelas semanas registradas ou
+    // pelos envios do andamento (o que for maior).
+    const base = refDecisao > ativo.inicio ? acumuladoAntesDe(ativo, refDecisao) : { gasto: 0, cliques: 0, vendas: 0 };
+    const soma = (k, b) => Math.max(antes.reduce((t, s) => t + num(s[k]), 0), b);
+    const ini = base.gasto > 0 ? refDecisao : antes.length ? antes.reduce((m, s) => (s.data > m ? s.data : m), refDecisao) : ativo.inicio;
     const dias = diasEntre(ini, a.ate) + 1;
-    const gasto = Math.max(0, a.gasto - soma("ads_gasto"));
-    const vendas = Math.max(0, a.vendas - soma("ads_vendas"));
-    const cliques = Math.max(0, a.cliques - soma("ads_cliques"));
+    const gasto = Math.max(0, a.gasto - soma("ads_gasto", base.gasto));
+    const vendas = Math.max(0, a.vendas - soma("ads_vendas", base.vendas));
+    const cliques = Math.max(0, Math.round(a.cliques - soma("ads_cliques", base.cliques)));
     if (dias >= 3 && gasto > 0 && a.ate >= somarDiasIso(refDecisao, gapDias - 1))
       return { fonte: "andamento", ate: a.ate, dias, gasto, vendas, cliques, roas: (vendas * preco) / gasto };
   }
@@ -400,21 +429,28 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
         : sitA("pausado", "decisao", `Pausado pra revisar desde ${dm(pz.pausado.desde)}`, 'O período continua com as métricas. Depois de arrumar o anúncio, despause na Shopee e marque "Despausei".', { numeros, pausado: pz.pausado });
     }
     const a00 = andamentoValido(ativo, ss);
-    // Dias RODANDO (sem as pausas) e vendas desde a última volta.
-    const refVolta = pz.ultimaVolta?.data || ativo.inicio;
+    // Dias RODANDO (sem as pausas) e números desde a última volta/revisão.
+    const rev = ultimaRevisao(ativo);
+    const refVolta = rev?.data || ativo.inicio;
     const diasRodando = diasEntre(ativo.inicio, hoje) - pz.diasPausados;
     const diasDesdeVolta = diasEntre(refVolta, hoje);
     const vendasTot = Math.max(r.vendas, a00?.vendas || 0);
-    const vendasDesdeVolta = pz.ultimaVolta ? Math.max(0, vendasTot - num(pz.ultimaVolta.vendas)) : vendasTot;
+    const base = rev ? acumuladoAntesDe(ativo, rev.data) : { gasto: 0, cliques: 0, vendas: 0 };
+    const desde = {
+      gasto: Math.max(0, Math.max(r.gasto, a00?.gasto || 0) - base.gasto),
+      cliques: Math.max(0, Math.round(Math.max(r.cliques, a00?.cliques || 0) - base.cliques)),
+      vendas: Math.max(0, vendasTot - base.vendas),
+    };
+    const vendasDesdeVolta = desde.vendas;
     const dia3 = num(regras.diaConferencia || 3);
+    const quandoRev = rev ? ` desde ${rev.tipo === "volta" ? "que voltou" : "a revisão"} (${dm(rev.data)})` : "";
     // Tem número cobrindo os 3 dias? (andamento até ≥ ref + 2, ou semana registrada depois)
     const temDado = (a00 && a00.ate >= somarDiasIso(refVolta, dia3 - 1)) || semanasNoPeriodo(ss, ativo).some((x) => x.data > somarDiasIso(refVolta, dia3 - 1));
-    const limiteRevisao = diasRodando < regras.aprendizadoDias && revisouSemVenda(ativo);
-    if (diasDesdeVolta >= dia3 && vendasDesdeVolta === 0 && !limiteRevisao) {
+    if (diasDesdeVolta >= dia3 && vendasDesdeVolta === 0) {
       if (temDado)
-        return sitA("sem-venda-dia3", "resolver", `${diasDesdeVolta} dias pagando Ads sem venda — pare e arrume o anúncio`, `O Ads só traz gente até o anúncio; se em ${diasDesdeVolta} dias ninguém comprou, mais dinheiro não resolve. Pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"} antes de gastar mais.`, { numeros, semVenda: { dias: diasDesdeVolta, gasto: a00?.gasto ?? r.gasto, cliques: Math.max(r.cliques, a00?.cliques || 0), podeEsperar: diasRodando < regras.aprendizadoDias && !revisouSemVenda(ativo) } });
-      if (diasRodando < regras.aprendizadoDias)
-        return sitA("conferir-dia3", "atencao", `Dia ${diasRodando + 1}: atualize o andamento`, `Pra saber se o Ads já vendeu: envie o CSV do Shopee Ads (Análise → Importar dados) ou o número à mão em "Atualizar andamento". Sem venda em 3 dias = parar e arrumar o anúncio.`, { numeros });
+        return sitA("sem-venda-dia3", "resolver", `${diasDesdeVolta} dias pagando Ads sem venda${quandoRev} — pare e arrume o anúncio`, `O Ads só traz gente até o anúncio; se em ${diasDesdeVolta} dias ninguém comprou, mais dinheiro não resolve. Pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"} antes de gastar mais.`, { numeros, semVenda: { dias: diasDesdeVolta, gasto: desde.gasto, cliques: desde.cliques, podeEsperar: true, desdeRevisao: !!rev } });
+      if (diasRodando < regras.aprendizadoDias || rev)
+        return sitA("conferir-dia3", "atencao", `${rev ? `${diasDesdeVolta} dias${quandoRev}` : `Dia ${diasRodando + 1}`}: atualize o andamento`, `Pra saber se o Ads já vendeu: envie o CSV do Shopee Ads (Análise → Importar dados) ou o número à mão em "Atualizar andamento". Sem venda em 3 dias = parar e arrumar o anúncio.`, { numeros });
     }
     // Ads no PREJUÍZO (16/10/2026, Gustavo: "anúncio no prejuízo precisa
     // aparecer — a decisão é imediata"): a partir do 3º dia (desde o início ou
@@ -422,17 +458,18 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     // equilíbrio → resolver JÁ, sem esperar os 7 dias de aprendizado nem os 3
     // depois do ajuste. Mesmas saídas do dia 3 sem venda.
     {
-      const gastoTot = Math.max(r.gasto, a00?.gasto || 0);
-      const roasTot = gastoTot > 0 ? (vendasTot * preco) / gastoTot : null;
+      const gastoTot = desde.gasto;
+      const vendasDes = desde.vendas;
+      const roasTot = gastoTot > 0 ? (vendasDes * preco) / gastoTot : null;
       const retTot = retornoAds(roasTot, empate);
       const gastoMin = Math.max(num(regras.prejuizoGastoMin || 15), (orcamento || 0) * 1.5);
-      if (diasDesdeVolta >= dia3 && !limiteRevisao && gastoTot >= gastoMin && empate && retTot != null && retTot < num(regras.prejuizoRetorno || 0.5))
+      if (diasDesdeVolta >= dia3 && gastoTot >= gastoMin && empate && retTot != null && retTot < num(regras.prejuizoRetorno || 0.5))
         return sitA(
           "ads-prejuizo",
           "resolver",
-          `Ads no prejuízo — ${moeda(gastoTot)} gastos, ${vendasTot} venda${vendasTot === 1 ? "" : "s"} via Ads`,
+          `Ads no prejuízo — ${moeda(gastoTot)} gastos, ${vendasDes} venda${vendasDes === 1 ? "" : "s"} via Ads${quandoRev}`,
           `ROAS ${um(roasTot)} contra um equilíbrio de ${um(empate)}: cada R$ 1 de Ads voltou ${moeda(roasTot)} em vendas — o Ads está tirando lucro. Pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"} antes de gastar mais (não precisa esperar os 7 dias).`,
-          { numeros, semVenda: { dias: diasDesdeVolta, gasto: gastoTot, cliques: Math.max(r.cliques, a00?.cliques || 0), podeEsperar: diasRodando < regras.aprendizadoDias && !revisouSemVenda(ativo), prejuizo: true } }
+          { numeros, semVenda: { dias: diasDesdeVolta, gasto: gastoTot, cliques: desde.cliques, podeEsperar: true, prejuizo: true, desdeRevisao: !!rev } }
         );
     }
     // Lance automático: aprende 7 dias (dias rodando), depois vira meta de ROAS.
@@ -450,15 +487,17 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     }
     // Ritmo (plano 14/10/2026): 7 dias de aprendizado no começo do período;
     // depois de cada ajuste, decide de novo em 3 dias.
-    const refDecisao = ultimoAjuste && ultimoAjuste > ativo.inicio ? ultimoAjuste : ativo.inicio;
+    // Voltar do pause ou revisar o anúncio também recomeça a contagem (3 dias).
+    const refAj = [ultimoAjuste, rev?.data].filter((d) => d && d > ativo.inicio).sort().pop();
+    const refDecisao = refAj || ativo.inicio;
     const depoisDeAjuste = refDecisao !== ativo.inicio;
     const gapDias = depoisDeAjuste ? (alavancar ? num(regras.alavancarAprendizado) || 3 : num(regras.decisaoDias) || 3) : regras.aprendizadoDias;
     const diasDesde = diasEntre(refDecisao, hoje);
     const a0 = andamentoValido(ativo, ss);
-    const totCliques = Math.max(r.cliques, a0?.cliques || 0);
-    const totVendas = Math.max(r.vendas, a0?.vendas || 0);
-    if (totVendas === 0 && totCliques >= regras.cliquesSemVenda)
-      return sitA("pausar-revisar", "resolver", "Pausar e revisar o anúncio", `${totCliques} cliques pagos e nenhuma venda: o Ads está trazendo gente, mas a página não convence. Pause e revise ${anuncio?.porOnde || "foto, descrição, medidas e preço"} antes de gastar mais.`, { numeros });
+    // Cliques sem venda: depois de uma volta/revisão, só os cliques novos e só
+    // a partir do 3º dia.
+    if (desde.vendas === 0 && desde.cliques >= regras.cliquesSemVenda && (!rev || diasDesdeVolta >= dia3))
+      return sitA("pausar-revisar", "resolver", "Pausar e revisar o anúncio", `${desde.cliques} cliques pagos${quandoRev} e nenhuma venda: o Ads está trazendo gente, mas a página não convence. Pause e revise ${anuncio?.porOnde || "foto, descrição, medidas e preço"} antes de gastar mais.`, { numeros });
     if (diasDesde < gapDias)
       return sitA(
         "aprendendo",

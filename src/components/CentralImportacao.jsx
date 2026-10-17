@@ -199,7 +199,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         const lig = (r.itens || []).filter((i) => ligarSku(i.sku, itens)).length;
         resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${txtListas} · ${(r.itens || []).length} anúncios no total, ${lig} ligados ao app — funil das semanas da Rampa e do Ads`;
       } else {
-        const res = andamentoDoCsv([r], linhasAds?.linhas || []);
+        const res = andamentoDoCsv([r], linhasAds?.linhas || [], linhasAds?.lojaLinha || null);
         let n = 0;
         for (const l of (linhasAds?.linhas || []).filter((x) => x.av?.ativo && x.canal?.tipo === "shopee")) {
           const x = res.porChave[l.chave] || (res.zerados.includes(l.chave) ? { gasto: 0, cliques: 0, vendas: 0 } : null);
@@ -208,9 +208,15 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
           if (!s.ok) throw new Error(s.msg);
           n++;
         }
+        let txtLoja = "";
+        if (res.lojaAndamento) {
+          const s = await salvarAndamentoAds(res.lojaAndamento.periodo, { ate: res.lojaAndamento.ate, ...res.lojaAndamento.valores });
+          if (!s.ok) throw new Error(s.msg);
+          txtLoja = ` + GMV Max da Loja (${BRL(res.lojaAndamento.valores.gasto)})`;
+        }
         setPerguntas(res.perguntas || []);
         setAvisos((a) => ({ ...a, [rel]: res.avisos || [] }));
-        resumo = `${dm(res.periodo?.de)} a ${dm(res.periodo?.ate)}${txtListas} · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado`;
+        resumo = `${dm(res.periodo?.de)} a ${dm(res.periodo?.ate)}${txtListas} · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado${txtLoja}`;
         window.dispatchEvent(new Event("focus"));
       }
       const g = await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivo.name, periodo: r.periodo, ok: true, resumo, dados: { ...relatorioParaGuardar({ ...r, arquivo: arquivo.name }), partes: partes.map(relatorioParaGuardar) } });

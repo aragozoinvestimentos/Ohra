@@ -565,7 +565,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                               onExcluir={(periodo) => setExcluirDlg({ periodo, rampa: l.rampa?.r || null })}
                               onPausar={() => rodar(() => pausarPeriodoAds(l.av.ativo, hoje), "Pausado pra revisar — o período continua; marque “Despausei” quando religar")}
                               onDespausar={() => rodar(() => despausarPeriodoAds(l.av.ativo, hoje), "Despausado — a conferência recomeça em 3 dias")}
-                              onRevisei={() => rodar(() => reviseiSemVendaAds(l.av.ativo, hoje), "Ok — o app espera até o 7º dia")}
+                              onRevisei={() => rodar(() => reviseiSemVendaAds(l.av.ativo, hoje), "Ok — o app confere de novo em 3 dias")}
                               onSemAds={(marcar) => semAdsPorEscolha(l, marcar)}
                               onAndamento={() => setAndamentoDlg(true)}
                             />
@@ -623,7 +623,7 @@ function passosSemVenda(l) {
   if (anuncio?.porOnde) passos.push({ t: `Arrume o anúncio: ${anuncio.porOnde}`, d: anuncio.titulo || "pelo funil da Rampa" });
   else if (sv.cliques >= 15) passos.push({ t: "Clicam mas não compram: preço, descrição, medidas e fotos de uso", d: `${sv.cliques} cliques pagos ${sv.prejuizo ? "e quase nenhuma venda" : "sem venda"} — compare o preço com o concorrente (ou um substituto) e confira frete e prazo.` });
   else passos.push({ t: "Pouca gente clica: troque a foto de capa e confira o título", d: "Fundo limpo, produto grande, uso real; a palavra que o cliente busca no começo do título." });
-  passos.push({ t: "Volte aqui e escolha", d: "Pausei pra revisar (o período continua com as métricas) · Revisei — dar até o 7º dia · ou encerrar." });
+  passos.push({ t: "Volte aqui e escolha", d: "Pausei pra revisar (o período continua com as métricas) · Revisei (sem pausar) — o app confere de novo em 3 dias · ou encerrar." });
   return passos;
 }
 
@@ -667,7 +667,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           </ol>
           <div className="acoes-ads">
             <button type="button" className="btn btn-mini primary" onClick={onPausar}>Pausei pra revisar</button>
-            {av.semVenda?.podeEsperar && <button type="button" className="btn btn-mini" onClick={onRevisei}>Revisei o anúncio — dar até o 7º dia</button>}
+            {av.semVenda?.podeEsperar && <button type="button" className="btn btn-mini" onClick={onRevisei}>Revisei o anúncio — conferir em 3 dias</button>}
             <button type="button" className="btn btn-mini" onClick={onEncerrar}>Pausei — encerrar período</button>
             {l.rampa && (
               <button type="button" className="link-btn" onClick={() => irParaAba("crescimento", { sub: "rampa", rampaId: l.rampa.r.id })}>

@@ -102,7 +102,7 @@ export async function excluirPeriodoAds(periodo, { rampa = null, hoje } = {}) {
 // do dia 3 recomeça contando dali).
 export const pausarPeriodoAds = (periodo, data) => ajustarPeriodoAds(periodo, { tipo: "pausa", data, motivo: "pausei pra revisar o anúncio" });
 export const despausarPeriodoAds = (periodo, data) => ajustarPeriodoAds(periodo, { tipo: "volta", data, vendas: Number(periodo?.parcial?.vendas) || 0, motivo: "despausei" });
-export const reviseiSemVendaAds = (periodo, data) => ajustarPeriodoAds(periodo, { tipo: "revisei", data, motivo: "revisei o anúncio — dar até o 7º dia" });
+export const reviseiSemVendaAds = (periodo, data) => ajustarPeriodoAds(periodo, { tipo: "revisei", data, motivo: "revisei o anúncio — conferir de novo em 3 dias" });
 
 export async function salvarAndamentoAds(periodo, { ate, gasto, cliques, vendas, receita }) {
   const ant = periodo?.parcial;
