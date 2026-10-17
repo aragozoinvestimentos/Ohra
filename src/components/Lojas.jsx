@@ -172,7 +172,8 @@ async function exportarBackup(onToast) {
 }
 
 export default function Lojas({ onToast }) {
-  const { lojas, criar, atualizar, remover, conferirPin } = useLoja();
+  const { lojas, lojaId, criar, atualizar, remover, conferirPin } = useLoja();
+  const lojaAtual = lojas.find((l) => l.id === lojaId) || null;
   const [criando, setCriando] = useState(false);
   const [novo, setNovo] = useState(NOVO_VAZIO);
   const [editandoId, setEditandoId] = useState(null);
@@ -336,6 +337,16 @@ export default function Lojas({ onToast }) {
           + Nova loja
         </button>
       </TopbarAcoes>
+      {lojaAtual && (
+        <div className="loja-atual-faixa" role="status">
+          <IconePreview url={lojaAtual.icone_url} nome={lojaAtual.nome} />
+          <div>
+            <div className="loja-atual-rot">Você está na loja</div>
+            <div className="loja-atual-nome">{lojaAtual.nome}</div>
+            <div className="loja-atual-sub">Tudo que você vê e salva no app agora é só desta loja — cada loja guarda os dados dela separados. Pra ver outra, troque no menu (pede o PIN dela).</div>
+          </div>
+        </div>
+      )}
       <MetasPrecoLoja onToast={onToast} />
       <CalendarioLoja onToast={onToast} />
       <div className="panel">
@@ -360,9 +371,10 @@ export default function Lojas({ onToast }) {
                   />
                 </div>
               ) : (
-                <div className="loja-card" key={loja.id}>
+                <div className={`loja-card${loja.id === lojaId ? " loja-card-atual" : ""}`} key={loja.id}>
                   <IconePreview url={loja.icone_url} nome={loja.nome} />
                   <div className="loja-card-nome">{loja.nome}</div>
+                  {loja.id === lojaId && <div className="loja-card-aqui">● você está aqui</div>}
                   <div className="loja-card-pin">{loja.pin ? "PIN ●●●●" : "Sem PIN"}</div>
                   <div className="loja-card-actions">
                     <button className="btn" onClick={() => iniciarEdicao(loja)}>Editar</button>
