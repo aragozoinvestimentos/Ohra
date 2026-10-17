@@ -34,6 +34,9 @@ import Estado from "./Estado.jsx";
 import VendasMes from "./VendasMes.jsx";
 import { recarregarReserva, useReservaProducao } from "../hooks/useReservaProducao.js";
 import { saldoReserva } from "../lib/vendasMes.js";
+import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
+import { saldoAds } from "../lib/saldoAds.js";
+import SaldoAdsCaixa from "./SaldoAdsCaixa.jsx";
 
 const IGNORAR_COMPRA_KEY = "ohra:caixa:ignorar-compra";
 
@@ -115,6 +118,8 @@ export default function FluxoCaixa({ onToast }) {
   const [sub] = useSubAba("ohra:caixa:sub", "caixa", SUBABAS_CAIXA.map((x) => x.key));
   const [verConfig, setVerConfig] = useState(false);
   const reserva = useReservaProducao();
+  const adsP = useAdsPeriodos();
+  const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos, periodos: adsP.periodos, hoje }) : null), [adsP.disponivel, adsP.periodos, lancamentos, hoje]);
   const saldoDaReserva = useMemo(() => saldoReserva(reserva.registros).saldo, [reserva.registros]);
 
   useEffect(() => {
@@ -252,6 +257,11 @@ export default function FluxoCaixa({ onToast }) {
   // --- Ações ---
   function abrirNovo(tipo) {
     setForm(novoForm(tipo));
+  }
+
+  function abrirRecargaAds() {
+    const shopee = (canais || []).find((c) => c.tipo === "shopee");
+    setForm({ ...novoForm("saida"), descricao: "Recarga de Ads (Shopee)", categoria: "anuncios", canal_id: shopee?.id || "", realizado: true });
   }
 
   function abrirSaldoInicial() {
@@ -549,6 +559,8 @@ export default function FluxoCaixa({ onToast }) {
               ]}
             />
           </ResumoFixo>
+
+          <SaldoAdsCaixa s={saldoDeAds} hoje={hoje} onRecarga={abrirRecargaAds} />
 
           {nPendencias > 0 && (
             <div className={`pendencias-caixa${verPendentes ? " aberto" : ""}`}>

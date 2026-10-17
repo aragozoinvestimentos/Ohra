@@ -7,7 +7,7 @@ import { PLATAFORMAS, caixaDosPedidos, interpretarPedidosOlist, ligarSku, plataf
 import { excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
 import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { canalComEmbalagem } from "../lib/embalagemCanal.js";
-import { estenderPeriodoAds, iniciarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
+import { encerrarPeriodoAds, estenderPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
 import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
 import { recarregarPedidos } from "../hooks/usePedidos.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
@@ -64,6 +64,11 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   const [ocupado, setOcupado] = useState(null);
   // Plataformas com o nº do pedido já conferido: no banco (preferencias_loja, v59).
   const [confs, setConfs] = usePreferencia("importar:plataformas-conferidas", {}, { legado: conferidas });
+  // Avisos de anúncio pausado/excluído que o Gustavo mandou ignorar (chave →
+  // "status|gasto"): só voltam se o gasto ou o status mudar.
+  const [adsIgnorados, setAdsIgnorados] = usePreferencia("importar:ads-ignorados", {});
+  const [infos, setInfos] = useState([]);
+  const sigPergunta = (q) => `${q.tipo}|${q.status || ""}|${q.valores?.gasto ?? ""}`;
   const [fisico, setFisico] = useState(null); // form aberto
   const [excluir, setExcluir] = useState(null);
   const ignorados = useMemo(() => new Set((ped.ignorados || []).map((g) => normSku(g.sku))), [ped.ignorados]);
@@ -214,7 +219,8 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
           if (!s.ok) throw new Error(s.msg);
           txtLoja = ` + GMV Max da Loja (${BRL(res.lojaAndamento.valores.gasto)})`;
         }
-        setPerguntas(res.perguntas || []);
+        setPerguntas((res.perguntas || []).filter((q) => adsIgnorados[q.chave] !== sigPergunta(q)));
+        setInfos(res.infos || []);
         setAvisos((a) => ({ ...a, [rel]: res.avisos || [] }));
         resumo = `${dm(res.periodo?.de)} a ${dm(res.periodo?.ate)}${txtListas} · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado${txtLoja}`;
         window.dispatchEvent(new Event("focus"));
@@ -228,20 +234,34 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     }
     setOcupado(null);
   }
-  async function responder(q, sim) {
-    if (sim) {
-      const r =
-        q.tipo === "estender"
-          ? await estenderPeriodoAds(q.periodo, q.data)
-          : await (async () => {
-              const c = await iniciarPeriodoAds({ lojaId, tipo: q.l.tipo, id: q.l.id, canalId: q.l.canal.id, inicio: q.data, nota: "criado pelo CSV do Shopee Ads" });
-              if (c.ok && c.periodo) await salvarAndamentoAds(c.periodo, { ate: q.ate, ...q.valores });
-              return c;
-            })();
-      if (!r.ok) return onToast?.(r.msg);
+  // acao: "sim" | "nao" | "pausar" (parado) — "nao" em aviso de pausado/excluído = ignorar (lembrado).
+  async function responder(q, acao) {
+    const nome = q.l.item.nome;
+    if (acao !== "nao") {
+      let r;
+      let msg = "";
+      if (q.tipo === "estender") {
+        r = await estenderPeriodoAds(q.periodo, q.data);
+        msg = `${nome}: fim do período estendido até ${dm(q.data)}`;
+      } else if (q.tipo === "criar" || q.tipo === "criar-encerrado") {
+        r = await iniciarPeriodoAds({ lojaId, tipo: q.l.tipo, id: q.l.id, canalId: q.l.canal.id, inicio: q.data, nota: "criado pelo CSV do Shopee Ads" });
+        if (r.ok && r.periodo) await salvarAndamentoAds(r.periodo, { ate: q.ate, ...q.valores });
+        if (r.ok && r.periodo && q.tipo === "criar-encerrado") await encerrarPeriodoAds(r.periodo, { fim: q.ate, motivo: `${q.status.toLowerCase()} na Shopee` });
+        msg = q.tipo === "criar-encerrado" ? `${nome}: gasto registrado como período encerrado (${dm(q.data)}–${dm(q.ate)})` : `${nome}: período de Ads criado desde ${dm(q.data)}`;
+      } else if (q.tipo === "corrigir") {
+        r = await salvarAndamentoAds(q.periodo, { ate: q.data, ...q.valores });
+        msg = `${nome}: gasto do período corrigido pra ${BRL(q.valores.gasto)}`;
+      } else if (q.tipo === "parado" && acao === "pausar") {
+        r = await pausarPeriodoAds(q.periodo, q.data);
+        msg = `${nome}: marcado como pausado desde ${dm(q.data)}`;
+      } else if (q.tipo === "parado") {
+        r = await encerrarPeriodoAds(q.periodo, { fim: q.data, motivo: `${q.status.toLowerCase()} na Shopee` });
+        msg = `${nome}: período encerrado em ${dm(q.data)}`;
+      }
+      if (r && !r.ok) return onToast?.(r.msg);
       window.dispatchEvent(new Event("focus"));
-      onToast?.(q.tipo === "estender" ? `${q.l.item.nome}: fim do período estendido até ${dm(q.data)}` : `${q.l.item.nome}: período de Ads criado desde ${dm(q.data)}`);
-    }
+      if (msg) onToast?.(msg);
+    } else if (["parado", "corrigir", "criar-encerrado"].includes(q.tipo)) setAdsIgnorados((m) => ({ ...m, [q.chave]: sigPergunta(q) }));
     setPerguntas((p) => p.filter((x) => x.chave !== q.chave));
   }
 
@@ -421,13 +441,40 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
             })}
             {perguntas.map((q) => (
               <div key={q.chave} className="ana-pend">
-                <b>{q.l.item.nome}: {BRL(q.valores.gasto)} de Ads no CSV</b>
-                <div>{q.tipo === "estender" ? `O período terminou em ${dm(q.periodo.fim)} no app, mas o CSV vai até ${dm(q.data)} com gasto. Estender o fim até ${dm(q.data)}?` : `Não há período de Ads ligado no app. Criar um período a partir de ${dm(q.data)} (início do CSV)?`}</div>
+                <b>
+                  {q.l.item.nome}: {BRL(q.valores.gasto)} de Ads no CSV{q.status ? ` · ${q.status} na Shopee` : ""}
+                </b>
+                <div>
+                  {q.tipo === "estender"
+                    ? `O período terminou em ${dm(q.periodo.fim)} no app, mas o CSV vai até ${dm(q.data)} com gasto e o anúncio está rodando. Estender o fim até ${dm(q.data)}?`
+                    : q.tipo === "criar"
+                      ? `Não há período de Ads ligado no app. Criar um período a partir de ${dm(q.data)}?`
+                      : q.tipo === "criar-encerrado"
+                        ? `Não há período desse Ads no app. Registrar o gasto como um período já encerrado (${dm(q.data)}–${dm(q.ate)}), pra entrar no total gasto?`
+                        : q.tipo === "corrigir"
+                          ? `O período encerrado no app está com ${BRL(q.antes)} de gasto; o CSV diz ${BRL(q.valores.gasto)}. Corrigir pro valor do CSV?`
+                          : q.status === "Excluído"
+                            ? `No app o período continua ligado. O gasto parou por volta de ${dm(q.data)} — encerrar o período nessa data?`
+                            : `No app o período continua ligado. O gasto parou por volta de ${dm(q.data)} — você pausou? Encerre o período ou marque como pausado (pra revisar e voltar).`}
+                </div>
                 <div className="ana-pend-acoes">
-                  <button type="button" className="btn btn-mini primary" onClick={() => responder(q, true)}>Sim</button>
-                  <button type="button" className="btn btn-mini" onClick={() => responder(q, false)}>Não</button>
+                  {q.tipo === "parado" ? (
+                    <>
+                      <button type="button" className="btn btn-mini primary" onClick={() => responder(q, "sim")}>Encerrar em {dm(q.data)}</button>
+                      {q.status !== "Excluído" && <button type="button" className="btn btn-mini" onClick={() => responder(q, "pausar")}>Marcar como pausado</button>}
+                      <button type="button" className="btn btn-mini" onClick={() => responder(q, "nao")}>Ignorar</button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" className="btn btn-mini primary" onClick={() => responder(q, "sim")}>{q.tipo === "corrigir" ? "Corrigir" : "Sim"}</button>
+                      <button type="button" className="btn btn-mini" onClick={() => responder(q, "nao")}>{["corrigir", "criar-encerrado"].includes(q.tipo) ? "Ignorar" : "Não"}</button>
+                    </>
+                  )}
                 </div>
               </div>
+            ))}
+            {infos.map((t) => (
+              <div key={t} className="ana-info-ok">✓ {t.replace(/ ✓$/, "")}</div>
             ))}
           </>
         )}

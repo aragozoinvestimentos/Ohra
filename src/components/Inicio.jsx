@@ -38,6 +38,8 @@ import { estadoDoTom } from "../lib/estados.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import { LinhaTarefa, TarefaDialog } from "./Tarefas.jsx";
 import { useTarefas } from "../hooks/useTarefas.js";
+import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
+import { saldoAds } from "../lib/saldoAds.js";
 import { LIMITE_TAREFAS, concluidasRecentes, repartirTarefas } from "../lib/tarefas.js";
 import { abrirTarefa, concluirTarefa, desfazerConclusao, excluirTarefa, rotuloLink } from "../lib/tarefasAcoes.js";
 
@@ -278,9 +280,11 @@ export default function Inicio({ onIrPara, onToast }) {
   // --- Pra fazer + status ---
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
   const revisoes = useMemo(() => revisoesPrecoDireto({ itens, canais, precos, hoje }), [itens, canais, precos, hoje]);
+  const adsP = useAdsPeriodos();
+  const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos: gestao.lancamentos, periodos: adsP.periodos, hoje }) : null), [adsP.disponivel, adsP.periodos, gestao.lancamentos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, hoje }),
-    [precosAlerta, caixa, linhas, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, hoje }),
+    [precosAlerta, caixa, linhas, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.

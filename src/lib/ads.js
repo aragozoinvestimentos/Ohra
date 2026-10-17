@@ -46,6 +46,13 @@ export const REGRAS_ADS = {
   prejuizoRetorno: 0.5, // ROAS < metade do equilíbrio a partir do dia 3 = Ads no prejuízo (decisão imediata)
   prejuizoGastoMin: 15, // …com pelo menos R$ 15 gastos (ou 1,5 dia de orçamento)
   pausaLongaDias: 21, // pausado há 21 dias → a Shopee começa a perder o aprendizado
+  // Queda com o Ads ligado (17/10/2026): últimos 3 dias × os 14 anteriores.
+  estabelecidoVendas: 10, // ≥ 10 vendas via Ads na base (ou ≥ 1/dia) = "já vende bem"
+  estabelecidoRitmo: 1,
+  quedaBaseDias: 14, // base de comparação: o ritmo dos 14 dias antes
+  quedaPct: 0.4, // vendas/dia caíram ≥ 40% = sinal (dia 3) …
+  quedaAcaoDias: 7, // … e se seguir assim por 7 dias (ROAS < equilíbrio) = agir
+  paradaVendas: 3, // gastou o equivalente a 3 vendas (pelo custo por venda dele) sem vender = parou de vez
   lojaGastoMinDia: 1, // campanha da loja gastando < R$ 1/dia por 7 dias = meta alta demais
   lojaMetaFator: 2, // campanha da loja: meta alta = 2× o equilíbrio da loja
   decisaoDias: 3, // depois de cada ajuste: decide de novo em 3 dias (método do Luan, 16/10/2026)
@@ -319,6 +326,62 @@ export function constanciaAds(periodo, regras = REGRAS_ADS) {
   return { agora, antes, variacao: agora / antes - 1, ate: s0[0] };
 }
 
+// Série do andamento (envios do CSV) a partir de `desde` (inclusive), com a
+// origem zero na véspera do início do período quando `desde` é o início.
+function serieAds(periodo, desde) {
+  const par = periodo?.parcial;
+  const pts = [...(Array.isArray(par?.historico) ? par.historico : []), ...(par?.ate ? [par] : [])]
+    .filter((h) => h?.ate)
+    .map((h) => ({ ate: String(h.ate).slice(0, 10), g: num(h.gasto), cl: num(h.cliques), v: num(h.vendas) }))
+    .sort((a, b) => a.ate.localeCompare(b.ate));
+  const origem = { ate: somarDiasIso(periodo.inicio, -1), g: 0, cl: 0, v: 0 };
+  const lista = [origem, ...pts].filter((p, i, arr) => i === arr.findIndex((q) => q.ate === p.ate));
+  const corte = somarDiasIso(desde, -1);
+  return lista.filter((p) => p.ate >= corte);
+}
+
+// Queda com o Ads ligado (17/10/2026, combinado com o Gustavo): olha os
+// ÚLTIMOS ~3 dias (pelos envios do CSV) contra o ritmo dos 14 dias antes.
+// Anúncio novo/que vende pouco: parou de vender ou caiu no prejuízo na
+// janela = resolver já. Anúncio que já vende bem (≥ 10 vendas via Ads na base
+// ou ≥ 1/dia): queda ≥ 40% = sinal pra avaliar no dia 3; se seguir abaixo do
+// equilíbrio por 7 dias = agir; parou de vez (gastou ≥ 3 vendas pelo custo por
+// venda dele sem vender) = resolver no dia 3. Só conta depois do último
+// ajuste/volta (`desde`). → null ou { tipo, … }.
+export function quedaAds(periodo, { desde, preco, empate, orcamento, regras = REGRAS_ADS }) {
+  const serie = serieAds(periodo, desde);
+  if (serie.length < 2) return null;
+  const s0 = serie[serie.length - 1];
+  const s1 = [...serie].reverse().find((p) => diasEntre(p.ate, s0.ate) >= 3);
+  if (!s1) return null;
+  const d3 = diasEntre(s1.ate, s0.ate);
+  const r3 = { dias: d3, g: s0.g - s1.g, cl: s0.cl - s1.cl, v: s0.v - s1.v, de: somarDiasIso(s1.ate, 1), ate: s0.ate };
+  if (!(r3.g > 0)) return null;
+  r3.roas = (r3.v * preco) / r3.g;
+  const iniBase = somarDiasIso(s1.ate, -num(regras.quedaBaseDias || 14));
+  const s2 = serie.find((p) => p.ate >= iniBase && diasEntre(p.ate, s1.ate) >= 3) || null;
+  const base = s2 ? { dias: diasEntre(s2.ate, s1.ate), g: s1.g - s2.g, v: s1.v - s2.v } : null;
+  const ritmoB = base && base.dias > 0 ? base.v / base.dias : 0;
+  const estabelecido = !!base && (base.v >= num(regras.estabelecidoVendas || 10) || ritmoB >= num(regras.estabelecidoRitmo || 1));
+  const minimoGasto = Math.max(num(regras.prejuizoGastoMin || 15), (orcamento || 0) * 1.5);
+  if (!estabelecido) {
+    if (r3.v === 0 && r3.g >= minimoGasto && s1.v > 0) return { tipo: "parou", estabelecido: false, r3, base };
+    if (r3.g >= minimoGasto && empate && r3.roas < empate * num(regras.prejuizoRetorno || 0.5)) return { tipo: "prejuizo", estabelecido: false, r3, base };
+    return null;
+  }
+  const cpv = base.v > 0 ? base.g / base.v : null;
+  if (r3.v === 0 && cpv && r3.g >= cpv * num(regras.paradaVendas || 3)) return { tipo: "parou", estabelecido: true, r3, base, cpv, esperadas: r3.g / cpv };
+  const ritmo3 = r3.v / d3;
+  const queda = ritmoB > 0 ? 1 - ritmo3 / ritmoB : 0;
+  const caiu = queda >= num(regras.quedaPct || 0.4) || (empate && r3.roas < empate);
+  if (!caiu) return null;
+  // Já dura 7 dias? Janela dos últimos ~7 dias abaixo do equilíbrio.
+  const s7 = [...serie].reverse().find((p) => diasEntre(p.ate, s0.ate) >= num(regras.quedaAcaoDias || 7));
+  const r7 = s7 && s0.g - s7.g > 0 ? { dias: diasEntre(s7.ate, s0.ate), g: s0.g - s7.g, v: s0.v - s7.v, roas: ((s0.v - s7.v) * preco) / (s0.g - s7.g) } : null;
+  if (r7 && empate && r7.roas < empate) return { tipo: "queda-7", estabelecido: true, r3, r7, base, ritmo3, ritmoB, queda };
+  return { tipo: "queda-3", estabelecido: true, r3, base, ritmo3, ritmoB, queda, decideEm: somarDiasIso(s1.ate, num(regras.quedaAcaoDias || 7) + 1) };
+}
+
 // Resumo de um período (pra histórico e resultado).
 export function resumoPeriodo(periodo, semanas, preco, empate, regras = REGRAS_ADS) {
   const ss = semanasNoPeriodo(semanas, periodo);
@@ -508,6 +571,48 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
           : `A plataforma ainda está aprendendo: não mexa na meta nem no orçamento até ${dm(somarDiasIso(refDecisao, gapDias))}. Envie o CSV do Shopee Ads normalmente.`,
         { numeros, decideEm: somarDiasIso(refDecisao, gapDias) }
       );
+    // Queda com o Ads ligado (17/10/2026): últimos 3 dias × os 14 antes.
+    {
+      const q = quedaAds(ativo, { desde: refDecisao, preco, empate, orcamento, regras });
+      const pct = (x) => `${Math.round(x * 100)}%`;
+      const vtxt = (n) => `${Math.round(n * 10) / 10} venda${Math.round(n * 10) / 10 === 1 ? "" : "s"}`;
+      if (q?.tipo === "parou")
+        return sitA(
+          "parou-ads",
+          "resolver",
+          `Parou de vender pelo Ads — ${moeda(q.r3.g)} em ${q.r3.dias} dias sem venda`,
+          q.estabelecido
+            ? `Ele vendia ~${vtxt(q.base.v / q.base.dias)}/dia via Ads (${moeda(q.cpv)} por venda): nesses ${q.r3.dias} dias deveriam ter saído ~${Math.round(q.esperadas)} e saiu nenhuma. Não é azar — confira se o anúncio está ativo e com estoque, se o preço mudou, se um concorrente baixou o preço ou se entrou avaliação ruim. Pause até descobrir.`
+            : `Vendeu antes, mas nos últimos ${q.r3.dias} dias (${dm(q.r3.de)}–${dm(q.r3.ate)}) gastou ${moeda(q.r3.g)} e não vendeu nada. Pause e confira ${anuncio?.porOnde || "o preço, a capa e o estoque"} antes de gastar mais.`,
+          { numeros, queda: q, semVenda: { dias: q.r3.dias, gasto: q.r3.g, cliques: Math.round(q.r3.cl), podeEsperar: true } }
+        );
+      if (q?.tipo === "prejuizo")
+        return sitA(
+          "ads-prejuizo",
+          "resolver",
+          `Ads no prejuízo nos últimos ${q.r3.dias} dias — ${moeda(q.r3.g)} gastos, ${q.r3.v} venda${q.r3.v === 1 ? "" : "s"}`,
+          `ROAS ${um(q.r3.roas)} de ${dm(q.r3.de)} a ${dm(q.r3.ate)}, menos da metade do equilíbrio (${um(empate)}): o Ads está tirando lucro. Pause e revise ${anuncio?.porOnde || "o anúncio"} ou reduza.`,
+          { numeros, queda: q, semVenda: { dias: q.r3.dias, gasto: q.r3.g, cliques: Math.round(q.r3.cl), podeEsperar: true, prejuizo: true } }
+        );
+      if (q?.tipo === "queda-7") {
+        const novoOrc = orcamento ? Math.max(num(regras.minDiario), Math.floor(orcamento * 0.8)) : null;
+        return sitA(
+          "queda-ads",
+          "resolver",
+          `Vendas pelo Ads caíram há ${q.r7.dias} dias — reduza ou suba a meta`,
+          `Nos últimos ${q.r7.dias} dias o ROAS ficou ${um(q.r7.roas)}, abaixo do equilíbrio (${um(empate)}), e as vendas via Ads caíram ${pct(Math.max(0, q.queda))} em relação ao ritmo de antes (${vtxt(q.ritmoB)}/dia → ${vtxt(q.ritmo3)}/dia). Reduza ~20%${novoOrc ? ` (pra ${moeda(novoOrc)}/dia)` : ""} ou suba a meta; se continuar, pause.`,
+          { numeros, queda: q, novoOrcamento: novoOrc }
+        );
+      }
+      if (q?.tipo === "queda-3")
+        return sitA(
+          "queda-ads-sinal",
+          "atencao",
+          `Vendas pelo Ads caíram ${pct(Math.max(0, q.queda))} nos últimos ${q.r3.dias} dias — avalie, sem mexer ainda`,
+          `Vendia ~${vtxt(q.ritmoB)}/dia via Ads; de ${dm(q.r3.de)} a ${dm(q.r3.ate)} foi ~${vtxt(q.ritmo3)}/dia (ROAS ${um(q.r3.roas)}). Pode ser oscilação. Confira: estoque e anúncio ativo, preço do concorrente, avaliação ruim nova, campanha da plataforma que acabou, e se o orgânico também caiu. Se seguir assim até ${dm(q.decideEm)}, o app pede pra agir.`,
+          { numeros, queda: q, decideEm: q.decideEm }
+        );
+    }
     if (!empate || empate > regras.roasInviavel)
       return sitA("inviavel-ativo", "atencao", "Ads não se paga neste preço", empate ? `O ROAS de equilíbrio é ${um(empate)}: cada R$ 1 de Ads precisa trazer ${moeda(empate)} em vendas. Pause, a não ser que esteja comprando as primeiras vendas de propósito.` : "Sem lucro neste preço: cada venda via Ads aumenta o prejuízo. Pause.", { numeros });
     // Alavancar (sazonal): exige andamento recente (3–4 dias).
@@ -656,9 +761,15 @@ export function adsNaJanela(periodos, semanas, de, ate) {
   });
   const sem = { gasto: noJanela.reduce((t, s) => t + num(s.ads_gasto), 0), vendas: noJanela.reduce((t, s) => t + num(s.ads_vendas), 0) };
   const csv = { gasto: 0, vendas: 0, ate: null };
+  // Dois períodos do mesmo item com o MESMO andamento (o CSV acumulado foi
+  // gravado nos dois) contam uma vez.
+  const vistos = new Set();
   for (const p of periodos || []) {
     const par = p?.parcial;
     if (!par?.ate || !(num(par.gasto) > 0) || par.ate < de || p.inicio > ate) continue;
+    const sig = `${p.item_tipo}|${p.item_id}|${p.canal_id}|${par.ate}|${num(par.gasto)}`;
+    if (vistos.has(sig)) continue;
+    vistos.add(sig);
     const antes = semanasNoPeriodo(semanas || [], p).filter((s) => somarDiasIso(String(s.data).slice(0, 10), -1) < de);
     let g = num(par.gasto);
     let v = num(par.vendas);

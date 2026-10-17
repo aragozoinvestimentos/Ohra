@@ -61,13 +61,16 @@ function acaoDoAds(av) {
   const n = av.numeros || {};
   const DEPOIS_AJ = "Depois de mudar na Shopee: registre aqui — o app espera uns dias pra decidir de novo.";
   if (av.ativo) {
-    if (av.chave === "sem-venda-dia3" || av.chave === "ads-prejuizo") return { k: "abrir", botao: "Ver o que fazer", depois: "Pause na Shopee e arrume o anúncio; depois marque aqui." };
+    if (av.chave === "sem-venda-dia3" || av.chave === "ads-prejuizo" || av.chave === "parou-ads") return { k: "abrir", botao: "Ver o que fazer", depois: "Pause na Shopee e arrume o anúncio; depois marque aqui." };
     if (av.chave === "pausado" || av.chave === "despausar" || av.chave === "pausa-longa") return { k: "despausar", botao: "Despausei", depois: "Depois de religar na Shopee: marque aqui — a conferência recomeça 3 dias depois." };
     if (av.chave === "conferir-dia3") return { k: "andamento", botao: "Atualizar andamento", depois: "Envie o CSV do Shopee Ads (ou o número à mão) pra saber se já vendeu." };
     if (av.chave === "virar-meta" && av.novaMeta) return { k: "ajuste", botao: `Já troquei — meta ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "fim do lance automático: virou meta de ROAS" }, depois: "Na Shopee: editar a campanha → GMV Max – Meta de ROAS. Depois registre aqui." };
     if (av.chave === "loja-abaixo" && av.novaMeta) return { k: "ajuste", botao: `Subi a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "campanha da loja abaixo do equilíbrio" }, depois: DEPOIS_AJ };
     if (av.chave === "loja-nao-gasta" && av.novaMeta) return { k: "ajuste", botao: `Baixei a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "campanha da loja quase não gasta" }, depois: DEPOIS_AJ };
     if (av.chave === "aguardando" && av.loja) return { k: "andamento", botao: "Atualizar andamento", depois: null };
+    if (av.chave === "queda-ads" && av.novoOrcamento)
+      return { k: "ajuste", botao: `Reduzi pra ${BRL(av.novoOrcamento)}/dia`, ajuste: { orcamento: av.novoOrcamento, meta: vals.meta, motivo: "reduzi: vendas pelo Ads caíram há 7 dias" }, depois: DEPOIS_AJ };
+    if (av.chave === "queda-ads-sinal") return { k: "abrir", botao: "Ver o que conferir", depois: "Só avalie a causa — o app pede pra agir se seguir assim por 7 dias." };
     if ((av.chave === "aumentar" || av.chave === "reduzir") && av.novoOrcamento)
       return {
         k: "ajuste",
@@ -652,7 +655,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           />
         );
       })()}
-      {(av.chave === "sem-venda-dia3" || av.chave === "ads-prejuizo") && (
+      {(av.chave === "sem-venda-dia3" || av.chave === "ads-prejuizo" || av.chave === "parou-ads") && (
         <div className="ads-dia3">
           <ol className="passos-ads">
             {passosSemVenda(l).map((p, i) => (

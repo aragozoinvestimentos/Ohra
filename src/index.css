@@ -1946,6 +1946,7 @@ tr.combinacao-off td { opacity: 0.45; }
 .ana-status.nunca { background: var(--surface-2); color: var(--ink-soft); }
 .ana-status .ic { font-weight: 800; }
 .ana-aviso { grid-column: 1 / -1; font-size: 12px; color: var(--st-atencao); }
+.ana-info-ok { grid-column: 1 / -1; font-size: 12px; color: var(--ink-soft); }
 .ana-aviso-cfg { grid-column: 1 / -1; background: var(--st-atencao-soft); color: var(--st-atencao); border-radius: 9px; padding: 6px 10px; font-size: 12.5px; }
 .ana-pend { margin: 4px 14px 10px; border: 1px solid var(--st-atencao); border-radius: 10px; padding: 8px 10px; background: var(--surface-3); font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
 .ana-pend-lin { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-top: 1px dashed var(--border); padding-top: 5px; }
@@ -2167,3 +2168,12 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .chip-fonte { font-size: 11px; border-radius: 999px; padding: 1px 8px; background: var(--st-info-soft, var(--surface-2)); color: var(--ink-soft); }
 .chip-fonte.antiga { background: var(--surface-2); font-style: italic; }
 .chip-fonte.falta { background: var(--st-atencao-soft); color: var(--st-atencao); }
+
+/* Saldo de Ads na Shopee (Fluxo de Caixa → 1 · Caixa) */
+.saldo-ads { border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 8px 14px; margin: 0 0 10px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.saldo-ads.recarregar { border-color: var(--st-atencao); background: var(--st-atencao-soft); }
+.saldo-ads-cab { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.saldo-ads-cab .btn { margin-left: auto; }
+.saldo-ads-valor { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.saldo-ads-alerta { color: var(--st-atencao); }
+.saldo-ads-ok { color: var(--st-oportunidade); }

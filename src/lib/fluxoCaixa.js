@@ -16,7 +16,7 @@ export const CATEGORIAS = {
     { key: "filamento", label: "Filamento / material" },
     { key: "embalagem", label: "Embalagem" },
     { key: "frete", label: "Frete" },
-    { key: "anuncios", label: "Anúncios / Ads" },
+    { key: "anuncios", label: "Anúncios / Ads (recarga)" },
     { key: "taxas", label: "Taxas / impostos" },
     { key: "equipamento", label: "Impressora / equipamento" },
     { key: "manutencao", label: "Manutenção / peças" },

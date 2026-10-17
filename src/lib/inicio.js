@@ -6,6 +6,7 @@
 import { pendenciasDeTarefas } from "./tarefas.js";
 import { estadoSugestaoAfiliado } from "./estados.js";
 import { andamentoAtrasado } from "./ads.js";
+import { precisaRecarregar } from "./saldoAds.js";
 
 const brl = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
@@ -61,6 +62,7 @@ export function montarPendencias({
   revisoes = [], // [{ item, canal, motivos }] venda direta: preço velho ou custo subiu (revisarPreco.js)
   adsSazonal = [], // [{ chave, item, canal, aviso }] fases do Ads sazonal (ads.js → avisoAdsSazonal)
   importacoes = null, // { disponivel, lista, plataformas: [{ id, nome }] } — central da aba Análise (v55)
+  saldoDeAds = null, // saldoAds (lib/saldoAds.js): recargas − gasto dos CSVs
   hoje = "",
 }) {
   const out = [];
@@ -250,6 +252,15 @@ export function montarPendencias({
       add({ id: `ads|${l.chave}|prejuizo`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads no prejuízo`, texto: `${l.canal.nome} · ${av.titulo.replace(/^Ads no prejuízo — /, "")} · pause e arrume o anúncio`, ir: irL, rotulo: "Ver o que fazer" });
       continue;
     }
+    // Queda com o Ads ligado (17/10/2026).
+    if (av.chave === "parou-ads" || av.chave === "queda-ads") {
+      add({ id: `ads|${l.chave}|${av.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "parou-ads" ? "confira anúncio, estoque e preço — pause até descobrir" : "reduza o orçamento ou suba a meta"}`, ir: irL, rotulo: "Ver o que fazer" });
+      continue;
+    }
+    if (av.chave === "queda-ads-sinal") {
+      add({ id: `ads|${l.chave}|queda-sinal`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.split(" — ")[0]}`, texto: `${l.canal.nome} · avalie a causa, sem mexer ainda — o app pede pra agir se seguir assim até ${av.decideEm ? `${av.decideEm.slice(8, 10)}/${av.decideEm.slice(5, 7)}` : "o 7º dia"}`, ir: irL, rotulo: "Abrir Ads" });
+      continue;
+    }
     if (av.chave === "despausar") {
       add({ id: `ads|${l.chave}|despausar`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: já revisou? Despause o Ads`, texto: `${l.canal.nome} · pausado desde ${av.pausado?.desde ? `${av.pausado.desde.slice(8, 10)}/${av.pausado.desde.slice(5, 7)}` : "—"}`, ir: irL, rotulo: "Abrir Ads" });
       continue;
@@ -283,6 +294,18 @@ export function montarPendencias({
     if (av.avisoMeta)
       add({ id: `ads|${l.chave}|meta-alta-inicio`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: meta de ROAS alta pra começar`, texto: `${l.canal.nome} · meta ${av.avisoMeta.meta.toFixed(1).replace(".", ",")} — comece com ${av.avisoMeta.sugerida.toFixed(1).replace(".", ",")}`, ir: irL, rotulo: "Abrir Ads" });
   }
+  // Saldo de Ads na Shopee acabando (17/10/2026): menos de 5 dias no ritmo atual.
+  if (precisaRecarregar(saldoDeAds))
+    add({
+      id: "ads|recarregar",
+      grupo: "rotina",
+      ordem: 2,
+      tom: "warn",
+      titulo: `Recarregar o Ads — saldo ≈ R$ ${saldoDeAds.saldo.toFixed(2).replace(".", ",")}`,
+      texto: `Dá pra ~${Math.max(0, Math.floor(saldoDeAds.dias))} dia${Math.floor(saldoDeAds.dias) === 1 ? "" : "s"} no ritmo de R$ ${saldoDeAds.gastoDia.toFixed(2).replace(".", ",")}/dia · depois de depositar na Shopee, lance a recarga no Fluxo de Caixa`,
+      ir: { aba: "caixa" },
+      rotulo: "Abrir o caixa",
+    });
   // Andamento do Ads (plano 14/10/2026): UM aviso quando o envio mais antigo
   // entre os itens com Ads ligado tem mais de 3 dias.
   {
