@@ -506,6 +506,21 @@ function GrupoDialog({ grupo, itens, canal, canais, salvando, onCancelar, onSalv
   const ok = f.nome.trim() && validas.length >= 2 && !repetidas;
   return (
     <EditarDialog titulo={grupo ? `Editar anúncio — ${grupo.nome}` : "Novo anúncio com vários itens"} salvando={salvando} onCancelar={onCancelar} onSalvar={() => ok && onSalvar(f)} salvarLabel="Salvar anúncio" classe="modal-box-xl">
+      <details className="quando-usar" open={!grupo}>
+        <summary>Quando usar anúncio com vários itens?</summary>
+        <p>
+          Quando o cliente vai <b>escolher UMA opção</b> dentro do mesmo anúncio — ex.: <i>( ) Só o Leão · ( ) Leão + Letreiro</i>. Cada opção é um item já
+          cadastrado (produto, variação ou kit), com o preço salvo dele.
+        </p>
+        <p>
+          <b>Quer vender só os itens juntos, sem escolha?</b> Isso é um <b>kit</b>: cadastre em Produtos → Kits, precifique no 1º Avulso e use a Ficha em
+          “Um item”. Os produtos soltos ficam só como base de custo.
+        </p>
+        <p>
+          <b>✦ Montar combinações</b> = atalho: cria sozinho os kits de cada combinação (ex.: Leão + Letreiro) e já põe como opções. <b>Escolher os itens
+          embaixo</b> = usa só o que já existe — produto solto vira uma opção vendida sozinha, não um kit.
+        </p>
+      </details>
       <div className="grid-auto">
         <div className="field"><label>Nome do anúncio</label><input value={f.nome} onChange={(e) => setF((p) => ({ ...p, nome: e.target.value }))} placeholder="ex.: Kit de Natal" /></div>
         <div className="field">

@@ -2209,3 +2209,8 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 }
 .btn-icone:not(.btn):hover { background: var(--surface-3); border-color: var(--ink-faint); }
 .btn-icone:not(.btn):disabled { opacity: 0.45; cursor: default; }
+
+/* Anúncio com vários itens: "Quando usar?" no topo da janela */
+.quando-usar { background: var(--st-info-soft); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
+.quando-usar summary { cursor: pointer; font-weight: 700; }
+.quando-usar p { margin: 6px 0 0; line-height: 1.45; }
