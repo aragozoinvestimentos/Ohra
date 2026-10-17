@@ -45,6 +45,8 @@ import { pegarPedido } from "../lib/navegar.js";
 import SemanasFonte from "./SemanasFonte.jsx";
 import Estado, { PontoSaude } from "./Estado.jsx";
 import { saudeRampa } from "../lib/estados.js";
+import { useLembretes } from "../hooks/useLembretes.js";
+import { PRAZOS_PAUSA, pausaAtiva, pausarRampa, pausasDeRampa, retomarRampa } from "../lib/pausaRampa.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -172,6 +174,8 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
   // As semanas são montadas sozinhas pelas importações (lib/semanasAuto.js):
   // não existe mais "semana pendente".
   const pendDe = () => null;
+  const { lembretes } = useLembretes();
+  const pausas = useMemo(() => pausasDeRampa(lembretes), [lembretes]);
   // Lista única "Em rampa" (out/2026): produtos + anúncios com vários itens,
   // separada pelo que pedir ação — a ação vem de lib/rampaAgora.js (só lê o
   // que a rampa decidiu). Semana pendente sem outra ação = "Registrar a semana".
@@ -180,12 +184,27 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
       const acao = acaoDaRampa(l.est, { canal: l.canal.nome, grupo, checklist: l.r.checklist || {}, pctDe: grupo ? l.g?.pctDe : null });
       const pend = pendDe(l);
       const doGrupo = !grupo && l.soNoGrupo;
-      const secao = doGrupo ? "acomp" : ["resolver", "atencao"].includes(acao.tipo) ? "fazer" : acao.tipo === "oportunidade" ? "subir" : pend ? "fazer" : "acomp";
-      return { l, grupo, acao, pend, secao, proxima: proximaConferencia(l.est, { pendente: pend }) };
+      let secao = doGrupo ? "acomp" : ["resolver", "atencao"].includes(acao.tipo) ? "fazer" : acao.tipo === "oportunidade" ? "subir" : pend ? "fazer" : "acomp";
+      // "Não acompanhar por enquanto": sai das seções de ação até vender ou o
+      // prazo acabar (lib/pausaRampa.js). Urgente (resolver) continua aparecendo.
+      const pausa = doGrupo ? null : pausaAtiva(pausas.get(l.r.id), l.est, hoje);
+      if (pausa && acao.tipo !== "resolver") secao = "pausa";
+      return { l, grupo, acao, pend, secao, pausa, podePausar: !doGrupo && secao !== "acomp" && acao.tipo !== "resolver", proxima: proximaConferencia(l.est, { pendente: pend }) };
     };
     return [...linhas.map((l) => um(l, false)), ...linhasGrupo.map((l) => um(l, true))];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linhas, linhasGrupo]);
+  }, [linhas, linhasGrupo, pausas, hoje]);
+  const [verPausadas, setVerPausadas] = useState(false);
+  async function pausar(x, dias) {
+    const r = await pausarRampa({ lojaId, rampaId: x.l.r.id, dias, vendasTotal: x.l.est.vendasTotal, hoje });
+    if (!r.ok) return onToast?.(r.msg);
+    onToast?.(`${x.l.produto.nome}: sem acompanhar — volta com a próxima venda${dias ? ` ou em ${dias} dias` : ""}`);
+  }
+  async function retomar(x) {
+    const r = await retomarRampa({ lojaId, rampaId: x.l.r.id });
+    if (!r.ok) return onToast?.(r.msg);
+    onToast?.(`${x.l.produto.nome}: acompanhando de novo`);
+  }
   const itensVis = useMemo(() => {
     const t = busca.trim().toLowerCase();
     return itensLista.filter((x) => {
@@ -554,21 +573,26 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
                       ["fazer", "Pra fazer agora"],
                       ["subir", "Pronto pra subir"],
                       ["acomp", "Acompanhando"],
+                      ["pausa", "Sem acompanhar"],
                     ].map(([sec, titulo]) => {
                       const doSec = itensVis.filter((x) => x.secao === sec);
                       if (!doSec.length) return null;
+                      const fechada = sec === "pausa" && !verPausadas && !busca.trim();
                       return (
                         <Fragment key={sec}>
-                          <tr className={`secao-lista secao-${sec}`}>
+                          <tr className={`secao-lista secao-${sec}${sec === "pausa" ? " linha-clicavel" : ""}`} onClick={sec === "pausa" ? () => setVerPausadas((v) => !v) : undefined}>
                             <td colSpan={4}>
-                              {sec === "subir" ? "↑ " : sec === "fazer" ? "! " : ""}
+                              {sec === "subir" ? "↑ " : sec === "fazer" ? "! " : sec === "pausa" ? (fechada ? "▸ " : "▾ ") : ""}
                               {titulo} <span className="filtro-n">{doSec.length}</span>
+                              {sec === "pausa" && <span className="faint"> · voltam sozinhos com a próxima venda ou no fim do prazo</span>}
                             </td>
                           </tr>
-                          {doSec.map((x) => (
+                          {!fechada && doSec.map((x) => (
                             <LinhaEmRampa
                               key={x.l.r.id}
                               x={x}
+                              onPausar={(dias) => pausar(x, dias)}
+                              onRetomar={() => retomar(x)}
                               atual={x.grupo ? selId === x.l.r.id : sel?.r.id === x.l.r.id}
                               onAbrir={() => {
                                 setSelId(x.l.r.id);
@@ -992,8 +1016,9 @@ function CronogramaSazonal({ e, onDescer }) {
 }
 
 // Uma linha da lista "Em rampa" (produto ou anúncio com vários itens).
-function LinhaEmRampa({ x, atual, onAbrir, onAcao }) {
+function LinhaEmRampa({ x, atual, onAbrir, onAcao, onPausar, onRetomar }) {
   const { l, grupo, pend, proxima } = x;
+  const [escolher, setEscolher] = useState(false);
   const e = l.est;
   // Produto que só vende dentro do anúncio com vários itens: a rampa do anúncio decide.
   const acao = !grupo && l.soNoGrupo ? { tipo: "info", titulo: "Segue a rampa do anúncio inteiro", porque: "Pode encerrar esta rampa (⋯ Mais no detalhe)." } : x.acao;
@@ -1079,6 +1104,36 @@ function LinhaEmRampa({ x, atual, onAbrir, onAcao }) {
           )}
         </div>
         {acao.porque && <div className="sub-num oqf-porque">{acao.porque}</div>}
+        {x.pausa ? (
+          <div className="sub-num pausa-rampa" onClick={(ev) => ev.stopPropagation()}>
+            Sem acompanhar desde {diaMes(x.pausa.desde)} · volta com a próxima venda{x.pausa.soVenda ? "" : ` ou em ${diaMes(x.pausa.ate)}`} ·{" "}
+            <button type="button" className="link-btn" onClick={onRetomar}>
+              acompanhar de novo
+            </button>
+          </div>
+        ) : (
+          x.podePausar && (
+            <div className="sub-num pausa-rampa" onClick={(ev) => ev.stopPropagation()}>
+              {!escolher ? (
+                <button type="button" className="link-btn" title="Some daqui e do Início até vender ou até o prazo acabar. Prejuízo continua aparecendo." onClick={() => setEscolher(true)}>
+                  não acompanhar por enquanto
+                </button>
+              ) : (
+                <>
+                  Não acompanhar:{" "}
+                  {PRAZOS_PAUSA.map((d) => (
+                    <button key={d ?? "venda"} type="button" className="link-btn" onClick={() => (setEscolher(false), onPausar(d))}>
+                      {d ? `${d} dias` : "só quando vender"}
+                    </button>
+                  ))}{" "}
+                  <button type="button" className="link-btn faint" onClick={() => setEscolher(false)}>
+                    cancelar
+                  </button>
+                </>
+              )}
+            </div>
+          )
+        )}
       </td>
       <td>
         <span className={proxima.atrasada ? "prox-atrasada" : "muted-cel"}>{proxima.texto}</span>

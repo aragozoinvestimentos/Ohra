@@ -6,6 +6,7 @@ import { useReservaProducao } from "../hooks/useReservaProducao.js";
 import { revisoesPrecoDireto } from "../lib/revisarPreco.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLembretes } from "../hooks/useLembretes.js";
+import { pausaAtiva, pausasDeRampa } from "../lib/pausaRampa.js";
 import { infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
 import { dataSP } from "../lib/datas.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -292,8 +293,15 @@ export default function Inicio({ onIrPara, onToast }) {
   const { lembretes, disponivel: lembretesOk } = useLembretes();
   const adiadoAte = useMemo(() => new Map(lembretes.filter((l) => String(l.chave).startsWith("inicio|")).map((l) => [l.chave.slice(7), l.adiado_ate])), [lembretes]);
   const podeAdiar = (p) => !p.tarefa && p.grupo !== "resolver";
-  const pendencias = todasPendencias.filter((p) => !(podeAdiar(p) && adiadoAte.get(p.id) > hoje));
-  const adiados = todasPendencias.filter((p) => podeAdiar(p) && adiadoAte.get(p.id) > hoje);
+  // Rampa marcada "não acompanhar por enquanto" (Crescimento → Rampa): os
+  // avisos dela (menos os urgentes) saem até vender ou o prazo acabar.
+  const rampasPausadas = useMemo(() => {
+    const pausas = pausasDeRampa(lembretes);
+    return new Set(linhas.filter((l) => pausaAtiva(pausas.get(l.r.id), l.est, hoje)).map((l) => l.r.id));
+  }, [lembretes, linhas, hoje]);
+  const pausadaRampa = (p) => p.grupo !== "resolver" && rampasPausadas.has(p.ir?.pedido?.rampaId);
+  const pendencias = todasPendencias.filter((p) => !pausadaRampa(p) && !(podeAdiar(p) && adiadoAte.get(p.id) > hoje));
+  const adiados = todasPendencias.filter((p) => !pausadaRampa(p) && podeAdiar(p) && adiadoAte.get(p.id) > hoje);
   const [verAdiados, setVerAdiados] = useState(false);
   async function adiar30(p) {
     if (!lembretesOk) return onToast?.("Falta rodar o supabase/schema_v40.sql no Supabase");

@@ -2265,3 +2265,9 @@ tr.clicavel.ativo td { background: var(--accent-soft); }
 .live-excluir { margin-left: auto; }
 .panel > h3:has(.live-excluir) { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .live-plano-texto { font-size: 13px; margin: 2px 0 4px; padding: 6px 10px; border-radius: 8px; background: var(--st-info-soft); }
+
+/* Rampa: "não acompanhar por enquanto" */
+.pausa-rampa { margin-top: 3px; }
+.pausa-rampa .link-btn { margin-right: 8px; font-size: 12px; }
+.secao-lista.secao-pausa td { color: var(--text-muted, #777); }
+.secao-lista.secao-pausa .faint { text-transform: none; letter-spacing: 0; font-weight: 400; }
