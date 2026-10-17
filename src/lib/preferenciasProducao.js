@@ -27,10 +27,6 @@ export function lerUltimosPercentuais(padrao) {
 }
 
 export function salvarUltimosPercentuais({ falhasPct, manutencaoPct, acabamentoPct }) {
+  // Só no banco/cache da loja (o localStorage antigo era um só pra todas as lojas).
   gravarPreferencia(PREF, { falhasPct, manutencaoPct, acabamentoPct });
-  try {
-    localStorage.setItem(CHAVE, JSON.stringify({ falhasPct, manutencaoPct, acabamentoPct }));
-  } catch {
-    // localStorage indisponível — só perde a conveniência, não quebra nada
-  }
 }

@@ -216,7 +216,7 @@ export default function Inicio({ onIrPara, onToast }) {
   }
 
   // --- Dinheiro (mesmas contas do Fluxo de Caixa e de Metas) ---
-  const [estimativasCaixa] = usePreferencia("caixa:estimativas", { vendas: "", custos: "" }, { legado: () => loadEstimativas(lojaId) });
+  const [estimativasCaixa] = usePreferencia("caixa:estimativas", { vendas: "", custos: "" }, { legado: () => loadEstimativas(lojaId), legadoPorLoja: true });
   const caixa = useMemo(
     () => (gestao.lancamentos.length ? resumoCaixa(gestao.lancamentos, { hoje, estimativas: estimativasCaixa, meses: 3, dias: 7 }) : null),
     [gestao.lancamentos, hoje, estimativasCaixa]

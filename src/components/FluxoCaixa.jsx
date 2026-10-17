@@ -114,7 +114,7 @@ export default function FluxoCaixa({ onToast }) {
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [horizonte, setHorizonte] = useState(12);
   // Estimativas da projeção: no banco (preferencias_loja, v59) — iguais em todo aparelho.
-  const [estimativas, setEstimativas] = usePreferencia("caixa:estimativas", { vendas: "", custos: "" }, { legado: () => loadEstimativas(lojaId) });
+  const [estimativas, setEstimativas] = usePreferencia("caixa:estimativas", { vendas: "", custos: "" }, { legado: () => loadEstimativas(lojaId), legadoPorLoja: true });
   const [sub] = useSubAba("ohra:caixa:sub", "caixa", SUBABAS_CAIXA.map((x) => x.key));
   const [verConfig, setVerConfig] = useState(false);
   const reserva = useReservaProducao();

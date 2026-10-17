@@ -88,12 +88,16 @@ const gravarLocal = (k, v) => {
   }
 };
 
+// Cópia local por LOJA (cada loja tem a sua; trocar de loja nunca mostra o
+// valor da outra).
+const chaveLocal = (lojaId, chave) => `ohra:pref:${lojaId || "sem-loja"}:${chave}`;
+
 /** Grava uma preferência da loja no banco (e no cache local). */
 export async function gravarPreferencia(chave, valor, lojaId = lojaAtual) {
   const valores = new Map(estado.valores);
   valores.set(chave, valor);
   publicar({ ...estado, valores }); // otimista: a tela muda na hora
-  gravarLocal(`ohra:pref:${chave}`, valor);
+  gravarLocal(chaveLocal(lojaId, chave), valor);
   if (!supabase || !estado.disponivel) return { ok: true, soLocal: true };
   const { error } = await supabase
     .from("preferencias_loja")
@@ -106,9 +110,11 @@ export async function gravarPreferencia(chave, valor, lojaId = lojaAtual) {
  * - padrao: valor quando não há nada salvo.
  * - legado: chave antiga do localStorage (ou função que devolve o valor antigo)
  *   — sobe pro banco na 1ª vez.
+ * - legadoPorLoja: o valor antigo já era separado por loja (sobe pra cada uma);
+ *   sem isso, o antigo era UM só pra todas e sobe só pra loja que abrir primeiro.
  * - atraso: ms pra juntar digitação antes de gravar (padrão 600).
  */
-export function usePreferencia(chave, padrao, { legado = null, atraso = 600 } = {}) {
+export function usePreferencia(chave, padrao, { legado = null, legadoPorLoja = false, atraso = 600 } = {}) {
   const { lojaId } = useLoja();
   const s = useSyncExternalStore(assinar, () => estado, () => estado);
   useEffect(() => {
@@ -137,13 +143,20 @@ export function usePreferencia(chave, padrao, { legado = null, atraso = 600 } = 
     // Só sobe o que tem conteúdo de verdade: um aparelho sem nada salvo não
     // pode ocupar a vaga do que está guardado em outro (o 1º com dado ganha).
     const vazio = v === undefined || v === null || v === "" || JSON.stringify(v) === JSON.stringify(padrao) || (typeof v === "object" && Object.keys(v).length === 0) || (typeof v === "object" && Object.values(v).every((x) => x === "" || x == null));
-    if (!vazio) gravarPreferencia(chave, v, lojaId);
+    // Valor antigo COMPARTILHADO (um só pra todas as lojas): sobe só uma vez,
+    // pra loja que abrir primeiro — não copia pra outra loja.
+    const marca = legadoPorLoja ? null : `ohra:pref-migrado:${chave}`;
+    if (marca && lerLocal(marca)) return;
+    if (!vazio) {
+      gravarPreferencia(chave, v, lojaId);
+      if (marca) gravarLocal(marca, lojaId || "sem-loja");
+    }
   });
 
   let valor;
   if (temNoBanco) valor = s.valores.get(chave);
   else {
-    const cache = lerLocal(`ohra:pref:${chave}`);
+    const cache = lerLocal(chaveLocal(lojaId, chave));
     const v = cache !== undefined ? cache : valorLegado();
     valor = v !== undefined && v !== null ? v : padrao;
   }
@@ -160,7 +173,7 @@ export function usePreferencia(chave, padrao, { legado = null, atraso = 600 } = 
       const valores = new Map(estado.valores);
       valores.set(chave, v);
       publicar({ ...estado, valores });
-      gravarLocal(`ohra:pref:${chave}`, v);
+      gravarLocal(chaveLocal(lojaId, chave), v);
       clearTimeout(pendente.current);
       pendente.current = setTimeout(() => gravarPreferencia(chave, v, lojaId), atraso);
     },
@@ -171,6 +184,6 @@ export function usePreferencia(chave, padrao, { legado = null, atraso = 600 } = 
 
 /** Leitura direta (fora de componente): banco › cache local › undefined. */
 export function lerPreferencia(chave) {
-  if (estado.valores.has(chave)) return estado.valores.get(chave);
-  return lerLocal(`ohra:pref:${chave}`);
+  if (estado.lojaId === lojaAtual && estado.valores.has(chave)) return estado.valores.get(chave);
+  return lerLocal(chaveLocal(lojaAtual, chave));
 }
