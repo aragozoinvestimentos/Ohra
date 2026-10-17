@@ -31,10 +31,10 @@ export default function LojaGate({ onToast }) {
       <div className="loja-gate">
         <div className="loja-gate-card loja-gate-card-larga">
           <div className="loja-gate-brand">
-            <img src={logo} alt="Ohra" />
+            <img src={logo} alt="Margem Real" />
             <div>
-              <div className="word">OHRA</div>
-              <div className="tagline">Precificador</div>
+              <div className="word">MARGEM REAL</div>
+              <div className="tagline">o lucro de verdade de cada venda</div>
             </div>
           </div>
           <h3>Nenhuma loja cadastrada ainda</h3>
@@ -56,10 +56,10 @@ export default function LojaGate({ onToast }) {
     <div className="loja-gate">
       <div className="loja-gate-card">
         <div className="loja-gate-brand">
-          <img src={logo} alt="Ohra" />
+          <img src={logo} alt="Margem Real" />
           <div>
-            <div className="word">OHRA</div>
-            <div className="tagline">Precificador</div>
+            <div className="word">MARGEM REAL</div>
+            <div className="tagline">o lucro de verdade de cada venda</div>
           </div>
         </div>
         <h3>Escolha uma loja</h3>

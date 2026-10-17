@@ -372,7 +372,7 @@ export default function App() {
   }
 
   const menuAtual = menuDaAba(tab);
-  const grupoAtual = tab === "tutorial" ? "Ajuda" : menuAtual?.grupo || "Ohra";
+  const grupoAtual = tab === "tutorial" ? "Ajuda" : menuAtual?.grupo || "Margem Real";
   const tituloAtual = tab === "tutorial" ? TUTORIAL.label : menuAtual?.label;
   const subtituloAtual = tab === "tutorial" ? TUTORIAL.sub : menuAtual?.sub;
   const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub, analise: analiseSub };
@@ -416,8 +416,8 @@ export default function App() {
             <img className="brand-logo" src={logo} alt="" />
           )}
           <div>
-            <div className="word">OHRA</div>
-            <div className="tagline">Precificador</div>
+            <div className="word">MARGEM REAL</div>
+            <div className="tagline">o lucro de verdade</div>
           </div>
         </div>
 

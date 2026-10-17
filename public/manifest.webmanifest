@@ -1,7 +1,7 @@
 {
-  "name": "Precificador Ohra",
-  "short_name": "Ohra",
-  "description": "Custo de produção e preço por canal — Shopee e Mercado Livre.",
+  "name": "Margem Real",
+  "short_name": "Margem Real",
+  "description": "O lucro de verdade de cada venda — custo, preço por canal, crescimento e caixa da sua loja nos marketplaces.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F7F3EE",

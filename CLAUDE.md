@@ -1,4 +1,6 @@
-# Precificador Ohra
+# Margem Real (antes "Precificador Ohra")
+
+**Nome do app = Margem Real** ("o lucro de verdade de cada venda"; menu: "o lucro de verdade") — escolhido pelo Gustavo em 17/10/2026; app multimercado (a Ohra - 3D é a 1ª loja, não é o nome do app). Trocado em: menu lateral, tela de escolher loja, título/descrição da aba, manifest (PWA), tutorial e backup. Ícone/favicon novo: Gustavo vai escolher entre 3 opções (A seta do lucro, B monograma MR, C barras) — até lá continua o logo antigo.
 
 PWA de precificação/produção pra produtos impressos em 3D (Gustavo vende via Shopee, Mercado Livre, TikTok Shop, Shein). React 19 + Vite, Supabase (anon-key, RLS permissiva), deploy automático no Vercel a partir do `main` (`https://ohraa.vercel.app`).
 

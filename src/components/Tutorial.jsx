@@ -284,7 +284,7 @@ export default function Tutorial() {
       <ChecklistProgresso />
 
       <div className="panel">
-        <h3>Como usar o Ohra</h3>
+        <h3>Como usar o Margem Real</h3>
         <p style={{ margin: "0 0 4px", fontSize: 13.5, color: "var(--ink-soft)", lineHeight: 1.6 }}>
           O menu tem 7 itens: Início, Produtos (cadastros e custo), Preços, Crescimento, Produção, Dinheiro e
           Configuração — as telas de cada um ficam no topo, embaixo do título. Na primeira vez, comece pela

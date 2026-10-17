@@ -158,7 +158,7 @@ async function exportarBackup(onToast) {
     onToast(`Backup falhou: ${falhas[0]?.erro || "nenhuma tabela lida"}`);
     return false;
   }
-  const payload = { geradoEm: new Date().toISOString(), app: "Precificador Ohra", tabelas: dados, ...(falhas.length ? { tabelasComErro: falhas } : {}) };
+  const payload = { geradoEm: new Date().toISOString(), app: "Margem Real", tabelas: dados, ...(falhas.length ? { tabelasComErro: falhas } : {}) };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
