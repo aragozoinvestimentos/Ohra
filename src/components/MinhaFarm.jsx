@@ -313,7 +313,7 @@ export default function MinhaFarm({ onToast }) {
                         {d ? (
                           <>
                             <div className="farm-barra" title={`${Math.round(d.pct * 100)}% da vida útil`}>
-                              <div className={d.pct >= 1 ? "fim" : d.pct >= AVISO_DESGASTE ? "alerta" : ""} style={{ width: `${Math.min(100, d.pct * 100)}%` }} />
+                              <div className={d.pct >= 1 ? "farm-barra-fim" : d.pct >= AVISO_DESGASTE ? "farm-barra-alerta" : ""} style={{ width: `${Math.min(100, d.pct * 100)}%` }} />
                             </div>
                             <div className="muted-cel">{horas(d.horas)} de {horas(d.vida)} h · {Math.round(d.pct * 100)}%</div>
                           </>
