@@ -281,7 +281,8 @@ export default function Inicio({ onIrPara, onToast }) {
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
   const revisoes = useMemo(() => revisoesPrecoDireto({ itens, canais, precos, hoje }), [itens, canais, precos, hoje]);
   const adsP = useAdsPeriodos();
-  const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos: gestao.lancamentos, periodos: adsP.periodos, hoje }) : null), [adsP.disponivel, adsP.periodos, gestao.lancamentos, hoje]);
+  const [baseAds] = usePreferencia("caixa:saldo-ads-base", null);
+  const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos: gestao.lancamentos, periodos: adsP.periodos, hoje, base: baseAds }) : null), [adsP.disponivel, adsP.periodos, gestao.lancamentos, hoje, baseAds]);
   const todasPendencias = useMemo(
     () => montarPendencias({ precosAlerta, caixa, rampas: linhas, anunciosAtualizar, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, hoje }),
     [precosAlerta, caixa, linhas, anunciosAtualizar, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, hoje]

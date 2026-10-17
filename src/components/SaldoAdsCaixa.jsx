@@ -15,10 +15,29 @@ const num = (v) => {
 
 export default function SaldoAdsCaixa({ s, hoje, onRecarga }) {
   const [conf, setConf] = usePreferencia("caixa:saldo-ads-shopee", null);
+  const [, setBase] = usePreferencia("caixa:saldo-ads-base", null);
   const [editando, setEditando] = useState(false);
+  const [acertando, setAcertando] = useState(false);
   const [txt, setTxt] = useState("");
   if (!s) return null;
   if (!s.temRecarga && !(s.gasto > 0)) return null;
+  // Acertar: o saldo que a Shopee mostra hoje vira o ponto de partida.
+  const acertar = () => {
+    const v = num(txt);
+    if (v == null) return;
+    setBase({ valor: v, data: hoje, gastoBase: s.gastoTotal ?? s.gasto });
+    setConf({ valor: v, data: hoje });
+    setAcertando(false);
+  };
+  const formAcertar = (
+    <div className="saldo-ads-linha">
+      Saldo que a Shopee mostra hoje:{" "}
+      <input value={txt} onChange={(e) => setTxt(e.target.value)} placeholder="74,66" style={{ width: 90 }} autoFocus />{" "}
+      <button type="button" className="btn btn-mini primary" onClick={acertar}>Acertar saldo</button>{" "}
+      <button type="button" className="link-btn" onClick={() => setAcertando(false)}>cancelar</button>
+      <div className="faint">A partir de hoje o app conta deste valor: + recargas lançadas depois de hoje − gasto novo dos CSVs.</div>
+    </div>
+  );
   const recarregar = precisaRecarregar(s);
   const dif = conf && conf.valor != null && s.temRecarga ? Math.round((conf.valor - s.saldo) * 100) / 100 : null;
   return (
@@ -27,15 +46,25 @@ export default function SaldoAdsCaixa({ s, hoje, onRecarga }) {
         <b>Saldo de Ads na Shopee</b>
         <Ajuda texto="A Shopee pede o dinheiro antes (recarga). Lance cada depósito como saída na categoria “Anúncios / Ads (recarga)” — é quando o dinheiro sai da sua conta. O gasto que os CSVs do Shopee Ads mostram não vira saída de novo (já desconta do lucro em Vendas do mês). Saldo = recargas − gasto dos CSVs (inclui a GMV Max da Loja)." />
         <button type="button" className="btn btn-mini" onClick={onRecarga}>+ Recarga de Ads</button>
+        {!s.temRecarga && !acertando && (
+          <button type="button" className="btn btn-mini" onClick={() => { setTxt(""); setAcertando(true); }}>Acertar saldo</button>
+        )}
       </div>
-      {!s.temRecarga ? (
+      {acertando ? (
+        formAcertar
+      ) : !s.temRecarga ? (
         <div className="saldo-ads-linha">
           Os CSVs mostram {BRL(s.gasto)} gastos em Ads, mas nenhuma recarga lançada. Lance os depósitos que fez na Shopee (“+ Recarga de Ads”) pra o app acompanhar o saldo.
         </div>
       ) : (
         <>
           <div className="saldo-ads-linha">
-            <span className="saldo-ads-valor">{BRL(s.saldo)}</span> = recargas {BRL(s.recargas)} − gasto {BRL(s.gasto)}
+            <span className="saldo-ads-valor">{BRL(s.saldo)}</span>
+            {s.base ? (
+              <> = acertado em {dm(s.base.data)}: {BRL(s.base.valor)} + recargas depois {BRL(Math.round((s.recargas - Number(s.base.valor)) * 100) / 100)} − gasto depois {BRL(s.gasto)}</>
+            ) : (
+              <> = recargas {BRL(s.recargas)} − gasto {BRL(s.gasto)}</>
+            )}
             {s.ate ? <span className="faint"> (CSV até {dm(s.ate)})</span> : null}
             {s.dias != null && s.gastoDia > 0 && (
               <span className={recarregar ? "saldo-ads-alerta" : "faint"}>
@@ -78,7 +107,8 @@ export default function SaldoAdsCaixa({ s, hoje, onRecarga }) {
               </>
             ) : (
               <button type="button" className="link-btn" onClick={() => { setTxt(""); setEditando(true); }}>conferir com o saldo que a Shopee mostra</button>
-            )}
+            )}{" "}
+            · <button type="button" className="link-btn" onClick={() => { setTxt(""); setAcertando(true); }}>acertar saldo</button>
           </div>
         </>
       )}

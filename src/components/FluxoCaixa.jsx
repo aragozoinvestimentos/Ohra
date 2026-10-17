@@ -119,7 +119,8 @@ export default function FluxoCaixa({ onToast }) {
   const [verConfig, setVerConfig] = useState(false);
   const reserva = useReservaProducao();
   const adsP = useAdsPeriodos();
-  const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos, periodos: adsP.periodos, hoje }) : null), [adsP.disponivel, adsP.periodos, lancamentos, hoje]);
+  const [baseAds] = usePreferencia("caixa:saldo-ads-base", null);
+  const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos, periodos: adsP.periodos, hoje, base: baseAds }) : null), [adsP.disponivel, adsP.periodos, lancamentos, hoje, baseAds]);
   const saldoDaReserva = useMemo(() => saldoReserva(reserva.registros).saldo, [reserva.registros]);
 
   useEffect(() => {

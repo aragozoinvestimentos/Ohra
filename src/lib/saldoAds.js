@@ -21,12 +21,18 @@ export function ehRecargaAds(l) {
   return l && l.tipo === "saida" && l.categoria === "anuncios" && l.recorrencia !== "mensal";
 }
 
-// → { recargas, gasto, saldo, gastoDia, dias, ate, primeira, temRecarga }
-export function saldoAds({ lancamentos = [], periodos = [], hoje }) {
-  const rec = lancamentos.filter((l) => ehRecargaAds(l) && l.data_realizada && l.data_realizada <= hoje);
-  const recargas = rec.reduce((t, l) => t + num(l.valor), 0);
+// Saldo acertado à mão (17/10/2026, pedido do Gustavo: "corrija meu saldo,
+// pra começar a acertar de novo"): `base` = { valor, data, gastoBase } —
+// a partir daí saldo = valor + recargas DEPOIS da data − gasto dos CSVs que
+// passar do total que havia no dia do acerto (gastoBase).
+// → { recargas, gasto, saldo, gastoDia, dias, ate, primeira, temRecarga, base }
+export function saldoAds({ lancamentos = [], periodos = [], hoje, base = null }) {
+  const temBase = base && base.valor != null && base.data;
+  const rec = lancamentos.filter((l) => ehRecargaAds(l) && l.data_realizada && l.data_realizada <= hoje && (!temBase || l.data_realizada > base.data));
+  const recargas = rec.reduce((t, l) => t + num(l.valor), 0) + (temBase ? num(base.valor) : 0);
   const tudo = adsNaJanela(periodos, [], "2000-01-01", hoje);
-  const gasto = tudo.gasto;
+  const gastoTotal = tudo.gasto;
+  const gasto = temBase ? Math.max(0, Math.round((gastoTotal - num(base.gastoBase)) * 100) / 100) : gastoTotal;
   // Ritmo: gasto dos últimos 7 dias (pelos CSVs); sem isso, os orçamentos diários ligados.
   const g7 = adsNaJanela(periodos, [], somarDias(hoje, -6), hoje).gasto / 7;
   const orcDia = periodos
@@ -42,7 +48,9 @@ export function saldoAds({ lancamentos = [], periodos = [], hoje }) {
     dias: gastoDia > 0 ? saldo / gastoDia : null,
     ate: tudo.ate,
     primeira: rec.map((l) => l.data_realizada).sort()[0] || null,
-    temRecarga: rec.length > 0,
+    temRecarga: rec.length > 0 || !!temBase,
+    gastoTotal,
+    base: temBase ? base : null,
   };
 }
 
