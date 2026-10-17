@@ -2198,3 +2198,14 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .marca-app .marca-r { fill: var(--marca-r); }
 .marca-app.td-logo { filter: none; width: 68px; height: 68px; }
 .tela-descanso-leve .marca-app.td-logo { width: 48px; height: 48px; }
+
+/* Botão de ícone solto (✎ / × sem a classe .btn) — antes ficava com o
+   estilo padrão do navegador (branco no tema escuro, ícone quase invisível). */
+.btn-icone:not(.btn) {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 28px; padding: 0 7px; font-size: 14px; line-height: 1;
+  color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 8px; cursor: pointer;
+}
+.btn-icone:not(.btn):hover { background: var(--surface-3); border-color: var(--ink-faint); }
+.btn-icone:not(.btn):disabled { opacity: 0.45; cursor: default; }
