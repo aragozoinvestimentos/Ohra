@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
+import { excluirItemCompleto, kitsQueUsam } from "../lib/excluirItem.js";
 import { ML_CATEGORIA_PADRAO, ML_TIPO_ANUNCIO_PADRAO } from "../hooks/useRankingData.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { statusPrecoSalvo, sugestaoKit, configEscada, precoMinimoAceitavel, canalEmMarkup } from "../lib/escada.js";
@@ -668,38 +669,13 @@ export default function Historico({ onEditarCompleto, onToast }) {
   }
 
   async function pedirExclusaoCompleta(item) {
-    const [tipoLetra, id] = item.id.split(":");
-    if (tipoLetra !== "k" && supabase) {
-      const { data, error } = await supabase.from("kit_produtos").select("kit_id").eq("produto_id", id);
-      if (!error && data && data.length > 0) {
-        const kitIds = [...new Set(data.map((r) => r.kit_id))];
-        const nomes = kitIds.map((kid) => itens.find((i) => i.id === `k:${kid}`)?.nome).filter(Boolean);
-        setExcluirCompletoAlvo({
-          item,
-          aviso: nomes.length ? `Usado no(s) kit(s): ${nomes.join(", ")}. Excluir mesmo assim vai tirá-lo desses kits.` : null,
-        });
-        return;
-      }
-    }
-    setExcluirCompletoAlvo({ item, aviso: null });
+    const nomes = await kitsQueUsam(item, itens);
+    setExcluirCompletoAlvo({ item, aviso: nomes.length ? `Usado no(s) kit(s): ${nomes.join(", ")}. Excluir mesmo assim vai tirá-lo desses kits.` : null });
   }
 
-  async function excluirItemCompleto() {
-    const { item } = excluirCompletoAlvo;
-    const [tipoLetra, id] = item.id.split(":");
-    const tabela = tipoLetra === "k" ? "kits" : "produtos_cadastro";
-    const itemTipo = tipoLetra === "k" ? "kit" : "produto";
-    // Preços salvos das variações desse produto (as variações em si somem
-    // junto com o produto, por cascata no banco).
-    const idsVariacoes = itens.filter((i) => i.tipo === "Variação" && i.produtoId === id).map((i) => i.id.split(":")[1]);
-    const { error } = await supabase.from(tabela).delete().eq("id", id);
-    if (error) {
-      onToast(`Não foi possível excluir: ${error.message}`);
-      return;
-    }
-    // precos_canal não tem FK pro produto/kit (referência genérica) — limpa na mão.
-    await supabase.from("precos_canal").delete().eq("item_tipo", itemTipo).eq("item_id", id);
-    if (idsVariacoes.length) await supabase.from("precos_canal").delete().eq("item_tipo", "variacao").in("item_id", idsVariacoes);
+  async function excluirItemCompletoTela() {
+    const r = await excluirItemCompleto(excluirCompletoAlvo.item, itens);
+    if (!r.ok) return onToast(r.msg);
     setExcluirCompletoAlvo(null);
     onToast("Excluído por completo");
   }
@@ -1331,7 +1307,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
           }
           confirmarLabel="Excluir por completo"
           perigo
-          onConfirm={excluirItemCompleto}
+          onConfirm={excluirItemCompletoTela}
           onCancel={() => setExcluirCompletoAlvo(null)}
         />
       )}

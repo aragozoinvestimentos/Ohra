@@ -17,6 +17,10 @@ import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
 import Ajuda from "./Ajuda.jsx";
 import QuandoVende from "./QuandoVende.jsx";
+import ConfirmDialog from "./ConfirmDialog.jsx";
+import { excluirItemCompleto, kitsQueUsam } from "../lib/excluirItem.js";
+import { excluirVariacaoTodos } from "../lib/tirarDoCanal.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { configCalendario, quandoVendeDe, rotuloQuando, TIPOS_QUANDO } from "../lib/calendario.js";
 
@@ -36,7 +40,28 @@ const g = (v) => (v ? `${Math.round(v)} g` : "—");
 export default function CatalogoLista({ onEditar, onToast }) {
   const dados = useEscada();
   const { itens, produtos, canais, precos, materiais, rampas, alertaDe, agoraDe, carregando } = dados;
-  const { impressoras } = useCatalogo();
+  const { impressoras, produtos: produtosCrus } = useCatalogo();
+  // × no fim da linha: excluir o produto/kit (ou a variação) com confirmação.
+  const [excluir, setExcluir] = useState(null); // { item, aviso }
+  async function pedirExcluir(it) {
+    if (it.tipo === "Variação") return setExcluir({ item: it, aviso: null });
+    const nomes = await kitsQueUsam(it, itens);
+    setExcluir({ item: it, aviso: nomes.length ? `Está no(s) kit(s): ${nomes.join(", ")} — sai desses kits.` : null });
+  }
+  async function confirmarExcluir() {
+    const it = excluir.item;
+    if (it.tipo === "Variação") {
+      const erros = await excluirVariacaoTodos({ variacaoId: it.id.slice(2), n: Number(it.quantidade) || null, produto: (produtosCrus || []).find((p) => p.id === it.produtoId) || null });
+      recarregarCatalogo();
+      setExcluir(null);
+      return onToast?.(erros.length ? `Variação excluída, mas: ${erros.join("; ")}` : "Variação excluída");
+    }
+    const r = await excluirItemCompleto(it, itens);
+    if (!r.ok) return onToast?.(r.msg);
+    if (aberto === it.id) setAberto(null);
+    setExcluir(null);
+    onToast?.(`${it.tipo === "Kit" ? "Kit" : "Produto"} excluído`);
+  }
   const { grupos } = useAnunciosGrupo();
   const mapaGrupos = useMemo(() => gruposPorItem(grupos), [grupos]);
   const [busca, setBusca] = useState("");
@@ -164,6 +189,20 @@ export default function CatalogoLista({ onEditar, onToast }) {
             {salvos.length ? salvos.map(({ c, s }) => <CanalTag key={c.id} canal={c} title={BRL(s.preco)}>{`${c.nome} ${BRL(s.preco)}`}</CanalTag>) : <span className="muted-cel">sem preço salvo</span>}
           </span>
         </td>
+        <td className="td-excluir">
+          <button
+            type="button"
+            className="del"
+            title={`Excluir ${it.tipo === "Kit" ? "este kit" : it.tipo === "Variação" ? "esta variação" : "este produto"}`}
+            aria-label="Excluir"
+            onClick={(e) => {
+              e.stopPropagation();
+              pedirExcluir(it);
+            }}
+          >
+            ×
+          </button>
+        </td>
       </tr>
     );
   };
@@ -206,7 +245,7 @@ export default function CatalogoLista({ onEditar, onToast }) {
     ].filter(Boolean);
     return (
       <tr className="linha-detalhe">
-        <td colSpan={5}>
+        <td colSpan={6}>
           <div className="detalhe-cel catalogo-det">
             <div className="cat-card">
               <div className="cat-card-cab">
@@ -430,6 +469,7 @@ export default function CatalogoLista({ onEditar, onToast }) {
                 <th className="num">Peso</th>
                 <th>Produção</th>
                 <th>Preço salvo</th>
+                <th className="td-excluir" aria-label="Excluir"></th>
               </tr>
             </thead>
             <tbody>
@@ -452,6 +492,20 @@ export default function CatalogoLista({ onEditar, onToast }) {
             </tbody>
           </table>
         </div>
+      )}
+      {excluir && (
+        <ConfirmDialog
+          titulo={`Excluir ${excluir.item.tipo === "Kit" ? "kit" : excluir.item.tipo === "Variação" ? "variação" : "produto"}`}
+          mensagem={
+            excluir.item.tipo === "Variação"
+              ? `Excluir a variação "${excluir.item.nome}" de todos os canais (preço salvo, anúncio marcado e afiliado dela)? Não é possível desfazer.`
+              : `Excluir "${excluir.item.nome}" por completo${excluir.item.tipo === "Produto" ? ", com as variações dele," : ""} e todos os preços salvos em qualquer canal? Não é possível desfazer.${excluir.aviso ? ` ${excluir.aviso}` : ""}`
+          }
+          confirmarLabel="Excluir"
+          perigo
+          onConfirm={confirmarExcluir}
+          onCancel={() => setExcluir(null)}
+        />
       )}
     </div>
   );

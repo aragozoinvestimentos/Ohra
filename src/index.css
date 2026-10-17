@@ -2177,3 +2177,4 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .saldo-ads-valor { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
 .saldo-ads-alerta { color: var(--st-atencao); }
 .saldo-ads-ok { color: var(--st-oportunidade); }
+.td-excluir { width: 34px; text-align: right; padding-left: 0 !important; }
