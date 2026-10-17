@@ -21,7 +21,7 @@ const somar = (s, n) => {
 export const diasEntreIso = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
 
 // Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher).
-function pascoa(a) {
+export function pascoa(a) {
   const x = a % 19;
   const b = Math.floor(a / 100);
   const c = a % 100;
