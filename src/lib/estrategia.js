@@ -87,9 +87,13 @@ export function produtosEmRampa(rampas, precos) {
   for (const r of rampas || []) {
     const degraus = (r.degraus || []).map(num);
     const atual = degraus[Math.max(0, Math.min(degraus.length - 1, r.degrau_atual ?? 0))];
-    const salvo = (precos || []).find((p) => p.item_tipo === "produto" && p.item_id === r.produto_id && p.canal_id === r.canal_id);
+    // Rampa de kit (v62): chave "k:<kitId>|canalId".
+    const tipo = r.kit_id ? "kit" : "produto";
+    const id = r.kit_id || r.produto_id;
+    if (!id) continue;
+    const salvo = (precos || []).find((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === r.canal_id);
     const alvo = salvo ? num(salvo.preco) : degraus[degraus.length - 1];
-    if (atual > 0 && alvo > 0 && atual < alvo - 0.004) out.add(`${r.produto_id}|${r.canal_id}`);
+    if (atual > 0 && alvo > 0 && atual < alvo - 0.004) out.add(r.kit_id ? `k:${id}|${r.canal_id}` : `${id}|${r.canal_id}`);
   }
   return out;
 }
@@ -112,6 +116,7 @@ export function estrategiaEfetiva(item, canal, { precos = [], rampas = [], emRam
   const cid = canal.id;
   if (tipo === "produto" && set.has(`${idCru}|${cid}`)) return { chave: "crescimento", origem: "rampa" };
   if (tipo === "variacao" && item.produtoId && set.has(`${item.produtoId}|${cid}`)) return { chave: "crescimento", origem: "rampa" };
+  if (tipo === "kit" && set.has(`k:${idCru}|${cid}`)) return { chave: "crescimento", origem: "rampa" };
   if (tipo === "kit" && (item.componentes || []).some((c) => set.has(`${c.produtoId}|${cid}`))) return { chave: "crescimento", origem: "kit-em-rampa" };
   const linha = precos.find((p) => p.item_tipo === tipo && p.item_id === idCru && p.canal_id === cid) || null;
   const g = estrategiaGravada(linha, lucroAoVivo ?? linha?.lucro ?? null, hoje);

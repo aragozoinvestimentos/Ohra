@@ -60,5 +60,7 @@ export function useRampas({ comRegistros = false } = {}) {
   // de produto continuam vendo só as rampas por produto.
   const rampas = useMemo(() => estado.rampas.filter((r) => r.produto_id), [estado.rampas]);
   const rampasGrupo = useMemo(() => estado.rampas.filter((r) => r.grupo_id), [estado.rampas]);
-  return { ...estado, rampas, rampasGrupo, recarregar: () => window.dispatchEvent(new Event("focus")) };
+  // Rampa de KIT (v62, kit_id): kit vendido no anúncio próprio, degraus em R$.
+  const rampasKit = useMemo(() => estado.rampas.filter((r) => r.kit_id), [estado.rampas]);
+  return { ...estado, rampas, rampasGrupo, rampasKit, recarregar: () => window.dispatchEvent(new Event("focus")) };
 }

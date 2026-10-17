@@ -17,7 +17,7 @@ const freteDe = (valor, canal) => (canal && valor > 0 ? alertaPreco({ preco: val
 // Com riscado fixo (já anunciado), só a promo muda — mesma conta (anuncioNoRiscado).
 const pagaNoDegrau = (d, alvo, desconto, riscadoFixo = null) => (riscadoFixo ? anuncioNoRiscado(d, riscadoFixo) : anuncioFixo(d, alvo, desconto))?.clientePaga ?? d;
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
-import { anuncioDaRampa, anuncioFixo, anuncioNoRiscado, riscadoFixoDe } from "../lib/rampaAnuncio.js";
+import { anuncioDaRampa, anuncioDaRampaKit, anuncioFixo, anuncioNoRiscado, riscadoFixoDe } from "../lib/rampaAnuncio.js";
 import { descontoDoItem } from "../lib/escada.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
 import { CHECKLIST_ANUNCIO, REGRAS_PADRAO, ajustarDegrausAoAlvo, conhecidosDe, fmtSemana, finalAcima, normalizarDegraus, sugerirDegraus, sugerirDegrausSazonal, zeroAZero } from "../lib/rampa.js";
@@ -230,6 +230,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
   const anuncio = useMemo(() => {
     if (!sel) return null;
     const { canal, est, cfg, r } = sel;
+    if (sel.ehKit) return anuncioDaRampaKit({ kitItem: sel.item, canal, preco: est.preco, alvo: est.alvo, cfg, itens, produtos, kits, publicacoes: publicacoesCanal });
     const res = anuncioDaRampa({ produtoId: r.produto_id, canal, preco: est.preco, alvo: est.alvo, cfg, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoes: publicacoesCanal });
     // Lucro do avulso = o da rampa (mesmo custo/taxas ao vivo). Variação não
     // anunciada no canal (2º Por quantidade → Anunciado em) fica de fora.
@@ -326,7 +327,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
 
   // O Ads (inclusive o teste de lançamento) é gravado SÓ por lib/adsAcoes.js —
   // o mesmo diálogo e a mesma função da aba Ads.
-  const adsDe = (l) => linhasAds?.linhas.find((x) => x.chave === `produto|${l.r.produto_id}|${l.r.canal_id}`) || null;
+  const adsDe = (l) => linhasAds?.linhas.find((x) => x.chave === (l.ehKit ? `kit|${l.r.kit_id}|${l.r.canal_id}` : `produto|${l.r.produto_id}|${l.r.canal_id}`)) || null;
   const periodoTesteDe = (l) => (adsDe(l)?.periodos || []).find((p) => p.tipo === "teste" && p.inicio === l.r.teste_inicio) || (adsDe(l)?.av.ativo?.tipo === "teste" ? adsDe(l).av.ativo : null);
   const [testeDlg, setTesteDlg] = useState(null); // { linha, orc }
   async function iniciarTeste(f) {
@@ -334,8 +335,8 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
     setSalvando(true);
     const r = await iniciarPeriodoAds({
       lojaId,
-      tipo: "produto",
-      id: l.r.produto_id,
+      tipo: l.ehKit ? "kit" : "produto",
+      id: l.ehKit ? l.r.kit_id : l.r.produto_id,
       canalId: l.r.canal_id,
       inicio: f.inicio,
       fim: f.comoTeste ? f.fim : f.fim || null,
@@ -400,7 +401,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
 
   // Teste acima aprovado: o preço salvo (alvo) passa a ser o preço testado — só com confirmação.
   async function aprovarAcima(l) {
-    const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === l.r.produto_id && p.canal_id === l.r.canal_id);
+    const salvo = precos.find((p) => p.item_tipo === (l.ehKit ? "kit" : "produto") && p.item_id === (l.ehKit ? l.r.kit_id : l.r.produto_id) && p.canal_id === l.r.canal_id);
     if (!salvo) return onToast?.("Preço salvo não encontrado");
     const preco = l.est.preco;
     const lucro = l.est.lucroEm(preco);
@@ -651,7 +652,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
           acoesTeste={acoesTeste}
           onAcima={(tipo, preco) => setAcimaConfirma({ tipo, linha: sel, preco })}
           onAjustarAlvo={() => setAlvoAjuste(sel)}
-          adsLinha={linhasAds?.linhas.find((x) => x.chave === `produto|${sel.r.produto_id}|${sel.r.canal_id}`) || null}
+          adsLinha={adsDe(sel)}
           onVerAds={onVerAds}
         />
       )}
@@ -726,7 +727,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
       {iniciar && (
         <IniciarRampaDialog
           dados={dados}
-          rampas={rampas}
+          rampas={[...rampas, ...(rampasH.rampasKit || [])]}
           regras={regras}
           editar={iniciar.rampa || null}
           refazer={iniciar.refazer ? iniciar.linha : null}
@@ -1031,6 +1032,11 @@ function LinhaEmRampa({ x, atual, onAbrir, onAcao, onPausar, onRetomar }) {
       <td className="td-com-saude">
         {!grupo && <PontoSaude estado={saudeRampa(e, pend)} />}
         <b>{l.produto.nome}</b>
+        {l.ehKit && (
+          <span className="badge info tag-pronto" title="Rampa do anúncio do kit (preço salvo do kit é o alvo)">
+            kit
+          </span>
+        )}
         {grupo && (
           <span className="badge info tag-pronto" title="Anúncio com vários itens: todas as opções sobem juntas, em % do preço salvo de cada uma">
             vários itens
@@ -1651,7 +1657,7 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
             </table>
           </div>
           <p className="hint" style={{ margin: "6px 0 0" }}>
-            Variações e kits: a mesma curva de desconto do 2º Por quantidade (até {Math.round((l.cfg.descontoMax ?? 0.3) * 100)}%, lucro sempre subindo) sobre o preço de agora, sem passar do alvo de cada kit (o preço salvo dele não muda). Clique no valor pra copiar.
+            {l.ehKit ? "Rampa do kit: só o anúncio do próprio kit — o riscado fica fixo e só a promo muda. Clique no valor pra copiar." : <>Variações e kits: a mesma curva de desconto do 2º Por quantidade (até {Math.round((l.cfg.descontoMax ?? 0.3) * 100)}%, lucro sempre subindo) sobre o preço de agora, sem passar do alvo de cada kit (o preço salvo dele não muda). Clique no valor pra copiar.</>}
           </p>
 
         </div>
@@ -1958,17 +1964,23 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
   const hoje = hojeISO();
   const editar = refazer ? null : editarProp;
   const base = refazer?.r || null;
-  const salvoDe = (pid, cid) => precos.find((p) => p.item_tipo === "produto" && p.item_id === pid && p.canal_id === cid) || null;
-  const [produtoId, setProdutoId] = useState(editar?.produto_id || base?.produto_id || produtoInicial || "");
+  // Item escolhido = "p:<produto>" ou "k:<kit>" (rampa de kit, v62: kit
+  // vendido no anúncio próprio dele, degraus em R$ até o preço salvo do kit).
+  const idDe = (r) => (r?.kit_id ? `k:${r.kit_id}` : r?.produto_id ? `p:${r.produto_id}` : "");
+  const salvoDe = (iid, cid) => precos.find((p) => p.item_tipo === (iid.startsWith("k:") ? "kit" : "produto") && p.item_id === iid.slice(2) && p.canal_id === cid) || null;
+  const temRampa = (iid, cid) => rampas.some((r) => idDe(r) === iid && r.canal_id === cid);
+  const [selItem, setSelItem] = useState(idDe(editar) || idDe(base) || (produtoInicial ? (/^[pk]:/.test(produtoInicial) ? produtoInicial : `p:${produtoInicial}`) : ""));
+  const ehKit = selItem.startsWith("k:");
+  const produtoId = selItem && !ehKit ? selItem.slice(2) : "";
   const fixo = editar || base;
-  const canaisDoProduto = produtoId ? canais.filter((c) => !canalDireto(c) && salvoDe(produtoId, c.id) && (fixo ? c.id === fixo.canal_id : !rampas.some((r) => r.produto_id === produtoId && r.canal_id === c.id))) : [];
+  const canaisDoProduto = selItem ? canais.filter((c) => !canalDireto(c) && salvoDe(selItem, c.id) && (fixo ? c.id === fixo.canal_id : !temRampa(selItem, c.id))) : [];
   const [canalId, setCanalId] = useState(editar?.canal_id || base?.canal_id || canalInicial || "");
   const canal = canais.find((c) => c.id === (canalId || canaisDoProduto[0]?.id)) || null;
-  const item = itens.find((i) => i.id === `p:${produtoId}`);
-  const cfg = produtoId ? cfgDoProduto(produtoId) : null;
-  const alvo = produtoId && canal ? num(salvoDe(produtoId, canal.id)?.preco) : 0;
-  const descAnuncio = produtoId && canal ? descontoDoItem(`p:${produtoId}`, canal, { itens, produtos, kits }).desconto : 0;
-  const riscadoAnunciado = produtoId && canal ? riscadoFixoDe(`p:${produtoId}`, canal.id, publicacoesCanal) : null;
+  const item = itens.find((i) => i.id === selItem);
+  const cfg = selItem ? cfgDoProduto(produtoId || null) : null;
+  const alvo = selItem && canal ? num(salvoDe(selItem, canal.id)?.preco) : 0;
+  const descAnuncio = selItem && canal ? descontoDoItem(selItem, canal, { itens, produtos, kits }).desconto : 0;
+  const riscadoAnunciado = selItem && canal ? riscadoFixoDe(selItem, canal.id, publicacoesCanal) : null;
   const freteChip = (d) => freteDe(pagaNoDegrau(d, alvo, descAnuncio, riscadoAnunciado), canal);
   const zero = item && canal ? zeroAZero(canal, num(item.custoTotal), num(item.peso), cfg) : null;
   const [precoHoje, setPrecoHoje] = useState(editar ? virgula(num(editar.degraus[editar.degrau_atual])) : "");
@@ -1978,10 +1990,14 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
   const [salvando, setSalvando] = useState(false);
   // Produto "só na época de…" (Quando vende): rampa sazonal até a data-limite.
   const sazonal = useMemo(() => {
-    const p = produtos.find((x) => x.id === produtoId);
-    const S = infoSazonal(quandoVendeDe(p), configCalendario(cfgLoja), hoje);
-    return S && S.tipo === "epoca" ? S : null;
-  }, [produtos, produtoId, cfgLoja, hoje]);
+    // Kit: a 1ª peça "só na época de…".
+    const pids = ehKit ? (item?.componentes || []).map((c) => c.produtoId) : [produtoId];
+    for (const pid of pids) {
+      const S = infoSazonal(quandoVendeDe(produtos.find((x) => x.id === pid)), configCalendario(cfgLoja), hoje);
+      if (S && S.tipo === "epoca") return S;
+    }
+    return null;
+  }, [produtos, produtoId, ehKit, item, cfgLoja, hoje]);
   const jaVende = num(vendas) > 0 || num(aval) > 0;
   const sugSaz = useMemo(
     () =>
@@ -2000,10 +2016,15 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
   const semanasReg = refazer ? (refazer.est.semanas || []).length : 0;
 
   const opcoesProduto = useMemo(() => {
-    const comPreco = produtos.filter((p) => canais.some((c) => salvoDe(p.id, c.id) && !rampas.some((r) => r.produto_id === p.id && r.canal_id === c.id)));
-    return [{ label: "Produtos", itens: comPreco.map((p) => ({ id: p.id, rotulo: `${p.nome}${p.sku ? ` · ${p.sku}` : ""}` })) }];
+    const livre = (iid) => canais.some((c) => !canalDireto(c) && salvoDe(iid, c.id) && !temRampa(iid, c.id));
+    const comPreco = produtos.filter((p) => livre(`p:${p.id}`));
+    const kitsCom = (kits || []).filter((k) => livre(`k:${k.id}`));
+    return [
+      { label: "Produtos", itens: comPreco.map((p) => ({ id: `p:${p.id}`, rotulo: `${p.nome}${p.sku ? ` · ${p.sku}` : ""}` })) },
+      ...(kitsCom.length ? [{ label: "Kits", itens: kitsCom.map((k) => ({ id: `k:${k.id}`, rotulo: `${k.nome}${k.sku ? ` · ${k.sku}` : ""}` })) }] : []),
+    ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produtos, canais, precos, rampas]);
+  }, [produtos, kits, canais, precos, rampas]);
 
   // Lista final: números válidos ≤ alvo, alvo no fim, e o preço de hoje incluído.
   function montarLista() {
@@ -2026,7 +2047,7 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
   const idxHoje = listaFinal.length ? Math.max(0, listaFinal.findIndex((d) => d >= ph - 0.004)) : 0;
 
   async function salvar() {
-    if (!produtoId || !canal) return onToast?.("Escolha o produto e o canal");
+    if (!selItem || !canal) return onToast?.("Escolha o produto e o canal");
     if (!(alvo > 0)) return onToast?.("Esse produto não tem preço salvo neste canal — salve no 1º Avulso primeiro (ele é o alvo)");
     if (listaFinal.length < 1) return onToast?.("Informe os degraus");
     setSalvando(true);
@@ -2079,7 +2100,7 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
       .from("rampas_preco")
       .insert({
         loja_id: lojaId || null,
-        produto_id: produtoId,
+        ...(ehKit ? { kit_id: selItem.slice(2), produto_id: null } : { produto_id: produtoId }),
         canal_id: canal.id,
         degraus: listaFinal,
         degrau_atual: idxHoje,
@@ -2091,7 +2112,7 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
       .single();
     if (error) {
       setSalvando(false);
-      return onToast?.(/rampas_preco/.test(error.message) ? "Falta rodar o supabase/schema_v33.sql no Supabase" : `Não foi possível iniciar: ${error.message}`);
+      return onToast?.(ehKit && /kit_id/.test(error.message) ? "Falta rodar o supabase/schema_v62.sql no Supabase (rampa de kit)" : /rampas_preco/.test(error.message) ? "Falta rodar o supabase/schema_v33.sql no Supabase" : `Não foi possível iniciar: ${error.message}`);
     }
     await supabase.from("rampa_registros").insert({
       loja_id: lojaId || null,
@@ -2104,6 +2125,7 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
       nota: nota === "" ? null : num(nota),
     });
     setSalvando(false);
+    window.dispatchEvent(new Event("focus"));
     onToast?.(`Rampa iniciada: ${item?.nome} vendendo ${BRL(listaFinal[idxHoje])} em ${canal.nome}`);
     onClose(data.id);
   }
@@ -2144,21 +2166,21 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
             </div>
           )}
           <div className="field">
-            <label>Produto (só os que têm preço salvo em algum canal)</label>
+            <label>Produto ou kit (só os que têm preço salvo em algum canal)</label>
             <BuscaItem
               grupos={opcoesProduto}
-              value={produtoId}
+              value={selItem}
               onChange={(id) => {
-                setProdutoId(id);
+                setSelItem(id);
                 setCanalId("");
                 setDegrausEdit(null);
                 setPrecoHoje("");
               }}
             />
           </div>
-          {produtoId && (
+          {selItem && (
             <div className="field">
-              <label>Canal (onde o produto tem preço salvo)</label>
+              <label>Canal (onde {ehKit ? "o kit" : "o produto"} tem preço salvo)</label>
               <select
                 value={canal?.id || ""}
                 onChange={(e) => {
@@ -2174,7 +2196,12 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
           )}
         </>
       )}
-      {produtoId && canal && alvo > 0 && (
+      {ehKit && canal && (
+        <div className="hint" style={{ margin: "4px 0" }}>
+          Rampa do kit: o preço do <b>anúncio do kit</b> sobe em degraus até o preço salvo dele. As peças não precisam estar anunciadas sozinhas; as vendas vêm dos pedidos com o SKU do kit{item?.sku ? ` (${item.sku})` : ""}.
+        </div>
+      )}
+      {selItem && canal && alvo > 0 && (
         <>
           <div className="aviso-fluxo">
             0 a 0: <b>{BRL(zero)}</b> · alvo (preço salvo): <b>{BRL(alvo)}</b> — o salvo não muda.
@@ -2278,8 +2305,8 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
           </p>
         </>
       )}
-      {produtoId && canal && !(alvo > 0) && <div className="alerta alerta-warn"><b>Sem preço salvo</b>Salve o preço final desejado no 1º Avulso — ele é o alvo da rampa.</div>}
-      {!produtoId && !opcoesProduto[0].itens.length && <p className="hint">Nenhum produto com preço salvo disponível (ou todos já estão em rampa).</p>}
+      {selItem && canal && !(alvo > 0) && <div className="alerta alerta-warn"><b>Sem preço salvo</b>Salve o preço final desejado no 1º Avulso — ele é o alvo da rampa.</div>}
+      {!selItem && !opcoesProduto.some((g) => g.itens.length) && <p className="hint">Nenhum produto com preço salvo disponível (ou todos já estão em rampa).</p>}
     </EditarDialog>
   );
 }

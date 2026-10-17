@@ -173,16 +173,28 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
 }
 
 /**
+ * "O que digitar" de um KIT em rampa (v62): o anúncio próprio do kit, com o
+ * riscado fixo (ou o do alvo, se ainda não anunciado) e a promo do degrau.
+ * Mesmo formato do anuncioDaRampa (uma linha, id "avulso").
+ */
+export function anuncioDaRampaKit({ kitItem, canal, preco, alvo, cfg, itens, produtos, kits, publicacoes = [] }) {
+  const desc = descontoDoItem(kitItem.id, canal, { itens, produtos, kits }).desconto;
+  const a = anuncioDoItem({ itemId: kitItem.id, canal, real: preco, alvo, desconto: desc, publicacoes });
+  const linhas = a ? [{ id: "avulso", itemId: kitItem.id, nome: kitItem.nome, ...a, lucro: lucroNoPreco(canal, preco, num(kitItem.custoTotal), num(kitItem.peso), cfg) }] : [];
+  return { linhas, desconto: desc, riscadoFixo: riscadoFixoDe(kitItem.id, canal.id, publicacoes) };
+}
+
+/**
  * Mapa "itemId|canalId" → linha do anúncio da Rampa, só pros produtos em
  * rampa vendendo num preço DIFERENTE do salvo (abaixo do alvo ou testando
  * acima) — e as variações/kits que dependem deles. No alvo (ou rampa
  * encerrada) o item volta a seguir o preço salvo normalmente.
  */
-export function mapaAnuncioRampa({ rampas, canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoes = [] }) {
+export function mapaAnuncioRampa({ rampas, rampasKit = [], canais, itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoes = [] }) {
   const out = new Map();
-  if (!rampas?.length) return out;
+  if (!rampas?.length && !rampasKit?.length) return out;
   const precosRampa = precosComRampa(precos, rampas);
-  for (const r of rampas) {
+  for (const r of rampas || []) {
     const canal = canais.find((c) => c.id === r.canal_id);
     if (!canal) continue;
     const preco = degrauAtual(r);
@@ -194,6 +206,18 @@ export function mapaAnuncioRampa({ rampas, canais, itens, produtos, kits, precos
       const chave = `${l.itemId}|${canal.id}`;
       if (!out.has(chave)) out.set(chave, { ...l, acima: preco > alvo, degrau: preco, alvo });
     }
+  }
+  // Rampa de KIT (v62): só o anúncio do próprio kit.
+  for (const r of rampasKit || []) {
+    const canal = canais.find((c) => c.id === r.canal_id);
+    const kitItem = itens.find((i) => i.id === `k:${r.kit_id}`);
+    if (!canal || !kitItem) continue;
+    const preco = degrauAtual(r);
+    const salvo = precos.find((p) => p.item_tipo === "kit" && p.item_id === r.kit_id && p.canal_id === r.canal_id);
+    const alvo = salvo ? num(salvo.preco) : num((r.degraus || [])[(r.degraus || []).length - 1]);
+    if (!(preco > 0) || !(alvo > 0) || Math.abs(preco - alvo) < 0.005) continue;
+    const res = anuncioDaRampaKit({ kitItem, canal, preco, alvo, cfg: cfgDoProduto(null), itens, produtos, kits, publicacoes });
+    for (const l of res.linhas) out.set(`${l.itemId}|${canal.id}`, { ...l, acima: preco > alvo, degrau: preco, alvo });
   }
   return out;
 }

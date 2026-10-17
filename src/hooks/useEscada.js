@@ -19,7 +19,7 @@ import { mapaAnuncioGrupos } from "../lib/grupoRampa.js";
 export function useEscada() {
   const { lojas, lojaId } = useLoja();
   const dados = useRankingData();
-  const { rampas, rampasGrupo } = useRampas();
+  const { rampas, rampasGrupo, rampasKit } = useRampas();
   const { grupos } = useAnunciosGrupo();
   const cfgLoja = useMemo(() => lojas.find((l) => l.id === lojaId)?.config_escada || null, [lojas, lojaId]);
   const produtosPorId = useMemo(() => new Map(dados.produtos.map((p) => [p.id, p])), [dados.produtos]);
@@ -28,7 +28,7 @@ export function useEscada() {
 
   const { itens, precos, concorrentes } = dados;
   // Produtos em rampa abaixo do alvo ("produtoId|canalId").
-  const emRampa = useMemo(() => produtosEmRampa(rampas, precos), [rampas, precos]);
+  const emRampa = useMemo(() => produtosEmRampa([...rampas, ...(rampasKit || [])], precos), [rampas, rampasKit, precos]);
   const escada = useCallback(
     (produtoId, canal, opcoes = {}) =>
       // canal orgânico com embalagem própria: custos com a embalagem dele (lib/embalagemCanal.js)
@@ -42,12 +42,12 @@ export function useEscada() {
   // rampa entram no mesmo mapa e PREVALECEM sobre uma rampa individual que
   // ainda exista do mesmo item (o anúncio inteiro passa a decidir).
   const mapaRampa = useMemo(() => {
-    const m = mapaAnuncioRampa({ rampas, canais: dados.canais, itens, produtos: dados.produtos, kits: dados.kits, precos, concorrentes, cfgDoProduto, publicacoes: dados.publicacoesCanal });
+    const m = mapaAnuncioRampa({ rampas, rampasKit, canais: dados.canais, itens, produtos: dados.produtos, kits: dados.kits, precos, concorrentes, cfgDoProduto, publicacoes: dados.publicacoesCanal });
     if (rampasGrupo?.length)
       for (const [k, v] of mapaAnuncioGrupos({ rampasGrupo, grupos, canais: dados.canais, itens, produtos: dados.produtos, kits: dados.kits, precos, publicacoes: dados.publicacoesCanal, cfgDoProduto }))
         m.set(k, v);
     return m;
-  }, [rampas, rampasGrupo, grupos, dados.canais, itens, dados.produtos, dados.kits, precos, concorrentes, cfgDoProduto, dados.publicacoesCanal]);
+  }, [rampas, rampasGrupo, rampasKit, grupos, dados.canais, itens, dados.produtos, dados.kits, precos, concorrentes, cfgDoProduto, dados.publicacoesCanal]);
   const clientePagaHoje = useCallback(
     (item, canal) => valorClientePagaHoje(item?.id, canal, { mapaRampa, precos, itens, produtos: dados.produtos, kits: dados.kits, publicacoes: dados.publicacoesCanal })?.valor ?? null,
     [mapaRampa, precos, itens, dados.produtos, dados.kits, dados.publicacoesCanal]

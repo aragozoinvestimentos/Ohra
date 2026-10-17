@@ -50,7 +50,7 @@ function useCalculoCrescimento() {
   const dados = useEscada();
   const { itens, produtos, kits, canais, precos, cfgDoProduto, cfgLoja, publicacoesCanal, gruposAnuncio: grupos } = dados;
   const rampasH = useRampas({ comRegistros: true });
-  const { rampas, rampasGrupo, registros: registrosGravados } = rampasH;
+  const { rampas, rampasGrupo, rampasKit = [], registros: registrosGravados } = rampasH;
   const { impressoras, farmConfig } = useCatalogo();
   // Itens que só existem dentro de um anúncio com vários itens: saem dos avisos
   // individuais de rampa e da lista de Ads (entram pelo anúncio inteiro).
@@ -201,7 +201,7 @@ function useCalculoCrescimento() {
     const regs = [];
     const parciais = new Map();
     const cobreDe = (canal) => (de, ate) => reais.cobertura.cobre(canal, de, ate);
-    for (const r of [...rampas, ...(rampasGrupo || [])]) {
+    for (const r of [...rampas, ...(rampasGrupo || []), ...rampasKit]) {
       const canal = canais.find((c) => c.id === r.canal_id);
       const grav = registrosGravados.filter((g) => g.rampa_id === r.id);
       if (!canal) {
@@ -209,7 +209,14 @@ function useCalculoCrescimento() {
         continue;
       }
       let vendasEm, funis, periodosR, aval;
-      if (r.grupo_id) {
+      if (r.kit_id) {
+        // Rampa de kit (v62): só as vendas do anúncio próprio do kit (SKU do kit).
+        vendasEm = vendasDeItens(canal.id, new Set([`k:${r.kit_id}`]));
+        const kit = kits.find((k) => k.id === r.kit_id);
+        funis = canal.tipo === "shopee" ? funisDoSku(kit?.sku) : [];
+        periodosR = periodosDoItem(adsH.periodos, "kit", r.kit_id, canal.id);
+        aval = avaliacoesDe("kit", r.kit_id, canal.id);
+      } else if (r.grupo_id) {
         vendasEm = vendasDoGrupo(canal.id, r.grupo_id);
         funis = canal.tipo === "shopee" ? funisDoGrupo(r.grupo_id, canal.id) : [];
         periodosR = periodosDoItem(adsH.periodos, "grupo", r.grupo_id, canal.id);
@@ -227,7 +234,7 @@ function useCalculoCrescimento() {
       if (parcial) parciais.set(r.id, parcial);
     }
     return { registros: juntarRegistros(regs, []), parciais };
-  }, [rampas, rampasGrupo, registrosGravados, canais, itens, produtos, adsH.periodos, avalH.registros, pedidosPorCanal, skuGrupo, desempenhos, reais.cobertura, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rampas, rampasGrupo, rampasKit, registrosGravados, canais, itens, produtos, kits, adsH.periodos, avalH.registros, pedidosPorCanal, skuGrupo, desempenhos, reais.cobertura, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
   const registros = vivo.registros;
   const rampasHV = useMemo(() => ({ ...rampasH, registros }), [rampasH, registros]);
 
@@ -259,9 +266,34 @@ function useCalculoCrescimento() {
         const est = estadoRampa(r, regs, regras, ctx, hoje);
         return { r, produto, canal, item, cfg, ctx, est, soNoGrupo: soNoGrupo.has(item.id) };
       })
+      .concat(
+        // Rampa de KIT (v62): mesma estadoRampa, com o custo/peso/preço salvo do
+        // kit. `produto` = { id: null, nome do kit } pra lista e os textos.
+        rampasKit.map((r) => {
+          const kit = kits.find((k) => k.id === r.kit_id);
+          const canal = canais.find((c) => c.id === r.canal_id);
+          const item = itens.find((i) => i.id === `k:${r.kit_id}`);
+          if (!kit || !canal || !item) return null;
+          const cfg = cfgDoProduto(null);
+          const salvo = precos.find((p) => p.item_tipo === "kit" && p.item_id === r.kit_id && p.canal_id === r.canal_id);
+          const adsAtivo = periodoAtivo(periodosDoItem(adsH.periodos, "kit", r.kit_id, r.canal_id), hoje);
+          // Sazonal: a 1ª peça "só na época de…".
+          let sazonal = null;
+          for (const c of item.componentes || []) {
+            const sz = infoSazonal(quandoVendeDe(produtos.find((p) => p.id === c.produtoId)), calendario, hoje);
+            if (sz && sz.tipo === "epoca") {
+              sazonal = sz;
+              break;
+            }
+          }
+          const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null };
+          const est = estadoRampa(r, registros.filter((g) => g.rampa_id === r.id), regras, ctx, hoje);
+          return { r, produto: { id: null, nome: kit.nome, sku: kit.sku || "" }, kit, ehKit: true, canal, item, cfg, ctx, est, soNoGrupo: soNoGrupo.has(item.id) };
+        })
+      )
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha, soNoGrupo, vivo.parciais]);
+  }, [rampas, rampasKit, kits, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha, soNoGrupo, vivo.parciais]);
 
   // Rampa do ANÚNCIO com vários itens (v54, grupoRampa.js): degraus em % do
   // preço salvo de cada opção; mesma estadoRampa por dentro.
@@ -299,8 +331,8 @@ function useCalculoCrescimento() {
   );
   const mapaAf = useMemo(() => new Map(linhasAf.map((l) => [l.chave, l])), [linhasAf]);
   const semanaAf = useMemo(
-    () => resumoSemana({ afRegistros: af.registros, rampaRegistros: registros, rampas, mapaLinhas: mapaAf, linhasRampa: linhas, hoje }),
-    [af.registros, registros, rampas, mapaAf, linhas, hoje]
+    () => resumoSemana({ afRegistros: af.registros, rampaRegistros: registros, rampas: [...rampas, ...rampasKit], mapaLinhas: mapaAf, linhasRampa: linhas, hoje }),
+    [af.registros, registros, rampas, rampasKit, mapaAf, linhas, hoje]
   );
 
   // Ads (schema v44, lib/ads.js): uma linha por produto/kit × canal com preço
@@ -335,7 +367,7 @@ function useCalculoCrescimento() {
         if (canalDireto(canal)) continue; // venda direta: sem Ads
         const salvo = precos.find((p) => p.item_tipo === tipo && p.item_id === id && p.canal_id === canal.id);
         if (!salvo || !(num(salvo.preco) > 0)) continue;
-        const rampa = tipo === "produto" ? linhas.find((l) => l.r.produto_id === id && l.r.canal_id === canal.id) || null : null;
+        const rampa = linhas.find((l) => (tipo === "produto" ? l.r.produto_id === id : tipo === "kit" && l.r.kit_id === id) && l.r.canal_id === canal.id) || null;
         const cfg = cfgDoProduto(tipo === "produto" ? id : null);
         const preco = rampa ? num(rampa.est.preco) : num(salvo.preco);
         const lucroEm = (p) => lucroNoPreco(canal, p, it.custoTotal, it.peso, cfg);

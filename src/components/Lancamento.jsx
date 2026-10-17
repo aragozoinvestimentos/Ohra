@@ -303,7 +303,7 @@ export default function Lancamento({ onToast, onSub }) {
       {iniciar && produtoId && canal && (
         <IniciarRampaDialog
           dados={dados}
-          rampas={rampasH.rampas}
+          rampas={[...rampasH.rampas, ...(rampasH.rampasKit || [])]}
           regras={regras}
           editar={null}
           produtoInicial={produtoId}
