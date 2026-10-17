@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { avisoSkuKit, skuDoKit, SKU_KIT_MAX } from "../lib/skuKit.js";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -140,7 +141,7 @@ export default function Kits({ abrirKitId, onToast }) {
     // antigos continuam no banco.
     const payload = {
       nome,
-      sku: form.sku.trim() || null,
+      sku: (skuAuto ? skuSugerido : form.sku).trim() || null,
       observacao: form.observacao.trim() || null,
       atualizado_em: new Date().toISOString(),
     };
@@ -233,7 +234,19 @@ export default function Kits({ abrirKitId, onToast }) {
     );
   }
 
-  const conflitoSku = achaConflitoSku(form.sku, editandoId);
+  // SKU sugerido pelas peças (KIT-LEAO-ELEVIVE): kit novo com o campo intocado
+  // já mostra e grava a sugestão; editando, só aparece "sugerido: … · usar".
+  const skuSugerido = skuDoKit(
+    (form.produtosItens || []).map((it) => {
+      const p = produtos.find((x) => x.id === it.itemId);
+      return { sku: p?.sku, nome: p?.nome, quantidade: it.quantidade };
+    }),
+    [...kits.filter((k) => k.id !== editandoId).map((k) => k.sku), ...produtos.map((p) => p.sku)],
+  );
+  const skuAuto = !editandoId && !form.skuTocado;
+  const skuMostrado = skuAuto ? skuSugerido : form.sku;
+  const avisoSku = avisoSkuKit(skuMostrado);
+  const conflitoSku = achaConflitoSku(skuMostrado, editandoId);
 
   const nomeQuery = form.nome.trim().toLowerCase();
   const skuQuery = form.sku.trim().toLowerCase();
@@ -276,13 +289,22 @@ export default function Kits({ abrirKitId, onToast }) {
             </label>
             <input
               type="text"
-              placeholder="ex: KIT-01"
-              value={form.sku}
+              placeholder="ex: KIT-LEAO-ELEVIVE"
+              maxLength={40}
+              value={skuMostrado}
               onChange={(e) => {
-                setForm((p) => ({ ...p, sku: e.target.value }));
+                setForm((p) => ({ ...p, sku: e.target.value, skuTocado: true }));
                 setSugestoesOcultas(false);
               }}
             />
+            {skuAuto && skuSugerido && <div className="hint" style={{ marginTop: 4, marginBottom: 0 }}>sugerido pelas peças (até {SKU_KIT_MAX} caracteres) — dá pra editar</div>}
+            {!skuAuto && skuSugerido && skuSugerido !== form.sku.trim() && (
+              <div className="hint" style={{ marginTop: 4, marginBottom: 0 }}>
+                sugerido pelas peças: <b>{skuSugerido}</b>{" "}
+                <button type="button" className="link-btn" onClick={() => setForm((p) => ({ ...p, sku: skuSugerido, skuTocado: true }))}>usar</button>
+              </div>
+            )}
+            {avisoSku && <div className="hint" style={{ marginTop: 4, marginBottom: 0, color: "var(--warn)" }}>⚠ SKU: {avisoSku}</div>}
             {conflitoSku && (
               <div className="hint" style={{ marginTop: 4, marginBottom: 0, color: "var(--warn)" }}>
                 Já existe um {conflitoSku.tipo} com esse SKU: {conflitoSku.nome}

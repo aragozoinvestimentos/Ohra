@@ -9,6 +9,7 @@
 // (kits + kit_produtos + kit_embalagens) — reaproveita um kit que já tenha a
 // mesma composição. Funções puras; quem grava é o MontarCombinacoes.jsx.
 import { calcularAnuncio, descontoDoItem, sugestaoKit, lucroNoPreco, r90up } from "./escada.js";
+import { skuDoKit } from "./skuKit.js";
 import { anuncioDoItem, riscadoFixoDe } from "./rampaAnuncio.js";
 import { RAZAO_MAX_SHOPEE } from "./anunciosGrupo.js";
 
@@ -106,14 +107,19 @@ export function montarCombinacoes({ base, adicionais, canal, itens, produtos, ki
     const s = precos.find((p) => p.item_tipo === tipo && p.item_id === id.slice(2) && p.canal_id === canal.id);
     return s && num(s.preco) > 0 ? s : null;
   };
-  const skuBase = itemBase.sku || palavraCurta(itemBase.nome).slice(0, 4).toUpperCase();
   return subconjuntos(extras.length).map((indices) => {
     const escolhidos = indices.map((i) => extras[i]);
     const pecas = somarPecas([pecasBase, ...escolhidos.map((e) => e.pecas)]);
     const rotulo = [palavraCurta(itemBase.nome), ...escolhidos.map((e) => `${e.quantidade > 1 ? `${e.quantidade}× ` : ""}${palavraCurta(e.item.nome)}`)].join(" + ");
     const nomeKit = [itemBase.nome, ...escolhidos.map((e) => `${e.quantidade > 1 ? `${e.quantidade}× ` : ""}${e.item.nome}`)].join(" + ");
     const sku = escolhidos.length
-      ? `${skuBase}-${escolhidos.map((e) => `${(e.item.sku || palavraCurta(e.item.nome)).replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase()}${e.quantidade > 1 ? e.quantidade : ""}`).join("-")}`
+      ? skuDoKit(
+          pecas.map((pc) => {
+            const pr = produtos.find((x) => x.id === pc.produtoId);
+            return { sku: pr?.sku, nome: pr?.nome, quantidade: pc.quantidade };
+          }),
+          [...(kits || []).map((k) => k.sku), ...(produtos || []).map((p) => p.sku)],
+        )
       : itemBase.sku || "";
     // Item que já existe: a própria base (sozinha) ou um kit com a mesma composição.
     const existente = !escolhidos.length ? itemBase : kitComComposicao(pecas, itens);
