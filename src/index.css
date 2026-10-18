@@ -2277,3 +2277,6 @@ tr.clicavel.ativo td { background: var(--accent-soft); }
 .promo-aviso-atencao { background: var(--st-atencao-soft); color: var(--st-atencao); }
 .promo-aviso-resolver { background: var(--st-resolver-soft); color: var(--st-resolver); }
 div > .promo-aviso:only-child, .promo-aviso.bloco { white-space: normal; }
+
+/* Cupom da live */
+.live-cupom-faixa { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 2px 8px; border-radius: 8px; background: var(--st-decisao-soft); }

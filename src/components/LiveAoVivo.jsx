@@ -8,6 +8,7 @@ import { ESTRATEGIAS, cruzarPedidos, estadoProduto, estrategiaPadrao, lucroNaLiv
 import { excluirLive, registrarEvento, salvarLive } from "../lib/liveAcoes.js";
 import { resumoEstrategia } from "../lib/liveTexto.js";
 import PromoAviso from "./PromoAviso.jsx";
+import { CupomAoVivo } from "./LiveCupom.jsx";
 
 // Live → 2 · Ao vivo: cronômetro, produto da vez em destaque (preço agora +
 // o que digitar), +1 venda grande (e −1), próximo degrau com "subir agora",
@@ -159,7 +160,15 @@ export default function LiveAoVivo({ esc, lv, atual, setAtualId, ctxDaLive, linh
         </span>
         <span className="live-topo-num">
           lucro <b>{BRL(resumo.lucro)}</b>
+          {resumo.descontoCupom > 0 && <span className="faint"> (já sem {BRL(resumo.descontoCupom)} de cupom)</span>}
         </span>
+        <CupomAoVivo
+          cupom={resumo.cupom}
+          onUsados={async (n) => {
+            const r = await salvarLive(live.id, { pedidos: { ...(live.pedidos || {}), _cupom: { ...live.pedidos._cupom, usados: Math.max(0, n) } } });
+            if (!r.ok) onToast(r.msg);
+          }}
+        />
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={() => setConfirmar(true)}>
           Encerrar a live

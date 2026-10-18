@@ -13,6 +13,7 @@ import { anuncioNoRiscado } from "../lib/rampaAnuncio.js";
 import { criarLive, excluirLive, salvarLive } from "../lib/liveAcoes.js";
 import { dm, diaSemana, planoEmTexto, rotuloLive } from "../lib/liveTexto.js";
 import PromoAviso from "./PromoAviso.jsx";
+import CupomLivePlano from "./LiveCupom.jsx";
 
 // Live → 1 · Planejar: criar a live (plataforma, data), escolher os produtos
 // (cada um vira uma CÓPIA — preço salvo, custo e riscado de hoje), uma
@@ -261,6 +262,14 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
     setSalvando(true);
     const { id: _id, ...patch } = rascunho || {};
     if (patch.produtos) patch.produtos = normalizar(patch.produtos, ctx);
+    if (patch.pedidos?._cupom) {
+      const c = patch.pedidos._cupom;
+      const n = (v) => {
+        const x = Number(String(v ?? "").replace(",", "."));
+        return isFinite(x) && x > 0 ? Math.round(x * 100) / 100 : null;
+      };
+      patch.pedidos = { ...patch.pedidos, _cupom: { ...c, valor: n(c.valor), minimo: n(c.minimo) } };
+    }
     const r = await salvarLive(atual.id, { ...patch, ...extra });
     setSalvando(false);
     if (!r.ok) {
@@ -474,6 +483,22 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
           </div>
         )}
       </div>
+
+      <CupomLivePlano
+        produtos={produtos.map((p0) => {
+          const p = completarCopia(p0, ctx);
+          return { ...p, estrategia: estrategiaCompleta(p, ctx) };
+        })}
+        ctx={ctx}
+        cupom={live.pedidos?._cupom || null}
+        bloqueado={bloqueada}
+        onCupom={(c) => {
+          const ped = { ...(live.pedidos || {}) };
+          if (c) ped._cupom = c;
+          else delete ped._cupom;
+          editar({ pedidos: ped });
+        }}
+      />
 
       {!bloqueada && (
         <div className="acoes-form live-acoes-fixas">
