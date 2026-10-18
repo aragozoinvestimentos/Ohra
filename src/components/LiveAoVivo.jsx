@@ -165,7 +165,7 @@ export default function LiveAoVivo({ esc, lv, atual, setAtualId, ctxDaLive, linh
         <CupomAoVivo
           cupom={resumo.cupom}
           onUsados={async (n) => {
-            const r = await salvarLive(live.id, { pedidos: { ...(live.pedidos || {}), _cupom: { ...live.pedidos._cupom, usados: Math.max(0, n) } } });
+            const r = await salvarLive(live.id, { pedidos: { ...(live.pedidos || {}), _cupom: { ...live.pedidos._cupom, usados: n } } });
             if (!r.ok) onToast(r.msg);
           }}
         />

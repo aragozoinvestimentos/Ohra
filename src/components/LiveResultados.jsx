@@ -137,7 +137,7 @@ function DetalheLive({ live, esc, lv, ctxDaLive, linhasPedidos, onToast, canaisL
           itens={[
             { label: "Vendas", valor: r.qtd, sub: `${(live.produtos || []).length} produtos na live` },
             { label: "Faturamento", valor: BRL(r.faturamento) },
-            { label: "Lucro", valor: BRL(r.lucro), sub: [live.taxa_extra ? `com taxa extra de ${Math.round(live.taxa_extra * 1000) / 10}%` : "taxas do canal + brindes", r.descontoCupom > 0 ? `− ${BRL(r.descontoCupom)} de cupom (${r.cupom.usados} usados)` : null].filter(Boolean).join(" · ") },
+            { label: "Lucro", valor: BRL(r.lucro), sub: [live.taxa_extra ? `com taxa extra de ${Math.round(live.taxa_extra * 1000) / 10}%` : "taxas do canal + brindes", r.descontoCupom > 0 ? `− ${BRL(r.descontoCupom)} de cupom (${r.cupomUsados} usados)` : null].filter(Boolean).join(" · ") },
             { label: "Lucro por hora", valor: r.lucroHora != null ? BRL(r.lucroHora) : "—", sub: `duração ${minParaTexto(r.duracaoMin)}` },
           ]}
         />
@@ -252,7 +252,7 @@ function Comparar({ lv, esc, ctxDaLive }) {
     ["Vendas", ra?.qtd ?? "—", rb?.qtd ?? "—"],
     ["Faturamento", ra ? BRL(ra.faturamento) : "—", rb ? BRL(rb.faturamento) : "—"],
     ["Lucro", ra ? BRL(ra.lucro) : "—", rb ? BRL(rb.lucro) : "—"],
-    ["Cupom usado", ra?.descontoCupom ? `${BRL(ra.descontoCupom)} (${ra.cupom.usados}×)` : "—", rb?.descontoCupom ? `${BRL(rb.descontoCupom)} (${rb.cupom.usados}×)` : "—"],
+    ["Cupom usado", ra?.descontoCupom ? `${BRL(ra.descontoCupom)} (${ra.cupomUsados}×)` : "—", rb?.descontoCupom ? `${BRL(rb.descontoCupom)} (${rb.cupomUsados}×)` : "—"],
     ["Lucro por hora", ra?.lucroHora != null ? BRL(ra.lucroHora) : "—", rb?.lucroHora != null ? BRL(rb.lucroHora) : "—"],
     ["O que fiz diferente", la?.diferente || "—", lb?.diferente || "—"],
   ];

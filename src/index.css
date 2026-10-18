@@ -2280,3 +2280,8 @@ div > .promo-aviso:only-child, .promo-aviso.bloco { white-space: normal; }
 
 /* Cupom da live */
 .live-cupom-faixa { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 2px 8px; border-radius: 8px; background: var(--st-decisao-soft); }
+.live-faixas { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.live-faixa { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.live-combos { margin: 6px 0 0 18px; padding: 0; line-height: 1.7; }
+.live-cupom-item { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; }
+tr.linha-apagada td { color: var(--muted, #888); }

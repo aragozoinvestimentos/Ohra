@@ -268,7 +268,9 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
         const x = Number(String(v ?? "").replace(",", "."));
         return isFinite(x) && x > 0 ? Math.round(x * 100) / 100 : null;
       };
-      patch.pedidos = { ...patch.pedidos, _cupom: { ...c, valor: n(c.valor), minimo: n(c.minimo) } };
+      const faixas = (Array.isArray(c.faixas) ? c.faixas : []).map((f) => ({ minimo: n(f.minimo), valor: n(f.valor), teto: n(f.teto) })).filter((f) => f.minimo && f.valor);
+      const { valor: _v, minimo: _m, ...resto } = c;
+      patch.pedidos = { ...patch.pedidos, _cupom: { ...resto, faixas: faixas.map((f) => ({ ...f, tipo: c.tipo === "valor" ? "valor" : "pct" })) } };
     }
     const r = await salvarLive(atual.id, { ...patch, ...extra });
     setSalvando(false);
@@ -492,6 +494,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
         ctx={ctx}
         cupom={live.pedidos?._cupom || null}
         bloqueado={bloqueada}
+        onToast={onToast}
         onCupom={(c) => {
           const ped = { ...(live.pedidos || {}) };
           if (c) ped._cupom = c;

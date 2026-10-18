@@ -209,36 +209,70 @@ export function resumoLive(live, eventos, ctx) {
   const duracaoMin = live.inicio ? Math.max(0, ((live.fim ? ms(live.fim) : Date.now()) - ms(live.inicio)) / 60000) : 0;
   const qtd = produtos.reduce((t, x) => t + x.qtd, 0);
   const faturamento = produtos.reduce((t, x) => t + x.faturamento, 0);
-  // Cupom da live: cada uso marcado no Ao vivo sai do lucro (e do faturamento).
+  // Cupom da live: cada uso marcado no Ao vivo sai do lucro (e do faturamento)
+  // — R$ fixo, ou % do total médio dos pedidos da faixa (estimado).
   const cupom = cupomDaLive(live);
-  const descontoCupom = cupom ? cent(num(cupom.usados) * num(cupom.valor)) : 0;
+  const usados = usadosDoCupom(cupom);
+  const estimado = cupom ? descontoEstimadoPorFaixa(live, ctx) : [];
+  const descontoCupom = cupom ? cent(estimado.reduce((t, d, i) => t + d * (usados[i] || 0), 0)) : 0;
   const lucro = cent(produtos.reduce((t, x) => t + x.lucro, 0) - descontoCupom);
-  return { produtos, qtd, faturamento: cent(faturamento - descontoCupom), lucro, descontoCupom, cupom, duracaoMin, lucroHora: duracaoMin >= 15 ? cent((lucro / duracaoMin) * 60) : null };
+  return { produtos, qtd, faturamento: cent(faturamento - descontoCupom), lucro, descontoCupom, cupom, cupomUsados: usados.reduce((t, x) => t + x, 0), duracaoMin, lucroHora: duracaoMin >= 15 ? cent((lucro / duracaoMin) * 60) : null };
 }
 
 // ---------- Cupom da live (18/10/2026) ----------
-// O preço dos produtos NÃO muda (é o da loja); o cupom da plataforma tira um
-// valor fixo dos pedidos acima de uma compra mínima. Guardado em
-// live.pedidos._cupom = { valor, minimo, usos, usados } (sem SQL).
+// O preço dos produtos NÃO muda (é o da loja); o cupom da plataforma dá um
+// desconto no TOTAL do pedido por faixa: "7% acima de R$ 40 · 10% acima de
+// R$ 60" (ou R$ fixo). Vale a maior faixa que o pedido alcança. Guardado em
+// live.pedidos._cupom = { faixas: [{ minimo, tipo 'pct'|'valor', valor, teto? }],
+// usos, usados: [n por faixa], fora } (sem SQL). Formato antigo
+// { valor, minimo, usados } = uma faixa em R$.
+const ceil5 = (v) => Math.ceil(v / 5) * 5;
+export const PCT_MAX_CUPOM = 15; // nunca sugere mais que 15%
+export const ITENS_MAX_PEDIDO = 4;
+export const FOLGA_USADA = 0.8; // a sugestão usa até 80% da folga do pior pedido
+
+export function faixasDoCupom(c) {
+  if (!c) return [];
+  const lista = Array.isArray(c.faixas) ? c.faixas : num(c.valor) > 0 ? [{ minimo: c.minimo, tipo: "valor", valor: c.valor }] : [];
+  return lista
+    .map((f) => ({ minimo: num(f.minimo), tipo: f.tipo === "pct" ? "pct" : "valor", valor: num(f.valor), teto: num(f.teto) || null }))
+    .filter((f) => f.minimo > 0 && f.valor > 0)
+    .sort((a, b) => a.minimo - b.minimo);
+}
+export const usadosDoCupom = (c) => (Array.isArray(c?.usados) ? c.usados.map(num) : [num(c?.usados)]);
 export const cupomDaLive = (live) => {
   const c = live?.pedidos?._cupom;
-  return c && num(c.valor) > 0 ? c : null;
+  return c && faixasDoCupom(c).length ? c : null;
 };
-const ceil5 = (v) => Math.ceil(v / 5) * 5;
+
+/** Desconto do cupom num pedido de valor `total` → { idx, desconto } (idx −1 = não alcança). */
+export function descontoNoPedido(faixas, total) {
+  let idx = -1;
+  faixas.forEach((f, i) => {
+    if (total >= f.minimo - 0.004) idx = i;
+  });
+  if (idx < 0) return { idx, desconto: 0 };
+  const f = faixas[idx];
+  let d = f.tipo === "pct" ? (total * f.valor) / 100 : f.valor;
+  if (f.teto) d = Math.min(d, f.teto);
+  return { idx, desconto: cent(d) };
+}
+export const textoFaixa = (f) => {
+  const brl = (v) => `R$ ${Number(v).toFixed(2).replace(".", ",").replace(",00", "")}`;
+  return `${f.tipo === "pct" ? `${String(f.valor).replace(".", ",")}%` : brl(f.valor)} acima de ${brl(f.minimo)}${f.tipo === "pct" && f.teto ? ` (máx. ${brl(f.teto)})` : ""}`;
+};
+
+// `fora` = keys dos produtos que NÃO entram no cupom (padrão: os sem folga —
+// cupom de produto, só pros marcados). O total do pedido conta só os do cupom.
+export const foraDoCupom = (cupom, analise) => (Array.isArray(cupom?.fora) ? cupom.fora : analise.itens.filter((x) => x.etiqueta === "sem").map((x) => x.prod.key));
 
 /**
  * Análise do cupom pros produtos da live, no preço de abertura de cada um.
- * → { itens: [{ prod, preco, lucro, minimo, folga, etiqueta: 'pode'|'sem'|'puxa' }],
- *     sugestao: { minimo, valor } | null,
- *     avaliar(valor, minimo) → { pior, medio, abaixo, pedidos } }
- * Pedido = 1 a 3 itens da live (pode repetir) com total ≥ compra mínima.
- * Pior pedido = o de menor lucro; o cupom "cabe" se o pior ainda fica ≥ a
- * soma dos mínimos dos itens. Conservador: o cupom sai inteiro do lucro.
+ * Pedido = 1 a 4 itens do cupom (pode repetir). Conservador: o desconto sai
+ * inteiro do lucro. Um pedido "cabe" se o lucro com o desconto fica ≥ a soma
+ * dos mínimos dos itens.
+ * → { itens, semFolga, avaliar(faixas), sugerir(tipo), combos(faixas) }
  */
-// `fora` = keys dos produtos que NÃO entram no cupom (padrão: os sem folga —
-// cupom de produto, só pros marcados). A compra mínima conta só os do cupom.
-export const foraDoCupom = (cupom, analise) => (Array.isArray(cupom?.fora) ? cupom.fora : analise.itens.filter((x) => x.etiqueta === "sem").map((x) => x.prod.key));
-
 export function analiseCupom(produtos, ctx, fora = null) {
   const cfgDe = (p) => (ctx?.cfgDe ? ctx.cfgDe(p) : ctx?.cfg) || {};
   const itens = (produtos || [])
@@ -253,50 +287,133 @@ export function analiseCupom(produtos, ctx, fora = null) {
   const avulsos = itens.filter((x) => x.pecas <= 1 && String(x.prod.item_id).startsWith("p:"));
   const lucroAvulsoMax = Math.max(0, ...avulsos.map((x) => x.lucro));
   for (const x of itens) x.etiqueta = x.pecas > 1 && x.lucro >= lucroAvulsoMax && x.folga > 0 ? "puxa" : x.folga > 0.004 ? "pode" : "sem";
-
   const semFolga = itens.filter((x) => x.etiqueta === "sem").map((x) => x.prod.key);
   const foraSet = new Set(Array.isArray(fora) ? fora : semFolga);
-  const noCupom = itens.filter((x) => !foraSet.has(x.prod.key));
   for (const x of itens) x.noCupom = !foraSet.has(x.prod.key);
-  function pedidos(minimo) {
-    const out = [];
-    const itens = noCupom;
-    const n = itens.length;
-    for (let i = 0; i < n; i++) {
-      if (itens[i].preco >= minimo) {
-        out.push([itens[i]]);
-        continue;
-      }
-      for (let j = i; j < n; j++) {
-        const t2 = itens[i].preco + itens[j].preco;
-        if (t2 >= minimo) {
-          out.push([itens[i], itens[j]]);
-          continue;
-        }
-        for (let k = j; k < n; k++) if (t2 + itens[k].preco >= minimo) out.push([itens[i], itens[j], itens[k]]);
-      }
+  const noCupom = itens.filter((x) => x.noCupom);
+
+  // Todos os pedidos de 1 a 4 itens do cupom (com repetição).
+  const pedidos = [];
+  const n = noCupom.length;
+  const rec = (inicio, lista) => {
+    if (lista.length) {
+      pedidos.push({
+        itens: lista,
+        total: cent(lista.reduce((t, x) => t + x.preco, 0)),
+        lucro: cent(lista.reduce((t, x) => t + x.lucro, 0)),
+        minimo: cent(lista.reduce((t, x) => t + x.minimo, 0)),
+      });
     }
-    return out.map((l) => ({ itens: l, total: cent(l.reduce((t, x) => t + x.preco, 0)), lucro: cent(l.reduce((t, x) => t + x.lucro, 0)), minimo: cent(l.reduce((t, x) => t + x.minimo, 0)) }));
+    if (lista.length >= ITENS_MAX_PEDIDO) return;
+    for (let i = inicio; i < n; i++) rec(i, [...lista, noCupom[i]]);
+  };
+  if (n <= 14) rec(0, []);
+
+  function avaliar(faixasIn) {
+    const faixas = faixasDoCupom({ faixas: faixasIn });
+    const porFaixa = faixas.map((f) => ({ faixa: f, pior: null, n: 0, somaLucro: 0, somaTotal: 0, somaDesc: 0 }));
+    let pior = null;
+    for (const p of pedidos) {
+      const { idx, desconto } = descontoNoPedido(faixas, p.total);
+      if (idx < 0) continue;
+      const lucroCom = cent(p.lucro - desconto);
+      const x = { ...p, desconto, lucroCom, folga: cent(lucroCom - p.minimo) };
+      const pf = porFaixa[idx];
+      pf.n++;
+      pf.somaLucro += lucroCom;
+      pf.somaTotal += p.total;
+      pf.somaDesc += desconto;
+      if (!pf.pior || x.folga < pf.pior.folga) pf.pior = x;
+      if (!pior || x.folga < pior.folga) pior = x;
+    }
+    const linhas = porFaixa.map((pf) => ({
+      faixa: pf.faixa,
+      pior: pf.pior,
+      n: pf.n,
+      medio: pf.n ? cent(pf.somaLucro / pf.n) : null,
+      totalMedio: pf.n ? cent(pf.somaTotal / pf.n) : null,
+      descontoMedio: pf.n ? cent(pf.somaDesc / pf.n) : null,
+      abaixo: !!pf.pior && pf.pior.folga < -0.004,
+      prejuizo: !!pf.pior && pf.pior.lucroCom < 0,
+    }));
+    return { porFaixa: linhas, pior, abaixo: linhas.some((l) => l.abaixo), prejuizo: linhas.some((l) => l.prejuizo) };
   }
-  function avaliar(valor, minimo) {
-    const v = num(valor);
-    const ps = pedidos(num(minimo)).map((p) => ({ ...p, lucroCom: cent(p.lucro - v) }));
-    if (!ps.length) return { pior: null, medio: null, abaixo: false, pedidos: 0 };
-    const pior = ps.reduce((a, b) => (b.lucroCom < a.lucroCom ? b : a));
-    const medio = cent(ps.reduce((t, p) => t + p.lucroCom, 0) / ps.length);
-    return { pior, medio, abaixo: pior.lucroCom < pior.minimo - 0.004, prejuizo: pior.lucroCom < 0, pedidos: ps.length };
+
+  // Maior desconto que ainda deixa TODO pedido da faixa ≥ o mínimo.
+  function cabeNaFaixa(minimo, ate, tipo) {
+    const ps = pedidos.filter((p) => p.total >= minimo - 0.004 && (ate == null || p.total < ate - 0.004));
+    if (!ps.length) return null;
+    if (tipo === "pct") return Math.min(PCT_MAX_CUPOM, Math.floor(Math.min(...ps.map((p) => ((p.lucro - p.minimo) / p.total) * 100))));
+    return Math.floor(Math.min(minimo * (PCT_MAX_CUPOM / 100), ...ps.map((p) => p.lucro - p.minimo)));
   }
-  let sugestao = null;
-  if (noCupom.length) {
+  /** Faixas sugeridas (até 2): a 1ª passa do avulso mais caro; a 2ª ~1,5× ela. */
+  function sugerir(tipo = "pct") {
+    if (!noCupom.length || !pedidos.length) return [];
     const avNo = avulsos.filter((x) => x.noCupom);
     const maiorAvulso = Math.max(0, ...avNo.map((x) => x.preco));
-    const minimo = maiorAvulso > 0 ? ceil5(maiorAvulso + 0.01) : ceil5(Math.min(...noCupom.map((x) => x.preco)) * 1.5);
-    const ps = pedidos(minimo);
-    const cabe = ps.length ? Math.min(...ps.map((p) => p.lucro - p.minimo)) : 0;
-    const valor = Math.floor(Math.min(cabe, minimo * 0.15));
-    sugestao = { minimo, valor: valor >= 1 ? valor : 0 };
+    const m1 = maiorAvulso > 0 ? ceil5(maiorAvulso + 0.01) : ceil5(Math.min(...noCupom.map((x) => x.preco)) * 1.5);
+    const m2 = ceil5(m1 * 1.5);
+    // "Vale a pena" = usa até FOLGA_USADA da folga (sobra margem) e a 2ª
+    // faixa sempre dá mais que a 1ª (senão não puxa o pedido maior).
+    const c1 = cabeNaFaixa(m1, m2, tipo);
+    const c2 = cabeNaFaixa(m2, null, tipo);
+    const v2 = c2 != null ? Math.floor(c2 * FOLGA_USADA) : 0;
+    let v1 = c1 != null ? Math.floor(c1 * FOLGA_USADA) : 0;
+    if (v2 >= 2) v1 = Math.min(v1, v2 - (tipo === "pct" ? 3 : Math.max(1, Math.round(v2 * 0.3))));
+    const out = [];
+    if (v1 >= 1) out.push({ minimo: m1, tipo, valor: v1 });
+    if (v2 >= 1 && v2 > (v1 >= 1 ? v1 : 0)) out.push({ minimo: m2, tipo, valor: v2 });
+    return out;
   }
-  return { itens, sugestao, avaliar, semFolga };
+  /** Combos de 2–3 avulsos diferentes que alcançam uma faixa e lucram acima do mínimo. */
+  function combos(faixasIn, limite = 4) {
+    const faixas = faixasDoCupom({ faixas: faixasIn });
+    if (!faixas.length) return [];
+    const vistos = new Set();
+    return pedidos
+      // só avulsos diferentes (o kit já é um combo)
+      .filter((p) => p.itens.length >= 2 && p.itens.length <= 3 && p.itens.every((x) => x.pecas <= 1) && new Set(p.itens.map((x) => x.prod.key)).size === p.itens.length)
+      .map((p) => {
+        const { idx, desconto } = descontoNoPedido(faixas, p.total);
+        const prox = faixas[idx + 1] || null;
+        return { ...p, idx, desconto, lucroCom: cent(p.lucro - desconto), faltaProx: prox ? cent(prox.minimo - p.total) : null };
+      })
+      .filter((p) => p.idx >= 0 && p.lucroCom >= p.minimo - 0.004)
+      .sort((a, b) => b.lucroCom / b.total - a.lucroCom / a.total || b.lucroCom - a.lucroCom)
+      .filter((p) => {
+        const k = p.itens.map((x) => x.prod.key).sort().join("|");
+        if (vistos.has(k)) return false;
+        vistos.add(k);
+        return true;
+      })
+      .slice(0, limite);
+  }
+  // Cupom POR PRODUTO (referência pra digitar na plataforma): até 80% da
+  // folga de cada produto, em R$ (múltiplo de R$ 0,50) e em % (inteiro).
+  for (const x of itens) {
+    const cabe = Math.max(0, x.folga * FOLGA_USADA);
+    x.cupomPct = x.noCupom && x.preco > 0 ? Math.floor((cabe / x.preco) * 100) : 0;
+    x.cupomR = x.noCupom ? Math.floor(cabe * 2) / 2 : 0;
+    x.lucroComCupom = cent(x.lucro - x.cupomR);
+  }
+  return { itens, semFolga, avaliar, sugerir, combos, pedidos: pedidos.length };
+}
+
+/** Desconto estimado por uso de cada faixa (R$ fixo, ou % do total médio dos pedidos da faixa). */
+export function descontoEstimadoPorFaixa(live, ctx) {
+  const c = cupomDaLive(live);
+  const faixas = faixasDoCupom(c);
+  if (!faixas.length) return [];
+  if (faixas.every((f) => f.tipo === "valor")) return faixas.map((f) => f.valor);
+  const prods = (live.produtos || []).map((p) => completarCopia(p, ctx));
+  const r = analiseCupom(prods, ctx, Array.isArray(c.fora) ? c.fora : null).avaliar(faixas);
+  return faixas.map((f, i) => {
+    if (f.tipo === "valor") return f.valor;
+    const base = r.porFaixa[i]?.totalMedio || f.minimo;
+    let d = (base * f.valor) / 100;
+    if (f.teto) d = Math.min(d, f.teto);
+    return cent(d);
+  });
 }
 
 /** Lista da live: vendas como saíram + roteiro de impressão (peças somadas). */
