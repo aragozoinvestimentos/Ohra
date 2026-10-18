@@ -8,7 +8,7 @@ import { hojeSP } from "../lib/datas.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
 import { horasDoItem } from "../lib/pedidos.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
-import { ESTRATEGIAS, PRAZO_PADRAO, completarCopia, copiaDoItem, estrategiaPadrao, historicoDoItem, lucroNaLive, precoInicial, prazoEnvio } from "../lib/live.js";
+import { MODOS_LIVE, PRAZO_PADRAO, completarCopia, estrategiaInicial, estrategiaPermitida, estrategiasDoModo, modoPadraoDoCanal, copiaDoItem, estrategiaPadrao, historicoDoItem, lucroNaLive, precoInicial, prazoEnvio } from "../lib/live.js";
 import { anuncioNoRiscado } from "../lib/rampaAnuncio.js";
 import { criarLive, excluirLive, salvarLive } from "../lib/liveAcoes.js";
 import { dm, diaSemana, planoEmTexto, rotuloLive } from "../lib/liveTexto.js";
@@ -43,7 +43,9 @@ function Num({ valor, onValor, largura = 80, passo = false, placeholder }) {
 }
 
 export function NovaLive({ esc, lv, canaisLive, riscadoDe, ctxDaLive, setAtualId, onToast, lojaId, base = null, onFechar }) {
-  const [f, setF] = useState(() => ({ nome: base ? base.nome || "Live" : "Live", canal_id: base?.canal_id || canaisLive[0]?.id || "", data: hojeSP(), repetir: base?.id || "" }));
+  const [f, setF] = useState(() => ({ nome: base ? base.nome || "Live" : "Live", canal_id: base?.canal_id || canaisLive[0]?.id || "", data: hojeSP(), repetir: base?.id || "", modo: base?.pedidos?._modo || null }));
+  const canalSel = canaisLive.find((c) => c.id === f.canal_id) || null;
+  const modo = f.modo || modoPadraoDoCanal(canalSel);
   const [salvando, setSalvando] = useState(false);
   const anteriores = lv.lives.filter((l) => (l.produtos || []).length);
   async function criar() {
@@ -55,8 +57,9 @@ export function NovaLive({ esc, lv, canaisLive, riscadoDe, ctxDaLive, setAtualId
     const produtos = (src?.produtos || []).map((p, i) => {
       const item = esc.itens.find((x) => x.id === p.item_id);
       if (!item) return { ...p, ordem: i };
-      const nova = copiaDoItem(item, { canal, precos: esc.precos, produtos: esc.produtos, riscadoDe: riscadoDe(canal), ctx: ctxDaLive({ canal_id: canal.id }) });
-      return { ...nova, estrategia: { ...p.estrategia }, pronto: p.pronto ?? null, ordem: i };
+      const nova = copiaDoItem(item, { canal, precos: esc.precos, produtos: esc.produtos, riscadoDe: riscadoDe(canal), ctx: ctxDaLive({ canal_id: canal.id, pedidos: { _modo: modo } }), agora: esc.agoraDe?.(item, canal)?.agora?.preco, modo });
+      // Estratégia da live escolhida — se não vale no modo novo, a do modo (preço da loja).
+      return { ...nova, estrategia: estrategiaPermitida(modo, p.estrategia?.tipo) ? { ...p.estrategia } : nova.estrategia, pronto: p.pronto ?? null, ordem: i };
     });
     const r = await criarLive({
       loja_id: lojaId || null,
@@ -67,6 +70,8 @@ export function NovaLive({ esc, lv, canaisLive, riscadoDe, ctxDaLive, setAtualId
       prazo_dias: src?.prazo_dias ?? PRAZO_PADRAO[canal.tipo] ?? 2,
       taxa_extra: src?.taxa_extra ?? null,
       produtos,
+      // modo + o cupom da live repetida (sem os usos)
+      pedidos: { _modo: modo, ...(src?.pedidos?._cupom ? { _cupom: { ...src.pedidos._cupom, usados: [] } } : {}) },
       notas: src ? `Plano repetido da live de ${dm(src.data)}` : null,
     });
     setSalvando(false);
@@ -97,6 +102,20 @@ export function NovaLive({ esc, lv, canaisLive, riscadoDe, ctxDaLive, setAtualId
         <div className="field">
           <label>Data</label>
           <input type="date" value={f.data} onChange={(e) => setF({ ...f, data: e.target.value })} />
+        </div>
+        <div className="field" style={{ gridColumn: "1 / -1" }}>
+          <label>
+            Como vai ser a live
+            <Ajuda texto="Preço da loja + cupom: os produtos ficam no preço da loja e o desconto vem do cupom criado antes da live (o jeito da Shopee). Mudar o preço ao vivo: escada subindo, primeiros N, relâmpago — pra plataforma que deixa mudar o preço durante a live." />
+          </label>
+          <div className="toolbar" style={{ margin: 0 }}>
+            {MODOS_LIVE.map((m) => (
+              <button key={m.id} type="button" className={`filtro-btn${modo === m.id ? " ativo" : ""}`} title={m.desc} onClick={() => setF({ ...f, modo: m.id })}>
+                {m.nome}
+              </button>
+            ))}
+          </div>
+          <div className="hint">{MODOS_LIVE.find((m) => m.id === modo)?.desc}</div>
         </div>
         <div className="field">
           <label>
@@ -148,7 +167,7 @@ export function SeletorLive({ lv, esc, atual, setAtualId, filtro, extra }) {
 
 // Estratégia com os campos vazios preenchidos pela sugestão (dá pra editar).
 function estrategiaCompleta(p, ctx) {
-  const padrao = estrategiaPadrao(p.estrategia?.tipo || "escada", p, ctx);
+  const padrao = estrategiaPadrao(p.estrategia?.tipo || estrategiaInicial(ctx?.modo), p, ctx);
   const e = { ...(p.estrategia || {}) };
   for (const [k, v] of Object.entries(padrao)) if (e[k] == null || e[k] === "") e[k] = v;
   return e;
@@ -294,7 +313,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
     const item = esc.itens.find((i) => i.id === id);
     if (!item || !canal) return;
     if (produtos.some((p) => p.item_id === id)) return onToast("Esse item já está na live");
-    const c = copiaDoItem(item, { canal, precos: esc.precos, produtos: esc.produtos, riscadoDe: riscadoDe(canal), ctx });
+    const c = copiaDoItem(item, { canal, precos: esc.precos, produtos: esc.produtos, riscadoDe: riscadoDe(canal), ctx, agora: esc.agoraDe?.(item, canal)?.agora?.preco, modo: ctx.modo });
     if (!c.salvo) onToast(`${item.nome} não tem preço salvo em ${canal.nome} — digite os preços da live`);
     setProdutos([...produtos, c]);
   }
@@ -378,6 +397,29 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
           Produtos da live ({produtos.length})
           <Ajuda texto="Cada produto vira uma cópia dentro da live (preço salvo, custo e riscado de hoje). Mexer aqui NÃO muda nada fora da aba Live." />
         </h3>
+        <div className="toolbar live-modo">
+          <span className="faint">Como vai ser:</span>
+          {MODOS_LIVE.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`filtro-btn${ctx.modo === m.id ? " ativo" : ""}`}
+              title={m.desc}
+              disabled={bloqueada}
+              onClick={() => {
+                if (m.id === ctx.modo) return;
+                const ctx2 = { ...ctx, modo: m.id };
+                // Trocar de modo: estratégias que não valem no novo viram a padrão dele.
+                editar({
+                  pedidos: { ...(live.pedidos || {}), _modo: m.id },
+                  produtos: produtos.map((p) => (estrategiaPermitida(m.id, p.estrategia?.tipo) ? p : { ...p, estrategia: estrategiaPadrao(estrategiaInicial(m.id), p, ctx2) })),
+                });
+              }}
+            >
+              {m.nome}
+            </button>
+          ))}
+        </div>
         {!bloqueada && (
           <div className="toolbar">
             <BuscaItem grupos={grupos} value={addItem} onChange={adicionar} vazio="+ Adicionar produto ou kit" />
@@ -431,7 +473,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
                   <label className="live-campo">
                     <span>Estratégia</span>
                     <select value={e.tipo} onChange={(ev) => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: estrategiaPadrao(ev.target.value, p, ctx) })}>
-                      {ESTRATEGIAS.map((x) => (
+                      {[...estrategiasDoModo(ctx.modo), ...(estrategiaPermitida(ctx.modo, e.tipo) ? [] : [{ id: e.tipo, nome: "(não vale no desconto fixo)" }])].map((x) => (
                         <option key={x.id} value={x.id} title={x.desc}>
                           {x.nome}
                         </option>
@@ -445,7 +487,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
                   </label>
                 </fieldset>
                 <div className="live-plano-texto">
-                  <b>Plano:</b> {planoEmTexto(e, p.salvo || p.sugerido)}{" "}
+                  <b>Plano:</b> {ctx.modo === "fixo" && e.tipo === "fixo" ? `preço da loja (${BRL(Number(e.preco) || p.agora || p.salvo || p.sugerido || 0)}) a live toda — o desconto vem do cupom.${p.agora ? " Em rampa: é o preço de agora, não o alvo." : ""}` : planoEmTexto(e, p.salvo || p.sugerido)}{" "}
                   {!bloqueada && (
                     <button type="button" className="link-btn" onClick={() => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: estrategiaPadrao(e.tipo, p, ctx) })}>
                       voltar à sugestão
@@ -457,7 +499,9 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
                     Abre em <b>{ini ? BRL(ini) : "—"}</b>
                     {lucroIni != null && <span className={lucroIni < 0 ? "bad" : ""}> · lucro {BRL(lucroIni)}</span>}
                   </span>
-                  {an && (
+                  {ctx.modo === "fixo" ? (
+                    <span className="faint">preço da loja — nada muda no anúncio; o desconto vem do cupom</span>
+                  ) : an && (
                     <span className="faint">
                       digitar: original {BRL(an.original)} · promo {an.promo}% → cliente paga {BRL(an.clientePaga)}
                       {an.acimaDoRiscado && " (acima do riscado)"}

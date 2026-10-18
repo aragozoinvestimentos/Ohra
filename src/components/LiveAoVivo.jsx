@@ -4,7 +4,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import LiveLista from "./LiveLista.jsx";
 import { SeletorLive } from "./LivePlanejar.jsx";
 import { BRL } from "../lib/format.js";
-import { ESTRATEGIAS, cruzarPedidos, estadoProduto, estrategiaPadrao, lucroNaLive, nomeEstrategia, precoInicial, resumoLive } from "../lib/live.js";
+import { estrategiasDoModo, cruzarPedidos, estadoProduto, estrategiaPadrao, lucroNaLive, nomeEstrategia, precoInicial, resumoLive } from "../lib/live.js";
 import { excluirLive, registrarEvento, salvarLive } from "../lib/liveAcoes.js";
 import { resumoEstrategia } from "../lib/liveTexto.js";
 import PromoAviso from "./PromoAviso.jsx";
@@ -186,7 +186,9 @@ export default function LiveAoVivo({ esc, lv, atual, setAtualId, ctxDaLive, linh
             </div>
             <div className="faint">{resumoEstrategia(foco.estrategia)}</div>
             <div className="live-preco">{BRL(ef.preco)}</div>
-            {ef.anuncio ? (
+            {ctx.modo === "fixo" ? (
+              <div className="live-digitar faint">Preço da loja — nada pra mudar no anúncio; o desconto é o cupom.</div>
+            ) : ef.anuncio ? (
               <div className="live-digitar">
                 Digitar: promo{" "}
                 <button type="button" className="live-copiar" title="copiar" onClick={() => copiar(ef.anuncio.promo)}>
@@ -232,7 +234,7 @@ export default function LiveAoVivo({ esc, lv, atual, setAtualId, ctxDaLive, linh
               </button>
               <select value="" onChange={(e) => e.target.value && trocarEstrategia(foco, e.target.value)}>
                 <option value="">Trocar estratégia…</option>
-                {ESTRATEGIAS.filter((x) => x.id !== foco.estrategia?.tipo).map((x) => (
+                {estrategiasDoModo(ctx.modo).filter((x) => x.id !== foco.estrategia?.tipo).map((x) => (
                   <option key={x.id} value={x.id}>
                     {x.nome}
                   </option>

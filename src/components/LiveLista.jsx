@@ -84,7 +84,7 @@ export default function LiveLista({ live, eventos, canal, cruz, esc: escada, ctx
     const item = escada.itens.find((i) => i.id === id);
     if (!item || !canal) return;
     // Produto que não estava no plano: entra na live (cópia) só pra constar na lista.
-    const c = copiaDoItem(item, { canal, precos: escada.precos, produtos: escada.produtos, riscadoDe: null, ctx });
+    const c = copiaDoItem(item, { canal, precos: escada.precos, produtos: escada.produtos, riscadoDe: null, ctx, agora: escada.agoraDe?.(item, canal)?.agora?.preco });
     const r = await salvarLive(live.id, { produtos: [...produtosLive, { ...c, estrategia: { tipo: "fixo", preco: c.salvo }, ordem: produtosLive.length, foraDoPlano: true }] });
     if (!r.ok) return onToast(r.msg);
     setQtds((q) => ({ ...q, [c.key]: 1 }));

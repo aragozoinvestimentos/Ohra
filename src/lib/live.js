@@ -36,6 +36,23 @@ export const ESTRATEGIAS = [
 ];
 export const nomeEstrategia = (tipo) => ESTRATEGIAS.find((e) => e.id === tipo)?.nome || "—";
 
+// Modo da live (18/10/2026, Gustavo): escolhido ao criar.
+// "fixo" = PREÇO DA LOJA + CUPOM (desconto fixo): o cupom é criado antes e o
+//   preço não muda durante a live (o produto entra no que o cliente paga hoje,
+//   inclusive o degrau da Rampa) — padrão na Shopee.
+// "subir" = mudar o preço ao vivo (escada, primeiros N, relâmpago) — padrão no TikTok.
+// Guardado em live.pedidos._modo (sem SQL).
+export const MODOS_LIVE = [
+  { id: "fixo", nome: "Preço da loja + cupom (desconto fixo)", desc: "Os produtos ficam no preço da loja e o desconto vem do cupom criado antes da live. Nada muda durante a live." },
+  { id: "subir", nome: "Mudar o preço ao vivo", desc: "Escada subindo, primeiros N, relâmpago — pra plataforma que deixa mudar o preço durante a live." },
+];
+export const MODO_PADRAO = { shopee: "fixo", tiktok: "subir" };
+export const modoPadraoDoCanal = (canal) => MODO_PADRAO[canal?.tipo] || "subir";
+export const modoDaLive = (live, canal) => (live?.pedidos?._modo === "fixo" || live?.pedidos?._modo === "subir" ? live.pedidos._modo : modoPadraoDoCanal(canal));
+export const estrategiasDoModo = (modo) => (modo === "fixo" ? ESTRATEGIAS.filter((e) => e.id === "fixo" || e.id === "brinde") : ESTRATEGIAS);
+export const estrategiaInicial = (modo) => (modo === "fixo" ? "fixo" : "escada");
+export const estrategiaPermitida = (modo, tipo) => estrategiasDoModo(modo).some((e) => e.id === tipo);
+
 // Prazo de envio padrão (dias úteis) — editável em cada live.
 export const PRAZO_PADRAO = { tiktok: 1, shopee: 2 };
 export const MIN_SEM_VENDA = 5; // minutos sem venda → "segura ou volta um degrau"
@@ -101,8 +118,10 @@ export function estrategiaPadrao(tipo, prod, ctx) {
   if (tipo === "escada") return { tipo, piso, alvo, passo, subirPor: "vendas", aCada: 3, minutos: 5 };
   if (tipo === "primeiros") return { tipo, preco: piso, n: 10, normal: alvo };
   if (tipo === "relampago") return { tipo, preco: piso, minutos: 5, normal: alvo };
-  if (tipo === "brinde") return { tipo, preco: alvo, brindeNome: "", brindeCusto: 0 };
-  return { tipo: "fixo", preco: alvo };
+  // Preço fixo/brinde partem do preço que a loja cobra HOJE (degrau da Rampa), senão o alvo.
+  const hoje = num(prod.agora) || alvo;
+  if (tipo === "brinde") return { tipo, preco: hoje, brindeNome: "", brindeCusto: 0 };
+  return { tipo: "fixo", preco: hoje };
 }
 
 export function precoInicial(prod) {
@@ -555,7 +574,7 @@ export function historicoDoItem(itemId, lives, eventos, ctxDaLive, excetoId = nu
 export const novaKey = () => `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 /** Cópia de um item do catálogo pra dentro da live (o "valor salvo paralelo"). */
-export function copiaDoItem(item, { canal, precos, produtos, riscadoDe, ctx }) {
+export function copiaDoItem(item, { canal, precos, produtos, riscadoDe, ctx, agora = null, modo = null }) {
   const tipo = item.id.startsWith("k:") ? "kit" : item.id.startsWith("v:") ? "variacao" : "produto";
   const s = canal ? (precos || []).find((x) => x.item_tipo === tipo && x.item_id === item.id.slice(2) && x.canal_id === canal.id) : null;
   const salvo = s && num(s.preco) > 0 ? num(s.preco) : null;
@@ -567,9 +586,10 @@ export function copiaDoItem(item, { canal, precos, produtos, riscadoDe, ctx }) {
     custo: cent(num(item.custoTotal)),
     peso: num(item.peso),
     salvo,
+    agora: num(agora) > 0 && Math.abs(num(agora) - num(salvo)) >= 0.005 ? cent(num(agora)) : null, // preço da loja hoje (Rampa), se ≠ salvo
     riscado: salvo && riscadoDe ? riscadoDe(item, salvo) : null,
     pecas: pecasDoItem(item, produtos),
   };
   const completo = completarCopia(base, ctx);
-  return { ...completo, estrategia: estrategiaPadrao("escada", completo, ctx) };
+  return { ...completo, estrategia: estrategiaPadrao(estrategiaInicial(modo || ctx?.modo || modoPadraoDoCanal(canal)), completo, ctx) };
 }

@@ -11,6 +11,7 @@ import { SUBABAS_LIVE, PLATAFORMAS_LIVE } from "../lib/liveTexto.js";
 import LivePlanejar from "./LivePlanejar.jsx";
 import LiveAoVivo from "./LiveAoVivo.jsx";
 import LiveResultados from "./LiveResultados.jsx";
+import { modoDaLive } from "../lib/live.js";
 
 // Aba Live (schema v61): 1 · Planejar | 2 · Ao vivo | 3 · Resultados (sub-aba
 // no cabeçalho, ohra:live-sub). A live é PARALELA: guarda uma cópia dos
@@ -34,7 +35,13 @@ export default function Live({ onToast }) {
     },
     [esc]
   );
-  const ctxDaLive = useCallback((live) => ({ canal: (esc.canais || []).find((c) => c.id === live.canal_id) || null, cfgDe }), [esc.canais, cfgDe]);
+  const ctxDaLive = useCallback(
+    (live) => {
+      const canal = (esc.canais || []).find((c) => c.id === live.canal_id) || null;
+      return { canal, cfgDe, modo: modoDaLive(live, canal) };
+    },
+    [esc.canais, cfgDe]
+  );
   // Riscado da cópia: o já anunciado (fixo) ou o que o Anunciar sugeriria no preço salvo.
   const riscadoDe = useCallback(
     (canal) => (item, salvo) => {
