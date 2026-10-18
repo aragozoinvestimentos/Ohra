@@ -28,6 +28,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import { EditorVariacao } from "./VariacoesProduto.jsx";
 import { EmbalagemOrganicoDialog } from "./EmbalagemOrganico.jsx";
 import { canalComEmbalagem, configOrganicoDoItem } from "../lib/embalagemCanal.js";
+import PromoAviso from "./PromoAviso.jsx";
 
 const NOME_CANAL = { shopee: "Shopee", ml: "Mercado Livre", tiktok: "TikTok Shop", shein: "Shein" };
 const nomeCanal = (c) => c?.nome || NOME_CANAL[c?.tipo] || "Canal";
@@ -84,6 +85,7 @@ function EditarCadastro({ canal, itemTipo, itemId, real, atual, lojaId, onToast 
         <span>
           {previa ? `promo ${previa.promo}% → cliente paga ${BRL(previa.clientePaga)}` : "—"}
           {previa?.acimaDoRiscado ? " · abaixo do preço de agora: não dá promo" : ""}
+          {previa && <PromoAviso canal={canal} promo={previa.promo} />}
         </span>
         <span className="editar-cadastro-dica" title="Pra deixar igual à plataforma — evite mudar o preço cheio no marketplace">igual à plataforma · evite mudar o cheio</span>
       </label>
@@ -245,7 +247,7 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                 precisaria subir o original
               </span>
             ) : (
-              <span className="sub">{an.promo ? `promo ${an.promo}% → paga ${BRL(an.clientePaga)}` : "sem desconto no canal"}</span>
+              <span className="sub">{an.promo ? `promo ${an.promo}% → paga ${BRL(an.clientePaga)}` : "sem desconto no canal"}<PromoAviso canal={canal} promo={an.promo} /></span>
             )}
             {anSalvo && <span className="sub" title="Preço de cadastro do preço salvo (o que vale hoje)">salvo: {BRL(anSalvo.original)}</span>}
           </>

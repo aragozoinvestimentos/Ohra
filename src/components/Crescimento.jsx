@@ -47,6 +47,7 @@ import Estado, { PontoSaude } from "./Estado.jsx";
 import { saudeRampa } from "../lib/estados.js";
 import { useLembretes } from "../hooks/useLembretes.js";
 import { PRAZOS_PAUSA, pausaAtiva, pausarRampa, pausasDeRampa, retomarRampa } from "../lib/pausaRampa.js";
+import PromoAviso from "./PromoAviso.jsx";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -1637,7 +1638,7 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
                       )}
                     </td>
                     <td className="num"><Copiavel valor={virgula(a.original)} texto={virgula(a.original)} /></td>
-                    <td className="num">{a.promo ? <Copiavel valor={`${a.promo}%`} texto={String(a.promo)} /> : "—"}</td>
+                    <td className="num">{a.promo ? <Copiavel valor={`${a.promo}%`} texto={String(a.promo)} /> : "—"}<PromoAviso canal={l.canal} promo={a.promo} /></td>
                     <td className="num">
                       {virgula(a.clientePaga)}
                       {a.clientePaga - a.real >= 0.005 && <span className="muted-cel"> +{Math.round((a.clientePaga - a.real) * 100)}¢</span>}

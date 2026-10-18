@@ -12,6 +12,7 @@ import { ESTRATEGIAS, PRAZO_PADRAO, completarCopia, copiaDoItem, estrategiaPadra
 import { anuncioNoRiscado } from "../lib/rampaAnuncio.js";
 import { criarLive, excluirLive, salvarLive } from "../lib/liveAcoes.js";
 import { dm, diaSemana, planoEmTexto, rotuloLive } from "../lib/liveTexto.js";
+import PromoAviso from "./PromoAviso.jsx";
 
 // Live → 1 · Planejar: criar a live (plataforma, data), escolher os produtos
 // (cada um vira uma CÓPIA — preço salvo, custo e riscado de hoje), uma
@@ -449,6 +450,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
                     <span className="faint">
                       digitar: original {BRL(an.original)} · promo {an.promo}% → cliente paga {BRL(an.clientePaga)}
                       {an.acimaDoRiscado && " (acima do riscado)"}
+                      <PromoAviso canal={canal} promo={an.promo} />
                     </span>
                   )}
                   {hist ? (

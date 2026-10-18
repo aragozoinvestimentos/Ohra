@@ -23,6 +23,8 @@ import { quebraNoValor } from "../lib/precoAgora.js";
 import { QuebraLucro } from "./AlvoAgora.jsx";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { gruposPorItem, idDoItemOpcao, opcoesDoGrupo } from "../lib/anunciosGrupo.js";
+import PromoAviso from "./PromoAviso.jsx";
+import { limitePromoDoCanal } from "../lib/limitePromo.js";
 
 const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
 
@@ -211,6 +213,11 @@ export default function Publicar({ onToast, onSub }) {
         onToast("Desconto entre 0 e 90%");
         return;
       }
+      const lim = limitePromoDoCanal(canais.find((c) => c.id === e.canalId));
+      if (lim && v > lim.max) {
+        onToast(`O ${lim.nome} não aceita desconto acima de ${lim.max}%`);
+        return;
+      }
       mapa[e.canalId] = Math.round(v * 10) / 1000;
     }
     const { error } = await supabase
@@ -283,6 +290,7 @@ export default function Publicar({ onToast, onSub }) {
             <small>Promo</small>
             <b>{x.promo}%</b>
             <span>clique pra copiar</span>
+            <PromoAviso canal={c} promo={x.promo} texto />
           </button>
           <div className="kv-cel">
             <small>Cliente paga</small>
@@ -413,6 +421,7 @@ export default function Publicar({ onToast, onSub }) {
                           <span className="cel-preco-v" title="Preço original (riscado) — digite no anúncio">{BRL(x.original)}</span>
                           <span className="preco-canal-linha">
                             promo <b>{x.promo}%</b>
+                            <PromoAviso canal={c} promo={x.promo} />
                             {(() => {
                               const q = lucroPago(l.item, c, x.clientePaga);
                               return q ? <> · lucro <b style={q.lucro < 0 ? { color: "var(--bad)" } : undefined}>{BRL(q.lucro)}</b></> : null;

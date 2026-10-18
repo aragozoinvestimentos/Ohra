@@ -12,6 +12,8 @@ import { ordenarCanais } from "../lib/canais.js";
 import { BRL } from "../lib/format.js";
 import { nomesReceita, receitaDoCanal, totalReceita } from "../lib/embalagemCanal.js";
 import { EmbalagemCanalDialog } from "./EmbalagemOrganico.jsx";
+import PromoAviso from "./PromoAviso.jsx";
+import { limitePromoDoCanal } from "../lib/limitePromo.js";
 
 const NOVO_VAZIO = { nome: "", comissao_pct: "", taxa_fixa: "", imposto_pct: "", custos_fixos_pct: "" };
 
@@ -85,6 +87,11 @@ function CampoDesconto({ canal, onToast }) {
     const novo = txt === "" ? null : Number(txt) / 100;
     if (novo != null && (!isFinite(novo) || novo < 0 || novo > 0.9)) {
       onToast("Desconto precisa ficar entre 0% e 90%");
+      return;
+    }
+    const lim = limitePromoDoCanal(canal);
+    if (novo != null && lim && novo * 100 > lim.max + 0.001) {
+      onToast(`O ${lim.nome} não aceita desconto acima de ${lim.max}%`);
       return;
     }
     const { error } = await supabase.from("canais").update({ desconto_anuncio_pct: novo }).eq("id", canal.id);
@@ -409,6 +416,7 @@ export default function Canais({ onToast }) {
                     </td>
                     <td className="num">
                       <CampoDesconto canal={c} onToast={onToast} />
+                      {Number(c.desconto_anuncio_pct) > 0 && <div><PromoAviso canal={c} promo={Math.round(Number(c.desconto_anuncio_pct) * 100)} /></div>}
                       {c.tipo === "custom" && Number(c.desconto_anuncio_pct) > 0 && <div className="sub-num" style={{ whiteSpace: "normal", maxWidth: 160, marginLeft: "auto" }}>venda direta normalmente sem desconto de anúncio</div>}
                     </td>
                     <td className="num">

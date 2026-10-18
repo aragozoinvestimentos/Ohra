@@ -7,6 +7,7 @@ import { BRL } from "../lib/format.js";
 import { ESTRATEGIAS, cruzarPedidos, estadoProduto, estrategiaPadrao, lucroNaLive, nomeEstrategia, precoInicial, resumoLive } from "../lib/live.js";
 import { excluirLive, registrarEvento, salvarLive } from "../lib/liveAcoes.js";
 import { resumoEstrategia } from "../lib/liveTexto.js";
+import PromoAviso from "./PromoAviso.jsx";
 
 // Live → 2 · Ao vivo: cronômetro, produto da vez em destaque (preço agora +
 // o que digitar), +1 venda grande (e −1), próximo degrau com "subir agora",
@@ -184,6 +185,7 @@ export default function LiveAoVivo({ esc, lv, atual, setAtualId, ctxDaLive, linh
                 </button>{" "}
                 sobre o original {BRL(ef.anuncio.original)} → cliente paga {BRL(ef.anuncio.clientePaga)}
                 {ef.anuncio.acimaDoRiscado && <span className="warn"> · acima do riscado</span>}
+                <PromoAviso canal={canal} promo={ef.anuncio.promo} texto />
               </div>
             ) : (
               <div className="live-digitar">

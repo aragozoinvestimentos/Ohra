@@ -14,6 +14,7 @@ import SemanasFonte from "./SemanasFonte.jsx";
 import Estado from "./Estado.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
+import PromoAviso from "./PromoAviso.jsx";
 
 // Crescimento → Rampa: rampa do ANÚNCIO com vários itens (plano 14/10/2026,
 // schema v54). Degraus em % do preço salvo de cada opção; todas sobem juntas,
@@ -403,7 +404,7 @@ function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar, comAgora = f
                     {x.an ? BRL(x.an.original) : "—"}
                     {x.fixo ? <span className="gr-fixo" title="Já anunciado: o preço original não muda">🔒</span> : null}
                   </td>
-                  <td className="num">{x.an ? <span className="pill-promo">{x.an.promo}%</span> : "—"}</td>
+                  <td className="num">{x.an ? <span className="pill-promo">{x.an.promo}%</span> : "—"}{x.an && <PromoAviso canal={l.canal} promo={x.an.promo} />}</td>
                   <td className="num"><b className="gr-paga">{x.an ? BRL(x.an.clientePaga) : "—"}</b></td>
                   <td className="num" style={{ color: x.lucro != null && x.lucro < 0 ? "var(--bad)" : undefined }}>{x.lucro != null ? BRL(x.lucro) : "—"}</td>
                 </tr>

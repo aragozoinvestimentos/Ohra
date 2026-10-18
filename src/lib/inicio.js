@@ -52,6 +52,7 @@ export function montarPendencias({
   caixa = null, // resumoCaixa (fluxoCaixa.js)
   rampas = [], // linhas do Crescimento ({ r, produto, canal, est })
   anunciosAtualizar = [], // [{ item, canal, x }] linhasAnunciar: mudou e já marcado feito antes
+  promosAcima = [], // [{ item, canal, x }] desconto acima do que a plataforma aceita (limitePromo.js)
   afSugestoes = [], // sugestoesAfiliado: "pode|…" e "amostra|…"
   atracao = [], // [{ item, canal }] pareceAtracaoDe
   tarefas = [], // tarefas manuais (schema v42)
@@ -447,6 +448,17 @@ export function montarPendencias({
       rotulo: "Abrir Anunciar",
     });
   }
+  for (const a of promosAcima)
+    add({
+      id: `promo-limite|${a.item.id}|${a.canal.id}`,
+      grupo: "rotina",
+      ordem: 4,
+      tom: "warn",
+      titulo: `${a.item.nome}: desconto de ${a.x.promo}% no ${a.canal.nome}`,
+      texto: `${a.canal.nome} · ${a.x.limitePromo.texto}`,
+      ir: { aba: "publicar" },
+      rotulo: "Abrir Anunciar",
+    });
   for (const l of rampas.filter((x) => x.est.alvoMudou))
     add({
       id: `alvo|${l.r.id}`,

@@ -2271,3 +2271,9 @@ tr.clicavel.ativo td { background: var(--accent-soft); }
 .pausa-rampa .link-btn { margin-right: 8px; font-size: 12px; }
 .secao-lista.secao-pausa td { color: var(--text-muted, #777); }
 .secao-lista.secao-pausa .faint { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+/* Limite de desconto da plataforma (TikTok: aviso > 40%, não aceita > 80%) */
+.promo-aviso { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.promo-aviso-atencao { background: var(--st-atencao-soft); color: var(--st-atencao); }
+.promo-aviso-resolver { background: var(--st-resolver-soft); color: var(--st-resolver); }
+div > .promo-aviso:only-child, .promo-aviso.bloco { white-space: normal; }

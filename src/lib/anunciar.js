@@ -6,6 +6,7 @@ import { alertaPreco } from "./estrategia.js";
 import { anuncioMudou, descontoDoItem } from "./escada.js";
 import { anuncioDoItem, descricaoMudanca } from "./rampaAnuncio.js";
 import { itemTipoDoId } from "./variacoes.js";
+import { avisoPromo } from "./limitePromo.js";
 
 // Quantidade não anunciada no canal (v41, anunciadoNoCanal) fica de fora: sem ↻ nem lembrete.
 export function linhasAnunciar({ itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, clientePagaHoje, anunciadoNoCanal = null }) {
@@ -36,7 +37,7 @@ export function linhasAnunciar({ itens, canais, precos, produtos, kits, publicac
         const anSalvo = ra ? anuncioDoItem({ itemId: item.id, canal: c, real: Number(s.preco), desconto, publicacoes: publicacoesCanal }) : an;
         // Frete grátis (v38): pelo que o cliente PAGA (cliente_paga, depois da promo).
         const frete = alertaPreco({ preco: an.real, canal: c, valorCliente: clientePagaHoje(item, c) ?? an.clientePaga }).frete;
-        porCanal[c.id] = { ...an, proprio, salvo, mudou, nunca: !salvo, rampa: ra, anSalvo, frete, oQueMudou: mudou && salvo ? descricaoMudanca(salvo, an) : null };
+        porCanal[c.id] = { ...an, proprio, salvo, mudou, nunca: !salvo, rampa: ra, anSalvo, frete, limitePromo: avisoPromo(c, an.promo), oQueMudou: mudou && salvo ? descricaoMudanca(salvo, an) : null };
       }
       if (!Object.keys(porCanal).length) return null;
       const pendentes = Object.values(porCanal).filter((x) => x.mudou).length;

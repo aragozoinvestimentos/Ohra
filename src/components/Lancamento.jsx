@@ -14,6 +14,7 @@ import ProximoPasso from "./ProximoPasso.jsx";
 import { IniciarRampaDialog } from "./Crescimento.jsx";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { ehIdGrupo, fichaDoGrupo } from "../lib/anunciosGrupo.js";
+import PromoAviso from "./PromoAviso.jsx";
 
 const virgula = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -88,6 +89,7 @@ export default function Lancamento({ onToast, onSub }) {
             <small>Promo</small>
             <b>{a.promo}%</b>
             <span>{ra ? "a do degrau de agora" : "no alvo"}</span>
+            <PromoAviso canal={canal} promo={a.promo} texto />
           </div>
           <div className="kv-cel">
             <small>Cliente paga</small>
@@ -172,7 +174,7 @@ export default function Lancamento({ onToast, onSub }) {
                               {BRL(l.an.original)}
                               <div className="muted-cel">{l.an.riscadoFixo ? "já anunciado (fixo)" : "a cadastrar"}</div>
                             </td>
-                            <td className="num">{l.an.promo ? `${l.an.promo}%` : "—"}</td>
+                            <td className="num">{l.an.promo ? `${l.an.promo}%` : "—"}<PromoAviso canal={canal} promo={l.an.promo} /></td>
                             <td className="num">
                               {l.an.emRampa ? (
                                 <>

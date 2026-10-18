@@ -17,6 +17,7 @@ import { nomeCanal } from "../lib/canais.js";
 import BuscaItem from "./BuscaItem.jsx";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
+import PromoAviso from "./PromoAviso.jsx";
 
 const LIMITE_NOME_OPCAO = 30; // Shopee: nome de cada opção de variação
 const MAX_VARIACOES = 2; // variações do produto (além da quantidade)
@@ -577,9 +578,12 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                                 </td>
                                 <td className="num">
                                   {l.an.promo ? (
+<>
                                     <button type="button" className={`ficha-valor${copiado === `pr|${l.sku}` ? " ok" : ""}`} title="Clique pra copiar a promoção %" onClick={() => copiarValor(String(l.an.promo), `pr|${l.sku}`)}>
                                       {l.an.promo}%<span className="ficha-copiar-ic">{copiado === `pr|${l.sku}` ? "✓" : "⧉"}</span>
                                     </button>
+                                    <PromoAviso canal={canal} promo={l.an.promo} />
+</>
                                   ) : (
                                     "—"
                                   )}

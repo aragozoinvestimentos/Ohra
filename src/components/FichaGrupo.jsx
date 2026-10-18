@@ -18,6 +18,7 @@ import FreteAviso from "./FreteAviso.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import MontarCombinacoes from "./MontarCombinacoes.jsx";
+import PromoAviso from "./PromoAviso.jsx";
 
 // 3º Ficha do anúncio — modo "Anúncio com vários itens" (schema v46): um
 // anúncio que junta itens diferentes numa variação ("Conjunto", "Tamanho"),
@@ -381,9 +382,12 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
                               </td>
                               <td className="num">
                                 {l.an.promo ? (
+<>
                                   <button type="button" className={`ficha-valor${copiado === `pr|${l.chave}` ? " ok" : ""}`} title="Clique pra copiar a promoção %" onClick={() => copiarValor(String(l.an.promo), `pr|${l.chave}`)}>
                                     {l.an.promo}%<span className="ficha-copiar-ic">{copiado === `pr|${l.chave}` ? "✓" : "⧉"}</span>
                                   </button>
+                                  <PromoAviso canal={canal} promo={l.an.promo} />
+</>
                                 ) : (
                                   "—"
                                 )}

@@ -29,6 +29,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
 import ResumoFixo from "./ResumoFixo.jsx";
 import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
+import { avisoPromo } from "../lib/limitePromo.js";
 
 const ML_CATEGORIAS = Object.keys(ML_CATEGORY_PCT);
 
@@ -658,9 +659,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
             : cadastro.acimaDoRiscado
               ? "já anunciado: precisaria subir o original — considere manter"
               : cadastro.riscadoFixo
-                ? `já anunciado (fixo) · promo ${cadastro.promo}% → paga ${BRL(cadastro.clientePaga)}`
+                ? `já anunciado (fixo) · promo ${cadastro.promo}% → paga ${BRL(cadastro.clientePaga)}${avisoPromo(canalCadastrado, cadastro.promo) ? ` · ⚠ ${avisoPromo(canalCadastrado, cadastro.promo).texto}` : ""}`
                 : cadastro.promo
-              ? `promo ${cadastro.promo}% → cliente paga ${BRL(cadastro.clientePaga)}`
+              ? `promo ${cadastro.promo}% → cliente paga ${BRL(cadastro.clientePaga)}${avisoPromo(canalCadastrado, cadastro.promo) ? ` · ⚠ ${avisoPromo(canalCadastrado, cadastro.promo).texto}` : ""}`
               : "canal sem desconto no anúncio",
         },
         {
