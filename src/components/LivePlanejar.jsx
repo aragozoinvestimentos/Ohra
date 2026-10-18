@@ -1,11 +1,9 @@
-import { useMemo, useState } from "react";
-import BuscaItem from "./BuscaItem.jsx";
+import { useState } from "react";
 import CanalTag from "./CanalTag.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { BRL } from "../lib/format.js";
 import { hojeSP } from "../lib/datas.js";
-import { gruposDoSeletor } from "../lib/variacoes.js";
 import { horasDoItem } from "../lib/pedidos.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { MODOS_LIVE, PRAZO_PADRAO, completarCopia, estrategiaInicial, estrategiaPermitida, estrategiasDoModo, modoPadraoDoCanal, copiaDoItem, estrategiaPadrao, historicoDoItem, lucroNaLive, precoInicial, prazoEnvio } from "../lib/live.js";
@@ -14,6 +12,7 @@ import { criarLive, excluirLive, salvarLive } from "../lib/liveAcoes.js";
 import { dm, diaSemana, planoEmTexto, rotuloLive } from "../lib/liveTexto.js";
 import PromoAviso from "./PromoAviso.jsx";
 import CupomLivePlano from "./LiveCupom.jsx";
+import LiveSeletor from "./LiveSeletor.jsx";
 
 // Live → 1 · Planejar: criar a live (plataforma, data), escolher os produtos
 // (cada um vira uma CÓPIA — preço salvo, custo e riscado de hoje), uma
@@ -238,8 +237,6 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
   const [rascunho, setRascunho] = useState(null); // { id, ...campos editados }
   const [salvando, setSalvando] = useState(false);
   const [confirmar, setConfirmar] = useState(null);
-  const [addItem, setAddItem] = useState("");
-  const grupos = useMemo(() => gruposDoSeletor(esc.itens), [esc.itens]);
 
   const live = atual && rascunho?.id === atual.id ? { ...atual, ...rascunho } : atual;
   const canal = live ? esc.canais.find((c) => c.id === live.canal_id) || null : null;
@@ -308,14 +305,22 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
       irPara("aovivo");
     }
   }
-  function adicionar(id) {
-    setAddItem("");
-    const item = esc.itens.find((i) => i.id === id);
-    if (!item || !canal) return;
-    if (produtos.some((p) => p.item_id === id)) return onToast("Esse item já está na live");
-    const c = copiaDoItem(item, { canal, precos: esc.precos, produtos: esc.produtos, riscadoDe: riscadoDe(canal), ctx, agora: esc.agoraDe?.(item, canal)?.agora?.preco, modo: ctx.modo });
-    if (!c.salvo) onToast(`${item.nome} não tem preço salvo em ${canal.nome} — digite os preços da live`);
-    setProdutos([...produtos, c]);
+  // Adiciona um ou vários itens (o "+ todos" do produto leva as variações juntas).
+  function adicionar(ids) {
+    if (!canal) return;
+    const novos = [];
+    const semPreco = [];
+    for (const id of [].concat(ids)) {
+      const item = esc.itens.find((i) => i.id === id);
+      if (!item || produtos.some((p) => p.item_id === id) || novos.some((p) => p.item_id === id)) continue;
+      const c = copiaDoItem(item, { canal, precos: esc.precos, produtos: esc.produtos, riscadoDe: riscadoDe(canal), ctx, agora: esc.agoraDe?.(item, canal)?.agora?.preco, modo: ctx.modo });
+      if (!c.salvo) semPreco.push(item.nome);
+      novos.push(c);
+    }
+    if (!novos.length) return;
+    setProdutos([...produtos, ...novos]);
+    if (semPreco.length) onToast(`${semPreco.join(", ")}: sem preço salvo em ${canal.nome} — usando o sugerido pela margem`);
+    else if (novos.length > 1) onToast(`${novos.length} itens adicionados`);
   }
   const mover = (i, d) => {
     const l = [...produtos];
@@ -420,11 +425,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
             </button>
           ))}
         </div>
-        {!bloqueada && (
-          <div className="toolbar">
-            <BuscaItem grupos={grupos} value={addItem} onChange={adicionar} vazio="+ Adicionar produto ou kit" />
-          </div>
-        )}
+        {!bloqueada && <LiveSeletor itens={esc.itens} canal={canal} precos={esc.precos} cobraNoCanal={esc.cobraNoCanal} naLive={new Set(produtos.map((p) => p.item_id))} onAdd={adicionar} />}
         {!produtos.length && <div className="empty">Nenhum produto ainda. Adicione os produtos (ou kits) que vai mostrar na live.</div>}
         <div className="live-plano-lista">
           {produtos.map((p0, i) => {
