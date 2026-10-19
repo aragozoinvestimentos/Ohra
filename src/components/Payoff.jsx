@@ -28,7 +28,7 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
 
   const prev = p.previsao;
   return (
-    <>
+    <div className="payoff-tela">
       <Kpis
         itens={[
           { label: "Seu dinheiro na loja", valor: BRL(p.doBolso), sub: p.doBolso > 0 ? "o que você tirou do bolso (aporte + saldo inicial)" : "lance o aporte / saldo inicial no Caixa" },
@@ -138,7 +138,7 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -191,22 +191,22 @@ function GraficoPayoff({ serie }) {
         {[0, 1, 2, 3, 4].map((i) => (
           <g key={i}>
             <line x1={x0} x2={W - 10} y1={Y(passo * i)} y2={Y(passo * i)} stroke="var(--border)" />
-            <text x={x0 - 6} y={Y(passo * i) + 3} textAnchor="end" fontSize="10" fill="var(--muted)">
+            <text x={x0 - 6} y={Y(passo * i) + 3} textAnchor="end" fontSize="10" fill="var(--ink-faint)">
               {k(passo * i)}
             </text>
           </g>
         ))}
-        <polyline fill="none" stroke="var(--text)" strokeWidth="2.5" points={linha("accPagou")} />
+        <polyline fill="none" stroke="var(--ink)" strokeWidth="2.5" points={linha("accPagou")} />
         <polyline fill="none" stroke="var(--accent)" strokeWidth="2.5" points={linha("accEntrou")} />
         {serie.map((s, i) => (
-          <text key={s.mes} x={X(i)} y={H + 8} textAnchor="middle" fontSize="10" fill="var(--muted)">
+          <text key={s.mes} x={X(i)} y={H + 8} textAnchor="middle" fontSize="10" fill="var(--ink-faint)">
             {rotuloMes(s.mes).slice(0, 3)}
           </text>
         ))}
       </svg>
       <div className="payoff-leg">
         <span>
-          <i style={{ background: "var(--text)" }} />a loja pagou (acumulado)
+          <i style={{ background: "var(--ink)" }} />a loja pagou (acumulado)
         </span>
         <span>
           <i style={{ background: "var(--accent)" }} />

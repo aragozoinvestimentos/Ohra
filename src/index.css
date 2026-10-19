@@ -2228,7 +2228,7 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .live-ordem { width: 24px; height: 24px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; flex: none; }
 .live-estrategia { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: flex-end; margin: 8px 0 6px; }
 .live-campo { display: inline-flex; flex-direction: column; gap: 2px; font-size: 12px; }
-.live-campo > span { color: var(--muted); }
+.live-campo > span { color: var(--ink-faint); }
 .live-plano-info { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
 .live-acoes-fixas { position: sticky; bottom: 0; background: var(--bg); padding: 8px 0; z-index: 5; display: flex; align-items: center; gap: 8px; }
 .live-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; position: sticky; top: var(--topbar-h, 61px); z-index: 6; }
@@ -2240,7 +2240,7 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .live-foco-nome { font-size: 22px; font-weight: 800; }
 .live-preco { font-size: 52px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--accent); }
 .live-digitar { font-size: 16px; }
-.live-copiar { font-size: 18px; font-weight: 800; padding: 2px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
+.live-copiar { font-size: 18px; font-weight: 800; padding: 2px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--ink); cursor: pointer; }
 .live-botoes { display: flex; gap: 10px; margin-top: 4px; }
 .live-mais { flex: 1; font-size: 26px; font-weight: 800; padding: 18px; background: var(--st-oportunidade, #16a34a); color: #fff; border-color: transparent; }
 .live-menos { font-size: 22px; padding: 18px 22px; }
@@ -2307,12 +2307,15 @@ td.vendas-opcao { padding-left: 26px; }
 @media (max-width: 900px) { .payoff-grade { grid-template-columns: 1fr; } }
 .payoff-barra { height: 8px; border-radius: 4px; background: var(--st-info-soft, #f1efec); overflow: hidden; min-width: 60px; }
 .payoff-barra i { display: block; height: 100%; background: var(--accent); }
-.payoff-leg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 0 14px 10px; }
+.payoff-leg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-faint); padding: 0 14px 10px; }
 .payoff-leg i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
 .payoff-minis { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; padding: 10px 14px; }
 .payoff-mini { border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
-.payoff-mini small { color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 600; letter-spacing: .04em; }
+.payoff-mini small { color: var(--ink-faint); font-size: 11px; text-transform: uppercase; font-weight: 600; letter-spacing: .04em; }
 .payoff-mini b { font-size: 18px; font-variant-numeric: tabular-nums; }
 .payoff-bars { display: flex; align-items: flex-end; gap: 3px; height: 38px; margin-top: 6px; }
 .payoff-bars span { flex: 1; background: var(--border); border-radius: 3px 3px 0 0; }
 .payoff-bars span.ult { background: var(--accent); }
+/* 5 KPIs numa linha só no PC (19/10/2026) */
+@media (min-width: 1101px) { .kpis.kpis-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.payoff-tela .panel > h3 > .faint { margin-left: 8px; font-weight: 400; }
