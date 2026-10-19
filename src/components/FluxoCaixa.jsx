@@ -120,6 +120,22 @@ export default function FluxoCaixa({ onToast }) {
   // Estimativas da projeção: no banco (preferencias_loja, v59) — iguais em todo aparelho.
   const [estimativas, setEstimativas] = usePreferencia("caixa:estimativas", { vendas: "", custos: "" }, { legado: () => loadEstimativas(lojaId), legadoPorLoja: true });
   const [sub] = useSubAba("ohra:caixa:sub", "caixa", SUBABAS_CAIXA.map((x) => x.key));
+  // Período de Vendas do mês (navegação — fica no aparelho).
+  const [periodoVendas, setPeriodoVendas] = useState(() => {
+    try {
+      return localStorage.getItem("ohra:vendas:periodo") || "mes";
+    } catch {
+      return "mes";
+    }
+  });
+  const trocarPeriodoVendas = (v) => {
+    setPeriodoVendas(v);
+    try {
+      localStorage.setItem("ohra:vendas:periodo", v);
+    } catch {
+      // sem problema
+    }
+  };
   const [verConfig, setVerConfig] = useState(false);
   const reserva = useReservaProducao();
   const adsP = useAdsPeriodos();
@@ -534,7 +550,17 @@ export default function FluxoCaixa({ onToast }) {
       </TopbarAcoes>
 
       <div className="caixa-cabecalho">
-        {sub !== "contas" && sub !== "payoff" && seletorMes}
+        {sub !== "contas" && sub !== "payoff" && (sub !== "vendas" || periodoVendas === "mes") && seletorMes}
+        {sub === "vendas" && (
+          <select className="seletor-periodo" value={periodoVendas} onChange={(e) => trocarPeriodoVendas(e.target.value)} aria-label="Período das vendas">
+            <option value="mes">Mês escolhido</option>
+            <option value="2">Últimos 2 meses</option>
+            <option value="3">Últimos 3 meses</option>
+            <option value="6">Último semestre</option>
+            <option value="12">Último ano</option>
+            <option value="tudo">Todo o período</option>
+          </select>
+        )}
       </div>
 
       {sub === "caixa" && (
@@ -964,7 +990,7 @@ export default function FluxoCaixa({ onToast }) {
         </>
       )}
 
-      {sub === "vendas" && <VendasMes mes={mesFiltro} onToast={onToast} />}
+      {sub === "vendas" && <VendasMes mes={mesFiltro} periodo={periodoVendas} onToast={onToast} />}
       {sub === "payoff" && <Payoff lancamentos={lancamentos} hoje={hoje} saldoAds={saldoDeAds} reservaRegistros={reserva.registros} />}
 
       {form && (

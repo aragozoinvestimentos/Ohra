@@ -33,7 +33,7 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
         itens={[
           { label: "Seu dinheiro na loja", valor: BRL(p.doBolso), sub: p.doBolso > 0 ? "o que você tirou do bolso (aporte + saldo inicial)" : "lance o aporte / saldo inicial no Caixa" },
           { label: "A loja já pagou", valor: BRL(p.pagou), sub: `com o seu dinheiro e com o das vendas · impressoras ${BRL(p.equipamento)} · operar ${BRL(p.operar)}` },
-          { label: "Entrou de vendas", valor: BRL(p.entrou), sub: "recebido de verdade (pedidos, vendas físicas, encomendas)" },
+          { label: "Entrou de vendas", valor: BRL(p.entrou), sub: "o que caiu no caixa, já sem as taxas (não é o faturamento)" },
           { label: "Resultado da loja", valor: `${p.resultado < 0 ? "− " : ""}${BRL(Math.abs(p.resultado))}`, tom: p.resultado < 0 ? "bad" : undefined, sub: "entrou − a loja pagou (sem o seu aporte)" },
           {
             label: "Falta voltar pro seu bolso",
@@ -46,6 +46,29 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
         {p.pagou > p.doBolso && p.doBolso > 0 ? "“A loja já pagou” é maior que o seu dinheiro porque parte das contas foi paga com o dinheiro das vendas. " : ""}Quando o que <b>entrou</b> passar o que a loja <b>pagou</b>, o seu dinheiro voltou.
         <Ajuda texto="Seu dinheiro na loja = lançamentos de aporte e saldo inicial. A loja já pagou = todas as saídas pagas do Caixa, menos a retirada (pró-labore, que é dinheiro voltando pra você); recarga de Ads conta aqui, o gasto dos CSVs não (pra não contar 2×); parcela da impressora conta quando é paga. Entrou = entradas recebidas, sem aporte/saldo inicial. Falta voltar = −(resultado + saldo de Ads ainda parado na Shopee). O aporte não é somado de novo às saídas: foi ele que pagou parte delas." />
       </p>
+
+      <div className="panel">
+        <h3>
+          De onde vem o que entrou <span className="faint">entradas recebidas no Caixa, desde o começo</span>
+        </h3>
+        <div className="table-wrap">
+          <table>
+            <tbody>
+              <tr><td>Pedidos importados (Análise → Importar dados) — o repasse das plataformas, já sem taxas</td><td className="num">{BRL(p.origem.pedidos)}</td></tr>
+              <tr><td>Vendas lançadas à mão no Caixa</td><td className="num">{BRL(p.origem.aMao)}</td></tr>
+              {p.origem.encomenda > 0 && <tr><td>Encomendas diretas</td><td className="num">{BRL(p.origem.encomenda)}</td></tr>}
+              <tr className="linha-total"><td>Entrou de vendas</td><td className="num">{BRL(p.entrou)}</td></tr>
+              {p.origem.outras > 0 && <tr><td className="muted-cel">Outras entradas (fora das vendas)</td><td className="num muted-cel">{BRL(p.origem.outras)}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        {p.origem.nDuplicadas > 0 && (
+          <div className="alerta alerta-warn" style={{ margin: "8px 14px" }}>
+            <b>{p.origem.nDuplicadas} venda{p.origem.nDuplicadas === 1 ? "" : "s"} lançada{p.origem.nDuplicadas === 1 ? "" : "s"} à mão ({BRL(p.origem.duplicadas)}) parece{p.origem.nDuplicadas === 1 ? "" : "m"} repetir os pedidos importados</b>
+            São da mesma semana (e canal) de uma entrada “lançado pela aba Análise”. Ficaram fora daqui; no Caixa elas ainda somam no saldo — confira e exclua as repetidas em 1 · Caixa.
+          </div>
+        )}
+      </div>
 
       <div className="panel">
         <h3>

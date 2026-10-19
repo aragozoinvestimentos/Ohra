@@ -7,7 +7,9 @@
 // - "A loja já pagou" = saídas pagas (menos retirada/pró-labore — isso é
 //   dinheiro voltando pra você, não custo). Recarga de Ads conta aqui; o
 //   gasto dos CSVs não (seria 2×).
-// - "Entrou de vendas" = entradas recebidas (venda, encomenda, outras).
+// - "Entrou de vendas" = entradas recebidas de venda/encomenda (o que caiu no
+//   caixa, já sem as taxas). "Outras entradas" e vendas lançadas à mão em
+//   semana que já tem os pedidos importados (prováveis duplicadas) ficam fora.
 // - Resultado = entrou − pagou. Falta recuperar = −(resultado + saldo de Ads
 //   ainda na Shopee) — o aporte não soma de novo às saídas, porque foi ele
 //   que pagou parte delas.
@@ -28,6 +30,20 @@ export const rotuloMes = (m) => `${NOMES_MES[Number(m.slice(5, 7)) - 1]}/${m.sli
 
 export function payoff({ lancamentos = [], hoje, saldoAdsShopee = 0, mesesMedia = 3 }) {
   const reais = lancamentos.filter((l) => l.recorrencia !== "mensal" && l.data_realizada && l.data_realizada <= hoje);
+  // Venda lançada À MÃO numa semana que já tem a entrada dos pedidos
+  // importados (mesmo canal, ou sem canal) = provável duplicada: fica fora do
+  // "entrou" e aparece no quadro "De onde vem o que entrou".
+  const semanaDe = (iso) => {
+    const d = new Date(`${iso}T12:00:00`);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.toISOString().slice(0, 10);
+  };
+  const importadas = reais.filter((l) => l.tipo === "entrada" && String(l.origem_import || "").startsWith("pedidos|"));
+  const semImport = new Set(importadas.map((l) => `${String(l.origem_import).split("|")[2]}|${l.canal_id || ""}`));
+  const semanasComImport = new Set(importadas.map((l) => String(l.origem_import).split("|")[2]));
+  const duplicada = (l) =>
+    l.tipo === "entrada" && !l.origem_import && ["venda", "encomenda"].includes(l.categoria) && (l.canal_id ? semImport.has(`${semanaDe(l.data_realizada)}|${l.canal_id}`) : semanasComImport.has(semanaDe(l.data_realizada)));
+  const origem = { pedidos: 0, aMao: 0, encomenda: 0, outras: 0, duplicadas: 0, nDuplicadas: 0 };
   let doBolso = 0;
   let entrou = 0;
   let pagou = 0;
@@ -40,7 +56,14 @@ export function payoff({ lancamentos = [], hoje, saldoAdsShopee = 0, mesesMedia 
     const m = mesDe(l.data_realizada);
     if (l.tipo === "entrada") {
       if (DO_BOLSO.has(l.categoria)) doBolso += v;
+      else if (duplicada(l)) {
+        origem.duplicadas += v;
+        origem.nDuplicadas++;
+      } else if (l.categoria !== "venda" && l.categoria !== "encomenda") origem.outras += v;
       else {
+        if (l.origem_import) origem.pedidos += v;
+        else if (l.categoria === "encomenda") origem.encomenda += v;
+        else origem.aMao += v;
         entrou += v;
         const x = mes(m);
         x.entrou += v;
@@ -102,6 +125,7 @@ export function payoff({ lancamentos = [], hoje, saldoAdsShopee = 0, mesesMedia 
     equipamento,
     operar: r2(pagou - equipamento),
     retiradas: r2(retiradas),
+    origem: { pedidos: r2(origem.pedidos), aMao: r2(origem.aMao), encomenda: r2(origem.encomenda), outras: r2(origem.outras), duplicadas: r2(origem.duplicadas), nDuplicadas: origem.nDuplicadas },
     resultado,
     falta,
     voltou,

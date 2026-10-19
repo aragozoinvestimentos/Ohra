@@ -9,7 +9,7 @@ import { recarregarVendasOrganicas, useVendasOrganicas } from "../hooks/useVenda
 import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
 import BuscaItem from "./BuscaItem.jsx";
 import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
-import { saldoReserva, vendasDoMes } from "../lib/vendasMes.js";
+import { juntarMeses, mesesDoPeriodo, saldoReserva, vendasDoMes } from "../lib/vendasMes.js";
 import { trocarSubAba } from "../lib/subAbas.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
 import { gastoAdsNaJanela, regrasAds, tetoDaLoja } from "../lib/ads.js";
@@ -35,7 +35,7 @@ const fimDoMes = (mes) => {
 // vendas registradas no Crescimento × preço da semana → recebe, repor e lucro,
 // por produto; e a Reserva de produção (schema v51): separar o "repor" do mês
 // num envelope (não é saída — o dinheiro fica na conta, só deixa de estar livre).
-export default function VendasMes({ mes, onToast }) {
+export default function VendasMes({ mes, periodo = "mes", onToast }) {
   const { lojaId } = useLoja();
   const { itens, canais, precos, cfgDoProduto, cfgLoja, itemNoCanal, produtos: produtosEsc, kits: kitsEsc, embalagens: embalagensEsc = [] } = useEscada();
   const { rampas, rampasGrupo, registros } = useRampas({ comRegistros: true });
@@ -53,10 +53,17 @@ export default function VendasMes({ mes, onToast }) {
   const [salvando, setSalvando] = useState(false);
   const hoje = hojeISO();
 
-  const v = useMemo(
-    () => vendasDoMes({ mes, rampas, rampasGrupo, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura, itemNoCanal }),
-    [itemNoCanal, mes, rampas, rampasGrupo, registros, af.registros, org.registros, itens, canais, cfgDoProduto, reais.linhas, reais.cobertura]
-  );
+  // Período (19/10/2026): o mês escolhido ou vários meses juntos (somados).
+  const multi = periodo !== "mes";
+  const meses = useMemo(() => {
+    const datas = [...(reais.linhas || []).map((p) => p.data), ...(org.registros || []).map((o) => o.data), ...(registros || []).map((r) => r.data)].filter(Boolean).map((d) => String(d).slice(0, 7)).sort();
+    return mesesDoPeriodo(periodo, hoje.slice(0, 7), mes, datas[0] || null);
+  }, [periodo, mes, hoje, reais.linhas, org.registros, registros]);
+  const v = useMemo(() => {
+    const um = (m) => vendasDoMes({ mes: m, rampas, rampasGrupo, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura, itemNoCanal });
+    return meses.length === 1 ? um(meses[0]) : juntarMeses(meses.map(um));
+  }, [itemNoCanal, meses, rampas, rampasGrupo, registros, af.registros, org.registros, itens, canais, cfgDoProduto, reais.linhas, reais.cobertura]);
+  const rotuloPeriodo = !multi ? rotuloMes(mes) : periodo === "tudo" ? `todo o período (${rotuloMes(meses[0])} a ${rotuloMes(meses[meses.length - 1])})` : `últimos ${periodo} meses (${rotuloMes(meses[0])} a ${rotuloMes(meses[meses.length - 1])})`;
   // Anúncio com vários itens: uma linha do anúncio (soma) e as opções embaixo
   // quando aberta — com as PEÇAS que saíram (letreiro, tigela…), pra ver o
   // que vende junto. Itens soltos seguem como antes.
@@ -232,7 +239,7 @@ export default function VendasMes({ mes, onToast }) {
     <>
       <Kpis
         itens={[
-          { label: `Vendas de ${rotuloMes(mes)}`, valor: t.unidades ? `${t.unidades} un.` : "—", sub: t.unidades ? `faturamento ${BRL(t.faturamento)}` : "nenhuma semana registrada no mês" },
+          { label: multi ? "Vendas no período" : `Vendas de ${rotuloMes(mes)}`, valor: t.unidades ? `${t.unidades} un.` : "—", sub: t.unidades ? `faturamento ${BRL(t.faturamento)}${multi ? ` · ${rotuloPeriodo}` : ""}` : multi ? `nenhuma venda em ${rotuloPeriodo}` : "nenhuma semana registrada no mês" },
           { label: "Você recebe", valor: t.unidades ? BRL(t.recebe) : "—", sub: "o que os canais repassam, depois das taxas" },
           { label: "Repor a produção", valor: t.unidades ? BRL(t.repor) : "—", sub: "custo das peças vendidas → reserva" },
           {
@@ -243,7 +250,7 @@ export default function VendasMes({ mes, onToast }) {
           },
         ]}
       />
-      {t.unidades > 0 && (() => {
+      {!multi && t.unidades > 0 && (() => {
         // Teto de Ads da loja (mesma conta da aba Ads) com os números deste mês.
         const tt = tetoDaLoja({ faturamento: t.faturamento, lucro: t.lucro, gasto: adsMes, regras: regrasAds(cfgLoja) });
         return (
@@ -254,6 +261,7 @@ export default function VendasMes({ mes, onToast }) {
         );
       })()}
 
+      {!multi && (
       <div className="panel">
         <h3 className="section-title">
           Reserva de produção
@@ -332,6 +340,7 @@ export default function VendasMes({ mes, onToast }) {
           </div>
         )}
       </div>
+      )}
 
       <div className="panel">
         <h3 className="section-title h3-split">
@@ -351,7 +360,7 @@ export default function VendasMes({ mes, onToast }) {
         )}
         {!v.linhas.length ? (
           <div className="empty">
-            Nenhuma venda registrada em {rotuloMes(mes)}. Importe os pedidos em{" "}
+            Nenhuma venda registrada em {rotuloPeriodo}. Importe os pedidos em{" "}
             <button type="button" className="link-btn" onClick={() => irParaAba("analise", { sub: "importar" })}>
               Análise → Importar dados →
             </button>
@@ -456,7 +465,7 @@ export default function VendasMes({ mes, onToast }) {
         )}
       </div>
 
-      {organicasMes.length > 0 && (
+      {!multi && organicasMes.length > 0 && (
         <div className="panel">
           <h3 className="section-title">
             Vendas orgânicas registradas à mão — {rotuloMes(mes)}

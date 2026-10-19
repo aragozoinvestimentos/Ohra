@@ -2319,3 +2319,4 @@ td.vendas-opcao { padding-left: 26px; }
 /* 5 KPIs numa linha só no PC (19/10/2026) */
 @media (min-width: 1101px) { .kpis.kpis-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 .payoff-tela .panel > h3 > .faint { margin-left: 8px; font-weight: 400; }
+.seletor-periodo { width: auto; min-height: 30px; padding: 4px 8px; }

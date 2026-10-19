@@ -161,3 +161,35 @@ export function saldoReserva(registros = []) {
   }
   return { saldo: cent(saldo), porMes };
 }
+
+// Vários meses juntos (19/10/2026, filtro "últimos N meses / todo o período"
+// em Vendas do mês): soma as linhas de cada mês pela mesma chave.
+const CAMPOS_SOMA = ["unidades", "faturamento", "recebe", "repor", "lucro", "ads", "comissao", "semanas", "aMao", "real"];
+export function juntarMeses(resultados = []) {
+  const porChave = new Map();
+  const total = { unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, ads: 0, comissao: 0, real: 0, adsAnuncios: 0, sobra: 0 };
+  for (const r of resultados) {
+    for (const l of r.linhas) {
+      const a = porChave.get(l.chave) || { ...l, ...Object.fromEntries(CAMPOS_SOMA.map((c) => [c, 0])) };
+      for (const c of CAMPOS_SOMA) a[c] += num(l[c]);
+      porChave.set(l.chave, a);
+    }
+    for (const c of Object.keys(total)) total[c] += num(r.total[c]);
+  }
+  const linhas = [...porChave.values()].map((l) => ({ ...l, faturamento: cent(l.faturamento), recebe: cent(l.recebe), repor: cent(l.repor), lucro: cent(l.lucro), ads: cent(l.ads), comissao: cent(l.comissao) })).sort((a, b) => b.lucro - a.lucro);
+  for (const c of Object.keys(total)) total[c] = c === "unidades" || c === "real" ? total[c] : cent(total[c]);
+  return { linhas, total };
+}
+// Meses de um período terminando no mês atual: "mes" = só o escolhido; N = últimos N; "tudo" = desde `desde`.
+export function mesesDoPeriodo(periodo, mesAtual, mesEscolhido, desde = null) {
+  if (!periodo || periodo === "mes") return [mesEscolhido];
+  const add = (m, n) => {
+    const [a, b] = m.split("-").map(Number);
+    const d = new Date(a, b - 1 + n, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const inicio = periodo === "tudo" ? desde || add(mesAtual, -11) : add(mesAtual, -(Number(periodo) - 1));
+  const out = [];
+  for (let m = inicio; m <= mesAtual && out.length < 60; m = add(m, 1)) out.push(m);
+  return out.length ? out : [mesAtual];
+}
