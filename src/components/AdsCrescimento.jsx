@@ -20,6 +20,10 @@ import { ajustarPeriodoAds, despausarPeriodoAds, encerrarPeriodoAds, estenderPer
 import { supabase } from "../lib/supabaseClient.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import { AgoraRampa } from "./RampaAgora.jsx";
+import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
+import { usePreferencia } from "../hooks/usePreferencia.js";
+import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
+import { conferenciaAds } from "../lib/saldoAds.js";
 
 // Crescimento → Ads (schema v44): avaliação semanal de Ads por produto/kit ×
 // canal — a decisão vem SÓ de lib/ads.js (avaliarAds); aqui só mostra e grava
@@ -190,6 +194,11 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
     else if (a.k === "novo") setPeriodoDlg({ linha: l });
     else setAberta(l.chave);
   };
+  // Conferência com o Dinheiro: gasto real (recargas − saldo da Shopee) × CSVs.
+  const caixaL = useLancamentosCaixa();
+  const [confSaldo] = usePreferencia("caixa:saldo-ads-shopee", null);
+  const adsTodos = useAdsPeriodos();
+  const confAds = useMemo(() => conferenciaAds({ lancamentos: caixaL.lancamentos, periodos: adsTodos.periodos || [], conf: confSaldo }), [caixaL.lancamentos, adsTodos.periodos, confSaldo]);
   const L = linhasAds.loja;
   const T = linhasAds.teto; // teto de Ads da loja (30 dias, tabela progressiva + metade do lucro)
   const [verTabela, setVerTabela] = useState(false);
@@ -364,6 +373,16 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
           { label: "Com Ads ligado", valor: String(ligados), sub: `de ${linhasAds.linhas.length} produto${linhasAds.linhas.length === 1 ? "" : "s"} × canal` },
         ]}
       />
+      {confAds && Math.abs(confAds.diferenca) >= 2 ? (
+        <div className="alerta alerta-warn">
+          <b>O gasto dos CSVs não bate com o Dinheiro</b>
+          Até {dm(confAds.data)} saiu de verdade do saldo da Shopee {BRL(confAds.real)} (recargas {BRL(confAds.recargas)} − saldo {BRL(confAds.saldo)}), mas os CSVs somam {BRL(confAds.csv)} —{" "}
+          {confAds.diferenca > 0 ? `${BRL(confAds.diferenca)} a mais. Provável: uma campanha antiga contada no período antigo e no novo. Reenvie o CSV de Ads dos produtos em Análise → Importar dados — a conta nova põe cada campanha no período em que ela começou.` : `${BRL(-confAds.diferenca)} a menos. Falta enviar algum CSV (ou a GMV Max da Loja) desse período.`}{" "}
+          <button type="button" className="link-btn" onClick={() => irParaAba("analise", { sub: "importar" })}>Abrir a importação →</button>
+        </div>
+      ) : confAds ? (
+        <div className="faint" style={{ margin: "0 0 8px" }}>✓ O gasto dos CSVs bate com o Dinheiro (saiu {BRL(confAds.real)} do saldo da Shopee até {dm(confAds.data)}).</div>
+      ) : null}
       {T?.acimaTeto && (
         <div className="alerta alerta-warn">
           <b>Ads acima do teto da loja</b>Nos últimos 30 dias o Ads gastou {BRL(T.gasto)}; o teto é {BRL(T.teto)} (fase {T.fase}). Antes de aumentar algum produto, reduza os que estão abaixo do mínimo.

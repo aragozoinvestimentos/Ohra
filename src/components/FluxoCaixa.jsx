@@ -37,6 +37,7 @@ import { saldoReserva } from "../lib/vendasMes.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { saldoAds } from "../lib/saldoAds.js";
 import SaldoAdsCaixa from "./SaldoAdsCaixa.jsx";
+import Payoff from "./Payoff.jsx";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 
 const IGNORAR_COMPRA_KEY = "ohra:caixa:ignorar-compra";
@@ -46,6 +47,7 @@ const SUBABAS_CAIXA = [
   { key: "caixa", label: "1 · Caixa" },
   { key: "contas", label: "2 · Contas fixas e parcelas" },
   { key: "vendas", label: "3 · Vendas do mês" },
+  { key: "payoff", label: "4 · Payoff" },
 ];
 const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 function somarDiasISO(iso, n) {
@@ -532,7 +534,7 @@ export default function FluxoCaixa({ onToast }) {
       </TopbarAcoes>
 
       <div className="caixa-cabecalho">
-        {sub !== "contas" && seletorMes}
+        {sub !== "contas" && sub !== "payoff" && seletorMes}
       </div>
 
       {sub === "caixa" && (
@@ -963,6 +965,7 @@ export default function FluxoCaixa({ onToast }) {
       )}
 
       {sub === "vendas" && <VendasMes mes={mesFiltro} onToast={onToast} />}
+      {sub === "payoff" && <Payoff lancamentos={lancamentos} hoje={hoje} saldoAds={saldoDeAds} reservaRegistros={reserva.registros} />}
 
       {form && (
         <EditarDialog

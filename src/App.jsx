@@ -161,11 +161,12 @@ const MENU = [
         key: "m-dinheiro",
         label: "Dinheiro",
         icone: "caixa",
-        sub: "Caixa, contas, vendas do mês, metas e retorno por item",
+        sub: "Caixa, contas, vendas do mês, payoff, metas e retorno por item",
         abas: [
           { tab: "caixa", s: "caixa", label: "Caixa", ordem: "1" },
           { tab: "caixa", s: "contas", label: "Contas fixas e parcelas", ordem: "2" },
           { tab: "caixa", s: "vendas", label: "Vendas do mês", ordem: "3" },
+          { tab: "caixa", s: "payoff", label: "Payoff", ordem: "4" },
           SEP,
           { tab: "metas", label: "Metas" },
           { tab: "ranking", label: "Ranking por retorno" },

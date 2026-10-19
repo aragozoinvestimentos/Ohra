@@ -79,3 +79,17 @@ export function saldoAds({ lancamentos = [], periodos = [], hoje, base = null })
 export function precisaRecarregar(s) {
   return !!s && s.temRecarga && s.gastoDia > 0 && s.dias != null && s.dias < DIAS_AVISO_RECARGA;
 }
+
+// Conferência Ads × Dinheiro (19/10/2026): o que saiu de verdade do saldo da
+// Shopee (recargas lançadas até a data da conferência − saldo que a Shopee
+// mostrava) × o que os CSVs somam até essa data. Diferença = algum período
+// contado em dobro (ou CSV faltando).
+export function conferenciaAds({ lancamentos = [], periodos = [], conf = null }) {
+  if (!conf || conf.valor == null || !conf.data) return null;
+  const rec = lancamentos.filter((l) => ehRecargaAds(l) && l.data_realizada && l.data_realizada <= conf.data);
+  if (!rec.length) return null;
+  const recargas = Math.round(rec.reduce((t, l) => t + num(l.valor), 0) * 100) / 100;
+  const real = Math.round((recargas - num(conf.valor)) * 100) / 100;
+  const csv = adsNaJanela(periodos, [], "2000-01-01", conf.data).gasto;
+  return { recargas, saldo: num(conf.valor), data: conf.data, real, csv, diferenca: Math.round((csv - real) * 100) / 100 };
+}

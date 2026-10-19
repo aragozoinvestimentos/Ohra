@@ -467,18 +467,29 @@ const num0 = (x) => (isFinite(Number(x)) ? Number(x) : 0);
 
 /**
  * O CSV soma TODAS as campanhas do anúncio (a antiga, que você pausou, e a
- * nova). Pro período `periodo`, só valem as campanhas que começaram depois
- * do fim do período anterior do mesmo item e antes do próximo — senão o
- * gasto da campanha antiga entra 2× (no período antigo e no atual).
+ * nova). Pro período `periodo`, só valem as campanhas que começaram nele
+ * (pela data de início) — senão o gasto da campanha antiga entra 2× (no
+ * período antigo e no atual).
  * Campanha sem data de início = vale pro período (como antes).
  */
 export function valoresDoPeriodo(x, periodo, periodosDoItem = []) {
   const cs = x?.campanhas;
   if (!periodo || !Array.isArray(cs) || !cs.length || cs.some((c) => !c.inicio)) return x;
-  const outros = (periodosDoItem || []).filter((p) => p && p.id !== periodo.id);
-  const fimAntes = outros.filter((p) => p.fim && p.inicio < periodo.inicio).map((p) => String(p.fim).slice(0, 10)).sort().pop() || null;
-  const iniDepois = outros.filter((p) => p.inicio > periodo.inicio).map((p) => String(p.inicio).slice(0, 10)).sort()[0] || null;
-  const dentro = cs.filter((c) => (!fimAntes || c.inicio > fimAntes) && (!iniDepois || c.inicio < iniDepois));
+  // Cada campanha é do período que começou por último até ela (com 2 dias de
+  // folga — o período no app pode ser criado um pouco depois); campanha mais
+  // antiga que todos os períodos fica no primeiro.
+  const lista = [...(periodosDoItem || []).filter((p) => p && p.id !== periodo.id), periodo].sort((a, b) => String(a.inicio).localeCompare(String(b.inicio)));
+  const mais2 = (iso) => {
+    const d = new Date(`${iso}T12:00:00`);
+    d.setDate(d.getDate() + 2);
+    return d.toISOString().slice(0, 10);
+  };
+  const dono = (c) => {
+    let o = lista[0];
+    for (const p of lista) if (String(p.inicio).slice(0, 10) <= mais2(c.inicio)) o = p;
+    return o;
+  };
+  const dentro = cs.filter((c) => dono(c) === periodo);
   if (dentro.length === cs.length) return x;
   const soma = dentro.reduce((t, c) => ({ g: t.g + c.g, cl: t.cl + c.cl, v: t.v + c.v }), { g: 0, cl: 0, v: 0 });
   return { ...x, gasto: Math.round(soma.g * 100) / 100, cliques: soma.cl, vendas: soma.v, separado: true };
