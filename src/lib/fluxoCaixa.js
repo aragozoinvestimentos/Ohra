@@ -99,7 +99,10 @@ export const lancamentosReais = (lancamentos) => lancamentos.filter((l) => l.rec
 // Pago com (schema v63, 19/10/2026): saída paga do BOLSO do Gustavo não sai
 // do caixa da loja — saldo e projeção são o dinheiro da loja. O resultado do
 // negócio (realDoMes, Metas, Payoff) continua contando todas as saídas.
-export const doBolso = (l) => l.tipo === "saida" && l.pago_com === "bolso";
+// Só vale depois de PAGA: conta a pagar (parcela futura) entra na projeção
+// sempre — ainda não se sabe de onde vai sair (Gustavo, 19/10/2026: "a
+// projeção não está mostrando as compras parceladas").
+export const doBolso = (l) => l.tipo === "saida" && l.pago_com === "bolso" && !!l.data_realizada;
 export const contaNoCaixa = (l) => !doBolso(l);
 
 export function saldoRealizado(lancamentos, ateData = null) {

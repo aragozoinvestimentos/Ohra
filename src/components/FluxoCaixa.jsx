@@ -211,7 +211,7 @@ export default function FluxoCaixa({ onToast }) {
   );
   // Saídas do mês escolhido pagas do bolso (fora do caixa da loja).
   const bolsoMes = useMemo(
-    () => lancamentos.filter((l) => l.tipo === "saida" && l.pago_com === "bolso" && l.recorrencia !== "mensal" && String(l.data_realizada || l.data_prevista).slice(0, 7) === mesFiltro).reduce((t, l) => t + Number(l.valor || 0), 0),
+    () => lancamentos.filter((l) => l.tipo === "saida" && l.pago_com === "bolso" && l.data_realizada && l.recorrencia !== "mensal" && String(l.data_realizada).slice(0, 7) === mesFiltro).reduce((t, l) => t + Number(l.valor || 0), 0),
     [lancamentos, mesFiltro]
   );
   const linhaSel = [...projecaoAmpla.passado, ...projecaoAmpla.linhas].find((l) => l.mes === mesFiltro) || mesCorrente;
@@ -846,7 +846,7 @@ export default function FluxoCaixa({ onToast }) {
                                   </div>
                                   <div className="lanc-sub">
                                     {rotuloCategoria(l.tipo, l.categoria)}
-                                    {l.tipo === "saida" && l.pago_com === "bolso" ? " · do seu bolso" : ""}
+                                    {l.tipo === "saida" && l.pago_com === "bolso" && l.data_realizada ? " · do seu bolso" : ""}
                                     {mostrarCanal && l.canal_id ? ` · ${canalNome(l.canal_id)}` : ""}
                                     {l.observacao ? ` · ${l.observacao}` : ""}
                                   </div>
