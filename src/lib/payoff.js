@@ -48,6 +48,7 @@ export function payoff({ lancamentos = [], hoje, saldoAdsShopee = 0, mesesMedia 
   let entrou = 0;
   let pagou = 0;
   let retiradas = 0;
+  let pagouBolso = 0; // saídas pagas do bolso do Gustavo (v63) — também são dinheiro dele na loja
   const porCat = new Map();
   const porMes = new Map();
   const mes = (m) => porMes.get(m) || { mes: m, entrou: 0, pagou: 0 };
@@ -75,6 +76,7 @@ export function payoff({ lancamentos = [], hoje, saldoAdsShopee = 0, mesesMedia 
         continue;
       }
       pagou += v;
+      if (l.pago_com === "bolso") pagouBolso += v;
       porCat.set(l.categoria || "outros", (porCat.get(l.categoria || "outros") || 0) + v);
       const x = mes(m);
       x.pagou += v;
@@ -86,8 +88,13 @@ export function payoff({ lancamentos = [], hoje, saldoAdsShopee = 0, mesesMedia 
     .filter((l) => l.tipo === "saida" && l.recorrencia !== "mensal" && !l.data_realizada && (l.parcela_grupo || l.categoria === "equipamento"))
     .reduce((t, l) => t + num(l.valor), 0);
   const resultado = r2(entrou - pagou);
+  // "Falta" líquida = o que ainda falta mesmo se a loja te devolvesse hoje o
+  // caixa dela e o saldo de Ads (= −(resultado + saldo de Ads)); é por ela que
+  // a previsão conta. A bruta = tudo que você colocou − o que já retirou.
   const falta = r2(Math.max(0, -(resultado + num(saldoAdsShopee))));
-  const voltou = doBolso > 0 ? Math.min(1, Math.max(0, 1 - falta / doBolso)) : null;
+  const colocado = r2(doBolso + pagouBolso);
+  const faltaBruta = r2(Math.max(0, colocado - retiradas));
+  const voltou = colocado > 0 ? Math.min(1, Math.max(0, retiradas / colocado)) : null;
 
   // Série mês a mês (do 1º mês com movimento até o atual), acumulada.
   const meses = [...porMes.keys()].sort();
@@ -120,6 +127,10 @@ export function payoff({ lancamentos = [], hoje, saldoAdsShopee = 0, mesesMedia 
   const equipamento = r2(porCat.get("equipamento") || 0);
   return {
     doBolso: r2(doBolso),
+    pagouBolso: r2(pagouBolso),
+    pagouLoja: r2(pagou - pagouBolso),
+    colocado,
+    faltaBruta,
     entrou: r2(entrou),
     pagou: r2(pagou),
     equipamento,

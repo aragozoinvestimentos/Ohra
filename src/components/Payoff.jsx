@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { BRL } from "../lib/format.js";
 import { payoff, ritmoPedidos, rotuloMes, seta } from "../lib/payoff.js";
-import { rotuloCategoria } from "../lib/fluxoCaixa.js";
+import { rotuloCategoria, saldoRealizado } from "../lib/fluxoCaixa.js";
 import { saldoReserva } from "../lib/vendasMes.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
@@ -22,6 +22,7 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
   const p = useMemo(() => payoff({ lancamentos, hoje, saldoAdsShopee }), [lancamentos, hoje, saldoAdsShopee]);
   const ritmo = useMemo(() => ritmoPedidos(reais.linhas, hoje), [reais.linhas, hoje]);
   const reserva = useMemo(() => saldoReserva(reservaRegistros || []).saldo, [reservaRegistros]);
+  const caixaLoja = useMemo(() => saldoRealizado(lancamentos, hoje), [lancamentos, hoje]);
 
   if (!lancamentos.length)
     return <div className="empty">Ainda não há lançamentos no Caixa. O Payoff sai do que você lança lá (aporte, saldo inicial, compras, recebimentos).</div>;
@@ -31,20 +32,28 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
     <div className="payoff-tela">
       <Kpis
         itens={[
-          { label: "Seu dinheiro na loja", valor: BRL(p.doBolso), sub: p.doBolso > 0 ? "o que você tirou do bolso (aporte + saldo inicial)" : "lance o aporte / saldo inicial no Caixa" },
-          { label: "A loja já pagou", valor: BRL(p.pagou), sub: `com o seu dinheiro e com o das vendas · impressoras ${BRL(p.equipamento)} · operar ${BRL(p.operar)}` },
+          {
+            label: "Você já colocou na loja",
+            valor: BRL(p.colocado),
+            sub: p.colocado > 0 ? `aporte + saldo inicial ${BRL(p.doBolso)} · contas pagas do seu bolso ${BRL(p.pagouBolso)}` : "lance o aporte / saldo inicial no Caixa",
+          },
+          {
+            label: "A loja pagou com o caixa dela",
+            valor: BRL(p.pagouLoja),
+            sub: `com o dinheiro das vendas · custo total da loja ${BRL(p.pagou)} (impressoras ${BRL(p.equipamento)})`,
+          },
           { label: "Entrou de vendas", valor: BRL(p.entrou), sub: "o que caiu no caixa, já sem as taxas (não é o faturamento)" },
-          { label: "Resultado da loja", valor: `${p.resultado < 0 ? "− " : ""}${BRL(Math.abs(p.resultado))}`, tom: p.resultado < 0 ? "bad" : undefined, sub: "entrou − a loja pagou (sem o seu aporte)" },
+          { label: "Caixa da loja hoje", valor: BRL(caixaLoja), tom: caixaLoja < 0 ? "bad" : undefined, sub: "dinheiro da loja parado — pode voltar pra você como Retirada (pró-labore)" },
           {
             label: "Falta voltar pro seu bolso",
-            valor: BRL(p.falta),
-            sub: p.voltou != null ? `${pctTxt(p.voltou)} do seu dinheiro já voltou${p.retiradas > 0 ? ` · você já retirou ${BRL(p.retiradas)}` : ""}` : "quanto a loja ainda deve a você",
+            valor: BRL(p.faltaBruta),
+            sub: `${p.retiradas > 0 ? `já voltou ${BRL(p.retiradas)} · ` : ""}se a loja te devolvesse o caixa hoje, faltariam ${BRL(p.falta)}`,
           },
         ]}
       />
       <p className="hint" style={{ margin: "0 0 10px" }}>
-        {p.pagou > p.doBolso && p.doBolso > 0 ? "“A loja já pagou” é maior que o seu dinheiro porque parte das contas foi paga com o dinheiro das vendas. " : ""}Quando o que <b>entrou</b> passar o que a loja <b>pagou</b>, o seu dinheiro voltou.
-        <Ajuda texto="Seu dinheiro na loja = lançamentos de aporte e saldo inicial. A loja já pagou = todas as saídas pagas do Caixa, menos a retirada (pró-labore, que é dinheiro voltando pra você); recarga de Ads conta aqui, o gasto dos CSVs não (pra não contar 2×); parcela da impressora conta quando é paga. Entrou = entradas recebidas, sem aporte/saldo inicial. Falta voltar = −(resultado + saldo de Ads ainda parado na Shopee). O aporte não é somado de novo às saídas: foi ele que pagou parte delas." />
+        Resultado do negócio até hoje: <b>{p.resultado < 0 ? "− " : ""}{BRL(Math.abs(p.resultado))}</b> (entrou − todo o custo da loja, pago por você ou pelo caixa). Quando ficar positivo e cobrir o que você colocou, o seu dinheiro voltou.
+        <Ajuda texto="Você já colocou = aporte + saldo inicial + contas pagas do seu bolso (no Caixa, cada saída tem “Pago com: Meu bolso / Caixa da loja”). A loja pagou com o caixa dela = saídas pagas com o dinheiro das vendas. Caixa da loja hoje = o saldo do Caixa (o que você paga do bolso não sai dele). Falta voltar = o que você colocou − o que você já retirou (Retirada / pró-labore). Recarga de Ads conta como custo; o gasto dos CSVs não (seria 2×). Parcela da impressora conta quando é paga." />
       </p>
 
       <div className="panel">

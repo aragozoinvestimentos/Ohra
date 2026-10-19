@@ -96,9 +96,15 @@ export function ocorrenciasRecorrentes(lancamentos, mesIni, mesFim) {
 // saldo nem em total — só as ocorrências dele.
 export const lancamentosReais = (lancamentos) => lancamentos.filter((l) => l.recorrencia !== "mensal");
 
+// Pago com (schema v63, 19/10/2026): saída paga do BOLSO do Gustavo não sai
+// do caixa da loja — saldo e projeção são o dinheiro da loja. O resultado do
+// negócio (realDoMes, Metas, Payoff) continua contando todas as saídas.
+export const doBolso = (l) => l.tipo === "saida" && l.pago_com === "bolso";
+export const contaNoCaixa = (l) => !doBolso(l);
+
 export function saldoRealizado(lancamentos, ateData = null) {
   return lancamentosReais(lancamentos)
-    .filter((l) => l.data_realizada && (!ateData || l.data_realizada <= ateData))
+    .filter((l) => contaNoCaixa(l) && l.data_realizada && (!ateData || l.data_realizada <= ateData))
     .reduce((s, l) => s + valorAssinado(l), 0);
 }
 
@@ -127,7 +133,7 @@ export function mediaMensal(lancamentos, tipo, mesAtual, n = 3) {
   if (!meses.size) return 0;
   let soma = 0;
   for (const l of lancamentosReais(lancamentos)) {
-    if (l.tipo !== tipo || !l.data_realizada || l.recorrencia_origem_id || l.categoria === "saldo_inicial" || l.categoria === "aporte") continue;
+    if (l.tipo !== tipo || !contaNoCaixa(l) || !l.data_realizada || l.recorrencia_origem_id || l.categoria === "saldo_inicial" || l.categoria === "aporte") continue;
     if (meses.has(mesDe(l.data_realizada))) soma += Number(l.valor) || 0;
   }
   return soma / meses.size;
@@ -146,8 +152,8 @@ export function mediaMensal(lancamentos, tipo, mesAtual, n = 3) {
 // pra ver como foi o passado ao lado da projeção. Não mexe em `linhas`.
 export function projetar(lancamentos, { mesAtual, meses = 12, mesesPassados = 0, vendasEstimadas = 0, custosEstimados = 0 }) {
   const mesFim = somarMeses(mesAtual, meses - 1);
-  const reais = lancamentosReais(lancamentos);
-  const virtuais = ocorrenciasRecorrentes(lancamentos, mesAtual, mesFim);
+  const reais = lancamentosReais(lancamentos).filter(contaNoCaixa);
+  const virtuais = ocorrenciasRecorrentes(lancamentos, mesAtual, mesFim).filter(contaNoCaixa);
   const inicioMesAtual = `${mesAtual}-01`;
   let saldo = reais
     .filter((l) => l.data_realizada && l.data_realizada < inicioMesAtual)

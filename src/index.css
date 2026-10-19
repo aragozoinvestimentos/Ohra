@@ -2320,3 +2320,4 @@ td.vendas-opcao { padding-left: 26px; }
 @media (min-width: 1101px) { .kpis.kpis-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 .payoff-tela .panel > h3 > .faint { margin-left: 8px; font-weight: 400; }
 .seletor-periodo { width: auto; min-height: 30px; padding: 4px 8px; }
+.pago-com { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; } .pago-com label { display: inline-flex; gap: 4px; align-items: center; }

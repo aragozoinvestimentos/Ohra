@@ -77,6 +77,7 @@ const novoForm = (tipo) => ({
   observacao: "",
   modeloId: null, // confirmando uma ocorrência de recorrente
   usarReserva: false, // saída paga com a reserva de produção (schema v51)
+  pagoCom: "", // saída: "bolso" | "loja" (schema v63); vazio = o último usado
 });
 
 const STATUS_BADGE = {
@@ -140,6 +141,7 @@ export default function FluxoCaixa({ onToast }) {
   const reserva = useReservaProducao();
   const adsP = useAdsPeriodos();
   const [baseAds] = usePreferencia("caixa:saldo-ads-base", null);
+  const [pagoComPadrao, setPagoComPadrao] = usePreferencia("caixa:pago-com", "bolso");
   // Nome do anúncio de um período de Ads (cartão "de onde vem o gasto").
   const nomeDoPeriodoAds = (p) => {
     if (p.item_tipo === "loja") return "GMV Max da Loja";
@@ -206,6 +208,11 @@ export default function FluxoCaixa({ onToast }) {
   const projecaoAmpla = useMemo(
     () => projetar(lancamentos, { mesAtual, meses: 13, mesesPassados: 12, vendasEstimadas: vendasEst, custosEstimados: custosEst }),
     [lancamentos, mesAtual, vendasEst, custosEst]
+  );
+  // Saídas do mês escolhido pagas do bolso (fora do caixa da loja).
+  const bolsoMes = useMemo(
+    () => lancamentos.filter((l) => l.tipo === "saida" && l.pago_com === "bolso" && l.recorrencia !== "mensal" && String(l.data_realizada || l.data_prevista).slice(0, 7) === mesFiltro).reduce((t, l) => t + Number(l.valor || 0), 0),
+    [lancamentos, mesFiltro]
   );
   const linhaSel = [...projecaoAmpla.passado, ...projecaoAmpla.linhas].find((l) => l.mes === mesFiltro) || mesCorrente;
   const selFase = mesFiltro < mesAtual ? "passado" : mesFiltro > mesAtual ? "futuro" : "atual";
@@ -328,6 +335,7 @@ export default function FluxoCaixa({ onToast }) {
       recorrencia_ate: l.recorrencia_ate || "",
       observacao: l.observacao || "",
       modeloId: null,
+      pagoCom: l.pago_com || "",
     });
   }
 
@@ -343,6 +351,7 @@ export default function FluxoCaixa({ onToast }) {
       data_realizada: l.data_prevista < hoje ? l.data_prevista : hoje,
       observacao: l.observacao || "",
       modeloId: l.modeloId,
+      pagoCom: l.pago_com || "",
     });
   }
 
@@ -365,15 +374,21 @@ export default function FluxoCaixa({ onToast }) {
       recorrencia_origem_id: form.modeloId || null,
       observacao: form.observacao.trim() || null,
     };
+    // Pago com (v63): retirada e saída da reserva saem do caixa da loja.
+    const pagoComEsc = form.tipo !== "saida" ? null : form.categoria === "retirada" || form.usarReserva ? "loja" : form.pagoCom || pagoComPadrao;
+    if (pagoComEsc) {
+      registro.pago_com = pagoComEsc;
+      if (form.categoria !== "retirada" && !form.usarReserva && pagoComEsc !== pagoComPadrao) setPagoComPadrao(pagoComEsc);
+    }
     const parcelado = !form.id && !form.modeloId && !form.recorrente && form.parcelado;
     const parcInformadas = Math.round(Number(form.parcelas));
     if (parcelado && !(parcInformadas >= 2 && parcInformadas <= 60)) return onToast?.("Informe o nº de parcelas (2 a 60)");
     const nParc = Math.max(2, Math.min(60, parcInformadas || 2));
     setSalvando(true);
-    const r = form.id
-      ? await supabase.from("lancamentos_caixa").update(registro).eq("id", form.id)
+    const enviar = () => form.id
+      ? supabase.from("lancamentos_caixa").update(registro).eq("id", form.id)
       : parcelado
-        ? await supabase.from("lancamentos_caixa").insert(
+        ? supabase.from("lancamentos_caixa").insert(
             linhasParceladas(registro, {
               valorTotal: valor,
               parcelas: nParc,
@@ -383,8 +398,14 @@ export default function FluxoCaixa({ onToast }) {
             })
           )
         : form.usarReserva
-          ? await supabase.from("lancamentos_caixa").insert(registro).select("id").single()
-          : await supabase.from("lancamentos_caixa").insert(registro);
+          ? supabase.from("lancamentos_caixa").insert(registro).select("id").single()
+          : supabase.from("lancamentos_caixa").insert(registro);
+    let r = await enviar();
+    if (r.error && /pago_com/.test(r.error.message)) {
+      delete registro.pago_com;
+      r = await enviar();
+      if (!r.error) onToast?.("Salvo sem o “pago com” — falta rodar o supabase/schema_v63.sql no Supabase");
+    }
     setSalvando(false);
     const { error } = r;
     if (error)
@@ -572,7 +593,7 @@ export default function FluxoCaixa({ onToast }) {
                   label: "Saldo atual",
                   valor: BRL(saldoAtual),
                   tom: saldoAtual >= 0 ? "destaque" : "bad",
-                  sub: reserva.disponivel && saldoDaReserva > 0 ? `livre ${BRL(livre)} · reserva de produção ${BRL(saldoDaReserva)}` : "tudo que já foi recebido − pago",
+                  sub: reserva.disponivel && saldoDaReserva > 0 ? `livre ${BRL(livre)} · reserva de produção ${BRL(saldoDaReserva)}` : "dinheiro da loja (o pago do seu bolso não sai daqui)",
                 },
                 {
                   label: `Entradas de ${rotuloMes(mesFiltro)}`,
@@ -586,9 +607,9 @@ export default function FluxoCaixa({ onToast }) {
                   label: `Saídas de ${rotuloMes(mesFiltro)}`,
                   valor: BRL(linhaSel?.saidas || 0),
                   sub:
-                    selFase === "passado"
+                    (selFase === "passado"
                       ? `${BRL(linhaSel?.saidasRealizadas || 0)} pago`
-                      : `${BRL(linhaSel?.saidasRealizadas || 0)} pago · ${BRL(linhaSel?.saidasPrevistas || 0)} a pagar${linhaSel?.saidasEstimadas ? ` · ${BRL(linhaSel.saidasEstimadas)} estimado` : ""}`,
+                      : `${BRL(linhaSel?.saidasRealizadas || 0)} pago · ${BRL(linhaSel?.saidasPrevistas || 0)} a pagar${linhaSel?.saidasEstimadas ? ` · ${BRL(linhaSel.saidasEstimadas)} estimado` : ""}`) + (bolsoMes > 0 ? ` · + ${BRL(bolsoMes)} do seu bolso` : ""),
                 },
                 {
                   label: `Saldo no fim de ${rotuloMes(mesFiltro)}${selFase === "futuro" ? " (projetado)" : ""}`,
@@ -825,6 +846,7 @@ export default function FluxoCaixa({ onToast }) {
                                   </div>
                                   <div className="lanc-sub">
                                     {rotuloCategoria(l.tipo, l.categoria)}
+                                    {l.tipo === "saida" && l.pago_com === "bolso" ? " · do seu bolso" : ""}
                                     {mostrarCanal && l.canal_id ? ` · ${canalNome(l.canal_id)}` : ""}
                                     {l.observacao ? ` · ${l.observacao}` : ""}
                                   </div>
@@ -1072,6 +1094,20 @@ export default function FluxoCaixa({ onToast }) {
                 Registrar como compra de material
               </button>{" "}
               — informa material e quantidade, atualiza o preço/kg pela média e cria a saída (à vista ou parcelada).
+            </div>
+          )}
+          {form.tipo === "saida" && form.categoria !== "retirada" && !form.usarReserva && (
+            <div className="check-linha pago-com">
+              <span>Pago com:</span>
+              {[
+                ["bolso", "Meu bolso"],
+                ["loja", "Caixa da loja"],
+              ].map(([k, t]) => (
+                <label key={k}>
+                  <input type="radio" name="pago-com" checked={(form.pagoCom || pagoComPadrao) === k} onChange={() => setForm((p) => ({ ...p, pagoCom: k }))} /> {t}
+                </label>
+              ))}
+              <Ajuda texto="Meu bolso = você pagou com o seu dinheiro: não sai do saldo da loja e conta no Payoff como dinheiro que você colocou. Caixa da loja = pago com o dinheiro das vendas. O resultado do negócio conta os dois." />
             </div>
           )}
           {!form.id && !form.modeloId && form.tipo === "saida" && !form.recorrente && reserva.disponivel && (

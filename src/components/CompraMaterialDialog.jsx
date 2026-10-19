@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
+import { usePreferencia } from "../hooks/usePreferencia.js";
 import { COMPRAS_NA_MEDIA, dividirParcelas, excluirCompra, linhasParceladas, precoMedio, recalcularPrecoMaterial } from "../lib/comprasMaterial.js";
 
 const num = (v) => {
@@ -21,6 +22,8 @@ const num = (v) => {
 //  3) recalcula o preço do material = média ponderada das 3 últimas compras
 //     que contam → todos os produtos atualizam ao vivo.
 export default function CompraMaterialDialog({ materialIdInicial, lancamento, grupo, inicial, onClose, onToast }) {
+  // Pago com (schema v63): o mesmo padrão do "− Saída" do Caixa.
+  const [pagoCom, setPagoCom] = usePreferencia("caixa:pago-com", "bolso");
   const { lojaId } = useLoja();
   const { materiais } = useRankingData();
   const hoje = hojeISO();
@@ -118,10 +121,16 @@ export default function CompraMaterialDialog({ materialIdInicial, lancamento, gr
           canal_id: null,
           observacao: f.observacao.trim() || null,
           compra_material_id: compra.id,
+          pago_com: pagoCom,
         },
         { valorTotal: valor, parcelas, data1: f.parcelado ? f.data1 || f.data : f.data, primeiraRealizada: f.pago, hoje }
       );
-      const r = await supabase.from("lancamentos_caixa").insert(linhas);
+      let r = await supabase.from("lancamentos_caixa").insert(linhas);
+      if (r.error && /pago_com/.test(r.error.message)) r = await supabase.from("lancamentos_caixa").insert(linhas.map((x) => {
+          const y = { ...x };
+          delete y.pago_com;
+          return y;
+        }));
       erroCaixa = r.error;
     }
     const rec = await recalcularPrecoMaterial(supabase, material.id);
@@ -248,6 +257,15 @@ export default function CompraMaterialDialog({ materialIdInicial, lancamento, gr
                 <input type="checkbox" checked={f.pago} onChange={set("pago")} />
                 {f.parcelado ? "1ª parcela já paga" : "Já pago"}
               </label>
+              <div className="check-linha pago-com">
+                <span>Pago com:</span>
+                <label>
+                  <input type="radio" name="pago-com-compra" checked={pagoCom === "bolso"} onChange={() => setPagoCom("bolso")} /> Meu bolso
+                </label>
+                <label>
+                  <input type="radio" name="pago-com-compra" checked={pagoCom === "loja"} onChange={() => setPagoCom("loja")} /> Caixa da loja
+                </label>
+              </div>
             </>
           )}
           <div className="field">
