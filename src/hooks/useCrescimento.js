@@ -24,6 +24,7 @@ import { juntarRegistros, registrosDeAvaliacao, semanasAutomaticas } from "../li
 import { cruzarGrupos, normSku, relatorioDoGuardado } from "../lib/relatorioShopee.js";
 import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
 import { PLATAFORMAS } from "../lib/pedidos.js";
+import { furosDasJanelas, janelasDoPeriodo, produtosDaGmv } from "../lib/gmvLoja.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -580,8 +581,33 @@ function useCalculoCrescimento() {
       const lb = (lembretesH.lembretes || []).find((x) => x.chave === `ads-nao|${l.chave}`);
       if (lb && !l.av.ativo) l.semAds = { desde: lb.adiado_ate || null };
     }
+    // GMV Max da Loja — quebra por produto do arquivo próprio (só informação +
+    // avisos "gasta sem vender" / "vale um Ads próprio?"). ID do item → SKU pelos
+    // Desempenhos guardados.
+    if (lojaLinha) {
+      const imp = [...(reais.importacoes || [])].filter((i) => i.ok && i.relatorio === "shopee:gmv" && i.dados?.janelas).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0];
+      const janelas = imp?.dados?.janelas || [];
+      if (janelas.length) {
+        const skuDoId = new Map();
+        for (const d of desempenhos) for (const it of d.r?.itens || []) if (it.itemId && it.sku) skuDoId.set(String(it.itemId), normSku(it.sku));
+        const ativoL = lojaLinha.av?.ativo || null;
+        const doPer = ativoL ? janelasDoPeriodo(janelas, ativoL) : janelas;
+        const ligar = (id) => {
+          const sku = skuDoId.get(String(id));
+          if (!sku) return null;
+          const l = linhasA.find((x) => x.canal?.id === canalLoja.id && x.tipo !== "grupo" && normSku(x.item?.sku) === sku);
+          return l ? { chave: l.chave, nome: l.item.nome, equilibrio: roasEmpate(l.preco, l.lucro), temAdsProprio: !!l.av?.ativo } : null;
+        };
+        lojaLinha.gmv = {
+          janelas: doPer,
+          furos: furosDasJanelas(doPer, ativoL?.inicio || null),
+          produtos: produtosDaGmv(doPer, { hoje, ligar }),
+          ate: doPer.reduce((m, j) => (j.ate > m ? j.ate : m), "") || null,
+        };
+      }
+    }
     return { loja, teto, sazonal, linhas: linhasA, lojaLinha, lembretesOk: lembretesH.disponivel };
-  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pedidosValidos = reais.linhas;
   return useMemo(

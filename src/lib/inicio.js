@@ -240,6 +240,18 @@ export function montarPendencias({
 
   // ---- Ads (decisão em lib/ads.js; aqui só lê) ----
   const irAds = { aba: "crescimento", pedido: { sub: "ads" } };
+  // GMV Max da Loja — arquivo próprio (gmvLoja.js decide; aqui só lê).
+  const gmv = ads?.lojaLinha?.gmv;
+  if (gmv) {
+    const irLoja = { aba: "crescimento", pedido: { sub: "ads", adsChave: ads.lojaLinha.chave } };
+    const dmI = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+    for (const f of gmv.furos || [])
+      add({ id: `gmv-furo|${f.de}|${f.ate}`, grupo: "rotina", ordem: 3, tom: "warn", titulo: `GMV Max da Loja: ${f.de === f.ate ? `falta o dia ${dmI(f.de)}` : `faltam os dias ${dmI(f.de)} a ${dmI(f.ate)}`}`, texto: "exporte esse período na Shopee e envie em Importar dados → GMV Max da Loja (soma sem duplicar)", ir: { aba: "analise", pedido: { sub: "importar" } }, rotulo: "Abrir a importação" });
+    for (const p of (gmv.produtos || []).filter((x) => x.aviso)) {
+      const nome = p.ligado?.nome || p.nome.slice(0, 40).trim();
+      add({ id: `gmv|${p.id}|${p.aviso.tipo}`, grupo: p.aviso.estado === "oportunidade" ? "oportunidade" : "rotina", ordem: 3, tom: p.aviso.estado === "oportunidade" ? "good" : "warn", titulo: `${nome}: ${p.aviso.titulo}`, texto: `Shopee · GMV Max da Loja · ${p.aviso.texto}`, ir: irLoja, rotulo: "Ver no Ads" });
+    }
+  }
   for (const l of [...(ads?.lojaLinha ? [ads.lojaLinha] : []), ...(ads?.linhas || [])]) {
     const av = l.av;
     if (!av.ativo) continue;

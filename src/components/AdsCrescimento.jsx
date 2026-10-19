@@ -832,6 +832,53 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
 }
 
 // GMV Max da Loja (v57): campanha da loja inteira, pros produtos sem Ads próprio.
+// Onde a GMV Max da Loja gastou (arquivo próprio, somando as janelas do período).
+function GmvPorProduto({ g }) {
+  const ps = g.produtos || [];
+  return (
+    <div className="historico-ads">
+      <div className="ads-rotulo">
+        Onde a campanha da loja gastou{g.janelas.length ? ` · ${g.janelas.map((j) => `${dm(j.de)}–${dm(j.ate)}`).join(" + ")}` : ""}
+      </div>
+      {g.furos.map((f) => (
+        <div key={f.de} className="ana-aviso">⚠ Furo: {f.de === f.ate ? `falta o dia ${dm(f.de)}` : `faltam os dias ${dm(f.de)} a ${dm(f.ate)}`} — exporte esse período em Análise → Importar dados → GMV Max da Loja.</div>
+      ))}
+      {ps.length > 0 ? (
+        <table className="tabela-ads">
+          <thead>
+            <tr><th>Produto</th><th>Gasto</th><th>Impressões</th><th>Cliques</th><th>Vendas</th><th>ROAS</th><th></th></tr>
+          </thead>
+          <tbody>
+            {ps.map((p) => (
+              <tr key={p.id}>
+                <td title={p.nome}>
+                  <b>{p.ligado?.nome || (p.nome.length > 48 ? `${p.nome.slice(0, 48)}…` : p.nome)}</b>
+                  {p.ligado?.temAdsProprio && <span className="chip-ads">tem Ads próprio</span>}
+                  {!p.ligado && <div className="faint">ID {p.id} · importe o Desempenho pra ligar ao produto</div>}
+                </td>
+                <td>{BRL(p.gasto)}</td>
+                <td>{p.impressoes}</td>
+                <td>{p.cliques}</td>
+                <td>{p.vendas}</td>
+                <td>{p.roas != null ? um(p.roas) : "—"}</td>
+                <td>{p.aviso && <Estado tipo={p.aviso.estado} icone={p.aviso.estado === "oportunidade" ? "↑" : "⚠"}>{p.aviso.titulo}</Estado>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div className="faint">Sem produtos no arquivo.</div>
+      )}
+      {ps.filter((p) => p.aviso).map((p) => (
+        <div key={p.id} className="hint" style={{ margin: "4px 0" }}>
+          <b>{p.ligado?.nome || p.nome}:</b> {p.aviso.texto}
+        </div>
+      ))}
+      <div className="faint">Os produtos daqui são só informação: a campanha da loja não vira Ads de produto.</div>
+    </div>
+  );
+}
+
 function DetalheLoja({ l, hoje, onFazer, onNovo, onAjuste, onEncerrar, onPausar, onExcluir }) {
   const av = l.av;
   const n = av.numeros || {};
@@ -865,6 +912,7 @@ function DetalheLoja({ l, hoje, onFazer, onNovo, onAjuste, onEncerrar, onPausar,
       <p className="hint" style={{ margin: "6px 0" }}>
         Equilíbrio da loja = faturamento ÷ lucro (antes do Ads) — {l.origemEq}. Cobre os produtos <b>sem Ads próprio</b>; os campeões seguem nas linhas deles. Entra no teto de Ads e no Vendas do mês.
       </p>
+      {l.gmv && <GmvPorProduto g={l.gmv} />}
       <div className="acoes-ads">
         {av.ativo ? (
           <>

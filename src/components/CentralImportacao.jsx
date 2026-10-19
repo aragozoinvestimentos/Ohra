@@ -9,6 +9,7 @@ import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { canalComEmbalagem } from "../lib/embalagemCanal.js";
 import { encerrarPeriodoAds, estenderPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
 import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
+import { acumuladoDasJanelas, furosDasJanelas, janelaDoRelatorio, janelasDoPeriodo, juntarJanela, textoFuro } from "../lib/gmvLoja.js";
 import { recarregarPedidos } from "../hooks/usePedidos.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -175,7 +176,8 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     try {
       const lidos = [];
       for (const a of arquivos) lidos.push(await lerRelatorio(a));
-      if (lidos.some((x) => x.tipo !== tipo)) throw new Error(tipo === "desempenho" ? "Isto é o CSV do Shopee Ads — suba no botão “Ads (CSV)”. Nada foi importado." : "Isto é o relatório de Desempenho — suba no botão “Desempenho do produto”. Nada foi importado.");
+      const errado = lidos.find((x) => x.tipo !== tipo);
+      if (errado) throw new Error(errado.tipo === "gmv" ? "Isto é o relatório da GMV Max da Loja — suba no botão “GMV Max da Loja”. Nada foi importado." : errado.tipo === "ads" ? "Isto é o CSV do Shopee Ads — suba no botão “Ads (CSV) dos produtos”. Nada foi importado." : "Isto é o relatório de Desempenho — suba no botão “Desempenho do produto”. Nada foi importado.");
       // A Shopee separa os anúncios em listas (melhor desempenho, recém-cadastrados…):
       // os arquivos escolhidos juntos viram um relatório só.
       const juntar = tipo === "ads" ? juntarAds : juntarDesempenho;
@@ -204,7 +206,10 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         const lig = (r.itens || []).filter((i) => ligarSku(i.sku, itens)).length;
         resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${txtListas} · ${(r.itens || []).length} anúncios no total, ${lig} ligados ao app — funil das semanas da Rampa e do Ads`;
       } else {
-        const res = andamentoDoCsv([r], linhasAds?.linhas || [], linhasAds?.lojaLinha || null);
+        // GMV Max da Loja: com o arquivo próprio já enviado, a linha da loja
+        // deste CSV fica de fora (o botão “GMV Max da Loja” manda nela).
+        const temGmv = !!ultimaImp("shopee:gmv");
+        const res = andamentoDoCsv([r], linhasAds?.linhas || [], temGmv ? null : linhasAds?.lojaLinha || null);
         let n = 0;
         for (const l of (linhasAds?.linhas || []).filter((x) => x.av?.ativo && x.canal?.tipo === "shopee")) {
           const x = res.porChave[l.chave] || (res.zerados.includes(l.chave) ? { gasto: 0, cliques: 0, vendas: 0 } : null);
@@ -234,6 +239,65 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     }
     setOcupado(null);
   }
+  // ---------- Shopee: GMV Max da Loja (arquivo próprio) ----------
+  // Cada arquivo = uma janela (o período exportado). As janelas se somam no
+  // período ligado da loja; a mesma janela de novo substitui; furo = aviso.
+  async function enviarGmv(arquivos) {
+    const rel = "shopee:gmv";
+    setOcupado(rel);
+    try {
+      const lidos = [];
+      for (const a of arquivos) lidos.push(await lerRelatorio(a));
+      const errado = lidos.find((x) => x.tipo !== "gmv");
+      if (errado) throw new Error(errado.tipo === "ads" ? "Isto é o CSV de Ads dos produtos — suba no botão “Ads (CSV) dos produtos”. Nada foi importado." : "Isto é o relatório de Desempenho — suba no botão “Desempenho do produto”. Nada foi importado.");
+      let janelas = ultimaImp(rel)?.dados?.janelas || [];
+      const infosJ = [];
+      for (const x of lidos) {
+        const j = janelaDoRelatorio(x);
+        if (!j) throw new Error(`${x.arquivo}: não achei o período no arquivo. Nada foi importado.`);
+        const r = juntarJanela(janelas, j);
+        if (r.erro) throw new Error(r.erro);
+        janelas = r.janelas;
+        if (r.info) infosJ.push(r.info);
+      }
+      const ll = linhasAds?.lojaLinha || null;
+      const ativo = ll?.av?.ativo || null;
+      const avs = [];
+      let txt = "";
+      if (ativo) {
+        const doPer = janelasDoPeriodo(janelas, ativo);
+        const ac = acumuladoDasJanelas(doPer);
+        if (ac) {
+          const s = await salvarAndamentoAds(ativo, { ate: ac.ate, gasto: ac.gasto, cliques: ac.cliques, vendas: ac.vendas, receita: ac.receita, historico: ac.historico });
+          if (!s.ok) throw new Error(s.msg);
+          txt = ` · período da loja desde ${dm(ativo.inicio)}: ${BRL(ac.gasto)} gastos, ${ac.vendas} vendas, até ${dm(ac.ate)}`;
+        }
+        for (const f of furosDasJanelas(doPer, ativo.inicio)) avs.push(`Furo no período da GMV Max: ${textoFuro(f)} — exporte exatamente esse período e envie aqui (ele se soma sem duplicar).`);
+        const antes = janelas.filter((j) => j.ate < ativo.inicio);
+        if (antes.length) avs.push(`${antes.length} envio${antes.length === 1 ? "" : "s"} antes de ${dm(ativo.inicio)} (início do período da loja no app) — não entra${antes.length === 1 ? "" : "m"} no andamento.`);
+        setPerguntas((p) => p.filter((q) => q.l?.tipo !== "loja"));
+      } else if (ll) {
+        const ac = acumuladoDasJanelas(janelas);
+        if (ac && ac.gasto > 0) {
+          setPerguntas((p) => [...p.filter((q) => q.l?.tipo !== "loja"), { chave: ll.chave, l: ll, tipo: "criar", data: ac.de, ate: ac.ate, valores: { gasto: ac.gasto, cliques: ac.cliques, vendas: ac.vendas, receita: ac.receita, historico: ac.historico } }]);
+          for (const f of furosDasJanelas(janelas, ac.de)) avs.push(`Furo: ${textoFuro(f)} — exporte esse período e envie aqui.`);
+        }
+      }
+      const nProd = lidos.reduce((n, x) => Math.max(n, (x.lojaPorItem || []).length), 0);
+      const resumo = `${lidos.map((x) => `${dm(x.periodo.de)} a ${dm(x.periodo.ate)}`).join(" + ")}: ${BRL(lidos.reduce((a, x) => a + (x.loja?.gasto || 0), 0))} gastos · ${nProd} produto${nProd === 1 ? "" : "s"} na campanha (só informação — não cria Ads de produto)${txt}${infosJ.length ? ` · ${infosJ.join(" · ")}` : ""}`;
+      setAvisos((a) => ({ ...a, [rel]: avs }));
+      const per = { de: janelas[0].de, ate: janelas.reduce((m, j) => (j.ate > m ? j.ate : m), "") };
+      const g = await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivos.map((a) => a.name).join(" + "), periodo: per, ok: true, resumo, dados: { janelas } });
+      if (!g.ok) throw new Error(g.msg);
+      setResultado((x) => ({ ...x, [rel]: { t: "ok", txt: `${resumo} · enviado agora (${horaSP(new Date().toISOString())})` } }));
+      recarregarPedidos();
+      window.dispatchEvent(new Event("focus"));
+    } catch (e) {
+      setResultado((x) => ({ ...x, [rel]: { t: "erro", txt: e.message || "Não foi possível ler o arquivo." } }));
+    }
+    setOcupado(null);
+  }
+
   // acao: "sim" | "nao" | "pausar" (parado) — "nao" em aviso de pausado/excluído = ignorar (lembrado).
   async function responder(q, acao) {
     const nome = q.l.item.nome;
@@ -432,12 +496,21 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
             })}
             {relat({
               rel: "shopee:ads",
-              nome: "Ads (CSV) — produtos e GMV Max da Loja",
+              nome: "Ads (CSV) dos produtos",
               limite: 3,
               aceita: ".csv",
               multiplo: true,
-              onde: <>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem). Se tiver mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam. <b>A GMV Max da Loja vem no mesmo arquivo</b> (linha “GMV Max da Loja”): não precisa de outro envio</>,
+              onde: <>Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b> (do início do período de Ads até ontem). Se tiver mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”), exporte <b>todas com o mesmo período</b> e envie uma depois da outra — elas se juntam. Só os Ads próprios dos produtos — a GMV Max da Loja vai no botão de baixo</>,
               onArquivo: (fs) => enviarShopee("ads", fs),
+            })}
+            {relat({
+              rel: "shopee:gmv",
+              nome: "GMV Max da Loja (CSV)",
+              limite: 7,
+              aceita: ".csv",
+              multiplo: true,
+              onde: <>Shopee → Marketing → Shopee Ads → <b>GMV Max da Loja → Exportar</b> (“Dados do GMV MAX da Loja”). Pode mandar uma semana de cada vez: os períodos <b>se somam sem duplicar</b> (o mesmo período de novo substitui) e o app avisa se faltar algum dia. Os produtos do arquivo são só informação — não viram Ads próprio</>,
+              onArquivo: (fs) => enviarGmv(fs),
             })}
             {perguntas.map((q) => (
               <div key={q.chave} className="ana-pend">

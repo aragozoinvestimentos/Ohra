@@ -226,6 +226,9 @@ export function interpretarAds(linhas, nomeArquivo) {
   const perTxt = linhaPer ? String(linhaPer[1] || "").split("-") : [];
   const periodo = perTxt.length === 2 && isoDeBR(perTxt[0]) && isoDeBR(perTxt[1]) ? { de: isoDeBR(perTxt[0]), ate: isoDeBR(perTxt[1]) } : periodoDoNome(nomeArquivo);
   const cab = linhas[iCab];
+  // Arquivo próprio da GMV Max da Loja (1ª linha "GMV Max da Loja", coluna
+  // "Nome do Produto" no lugar de "Nome do Anúncio") — tratado à parte.
+  if (/gmv max da loja/i.test(String(linhas[0]?.[0] || "")) || (achar(cab, "Nome do Anúncio") < 0 && achar(cab, "Nome do Produto") >= 0)) return interpretarGmvLoja(linhas, iCab, periodo);
   const c = {
     id: achar(cab, "ID do produto"),
     nome: achar(cab, "Nome do Anúncio"),
@@ -279,6 +282,46 @@ export function interpretarAds(linhas, nomeArquivo) {
   for (const a of porItem.values()) a.gasto = Math.round(a.gasto * 100) / 100;
   total.gasto = Math.round(total.gasto * 100) / 100;
   return { tipo: "ads", periodo, porItem, total, loja };
+}
+
+// "Dados do GMV MAX da Loja" (18/10/2026, arquivo real): linha total "GMV Max
+// da Loja" (ID "-") + uma linha por produto que a campanha divulgou. Nenhum
+// produto vira Ads próprio: `porItem` vazio; a quebra fica em `lojaPorItem`.
+function interpretarGmvLoja(linhas, iCab, periodo) {
+  const cab = linhas[iCab];
+  const c = {
+    id: achar(cab, "ID do produto"),
+    nome: achar(cab, "Nome do Produto", "Nome do Anúncio"),
+    imp: achar(cab, "Impressões"),
+    gasto: achar(cab, "Despesas"),
+    cli: achar(cab, "Cliques"),
+    itens: achar(cab, "Itens Vendidos"),
+    conv: achar(cab, "Conversões"),
+    gmv: achar(cab, "GMV"),
+  };
+  const ler = (l) => ({
+    gasto: Math.round((numPonto(l[c.gasto]) || 0) * 100) / 100,
+    cliques: numPonto(l[c.cli]) || 0,
+    impressoes: c.imp >= 0 ? numPonto(l[c.imp]) || 0 : 0,
+    vendas: numPonto(l[c.itens >= 0 ? c.itens : c.conv]) || 0,
+    receita: c.gmv >= 0 ? Math.round((numPonto(l[c.gmv]) || 0) * 100) / 100 : 0,
+  });
+  let loja = null;
+  const lojaPorItem = [];
+  for (const l of linhas.slice(iCab + 1)) {
+    const id = String(l[c.id] || "").trim();
+    if (!id && !String(l[c.nome] || "").trim()) continue;
+    if (!id || id === "-") {
+      if (/gmv max da loja/i.test(String(l[c.nome] || ""))) loja = ler(l);
+      continue;
+    }
+    lojaPorItem.push({ id, nome: String(l[c.nome] || ""), ...ler(l) });
+  }
+  if (!loja) {
+    // sem a linha total: soma os produtos
+    loja = lojaPorItem.reduce((a, p) => ({ gasto: Math.round((a.gasto + p.gasto) * 100) / 100, cliques: a.cliques + p.cliques, impressoes: a.impressoes + p.impressoes, vendas: a.vendas + p.vendas, receita: Math.round((a.receita + p.receita) * 100) / 100 }), { gasto: 0, cliques: 0, impressoes: 0, vendas: 0, receita: 0 });
+  }
+  return { tipo: "gmv", periodo, porItem: new Map(), total: { gasto: 0, cliques: 0, vendas: 0 }, loja, lojaPorItem };
 }
 
 // Shopee Ads exporta UMA lista por tipo de campanha ("produto com melhor
@@ -354,7 +397,7 @@ export async function lerRelatorio(arquivo) {
   if (/\.csv$/i.test(nome)) {
     const txt = await arquivo.text();
     const r = interpretarAds(lerCsv(txt), nome);
-    if (!r) throw new Error(`${nome}: não parece o "Dados Gerais de Anúncios" do Shopee Ads`);
+    if (!r) throw new Error(`${nome}: não parece o "Dados Gerais de Anúncios" do Shopee Ads nem o da GMV Max da Loja`);
     return { ...r, arquivo: nome };
   }
   const r = interpretarDesempenho(await lerXlsx(await arquivo.arrayBuffer()), nome);

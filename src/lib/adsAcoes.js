@@ -104,12 +104,14 @@ export const pausarPeriodoAds = (periodo, data) => ajustarPeriodoAds(periodo, { 
 export const despausarPeriodoAds = (periodo, data) => ajustarPeriodoAds(periodo, { tipo: "volta", data, vendas: Number(periodo?.parcial?.vendas) || 0, motivo: "despausei" });
 export const reviseiSemVendaAds = (periodo, data) => ajustarPeriodoAds(periodo, { tipo: "revisei", data, motivo: "revisei o anúncio — conferir de novo em 3 dias" });
 
-export async function salvarAndamentoAds(periodo, { ate, gasto, cliques, vendas, receita }) {
+// `historico` (opcional) substitui o histórico montado dos envios anteriores —
+// a GMV Max da Loja monta o dela pelas janelas importadas.
+export async function salvarAndamentoAds(periodo, { ate, gasto, cliques, vendas, receita, historico: histPronto }) {
   const ant = periodo?.parcial;
   const hist = [...(Array.isArray(ant?.historico) ? ant.historico : []), ...(ant?.ate ? [{ ate: ant.ate, gasto: ant.gasto, cliques: ant.cliques, vendas: ant.vendas, ...(ant.receita != null ? { receita: ant.receita } : {}) }] : [])]
     .filter((h) => h && h.ate && h.ate < ate)
     .reduce((m, h) => m.set(h.ate, h), new Map());
-  const historico = [...hist.values()].sort((a, b) => a.ate.localeCompare(b.ate)).slice(-12);
+  const historico = Array.isArray(histPronto) ? histPronto.filter((h) => h?.ate && h.ate < ate).slice(-12) : [...hist.values()].sort((a, b) => a.ate.localeCompare(b.ate)).slice(-12);
   const parcial = { ate, gasto, cliques, vendas, ...(receita != null ? { receita } : {}), em: new Date().toISOString(), historico };
   const { error } = await supabase.from("ads_periodos").update({ parcial }).eq("id", periodo.id);
   if (!error) return { ok: true };
