@@ -789,13 +789,18 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   // (com Ads inviável o problema é a margem do degrau, não a conversão)
   const noTeste = (s) => teste.inicio && s.data >= teste.inicio && s.data <= teste.ate;
   const adsForaTeste = semanasAds.filter((s) => !noTeste(s)).slice(-2);
+  // Ads ligado ainda no aprendizado (19/10/2026, Gustavo): espera os 7 dias
+  // do Ads antes de pedir pra arrumar o anúncio por poucas vendas/ROAS — sem
+  // venda nenhuma, o aviso do dia 3 do próprio Ads já cobre.
+  const adsAprendendo = !!ctx.adsAtivo && diasEntre(ctx.adsAtivo.inicio, hoje) < num(regras.adsAprendizadoDias ?? 7);
   const revisarPorAds =
+    !adsAprendendo &&
     teste.status !== "andamento" &&
     adsForaTeste.length === 2 &&
     roasMin != null &&
     roasMin <= regras.roasInviavel &&
     adsForaTeste.every((s) => (roasDe(s) ?? 0) < roasMin);
-  const revisarPorLancamento = i === 0 && dias >= regras.revisarDias && vendasDesde < regras.vendas / 2;
+  const revisarPorLancamento = !adsAprendendo && i === 0 && dias >= regras.revisarDias && vendasDesde < regras.vendas / 2;
   const vendasDepoisTeste = teste.ate ? semanas.filter((s) => s.data > teste.ate).reduce((t, s) => t + vendasParaDecisao(s), 0) : 0;
   const revisarPorTeste = teste.resultado?.chave === "revisar" && vendasDepoisTeste === 0;
   const anuncio = diagnosticoAnuncio({

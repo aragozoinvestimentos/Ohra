@@ -316,14 +316,17 @@ function useCalculoCrescimento() {
           break;
         }
       }
-      const adsAtivo = periodoAtivo(periodosDoItem(adsH.periodos, "grupo", grupo.id, canal.id), hoje);
+      // Ads do anúncio inteiro OU de uma opção que só existe nele (é o mesmo
+      // anúncio na Shopee — igual à linha do Ads).
+      const idsSo = opcoesDoGrupo(grupo).map(idDoItemOpcao).filter((id) => id && soNoGrupo.has(id));
+      const adsAtivo = periodoAtivo([...periodosDoItem(adsH.periodos, "grupo", grupo.id, canal.id), ...idsSo.flatMap((id) => periodosDoItem(adsH.periodos, itemTipoDoId(id), id.slice(2), canal.id))], hoje);
       const regs = registros.filter((g) => g.rampa_id === r.id);
       const g = estadoRampaGrupo({ rampa: r, registros: regs, regras, grupo, canal, itens, produtos, kits, precos, publicacoes: publicacoesCanal, cfgDoProduto, organicas: organicasVivas, hoje, sazonal, funilLoja, adsAtivo, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null });
       if (!g) continue;
       out.push({ r, grupo, canal, produto: { id: null, nome: `Anúncio: ${grupo.nome}`, sku: "" }, item: null, ehGrupo: true, g, est: g.est, regs });
     }
     return out.sort((a, b) => a.grupo.nome.localeCompare(b.grupo.nome));
-  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, hoje, calendario, funilLoja, adsH.periodos, campanha]);
+  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, hoje, calendario, funilLoja, adsH.periodos, campanha, soNoGrupo]);
 
   // Comissão de afiliado por item × canal (ao vivo).
   const linhasAf = useMemo(

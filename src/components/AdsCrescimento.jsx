@@ -6,7 +6,7 @@ import { BRL } from "../lib/format.js";
 import { andamentoValido, capacidadeDoItem, faseDaLoja, periodoLigado, resumoPeriodo, retornoAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS } from "../lib/ads.js";
 import { porSemana } from "../lib/rampa.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
-import { adsPorItemApp, cruzarGrupos, lerRelatorio } from "../lib/relatorioShopee.js";
+import { adsPorItemApp, valoresDoPeriodo, cruzarGrupos, lerRelatorio } from "../lib/relatorioShopee.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
 import { hojeSP } from "../lib/datas.js";
@@ -1069,7 +1069,7 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
       setVals((p) => {
         const n = { ...p };
         for (const l of shopee) {
-          const x = res.porChave[l.chave];
+          const x = res.porChave[l.chave] ? valoresDoPeriodo(res.porChave[l.chave], l.av.ativo, l.periodos) : null;
           // Sem linha no CSV (e SKU já conhecido) = sem gasto no período exportado.
           if (x) n[l.chave] = { gasto: virg(x.gasto), cliques: String(x.cliques), vendas: String(x.vendas) };
           else if (res.zerados.includes(l.chave)) n[l.chave] = { gasto: "0", cliques: "0", vendas: "0" };
@@ -1090,9 +1090,9 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
       if (res.periodo?.de && res.periodo?.ate)
         for (const l of shopeeTodas) {
           if (l.av.ativo) continue;
-          const x = res.porChave[l.chave];
-          if (!x || !(x.gasto > 0)) continue;
           const ult = (l.periodos || [])[0] || null;
+          const x = res.porChave[l.chave] ? valoresDoPeriodo(res.porChave[l.chave], { id: "novo", inicio: res.periodo.de }, l.periodos) : null;
+          if (!x || !(x.gasto > 0)) continue;
           const valores = { gasto: x.gasto, cliques: x.cliques, vendas: x.vendas };
           if (ult && ult.fim && ult.fim < res.periodo.ate && ult.fim >= somarDias(res.periodo.de, -1))
             pergs.push({ chave: l.chave, l, tipo: "estender", periodo: ult, data: res.periodo.ate, valores });

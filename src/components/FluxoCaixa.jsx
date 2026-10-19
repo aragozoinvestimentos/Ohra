@@ -37,6 +37,7 @@ import { saldoReserva } from "../lib/vendasMes.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { saldoAds } from "../lib/saldoAds.js";
 import SaldoAdsCaixa from "./SaldoAdsCaixa.jsx";
+import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 
 const IGNORAR_COMPRA_KEY = "ohra:caixa:ignorar-compra";
 
@@ -88,7 +89,8 @@ const STATUS_BADGE = {
 export default function FluxoCaixa({ onToast }) {
   const { lojaId } = useLoja();
   const [lancamentos, setLancamentos] = useState([]);
-  const { canaisTodos } = useCatalogo();
+  const { canaisTodos, produtos: prodsCat, kits: kitsCat, variacoes: varsCat } = useCatalogo();
+  const { grupos: gruposAds } = useAnunciosGrupo();
   const canais = useMemo(() => [...canaisTodos].sort((a, b) => (a.nome || "").localeCompare(b.nome || "", "pt-BR")), [canaisTodos]);
   const [carregando, setCarregando] = useState(!!supabase);
   const [erroTabela, setErroTabela] = useState(null);
@@ -120,6 +122,18 @@ export default function FluxoCaixa({ onToast }) {
   const reserva = useReservaProducao();
   const adsP = useAdsPeriodos();
   const [baseAds] = usePreferencia("caixa:saldo-ads-base", null);
+  // Nome do anúncio de um período de Ads (cartão "de onde vem o gasto").
+  const nomeDoPeriodoAds = (p) => {
+    if (p.item_tipo === "loja") return "GMV Max da Loja";
+    if (p.item_tipo === "grupo") return `Anúncio: ${(gruposAds || []).find((g) => g.id === p.item_id)?.nome || "vários itens"}`;
+    if (p.item_tipo === "kit") return (kitsCat || []).find((k) => k.id === p.item_id)?.nome || "Kit";
+    if (p.item_tipo === "variacao") {
+      const v = (varsCat || []).find((x) => x.id === p.item_id);
+      const pai = v && (prodsCat || []).find((x) => x.id === v.produto_id);
+      return pai ? `${pai.nome} — ${v.quantidade} un.` : "Variação";
+    }
+    return (prodsCat || []).find((x) => x.id === p.item_id)?.nome || "Produto";
+  };
   const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos, periodos: adsP.periodos, hoje, base: baseAds }) : null), [adsP.disponivel, adsP.periodos, lancamentos, hoje, baseAds]);
   const saldoDaReserva = useMemo(() => saldoReserva(reserva.registros).saldo, [reserva.registros]);
 
@@ -561,7 +575,7 @@ export default function FluxoCaixa({ onToast }) {
             />
           </ResumoFixo>
 
-          <SaldoAdsCaixa s={saldoDeAds} hoje={hoje} onRecarga={abrirRecargaAds} />
+          <SaldoAdsCaixa s={saldoDeAds} hoje={hoje} onRecarga={abrirRecargaAds} nomeDe={nomeDoPeriodoAds} />
 
           {nPendencias > 0 && (
             <div className={`pendencias-caixa${verPendentes ? " aberto" : ""}`}>

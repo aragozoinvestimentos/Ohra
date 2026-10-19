@@ -95,7 +95,11 @@ export function acumuladoDasJanelas(janelas) {
  * - "ads-proprio": ≥ `vendasMin` vendas nos últimos 14 dias e retorno ≥ 1,2×
  *   (ROAS ÷ equilíbrio do produto) — vale um Ads próprio (meta = ROAS dele na loja).
  */
-export const GMV_REGRAS = { cliquesSemVenda: 50, vendasMin: 5, diasOportunidade: 14, retornoMin: 1.2 };
+// 19/10/2026 (Gustavo): na GMV Max da Loja quem escolhe onde gastar é a
+// Shopee (meta alta, produtos secundários) — cliques sem venda NÃO geram
+// aviso; só um produto que sozinho passou de R$ 15 sem vender nada (o mesmo
+// limite do "Ads no prejuízo").
+export const GMV_REGRAS = { gastoSemVenda: 15, vendasMin: 5, diasOportunidade: 14, retornoMin: 1.2 };
 export function produtosDaGmv(janelas, { desde = null, hoje, ligar = () => null, regras = GMV_REGRAS } = {}) {
   const m = new Map();
   const corte14 = hoje ? somar(hoje, -regras.diasOportunidade) : null;
@@ -125,8 +129,8 @@ export function produtosDaGmv(janelas, { desde = null, hoje, ligar = () => null,
       const eq = lig?.equilibrio || null;
       const retorno14 = roas14 != null && eq ? roas14 / eq : null;
       let aviso = null;
-      if (a.vendas === 0 && a.cliques >= regras.cliquesSemVenda)
-        aviso = { tipo: "sem-venda", estado: "atencao", titulo: "a campanha da loja gasta nele sem vender", texto: `${a.cliques} cliques e nenhuma venda (R$ ${a.gasto.toFixed(2).replace(".", ",")} gastos) — confira capa, título e preço do anúncio; se continuar, tire esse produto da GMV Max da Loja na Shopee.` };
+      if (a.vendas === 0 && a.gasto >= regras.gastoSemVenda)
+        aviso = { tipo: "sem-venda", estado: "atencao", titulo: `a campanha da loja já gastou R$ ${a.gasto.toFixed(2).replace(".", ",")} nele sem vender`, texto: `${a.cliques} cliques e nenhuma venda — confira capa, título e preço do anúncio; se continuar, tire esse produto da GMV Max da Loja na Shopee.` };
       else if (!lig?.temAdsProprio && a.vendas14 >= regras.vendasMin && retorno14 != null && retorno14 >= regras.retornoMin)
         aviso = { tipo: "ads-proprio", estado: "oportunidade", titulo: "vende bem na campanha da loja — vale um Ads próprio?", texto: `${a.vendas14} vendas em ${regras.diasOportunidade} dias, ROAS ${roas14.toFixed(1).replace(".", ",")} (retorno ${retorno14.toFixed(1).replace(".", ",")}×). Comece um Ads próprio com meta ${roas14.toFixed(1).replace(".", ",")}.`, meta: Math.round(roas14 * 10) / 10 };
       return { ...a, roas, roas14, retorno14, ligado: lig, aviso };

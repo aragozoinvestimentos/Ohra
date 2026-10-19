@@ -13,12 +13,14 @@ const num = (v) => {
   return isFinite(x) ? x : null;
 };
 
-export default function SaldoAdsCaixa({ s, hoje, onRecarga }) {
+export default function SaldoAdsCaixa({ s, hoje, onRecarga, nomeDe = () => "" }) {
   const [conf, setConf] = usePreferencia("caixa:saldo-ads-shopee", null);
   const [, setBase] = usePreferencia("caixa:saldo-ads-base", null);
   const [editando, setEditando] = useState(false);
   const [acertando, setAcertando] = useState(false);
   const [txt, setTxt] = useState("");
+  const [verOrigem, setVerOrigem] = useState(false);
+  const [verTodos, setVerTodos] = useState(false);
   if (!s) return null;
   if (!s.temRecarga && !(s.gasto > 0)) return null;
   // Acertar: o saldo que a Shopee mostra hoje vira o ponto de partida.
@@ -109,9 +111,52 @@ export default function SaldoAdsCaixa({ s, hoje, onRecarga }) {
               <button type="button" className="link-btn" onClick={() => { setTxt(""); setEditando(true); }}>conferir com o saldo que a Shopee mostra</button>
             )}{" "}
             · <button type="button" className="link-btn" onClick={() => { setTxt(""); setAcertando(true); }}>acertar saldo</button>
+            {(s.porPeriodo || []).length > 0 && (
+              <>
+                {" "}· <button type="button" className="link-btn" onClick={() => setVerOrigem((v) => !v)}>{verOrigem ? "esconder de onde vem o gasto" : "de onde vem o gasto"}</button>
+              </>
+            )}
           </div>
+          {verOrigem && <OrigemGasto s={s} nomeDe={nomeDe} todos={verTodos} onTodos={() => setVerTodos((v) => !v)} />}
         </>
       )}
+    </div>
+  );
+}
+
+// De onde vem o gasto: por período de Ads (o que entra na conta do saldo).
+// Padrão = só o que gastou nos últimos 7 dias; "ver todos" = desde sempre.
+function OrigemGasto({ s, nomeDe, todos, onTodos }) {
+  const lista = s.porPeriodo || [];
+  const da7 = lista.filter((x) => x.gasto7 > 0.004);
+  const mostrar = todos ? [...lista].sort((a, b) => b.gasto - a.gasto) : da7;
+  const soma = mostrar.reduce((t, x) => t + (todos ? x.gasto : x.gasto7), 0);
+  const algumVarios = mostrar.some((x) => x.variosPeriodos);
+  return (
+    <div className="saldo-ads-origem">
+      <div className="faint">{todos ? `Todos os períodos de Ads — ${BRL(soma)} no total` : `Últimos 7 dias — ${BRL(soma)}`}</div>
+      {mostrar.length ? (
+        <table className="tabela-ads">
+          <tbody>
+            {mostrar.map((x) => (
+              <tr key={x.periodo.id}>
+                <td>
+                  <b>{nomeDe(x.periodo) || "Anúncio"}</b>
+                  {x.variosPeriodos && <span className="chip-ads" title="O mesmo anúncio tem mais de um período com gasto — confira se a campanha antiga não entrou nos dois">2+ períodos</span>}
+                </td>
+                <td className="muted-cel">{dm(x.periodo.inicio)}–{x.ligado ? "agora" : dm(x.periodo.fim)} · CSV até {dm(x.periodo.parcial?.ate)}</td>
+                <td className="num">{BRL(todos ? x.gasto : x.gasto7)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div className="faint">Nenhum gasto nos últimos 7 dias.</div>
+      )}
+      {algumVarios && <div className="faint">“2+ períodos”: o mesmo anúncio aparece em mais de um período. Compare com a lista de campanhas da Shopee; se uma campanha antiga estiver nos dois, reenvie o CSV de Ads — a conta nova separa cada campanha no período dela.</div>}
+      {lista.length > da7.length || todos ? (
+        <button type="button" className="link-btn" onClick={onTodos}>{todos ? "só os últimos 7 dias" : `ver todos (${lista.length})`}</button>
+      ) : null}
     </div>
   );
 }

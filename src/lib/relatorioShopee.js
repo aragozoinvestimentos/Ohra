@@ -365,6 +365,7 @@ export function juntarAds(relatorios) {
     t.gasto = Math.round(fim.g * 100) / 100;
     t.cliques = fim.cl;
     t.vendas = fim.v;
+    if (fim === somaDet) t.linhas = det;
     total.gasto += t.gasto;
     total.cliques += t.cliques;
     total.vendas += t.vendas;
@@ -452,6 +453,37 @@ function lembrarGrupoShopee(itemId, grupoId) {
 
 // Ads por item do app: itensApp = [{ chave, sku, grupoId? }] (grupoId = anúncio com vários itens). Números do período do CSV
 // (o andamento é ACUMULADO: exporte do início do período de Ads até ontem).
+// Campanhas de um anúncio no CSV (nome + data de início), pra separar uma
+// campanha antiga (período já encerrado no app) da atual. Sem a data = null.
+function campanhasDe(a) {
+  const ls = Array.isArray(a?.linhas) && a.linhas.length && typeof a.linhas[0] === "object" ? a.linhas : null;
+  if (!ls) return [{ inicio: null, g: num0(a?.gasto), cl: num0(a?.cliques), v: num0(a?.vendas) }];
+  return ls.map((x) => {
+    const raw = String(x.k || "").split("|").pop().trim().split(" ")[0];
+    return { inicio: isoDeBR(raw) || null, g: num0(x.g), cl: num0(x.cl), v: num0(x.v) };
+  });
+}
+const num0 = (x) => (isFinite(Number(x)) ? Number(x) : 0);
+
+/**
+ * O CSV soma TODAS as campanhas do anúncio (a antiga, que você pausou, e a
+ * nova). Pro período `periodo`, só valem as campanhas que começaram depois
+ * do fim do período anterior do mesmo item e antes do próximo — senão o
+ * gasto da campanha antiga entra 2× (no período antigo e no atual).
+ * Campanha sem data de início = vale pro período (como antes).
+ */
+export function valoresDoPeriodo(x, periodo, periodosDoItem = []) {
+  const cs = x?.campanhas;
+  if (!periodo || !Array.isArray(cs) || !cs.length || cs.some((c) => !c.inicio)) return x;
+  const outros = (periodosDoItem || []).filter((p) => p && p.id !== periodo.id);
+  const fimAntes = outros.filter((p) => p.fim && p.inicio < periodo.inicio).map((p) => String(p.fim).slice(0, 10)).sort().pop() || null;
+  const iniDepois = outros.filter((p) => p.inicio > periodo.inicio).map((p) => String(p.inicio).slice(0, 10)).sort()[0] || null;
+  const dentro = cs.filter((c) => (!fimAntes || c.inicio > fimAntes) && (!iniDepois || c.inicio < iniDepois));
+  if (dentro.length === cs.length) return x;
+  const soma = dentro.reduce((t, c) => ({ g: t.g + c.g, cl: t.cl + c.cl, v: t.v + c.v }), { g: 0, cl: 0, v: 0 });
+  return { ...x, gasto: Math.round(soma.g * 100) / 100, cliques: soma.cl, vendas: soma.v, separado: true };
+}
+
 export function adsPorItemApp(relatorios, itensApp) {
   const ads = juntarAds(relatorios);
   if (!ads) return { periodo: null, porChave: {}, adsSemPar: [], avisos: ["Escolha o CSV do Shopee Ads (Marketing → Shopee Ads → Exportar dados)."] };
@@ -461,8 +493,9 @@ export function adsPorItemApp(relatorios, itensApp) {
   for (const [id, a] of ads.porItem) {
     const sku = normSku(idSku[id]);
     if (!sku) continue;
-    const t = porSku.get(sku) || { gasto: 0, cliques: 0, vendas: 0, ids: [] };
+    const t = porSku.get(sku) || { gasto: 0, cliques: 0, vendas: 0, ids: [], campanhas: [] };
     if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
+    t.campanhas.push(...campanhasDe(a));
     t.gasto += a.gasto;
     t.cliques += a.cliques;
     t.vendas += a.vendas;
@@ -475,22 +508,23 @@ export function adsPorItemApp(relatorios, itensApp) {
   for (const it of itensApp.filter((x) => x.grupoId)) {
     const ids = [...ads.porItem.keys()].filter((id) => idGrupo[id] === it.grupoId);
     if (!ids.length) continue;
-    const t = { gasto: 0, cliques: 0, vendas: 0 };
+    const t = { gasto: 0, cliques: 0, vendas: 0, campanhas: [] };
     for (const id of ids) {
       const a = ads.porItem.get(id);
       if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
+      t.campanhas.push(...campanhasDe(a));
       t.gasto += a.gasto;
       t.cliques += a.cliques;
       t.vendas += a.vendas;
       usados.add(id);
     }
-    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "" };
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "", campanhas: t.campanhas };
   }
   for (const it of itensApp.filter((x) => !x.grupoId)) {
     const t = porSku.get(normSku(it.sku));
     if (!t) continue;
     t.ids.forEach((id) => usados.add(id));
-    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "" };
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "", campanhas: t.campanhas };
   }
   const adsSemPar = [...ads.porItem.entries()].filter(([id, a]) => !usados.has(id) && a.gasto > 0).map(([id, a]) => ({ itemId: id, ...a, conhecido: !!idSku[id] || !!idGrupo[id] }));
   const avisos = [];
@@ -602,9 +636,13 @@ export function andamentoDoCsv(lidos, todas, lojaLinha = null) {
   // Anúncio pausado/excluído na Shopee (17/10/2026, Gustavo: "se está pausado,
   // só me informe e eu confirmo"): nunca pergunta "estender"; com período
   // ligado no app, sugere encerrar na data em que o gasto parou.
-  const tratar = (l, x, chave) => {
+  const tratar = (l, x0, chave) => {
     const ativo = l.av?.ativo || null;
-    const st = x?.status || "";
+    const st = x0?.status || "";
+    // Só as campanhas deste período (a antiga, pausada, fica no período dela).
+    const ult0 = ativo || (l.periodos || [])[0] || null;
+    const x = l.tipo === "loja" ? x0 : valoresDoPeriodo(x0, ult0, l.periodos);
+    if (ativo && x !== x0) res.porChave[chave] = x;
     const valores = { gasto: x.gasto, cliques: Math.round(x.cliques || 0), vendas: Math.round(x.vendas || 0), ...(x.receita != null ? { receita: x.receita } : {}) };
     if (ativo) {
       if (parado(st) && !(/pausad/i.test(st) && pausadoNoApp(l.av))) perguntas.push({ chave, l, tipo: "parado", status: nomeSt(st), periodo: ativo, data: quandoParou(ativo, x.gasto), valores });
@@ -621,7 +659,11 @@ export function andamentoDoCsv(lidos, todas, lojaLinha = null) {
     }
     const ini = [x.inicio, res.periodo.de].filter(Boolean).sort().pop();
     if (ult && ult.fim && ult.fim < res.periodo.ate && ult.fim >= somar(res.periodo.de, -1)) perguntas.push({ chave, l, tipo: "estender", periodo: ult, data: res.periodo.ate, valores });
-    else if (!ult || !ult.fim || ult.fim < ini) perguntas.push({ chave, l, tipo: "criar", data: ini, ate: res.periodo.ate, valores });
+    else if (!ult || !ult.fim || ult.fim < ini) {
+      // Período novo: só as campanhas que começaram depois do último encerrado.
+      const xn = valoresDoPeriodo(x0, { id: "novo", inicio: ini }, l.periodos);
+      if (xn.gasto > 0) perguntas.push({ chave, l, tipo: "criar", data: ini, ate: res.periodo.ate, valores: { gasto: xn.gasto, cliques: Math.round(xn.cliques || 0), vendas: Math.round(xn.vendas || 0) } });
+    }
   };
   for (const l of shopee) {
     if (l.av?.ativo && res.periodo?.de && res.periodo.de > l.av.ativo.inicio)

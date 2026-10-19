@@ -526,7 +526,11 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
       const roasTot = gastoTot > 0 ? (vendasDes * preco) / gastoTot : null;
       const retTot = retornoAds(roasTot, empate);
       const gastoMin = Math.max(num(regras.prejuizoGastoMin || 15), (orcamento || 0) * 1.5);
-      if (diasDesdeVolta >= dia3 && gastoTot >= gastoMin && empate && retTot != null && retTot < num(regras.prejuizoRetorno || 0.5))
+      // Com venda nos 7 dias de aprendizado do início (19/10/2026, Gustavo:
+      // "vendeu, espera os 7 dias pra fechar o ROAS"): não pede pra parar —
+      // decide no 7º dia. Sem venda, o aviso do dia 3 já cobriu.
+      const esperaAprendizado = !rev && vendasDes > 0 && diasRodando < regras.aprendizadoDias;
+      if (!esperaAprendizado && diasDesdeVolta >= dia3 && gastoTot >= gastoMin && empate && retTot != null && retTot < num(regras.prejuizoRetorno || 0.5))
         return sitA(
           "ads-prejuizo",
           "resolver",

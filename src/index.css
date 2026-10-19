@@ -2175,6 +2175,8 @@ tr.secao-subir td { color: var(--st-oportunidade); background: var(--st-oportuni
 .saldo-ads-cab { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .saldo-ads-cab .btn { margin-left: auto; }
 .saldo-ads-valor { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.saldo-ads-origem { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; border-top: 1px dashed var(--border); }
+.saldo-ads-origem .tabela-ads td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .saldo-ads-alerta { color: var(--st-atencao); }
 .saldo-ads-ok { color: var(--st-oportunidade); }
 .td-excluir { width: 34px; text-align: right; padding-left: 0 !important; }
