@@ -57,6 +57,47 @@ export default function VendasMes({ mes, onToast }) {
     () => vendasDoMes({ mes, rampas, rampasGrupo, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura, itemNoCanal }),
     [itemNoCanal, mes, rampas, rampasGrupo, registros, af.registros, org.registros, itens, canais, cfgDoProduto, reais.linhas, reais.cobertura]
   );
+  // Anúncio com vários itens: uma linha do anúncio (soma) e as opções embaixo
+  // quando aberta — com as PEÇAS que saíram (letreiro, tigela…), pra ver o
+  // que vende junto. Itens soltos seguem como antes.
+  const [grupoAberto, setGrupoAberto] = useState({});
+  const linhasTela = useMemo(() => {
+    const out = [];
+    const vistos = new Map();
+    const nomeProd = (pid) => itens.find((i) => i.id === `p:${pid}`)?.nome || "peça";
+    for (const l of v.linhas) {
+      if (!l.grupo) {
+        out.push(l);
+        continue;
+      }
+      const k = `grupo|${l.grupo.id}|${l.canal.id}`;
+      let g = vistos.get(k);
+      if (!g) {
+        g = { ehGrupo: true, chave: k, nome: l.grupo.nome, canal: l.canal, filhas: [], unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, pecasM: new Map() };
+        vistos.set(k, g);
+        out.push(g);
+      }
+      g.filhas.push(l);
+      for (const c of ["unidades", "faturamento", "recebe", "repor", "lucro"]) g[c] += l[c];
+      const comp = l.item.componentes?.length ? l.item.componentes : l.item.produtoId ? [{ produtoId: l.item.produtoId, quantidade: l.item.quantidade || 1 }] : [{ produtoId: l.item.id.slice(2), quantidade: 1 }];
+      for (const c of comp) {
+        const nome = nomeProd(c.produtoId);
+        g.pecasM.set(nome, (g.pecasM.get(nome) || 0) + (Number(c.quantidade) || 1) * l.unidades);
+      }
+    }
+    const final = [];
+    for (const x of out) {
+      if (!x.ehGrupo) {
+        final.push(x);
+        continue;
+      }
+      x.pecas = [...x.pecasM.entries()].map(([nome, q]) => ({ nome, q })).sort((a, b) => b.q - a.q);
+      x.filhas.sort((a, b) => b.unidades - a.unidades);
+      final.push(x);
+      if (grupoAberto[x.chave]) final.push(...x.filhas);
+    }
+    return final;
+  }, [v.linhas, itens, grupoAberto]);
   const res = useMemo(() => saldoReserva(reserva.registros), [reserva.registros]);
   const jaSeparado = res.porMes.get(mes) || 0;
   const falta = Math.max(0, Math.round((v.total.repor - jaSeparado) * 100) / 100);
@@ -330,11 +371,28 @@ export default function VendasMes({ mes, onToast }) {
                 </tr>
               </thead>
               <tbody>
-                {v.linhas.map((l) => (
+                {linhasTela.map((l) =>
+                  l.ehGrupo ? (
+                    <Fragment key={l.chave}>
+                      <tr className="linha-clicavel linha-grupo-vendas" onClick={() => setGrupoAberto((g) => ({ ...g, [l.chave]: !g[l.chave] }))}>
+                        <td>
+                          <span className="faint">{grupoAberto[l.chave] ? "▾" : "▸"}</span> <b>Anúncio: {l.nome}</b> <CanalTag canal={l.canal} />
+                          <span className="muted-cel"> · {l.filhas.length} opç{l.filhas.length === 1 ? "ão" : "ões"} vendida{l.filhas.length === 1 ? "" : "s"}</span>
+                          {l.pecas.length > 0 && <div className="muted-cel">peças: {l.pecas.map((x) => `${x.nome} ${x.q}`).join(" · ")}</div>}
+                        </td>
+                        <td className="num">{l.unidades} un.</td>
+                        <td className="num">{BRL(l.faturamento)}</td>
+                        <td className="num">{BRL(l.recebe)}</td>
+                        <td className="num muted-cel">{BRL(l.repor)}</td>
+                        <td className="num" style={{ fontWeight: 600, color: l.lucro < 0 ? "var(--bad)" : undefined }}>{BRL(l.lucro)}</td>
+                        <td className="num muted-cel">—</td>
+                      </tr>
+                    </Fragment>
+                  ) : (
                   <Fragment key={l.chave}>
                     <tr className="linha-clicavel" onClick={() => setVerItem((x) => (x === l.chave ? null : l.chave))}>
-                      <td>
-                        {l.item.nome} <CanalTag canal={l.canal} />
+                      <td className={l.grupo ? "vendas-opcao" : undefined}>
+                        {l.grupo ? <>↳ {l.grupo.rotulo || l.item.nome}{l.grupo.rotulo && l.grupo.rotulo !== l.item.nome ? <span className="muted-cel"> · {l.item.nome}</span> : null}</> : <>{l.item.nome} <CanalTag canal={l.canal} /></>}
                         {l.aMao > 0 && <span className="muted-cel"> · {l.aMao} orgânica{l.aMao > 1 ? "s" : ""} à mão</span>}
                         {l.real > 0 && l.real < l.unidades && <span className="muted-cel"> · {l.real} dos pedidos</span>}
                       </td>
@@ -381,7 +439,8 @@ export default function VendasMes({ mes, onToast }) {
                       </tr>
                     )}
                   </Fragment>
-                ))}
+                  )
+                )}
                 <tr className="linha-total">
                   <td>Total</td>
                   <td className="num">{t.unidades} un.</td>

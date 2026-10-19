@@ -121,8 +121,11 @@ export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros
     if (!p.valido || !p.item || !p.data || mesDe(String(p.data).slice(0, 10)) !== mes) continue;
     const canal = p.canal || (p.origem === "fisico" ? FISICO : null);
     if (!canal) continue;
-    const chave = `${p.item.id}|${canal.id}`;
+    // Venda dentro de um anúncio com vários itens: linha própria da opção,
+    // marcada com o anúncio (a tela agrupa debaixo dele).
+    const chave = p.grupo ? `g:${p.grupo.id}|${p.item.id}|${canal.id}` : `${p.item.id}|${canal.id}`;
     const l = novaLinha(chave, p.item, canal);
+    if (p.grupo) l.grupo = p.grupo;
     l.unidades += p.q;
     l.faturamento += p.pago;
     l.recebe += p.recebe;

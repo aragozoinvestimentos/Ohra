@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useOpcaoDoSku } from "../hooks/useVendasReais.js";
 import { trocarSubAba, useSubAba } from "../lib/subAbas.js";
 import { pegarPedido } from "../lib/navegar.js";
 import { useEscada } from "../hooks/useEscada.js";
@@ -32,7 +33,8 @@ export default function Analise({ onToast }) {
     window.addEventListener("ohra:ir-para", ouvir);
     return () => window.removeEventListener("ohra:ir-para", ouvir);
   }, []);
-  const linhas = useMemo(() => enriquecer(ped.pedidos, { itens: esc.itens, canais: esc.canais, cfgDoProduto: esc.cfgDoProduto }), [ped.pedidos, esc.itens, esc.canais, esc.cfgDoProduto]);
+  const opcaoDoSku = useOpcaoDoSku(esc.itens, esc.precos);
+  const linhas = useMemo(() => enriquecer(ped.pedidos, { itens: esc.itens, canais: esc.canais, cfgDoProduto: esc.cfgDoProduto, opcaoDoSku }), [ped.pedidos, esc.itens, esc.canais, esc.cfgDoProduto, opcaoDoSku]);
 
   if (sub === "importar") return <CentralImportacao esc={esc} ped={ped} linhas={linhas} linhasAds={cres.linhasAds} cres={cres} hoje={hoje} onToast={onToast} />;
   if (!ped.disponivel)

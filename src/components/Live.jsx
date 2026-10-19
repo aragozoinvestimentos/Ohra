@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { useOpcaoDoSku } from "../hooks/useVendasReais.js";
 import { useSubAba, trocarSubAba } from "../lib/subAbas.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useEscada } from "../hooks/useEscada.js";
@@ -25,7 +26,8 @@ export default function Live({ onToast }) {
   const ped = usePedidos();
   const lv = useLives();
   const canaisLive = useMemo(() => (esc.canais || []).filter((c) => PLATAFORMAS_LIVE.includes(c.tipo)), [esc.canais]);
-  const linhasPedidos = useMemo(() => enriquecer(ped.pedidos, { itens: esc.itens, canais: esc.canais, cfgDoProduto: esc.cfgDoProduto }), [ped.pedidos, esc.itens, esc.canais, esc.cfgDoProduto]);
+  const opcaoDoSku = useOpcaoDoSku(esc.itens, esc.precos);
+  const linhasPedidos = useMemo(() => enriquecer(ped.pedidos, { itens: esc.itens, canais: esc.canais, cfgDoProduto: esc.cfgDoProduto, opcaoDoSku }), [ped.pedidos, esc.itens, esc.canais, esc.cfgDoProduto, opcaoDoSku]);
 
   const cfgDe = useCallback(
     (p) => {

@@ -146,12 +146,17 @@ export const idItemDoPedido = (p) => (p.item_tipo && p.item_id ? `${PREF[p.item_
  * Linhas "ricas" (valor pago, lucro e recebe com custo e taxas de HOJE).
  * ctx = { itens, canais, cfgDoProduto }. Venda física: sem taxa (lucro = pago − custo).
  */
-export function enriquecer(pedidos, { itens, canais, cfgDoProduto, itemNoCanal = null }) {
+// opcaoDoSku(sku) (opcional): opção de anúncio com vários itens com esse SKU
+// exato → { itemId, grupoId, grupoNome, rotulo, doGrupo } — a venda vai pro
+// item daquela opção (e fica marcada com o anúncio quando `doGrupo`).
+export function enriquecer(pedidos, { itens, canais, cfgDoProduto, itemNoCanal = null, opcaoDoSku = null }) {
   const porId = new Map((itens || []).map((i) => [i.id, i]));
   // Venda física = canal orgânico: usa a embalagem dele (v56, lib/embalagemCanal.js).
   const canalFisico = (canais || []).find((c) => canalComEmbalagem(c)) || null;
   return (pedidos || []).map((p) => {
-    const id = idItemDoPedido(p);
+    const op = opcaoDoSku && p.origem !== "fisico" ? opcaoDoSku(p.sku) : null;
+    const id = op && porId.has(op.itemId) ? op.itemId : idItemDoPedido(p);
+    const grupo = op && op.doGrupo ? { id: op.grupoId, nome: op.grupoNome, rotulo: op.rotulo } : null;
     const canal = p.canal_id ? (canais || []).find((c) => c.id === p.canal_id) || null : null;
     const item0 = id ? porId.get(id) || null : null;
     const item = item0 && itemNoCanal ? itemNoCanal(item0, canal || (p.origem === "fisico" ? canalFisico : null)) : item0;
@@ -166,7 +171,7 @@ export function enriquecer(pedidos, { itens, canais, cfgDoProduto, itemNoCanal =
         lucro = lu != null ? lu * q : null;
       } else lucro = pago - custo;
     }
-    return { ...p, id_item: id, item, canal, q, pago, bruto: valorBruto(p), lucro, recebe: lucro != null ? lucro + custo : pago, custo, valido: ehValido(p), entregue: ehEntregue(p.situacao) };
+    return { ...p, id_item: id, item, grupo, canal, q, pago, bruto: valorBruto(p), lucro, recebe: lucro != null ? lucro + custo : pago, custo, valido: ehValido(p), entregue: ehEntregue(p.situacao) };
   });
 }
 

@@ -58,6 +58,28 @@ export function anuncioNoCanal({ item, canal, precos, itens, produtos, kits, map
   return { an, anSalvo: anSalvo || an, salvo: s || null };
 }
 
+// SKU de cada opção (como a Ficha gera: SKU do item + sufixos) → opção.
+// Vendas do mês/pedidos: a venda feita pelo SKU de uma opção vai pro ITEM
+// daquela opção (19/10/2026: "Letreiro + 2 tigelas" caía no Letreiro pela
+// regra de prefixo do SKU) e fica marcada com o anúncio.
+export function skusDosGrupos(grupos, itens) {
+  const m = new Map();
+  const norm = (x) => String(x || "").trim().toUpperCase();
+  for (const g of grupos || []) {
+    const v2 = variacao2DoGrupo(g);
+    for (const o of opcoesDoGrupo(g)) {
+      const item = (itens || []).find((i) => i.id === idDoItemOpcao(o));
+      if (!item?.sku) continue;
+      for (const c of v2 ? v2.opcoes : [null]) {
+        const suf = `${o.sufixo_sku || ""}${c?.sufixo || ""}`;
+        const k = norm(`${item.sku}${suf}`);
+        if (!m.has(k)) m.set(k, { grupoId: g.id, grupoNome: g.nome, itemId: item.id, rotulo: o.rotulo || item.nome, comSufixo: !!suf });
+      }
+    }
+  }
+  return m;
+}
+
 // A ficha do grupo num canal: uma linha por opção (× opção da variação 2).
 export function fichaDoGrupo({ grupo, canal, itens, precos, produtos, kits, mapaRampa, publicacoes, clientePagaHoje }) {
   if (!grupo || !canal) return null;

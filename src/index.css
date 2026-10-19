@@ -2297,3 +2297,6 @@ tr.linha-apagada td { color: var(--muted, #888); }
 .live-escolher-grupo:first-child { border-top: 0; }
 .live-escolher-pai { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; white-space: normal; }
 .live-escolher-filho { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0 3px 16px; white-space: normal; }
+/* Vendas do mês: anúncio com vários itens (19/10/2026) */
+.linha-grupo-vendas td { background: var(--surface-2, transparent); }
+td.vendas-opcao { padding-left: 26px; }
