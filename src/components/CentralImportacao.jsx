@@ -36,17 +36,9 @@ const dm = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7
 const diasDesde = (iso, hoje) => (iso ? Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${String(iso).slice(0, 10)}T12:00:00`)) / 86400000) : null);
 const dataDoEnvio = (imp) => (imp?.criado_em ? new Date(imp.criado_em).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }) : null);
 const ICONE = { ok: "✓", erro: "✗", velho: "!", nunca: "–", pend: "?" };
-const CHAVE_CONFERIDA = "ohra:plataforma-conferida";
 const horaSP = (iso) => (iso ? new Date(iso).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "");
 // Identifica uma lista pelo conteúdo (os nomes dos arquivos da Shopee costumam ser iguais).
 const assinatura = (r) => (r.tipo === "ads" ? [...r.porItem.entries()].map(([id, a]) => `${id}:${a.gasto}`).sort().join(",") : (r.itens || []).map((i) => i.itemId).sort().join(","));
-const conferidas = () => {
-  try {
-    return JSON.parse(localStorage.getItem(CHAVE_CONFERIDA) || "{}") || {};
-  } catch {
-    return {};
-  }
-};
 
 async function lerPlanilha(arquivo) {
   const buf = await arquivo.arrayBuffer();
@@ -59,12 +51,10 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   const { lojaId } = useLoja();
   const { itens, canais, produtos, kits, precos, cfgDoProduto, gruposAnuncio: grupos = [] } = esc;
   const [resultado, setResultado] = useState({}); // relatorio → { t, txt }
-  const [pend, setPend] = useState(null); // { plat, canal, itens, pendentes:[{sku, descricao, un}], arquivo, periodo }
+  const [pend, setPend] = useState(null); // envio da Olist esperando resposta: { passo "plataforma"|"skus", porPlat, grupos, desconhecidos, pendentes, resolvidos, periodo, arquivo }
   const [perguntas, setPerguntas] = useState([]);
   const [avisos, setAvisos] = useState({}); // relatorio → [texto]
   const [ocupado, setOcupado] = useState(null);
-  // Plataformas com o nº do pedido já conferido: no banco (preferencias_loja, v59).
-  const [confs, setConfs] = usePreferencia("importar:plataformas-conferidas", {}, { legado: conferidas });
   // Avisos de anúncio pausado/excluído que o Gustavo mandou ignorar (chave →
   // "status|gasto"): só voltam se o gasto ou o status mudar.
   const [adsIgnorados, setAdsIgnorados] = usePreferencia("importar:ads-ignorados", {});
@@ -77,69 +67,111 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   const ultimaImp = (rel) => [...okOrdenadas].reverse().find((i) => i.relatorio === rel) || null;
   const ctx = { itens, canais, cfgDoProduto, itemNoCanal: esc.itemNoCanal };
 
-  // ---------- Pedidos da Olist ----------
-  async function enviarPedidos(plat, canal, arquivo) {
-    const rel = `pedidos:${plat.id}`;
+  // ---------- Pedidos da Olist (um arquivo com TODAS as plataformas) ----------
+  // 21/10/2026: a Olist exporta os pedidos de todos os marketplaces juntos — o
+  // app separa pelo nº do pedido no marketplace (PLATAFORMAS[].padrao; TikTok
+  // conferido com o 1º pedido real). Número que nenhum padrão reconhece = o app
+  // pergunta de qual plataforma é. O arquivo cobre o período de TODAS as
+  // plataformas com canal (registra pedidos:<plat> em cada uma).
+  const platsComCanal = PLATAFORMAS.map((p) => ({ plat: p, canal: canais.find((c) => c.tipo === p.tipo) || null })).filter((x) => x.canal);
+  async function enviarOlist(arquivo) {
+    const rel = "pedidos:olist";
     setOcupado(rel);
     try {
-      const { itens: lidos, periodo, plataformas } = interpretarPedidosOlist(await lerPlanilha(arquivo));
-      const outras = [...plataformas].filter((x) => x && x !== plat.id);
-      if (outras.length) {
-        const nome = PLATAFORMAS.find((p) => p.id === outras[0])?.nome;
-        throw new Error(`Os pedidos deste arquivo não parecem da ${plat.nome} (o número ${lidos.find((i) => plataformaDoNumero(i.ordem_compra) === outras[0])?.ordem_compra} é do ${nome}). Nada foi importado.`);
+      const { itens: lidos, periodo } = interpretarPedidosOlist(await lerPlanilha(arquivo));
+      if (!lidos.length) throw new Error("Nenhum pedido no arquivo. Nada foi importado.");
+      const porPlat = new Map();
+      const desconhecidos = [];
+      for (const i of lidos) {
+        const id = plataformaDoNumero(i.ordem_compra);
+        if (!id) desconhecidos.push(i);
+        else {
+          if (!porPlat.has(id)) porPlat.set(id, []);
+          porPlat.get(id).push(i);
+        }
       }
-      if (!plat.conferido && !plataformas.has(plat.id) && !confs[plat.id]) {
-        setPend({ plat, canal, lidos, periodo, arquivo: arquivo.name, confirmar: true });
-        setOcupado(null);
-        return;
-      }
-      prepararSkus(plat, canal, lidos, periodo, arquivo.name);
+      const base = { olist: true, porPlat, periodo, arquivo: arquivo.name };
+      if (desconhecidos.length) setPend({ ...base, passo: "plataforma", desconhecidos, escolha: "" });
+      else prepararOlist(base);
     } catch (e) {
       setResultado((r) => ({ ...r, [rel]: { t: "erro", txt: e.message || "Não foi possível ler o arquivo." } }));
     }
     setOcupado(null);
   }
-  function prepararSkus(plat, canal, lidos, periodo, arquivo) {
-    const ligados = lidos.map((i) => ({ ...i, it: ligarSku(i.sku, itens) }));
-    const pendMap = new Map();
-    for (const i of ligados)
-      if (!i.it && i.sku && !ignorados.has(i.sku)) {
-        const x = pendMap.get(i.sku) || { sku: i.sku, descricao: i.descricao, un: 0 };
-        x.un += num(i.quantidade);
-        pendMap.set(i.sku, x);
-      }
-    if (pendMap.size) setPend({ plat, canal, lidos: ligados, periodo, arquivo, pendentes: [...pendMap.values()], resolvidos: {} });
-    else gravar(plat, canal, ligados, periodo, arquivo);
+  function escolherDesconhecidos(p0, platId) {
+    const porPlat = new Map(p0.porPlat);
+    if (platId) porPlat.set(platId, [...(porPlat.get(platId) || []), ...p0.desconhecidos]);
+    prepararOlist({ olist: true, porPlat, periodo: p0.periodo, arquivo: p0.arquivo, ignorados: platId ? 0 : new Set(p0.desconhecidos.map((i) => i.pedido)).size });
   }
-  async function gravar(plat, canal, ligados, periodo, arquivo) {
-    const rel = `pedidos:${plat.id}`;
+  function prepararOlist(base) {
+    const grupos = [];
+    const semCanal = [];
+    for (const [id, lista] of base.porPlat) {
+      const x = platsComCanal.find((y) => y.plat.id === id);
+      if (!x) semCanal.push({ nome: PLATAFORMAS.find((p) => p.id === id)?.nome || id, n: new Set(lista.map((i) => i.pedido)).size });
+      else grupos.push({ ...x, ligados: lista.map((i) => ({ ...i, it: ligarSku(i.sku, itens) })) });
+    }
+    const pendMap = new Map();
+    for (const g of grupos)
+      for (const i of g.ligados)
+        if (!i.it && i.sku && !ignorados.has(i.sku)) {
+          const x = pendMap.get(i.sku) || { sku: i.sku, descricao: i.descricao, un: 0 };
+          x.un += num(i.quantidade);
+          pendMap.set(i.sku, x);
+        }
+    const pronto = { ...base, grupos, semCanal };
+    if (pendMap.size) setPend({ ...pronto, passo: "skus", pendentes: [...pendMap.values()], resolvidos: {} });
+    else gravarOlist(pronto);
+  }
+  async function gravarOlist({ grupos, semCanal = [], periodo, arquivo, ignorados: nIgn = 0 }) {
+    const rel = "pedidos:olist";
     setOcupado(rel);
     setPend(null);
     const existentes = new Set((ped.pedidos || []).map((p) => p.chave));
-    const validos = ligados.filter((i) => i.it);
-    const semItem = ligados.filter((i) => !i.it);
-    const rows = validos.map(({ it, ...i }) => ({ ...i, canal_id: canal.id, plataforma: plat.id, ...tipoEIdDoItem(it) }));
-    const r = await gravarPedidos({ lojaId, linhas: rows });
-    if (!r.ok) {
-      setResultado((x) => ({ ...x, [rel]: { t: "erro", txt: r.msg } }));
-      setOcupado(null);
-      return;
+    const rows = [];
+    let semItem = 0;
+    for (const g of grupos) {
+      for (const i of g.ligados) {
+        if (!i.it) {
+          semItem++;
+          continue;
+        }
+        const { it, ...resto } = i;
+        rows.push({ ...resto, canal_id: g.canal.id, plataforma: g.plat.id, ...tipoEIdDoItem(it) });
+      }
     }
-    const novos = rows.filter((x) => !existentes.has(x.chave)).length;
-    const cancel = new Set(rows.filter((x) => /cancel|devolv/i.test(x.situacao)).map((x) => x.pedido)).size;
-    // Caixa com todos os pedidos (os de antes + estes)
+    if (rows.length) {
+      const r = await gravarPedidos({ lojaId, linhas: rows });
+      if (!r.ok) {
+        setResultado((x) => ({ ...x, [rel]: { t: "erro", txt: r.msg } }));
+        setOcupado(null);
+        return;
+      }
+    }
+    // Caixa com todos os pedidos (os de antes + estes), numa conta só.
     const porChave = new Map((ped.pedidos || []).map((p) => [p.chave, p]));
     for (const x of rows) porChave.set(x.chave, { ...porChave.get(x.chave), ...x });
     const cx = await sincronizarCaixa({ lojaId, pedidos: [...porChave.values()], ctx });
-    const pedN = new Set(rows.map((x) => x.pedido)).size;
-    const resumo = `${dm(periodo.de)} a ${dm(periodo.ate)} · ${pedN} pedido${pedN === 1 ? "" : "s"} no arquivo, ${novos} ite${novos === 1 ? "m novo" : "ns novos"}${cancel ? ` (${cancel} cancelado${cancel > 1 ? "s" : ""})` : ""}${semItem.length ? ` · ${new Set(semItem.map((i) => i.sku)).size} SKU fora (pendente/descartado)` : ""}`;
+    // O arquivo da Olist cobre o período de todas as plataformas com canal.
+    const partes = [];
+    for (const { plat } of platsComCanal) {
+      const doPlat = rows.filter((x) => x.plataforma === plat.id);
+      const pedN = new Set(doPlat.map((x) => x.pedido)).size;
+      const novos = doPlat.filter((x) => !existentes.has(x.chave)).length;
+      const cancel = new Set(doPlat.filter((x) => /cancel|devolv/i.test(x.situacao)).map((x) => x.pedido)).size;
+      const resumo = `${dm(periodo.de)} a ${dm(periodo.ate)} · ${pedN ? `${pedN} pedido${pedN === 1 ? "" : "s"}, ${novos} ite${novos === 1 ? "m novo" : "ns novos"}${cancel ? ` (${cancel} cancelado${cancel > 1 ? "s" : ""})` : ""}` : "nenhum pedido no período"} · pelo arquivo da Olist`;
+      await registrarImportacao({ lojaId, relatorio: `pedidos:${plat.id}`, arquivo, periodo, ok: true, resumo });
+      if (pedN) partes.push(`${plat.nome} ${pedN}`);
+    }
+    const resumo = `${dm(periodo.de)} a ${dm(periodo.ate)} · ${partes.length ? partes.join(" · ") : "nenhum pedido"}${semItem ? ` · ${semItem} ite${semItem === 1 ? "m" : "ns"} com SKU fora (pendente/descartado)` : ""}${nIgn ? ` · ${nIgn} pedido${nIgn > 1 ? "s" : ""} de plataforma desconhecida ignorado${nIgn > 1 ? "s" : ""}` : ""}`;
     await registrarImportacao({ lojaId, relatorio: rel, arquivo, periodo, ok: true, resumo });
     setResultado((x) => ({ ...x, [rel]: { t: "ok", txt: `${resumo} · agora` } }));
-    setAvisos((a) => ({ ...a, [rel]: cx.ok ? cx.avisos : [cx.msg] }));
+    const avs = [...(cx.ok ? cx.avisos : [cx.msg]), ...semCanal.map((x) => `${x.n} pedido${x.n > 1 ? "s" : ""} da ${x.nome} ${x.n > 1 ? "ficaram" : "ficou"} de fora — cadastre o canal em Configuração → Canais e reenvie o arquivo.`)];
+    setAvisos((a) => ({ ...a, [rel]: avs }));
     recarregarPedidos();
     window.dispatchEvent(new Event("focus"));
     setOcupado(null);
-    onToast?.(`${plat.nome}: pedidos importados${cx.ok ? " · Fluxo de Caixa atualizado (entregues)" : ""}`);
+    onToast?.(`Pedidos importados${partes.length ? ` (${partes.join(" · ")})` : ""}${cx.ok ? " · Fluxo de Caixa atualizado (entregues)" : ""}`);
   }
   async function descartarSku(sku) {
     const r = await ignorarSku({ lojaId, sku });
@@ -423,63 +455,21 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   const pendentesN = PLATAFORMAS.filter((p) => canais.some((c) => c.tipo === p.tipo)).filter((p) => ["velho", "nunca"].includes(status(`pedidos:${p.id}`, 7).t) && ultimaImp(`pedidos:${p.id}`)).length;
   const cards = PLATAFORMAS.map((p) => {
     const canal = canais.find((c) => c.tipo === p.tipo) || null;
-    const aviso = !canal
-      ? `Canal ${p.nome} não cadastrado — cadastre em Configuração → Canais pra importar.`
-      : !p.conferido && !confs[p.id]
-        ? `Falta conferir o formato do número do pedido — no 1º envio o app pede confirmação.${p.id === "ml" ? " Relatório de Ads do Mercado Livre: mande um exemplo quando ligar Ads lá." : ""}`
-        : null;
+    const stP = canal ? status(`pedidos:${p.id}`, 7) : null;
     return (
       <div key={p.id} className={`panel${p.id === "shopee" ? " alto" : ""}`}>
         <h3>
-          <CanalTag tipo={p.tipo} nome={p.nome} /> <span className="dir">pedidos pela Olist{p.id === "shopee" ? " + relatórios de anúncio" : ""}</span>
+          <CanalTag tipo={p.tipo} nome={p.nome} /> <span className="dir">pedidos pelo arquivo da Olist{p.id === "shopee" ? " + relatórios de anúncio" : ""}</span>
         </h3>
-        {aviso && <div className="ana-relat"><div className="ana-aviso-cfg">⚠ {aviso}</div></div>}
-        {canal &&
-          relat({
-            rel: `pedidos:${p.id}`,
-            nome: "Pedidos (Olist)",
-            limite: 7,
-            onde: <>Olist → Vendas → Pedidos de venda → <b>E-commerce = {p.nome}</b> → período → Exportar</>,
-            onArquivo: (f) => enviarPedidos(p, canal, f),
-          })}
-        {canal && pend && pend.plat.id === p.id && (
-          <div className="ana-pend">
-            {pend.confirmar ? (
-              <>
-                <b>1º envio da {p.nome}: confirme que estes {new Set(pend.lidos.map((i) => i.pedido)).size} pedidos ({dm(pend.periodo.de)} a {dm(pend.periodo.ate)}) são mesmo da {p.nome}.</b>
-                <div className="faint">Ex.: nº no marketplace {pend.lidos[0]?.ordem_compra || "—"}. O app lembra a confirmação.</div>
-                <div className="ana-pend-acoes">
-                  <button type="button" className="btn btn-mini primary" onClick={() => { setConfs((c) => ({ ...(c || {}), [p.id]: true })); prepararSkus(p, canal, pend.lidos, pend.periodo, pend.arquivo); }}>Sim, são da {p.nome}</button>
-                  <button type="button" className="btn btn-mini" onClick={() => setPend(null)}>Cancelar</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <b>Antes de gravar: {pend.pendentes.length} SKU{pend.pendentes.length > 1 ? "s não estão cadastrados" : " não está cadastrado"} no app</b>
-                {pend.pendentes.map((s) => (
-                  <div key={s.sku} className="ana-pend-lin">
-                    <span>
-                      <b>{s.sku}</b> · {s.descricao.slice(0, 60)} ({s.un} un.)
-                    </span>
-                    {pend.resolvidos[s.sku] === "desc" ? (
-                      <span className="faint">✗ descartado — não entra nas contas</span>
-                    ) : pend.resolvidos[s.sku] === "cad" ? (
-                      <span className="faint">↗ cadastrando — reenvie o arquivo depois</span>
-                    ) : (
-                      <>
-                        <button type="button" className="btn btn-mini primary" onClick={() => cadastrarSku(s.sku)}>Cadastrar agora</button>
-                        <button type="button" className="btn btn-mini" onClick={() => descartarSku(s.sku)}>Descartar</button>
-                      </>
-                    )}
-                  </div>
-                ))}
-                <div className="faint">Os outros pedidos já podem ser gravados. O que ficar pendente entra depois, reenviando o mesmo arquivo (nada duplica).</div>
-                <div className="ana-pend-acoes">
-                  <button type="button" className="btn btn-mini primary" onClick={() => gravar(pend.plat, pend.canal, pend.lidos, pend.periodo, pend.arquivo)}>Gravar o resto</button>
-                  <button type="button" className="btn btn-mini" onClick={() => setPend(null)}>Cancelar</button>
-                </div>
-              </>
-            )}
+        {!canal ? (
+          <div className="ana-relat"><div className="ana-aviso-cfg">⚠ Canal {p.nome} não cadastrado — cadastre em Configuração → Canais pra os pedidos dele entrarem.</div></div>
+        ) : (
+          <div className="ana-relat">
+            <div className="ana-relat-nome">Pedidos</div>
+            <div className={`ana-status ${stP.t}`}>
+              <span className="ic">{ICONE[stP.t]}</span>
+              <span>{stP.t === "nunca" ? "ainda sem pedidos — vêm do arquivo da Olist (no topo)" : stP.txt}</span>
+            </div>
           </div>
         )}
         {canal && cres && <AvaliacoesBloco canal={canal} cres={cres} esc={esc} hoje={hoje} onToast={onToast} />}
@@ -554,6 +544,67 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       </div>
     );
   });
+
+  const cartaoOlist = (
+    <div className="panel ana-olist" key="olist">
+      <h3>
+        Pedidos (Olist) <span className="dir">um arquivo com todas as plataformas — o app separa pelo número do pedido</span>
+      </h3>
+      {relat({
+        rel: "pedidos:olist",
+        nome: "Pedidos de venda (todas as plataformas)",
+        limite: 7,
+        onde: <>Olist → Vendas → Pedidos de venda → período → <b>Exportar</b> (sem filtrar o e-commerce). Cada pedido vai pra plataforma dele (Shopee, TikTok, Mercado Livre…) e o período conta pra todas</>,
+        onArquivo: (f) => enviarOlist(f),
+      })}
+      {pend?.passo === "plataforma" && (
+        <div className="ana-pend">
+          <b>
+            {new Set(pend.desconhecidos.map((i) => i.pedido)).size} pedido{new Set(pend.desconhecidos.map((i) => i.pedido)).size > 1 ? "s" : ""} com número que o app não reconhece — de qual plataforma {new Set(pend.desconhecidos.map((i) => i.pedido)).size > 1 ? "são" : "é"}?
+          </b>
+          <div className="faint">Ex.: nº no marketplace {[...new Set(pend.desconhecidos.map((i) => i.ordem_compra || "(vazio)"))].slice(0, 3).join(", ")}.</div>
+          <div className="ana-pend-acoes">
+            <select value={pend.escolha} onChange={(e) => setPend((x) => ({ ...x, escolha: e.target.value }))}>
+              <option value="">— escolha —</option>
+              {platsComCanal.map(({ plat }) => (
+                <option key={plat.id} value={plat.id}>{plat.nome}</option>
+              ))}
+            </select>
+            <button type="button" className="btn btn-mini primary" disabled={!pend.escolha} onClick={() => escolherDesconhecidos(pend, pend.escolha)}>Usar essa plataforma</button>
+            <button type="button" className="btn btn-mini" onClick={() => escolherDesconhecidos(pend, null)}>Deixar esses de fora</button>
+            <button type="button" className="btn btn-mini" onClick={() => setPend(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+      {pend?.passo === "skus" && (
+        <div className="ana-pend">
+          <b>Antes de gravar: {pend.pendentes.length} SKU{pend.pendentes.length > 1 ? "s não estão cadastrados" : " não está cadastrado"} no app</b>
+          {pend.pendentes.map((x) => (
+            <div key={x.sku} className="ana-pend-lin">
+              <span>
+                <b>{x.sku}</b> · {x.descricao.slice(0, 60)} ({x.un} un.)
+              </span>
+              {pend.resolvidos[x.sku] === "desc" ? (
+                <span className="faint">✗ descartado — não entra nas contas</span>
+              ) : pend.resolvidos[x.sku] === "cad" ? (
+                <span className="faint">↗ cadastrando — reenvie o arquivo depois</span>
+              ) : (
+                <>
+                  <button type="button" className="btn btn-mini primary" onClick={() => cadastrarSku(x.sku)}>Cadastrar agora</button>
+                  <button type="button" className="btn btn-mini" onClick={() => descartarSku(x.sku)}>Descartar</button>
+                </>
+              )}
+            </div>
+          ))}
+          <div className="faint">Os outros pedidos já podem ser gravados. O que ficar pendente entra depois, reenviando o mesmo arquivo (nada duplica).</div>
+          <div className="ana-pend-acoes">
+            <button type="button" className="btn btn-mini primary" onClick={() => gravarOlist(pend)}>Gravar o resto</button>
+            <button type="button" className="btn btn-mini" onClick={() => setPend(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   const cartaoFisico = (
     <div className="panel" key="fisico">
@@ -644,6 +695,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         <div className="kpi"><div className="l">Lançado no caixa</div><div className="v">{BRL(totRec)}</div><div className="s">entregues + vendas físicas · a receber {BRL(totArec)} (fora do saldo)</div></div>
       </div>
 
+      {cartaoOlist}
       <div className="ana-fontes">
         {cards[0]}
         {cartaoFisico}
@@ -676,7 +728,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       <div className="panel">
         <h3>Como fica a semana</h3>
         <div className="ana-guia">
-          <div><b>1× por semana (≈ 5 min)</b>Pedidos da Olist de cada plataforma que vendeu + os relatórios de anúncio dela (Shopee: Desempenho e Ads). E as avaliações de quem vendeu (bloco Avaliações). As semanas da Rampa e do Ads se montam sozinhas.</div>
+          <div><b>1× por semana (≈ 5 min)</b>O arquivo de pedidos da Olist (um só, com todas as plataformas) + os relatórios de anúncio dela (Shopee: Desempenho e Ads). E as avaliações de quem vendeu (bloco Avaliações). As semanas da Rampa e do Ads se montam sozinhas.</div>
           <div><b>A cada 3 dias</b>Só o relatório de Ads de cada plataforma com Ads ligado (Shopee hoje).</div>
           <div><b>Venda física</b>Quando vender: “+ Registrar venda física”.</div>
           <div><b>O app faz sozinho</b>Ignora pedido repetido, separa cancelados, liga pelo SKU, lança no caixa e calcula o lucro com as taxas e o custo de hoje. Nome, CPF, endereço e telefone do cliente são ignorados.</div>

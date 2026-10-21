@@ -31,7 +31,7 @@ const diasEntre = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${
 export const PLATAFORMAS = [
   { id: "shopee", tipo: "shopee", nome: "Shopee", padrao: /^\d{6}[0-9A-Z]{8}$/, conferido: true },
   { id: "ml", tipo: "ml", nome: "Mercado Livre", padrao: /^2\d{15}$/, conferido: false },
-  { id: "tiktok", tipo: "tiktok", nome: "TikTok Shop", padrao: /^5\d{17}$/, conferido: false },
+  { id: "tiktok", tipo: "tiktok", nome: "TikTok Shop", padrao: /^5\d{17}$/, conferido: true }, // conferido com o 1º pedido real (21/10/2026)
   { id: "shein", tipo: "shein", nome: "Shein", padrao: null, conferido: false },
 ];
 export const plataformaDoNumero = (ordem) => {
