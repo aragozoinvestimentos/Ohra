@@ -92,9 +92,13 @@ export function mlFaixas(pesoG) {
 
 // Taxas do TikTok Shop Brasil vigentes desde 15/jul/2026 — só duas faixas,
 // definidas pelo preço do item já com desconto aplicado (não por categoria).
+// + "Taxa de serviço do SFP" de 6% sobre o item com desconto (programa de frete
+// do TikTok) — conferida na liquidação do 1º pedido real (21/10/2026: R$ 17,90 →
+// comissão R$ 1,79 + SFP R$ 1,07 + R$ 4 por item = R$ 6,86). `pct` = comissão + SFP.
+export const TIKTOK_SFP = 0.06;
 export const TIKTOK_TIERS = [
-  { label: "Abaixo de R$50,00", min: 0, max: 49.99, pct: 0.1, fixo: 4 },
-  { label: "A partir de R$50,00", min: 50, max: 9999999, pct: 0.06, fixo: 6 },
+  { label: "Abaixo de R$50,00", min: 0, max: 49.99, comissao: 0.1, sfp: TIKTOK_SFP, pct: 0.1 + TIKTOK_SFP, fixo: 4 },
+  { label: "A partir de R$50,00", min: 50, max: 9999999, comissao: 0.06, sfp: TIKTOK_SFP, pct: 0.06 + TIKTOK_SFP, fixo: 6 },
 ];
 
 // Comissão da Shein Marketplace Brasil — conferida em 27/09/2026 direto na

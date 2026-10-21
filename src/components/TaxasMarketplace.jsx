@@ -19,9 +19,9 @@ const CANAIS_OFICIAIS = [
   {
     tipo: "tiktok",
     nome: "TikTok Shop",
-    validado: "Vigente desde 15/07/2026 — conferido em 27/09/2026 na Academia do Vendedor TikTok Shop (seller-br.tiktok.com, \"Tarifa de Comissão da Plataforma\"). Faixas pelo preço já com o desconto do vendedor.",
-    colunas: ["Faixa de preço", "Comissão", "Taxa fixa"],
-    linhas: TIKTOK_TIERS.map((t) => [t.label, PCT(t.pct), BRL(t.fixo)]),
+    validado: "Comissão vigente desde 15/07/2026 — conferida em 27/09/2026 na Academia do Vendedor TikTok Shop (seller-br.tiktok.com, \"Tarifa de Comissão da Plataforma\"). + Taxa de serviço do SFP (6%), conferida na liquidação do 1º pedido real em 21/10/2026 (R$ 17,90 → comissão R$ 1,79 + SFP R$ 1,07 + R$ 4,00 por item = R$ 6,86; recebe R$ 11,04). Faixas pelo preço já com o desconto do vendedor.",
+    colunas: ["Faixa de preço", "Comissão", "Taxa SFP", "Total %", "Taxa fixa por item"],
+    linhas: TIKTOK_TIERS.map((t) => [t.label, PCT(t.comissao), PCT(t.sfp), PCT(t.pct), BRL(t.fixo)]),
   },
   {
     tipo: "shein",
