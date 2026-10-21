@@ -846,9 +846,15 @@ export function avaliarAdsLoja({ periodos = [], equilibrio, hoje, regras = REGRA
 // semana registrada À MÃO antes (Registrar semana antigo) com Ads errado segura
 // o número lá em cima mesmo reenviando o CSV. Mostra as duas partes.
 export function origemDoGasto(periodo, semanas) {
-  if (!periodo) return { csv: null, semanas: 0, mao: [], somaMao: 0 };
+  if (!periodo) return { csv: null, semanas: 0, mao: [], somaMao: 0, fora: [] };
   const ss = semanasNoPeriodo(semanas || [], periodo);
-  const mao = ss.filter((s) => !s.auto && s.id && (num(s.ads_gasto) > 0 || num(s.ads_vendas) > 0 || num(s.ads_cliques) > 0));
+  const temAds = (s) => !s.auto && s.id && (num(s.ads_gasto) > 0 || num(s.ads_vendas) > 0 || num(s.ads_cliques) > 0);
+  const mao = ss.filter(temAds);
+  // Semanas à mão com Ads FORA deste período (data antes do início, ou de
+  // outro período): não entram no número do período, mas ainda contam no Ads
+  // da semana, no teto e em Vendas do mês (adsNaJanela olha as datas).
+  const dentro = new Set(mao.map((s) => s.id));
+  const fora = (semanas || []).filter((s) => temAds(s) && !dentro.has(s.id));
   const par = periodo.parcial;
   const r2 = (x) => Math.round(x * 100) / 100;
   return {
@@ -856,5 +862,6 @@ export function origemDoGasto(periodo, semanas) {
     semanas: r2(ss.reduce((t, s) => t + num(s.ads_gasto), 0)),
     mao,
     somaMao: r2(mao.reduce((t, s) => t + num(s.ads_gasto), 0)),
+    fora,
   };
 }

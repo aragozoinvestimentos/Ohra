@@ -6,9 +6,12 @@ import { BRL } from "../lib/format.js";
 // cadastrado NA PLATAFORMA da live (preço salvo no canal; variação anunciada
 // no canal — `cobraNoCanal`), nome completo, busca larga e "+ todos" ao lado
 // do produto principal (adiciona ele e as variações dele de uma vez).
+// 21/10/2026: igual à plataforma — o produto entra pelo ANÚNCIO (todas as
+// variações de uma vez); a setinha abre pra escolher só algumas.
 export default function LiveSeletor({ itens, canal, precos, cobraNoCanal, naLive, onAdd }) {
   const [aberto, setAberto] = useState(false);
   const [busca, setBusca] = useState("");
+  const [abertos, setAbertos] = useState(() => new Set()); // produtos com as variações abertas
   const salvoNo = (item) => {
     if (!canal) return null;
     const tipo = item.id.startsWith("k:") ? "kit" : item.id.startsWith("v:") ? "variacao" : "produto";
@@ -67,15 +70,21 @@ export default function LiveSeletor({ itens, canal, precos, cobraNoCanal, naLive
           return (
             <div key={g.id} className="live-escolher-grupo">
               <div className="live-escolher-pai">
+                {!g.kits && g.filhos.length > 1 && (
+                  <button type="button" className="live-seta" title={abertos.has(g.id) || termos.length ? "Recolher" : "Escolher só algumas variações"} onClick={() => setAbertos((s0) => { const s1 = new Set(s0); if (s1.has(g.id)) s1.delete(g.id); else s1.add(g.id); return s1; })}>
+                    {abertos.has(g.id) ? "▾" : "▸"}
+                  </button>
+                )}
                 <b>{g.nome}</b>
                 {!g.kits && g.sku && <span className="faint"> · {g.sku}</span>}
-                {g.filhos.length > 1 && (
+                {!g.kits && g.filhos.length > 1 && <span className="faint"> · {g.filhos.map((f) => f.rotulo).join(", ")}</span>}
+                {!g.kits && (
                   <button type="button" className="btn btn-mini primary" disabled={!faltam.length} onClick={() => onAdd(faltam.map((f) => f.item.id))}>
-                    {faltam.length ? `+ todos (${faltam.length})` : "✓ todos na live"}
+                    {!faltam.length ? "✓ na live" : faltam.length === g.filhos.length ? (g.filhos.length > 1 ? `+ adicionar o anúncio (${g.filhos.length})` : "+ adicionar") : `+ o resto (${faltam.length})`}
                   </button>
                 )}
               </div>
-              {g.filhos.map((f) => {
+              {(g.kits || abertos.has(g.id) || termos.length > 0) && g.filhos.map((f) => {
                 const ja = naLive.has(f.item.id);
                 const preco = salvoNo(f.item);
                 return (

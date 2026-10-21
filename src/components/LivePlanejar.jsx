@@ -237,6 +237,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
   const [rascunho, setRascunho] = useState(null); // { id, ...campos editados }
   const [salvando, setSalvando] = useState(false);
   const [confirmar, setConfirmar] = useState(null);
+  const [abertos, setAbertos] = useState(() => new Set()); // anúncios agrupados abertos (só na sessão)
 
   const live = atual && rascunho?.id === atual.id ? { ...atual, ...rascunho } : atual;
   const canal = live ? esc.canais.find((c) => c.id === live.canal_id) || null : null;
@@ -318,16 +319,156 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
       novos.push(c);
     }
     if (!novos.length) return;
-    setProdutos([...produtos, ...novos]);
+    // Variação nova entra junto do anúncio dela (logo depois do último do grupo).
+    const lista = [...produtos];
+    for (const n of novos) {
+      const g = grupoDe(n);
+      let k = -1;
+      lista.forEach((x, idx) => {
+        if (grupoDe(x) === g) k = idx;
+      });
+      if (k >= 0) lista.splice(k + 1, 0, n);
+      else lista.push(n);
+    }
+    setProdutos(lista);
     if (semPreco.length) onToast(`${semPreco.join(", ")}: sem preço salvo em ${canal.nome} — usando o sugerido pela margem`);
     else if (novos.length > 1) onToast(`${novos.length} itens adicionados`);
   }
-  const mover = (i, d) => {
-    const l = [...produtos];
-    const j = i + d;
-    if (j < 0 || j >= l.length) return;
-    [l[i], l[j]] = [l[j], l[i]];
-    setProdutos(l);
+
+  // Anúncio agrupado (21/10/2026, pedido do Gustavo): na live da plataforma o
+  // produto entra pelo anúncio e o cliente escolhe a variação — aqui também o
+  // produto e as variações dele ficam num cartão só; a setinha abre cada um.
+  const grupoDe = (p) => {
+    if (!String(p.item_id).startsWith("v:")) return p.item_id;
+    const it = esc.itens.find((i) => i.id === p.item_id);
+    return it?.produtoId ? `p:${it.produtoId}` : p.item_id;
+  };
+  const rotuloVar = (p) => {
+    const it = esc.itens.find((i) => i.id === p.item_id);
+    return String(p.item_id).startsWith("v:") ? it?.nomeVariacao || p.nome : "1 unidade";
+  };
+  const gruposLive = [];
+  for (const p of produtos) {
+    const chave = grupoDe(p);
+    let g = gruposLive.find((x) => x.chave === chave);
+    if (!g) {
+      const pai = esc.itens.find((i) => i.id === chave);
+      g = { chave, nome: pai?.nome || p.nome, itens: [] };
+      gruposLive.push(g);
+    }
+    g.itens.push(p);
+  }
+  const moverGrupo = (gi, d) => {
+    const j = gi + d;
+    if (j < 0 || j >= gruposLive.length) return;
+    const l = [...gruposLive];
+    [l[gi], l[j]] = [l[j], l[gi]];
+    setProdutos(l.flatMap((g) => g.itens));
+  };
+  const alternarGrupo = (k) =>
+    setAbertos((s0) => {
+      const s1 = new Set(s0);
+      if (s1.has(k)) s1.delete(k);
+      else s1.add(k);
+      return s1;
+    });
+  // Um cartão de produto da live (sozinho, ou dentro do anúncio agrupado).
+  const cartao = (p0, opc = {}) => {
+            const p = completarCopia(p0, ctx);
+            const e = estrategiaCompleta(p, ctx);
+            const ini = precoInicial({ ...p, estrategia: e });
+            const lucroIni = ini ? lucroNaLive(p, ini, ctx) : null;
+            const lucroSalvo = p.salvo ? lucroNaLive({ ...p, estrategia: null }, p.salvo, ctx) : null;
+            const an = ini && p.riscado ? anuncioNoRiscado(ini, p.riscado) : null;
+            const hist = historicoDoItem(p.item_id, lv.lives, lv.eventos, ctxDaLive, live.id);
+            return (
+              <div className="live-plano-item" key={p.key}>
+                <div className="live-plano-cab">
+                  {!opc.noGrupo && <span className="live-ordem">{opc.num}</span>}
+                  <div className="live-plano-nome">
+                    <b>{opc.noGrupo ? rotuloVar(p) : p.nome}</b> {p.sku && <span className="faint">· {p.sku}</span>}
+                    <div className="faint">
+                      {p.salvo ? (
+                        <>
+                          salvo {BRL(p.salvo)}
+                          {lucroSalvo != null && ` · lucro ${BRL(lucroSalvo)}`}
+                        </>
+                      ) : p.sugerido ? (
+                        <>sem preço salvo em {canal?.nome || "neste canal"} — sugerido {BRL(p.sugerido)} pela sua margem desejada</>
+                      ) : (
+                        <>sem preço salvo em {canal?.nome || "neste canal"}</>
+                      )}{" "}
+                      · custo {BRL(p.custo)}
+                    </div>
+                  </div>
+                  {!bloqueada && (
+                    <span className="live-plano-acoes">
+                      {!opc.noGrupo && (
+                        <>
+                          <button type="button" className="btn-icone" title="Subir" disabled={opc.gi === 0} onClick={() => moverGrupo(opc.gi, -1)}>
+                            ↑
+                          </button>
+                          <button type="button" className="btn-icone" title="Descer" disabled={opc.gi === gruposLive.length - 1} onClick={() => moverGrupo(opc.gi, 1)}>
+                            ↓
+                          </button>
+                        </>
+                      )}
+                      <button type="button" className="btn-icone" title="Tirar da live" onClick={() => setProdutos(produtos.filter((x) => x.key !== p.key))}>
+                        ×
+                      </button>
+                    </span>
+                  )}
+                </div>
+                <fieldset disabled={bloqueada} className="live-fieldset live-estrategia">
+                  <label className="live-campo">
+                    <span>Estratégia</span>
+                    <select value={e.tipo} onChange={(ev) => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: estrategiaPadrao(ev.target.value, p, ctx) })}>
+                      {[...estrategiasDoModo(ctx.modo), ...(estrategiaPermitida(ctx.modo, e.tipo) ? [] : [{ id: e.tipo, nome: "(não vale no desconto fixo)" }])].map((x) => (
+                        <option key={x.id} value={x.id} title={x.desc}>
+                          {x.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <CamposEstrategia e={e} set={(ne) => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: ne })} />
+                  <label className="live-campo">
+                    <span>Vou ter pronto</span>
+                    <Num valor={p.pronto ?? null} onValor={(x) => setProd(p.key, { pronto: x == null ? null : Math.round(x) })} passo largura={56} placeholder={hist ? String(hist.pronto) : "—"} />
+                  </label>
+                </fieldset>
+                <div className="live-plano-texto">
+                  <b>Plano:</b> {ctx.modo === "fixo" && e.tipo === "fixo" ? `preço da loja (${BRL(Number(e.preco) || p.agora || p.salvo || p.sugerido || 0)}) a live toda — o desconto vem do cupom.${p.agora ? " Em rampa: é o preço de agora, não o alvo." : ""}` : planoEmTexto(e, p.salvo || p.sugerido)}{" "}
+                  {!bloqueada && (
+                    <button type="button" className="link-btn" onClick={() => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: estrategiaPadrao(e.tipo, p, ctx) })}>
+                      voltar à sugestão
+                    </button>
+                  )}
+                </div>
+                <div className="live-plano-info">
+                  <span>
+                    Abre em <b>{ini ? BRL(ini) : "—"}</b>
+                    {lucroIni != null && <span className={lucroIni < 0 ? "bad" : ""}> · lucro {BRL(lucroIni)}</span>}
+                  </span>
+                  {ctx.modo === "fixo" ? (
+                    <span className="faint">preço da loja — nada muda no anúncio; o desconto vem do cupom</span>
+                  ) : an && (
+                    <span className="faint">
+                      digitar: original {BRL(an.original)} · promo {an.promo}% → cliente paga {BRL(an.clientePaga)}
+                      {an.acimaDoRiscado && " (acima do riscado)"}
+                      <PromoAviso canal={canal} promo={an.promo} />
+                    </span>
+                  )}
+                  {hist ? (
+                    <span className="faint">
+                      {hist.lives === 1 ? "Na última live" : `Nas últimas ${hist.lives} lives`}: média {Math.round(hist.media * 10) / 10} por live
+                      {hist.ultima?.vendeuAte != null && ` · vendeu até ${BRL(hist.ultima.vendeuAte)}`} → tenha ~{hist.pronto} prontos
+                    </span>
+                  ) : (
+                    <span className="faint">primeira live com este produto</span>
+                  )}
+                </div>
+              </div>
+            );
   };
 
   // Conferência de produção: o que você vai deixar pronto × o tempo de impressão.
@@ -428,96 +569,50 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
         {!bloqueada && <LiveSeletor itens={esc.itens} canal={canal} precos={esc.precos} cobraNoCanal={esc.cobraNoCanal} naLive={new Set(produtos.map((p) => p.item_id))} onAdd={adicionar} />}
         {!produtos.length && <div className="empty">Nenhum produto ainda. Adicione os produtos (ou kits) que vai mostrar na live.</div>}
         <div className="live-plano-lista">
-          {produtos.map((p0, i) => {
-            const p = completarCopia(p0, ctx);
-            const e = estrategiaCompleta(p, ctx);
-            const ini = precoInicial({ ...p, estrategia: e });
-            const lucroIni = ini ? lucroNaLive(p, ini, ctx) : null;
-            const lucroSalvo = p.salvo ? lucroNaLive({ ...p, estrategia: null }, p.salvo, ctx) : null;
-            const an = ini && p.riscado ? anuncioNoRiscado(ini, p.riscado) : null;
-            const hist = historicoDoItem(p.item_id, lv.lives, lv.eventos, ctxDaLive, live.id);
+          {gruposLive.map((g, gi) => {
+            if (g.itens.length === 1) return cartao(g.itens[0], { num: gi + 1, gi });
+            const aberto = abertos.has(g.chave);
             return (
-              <div className="live-plano-item" key={p.key}>
+              <div className="live-plano-item live-plano-grupo" key={g.chave}>
                 <div className="live-plano-cab">
-                  <span className="live-ordem">{i + 1}</span>
+                  <span className="live-ordem">{gi + 1}</span>
                   <div className="live-plano-nome">
-                    <b>{p.nome}</b> {p.sku && <span className="faint">· {p.sku}</span>}
-                    <div className="faint">
-                      {p.salvo ? (
-                        <>
-                          salvo {BRL(p.salvo)}
-                          {lucroSalvo != null && ` · lucro ${BRL(lucroSalvo)}`}
-                        </>
-                      ) : p.sugerido ? (
-                        <>sem preço salvo em {canal?.nome || "neste canal"} — sugerido {BRL(p.sugerido)} pela sua margem desejada</>
-                      ) : (
-                        <>sem preço salvo em {canal?.nome || "neste canal"}</>
-                      )}{" "}
-                      · custo {BRL(p.custo)}
-                    </div>
+                    <button type="button" className="live-seta" title={aberto ? "Recolher as variações" : "Ver e mudar cada variação"} onClick={() => alternarGrupo(g.chave)}>
+                      {aberto ? "▾" : "▸"}
+                    </button>{" "}
+                    <b>{g.nome}</b> <span className="faint">· anúncio com {g.itens.length} variações na live</span>
+                    {!aberto && (
+                      <div className="live-grupo-resumo">
+                        {g.itens.map((p0) => {
+                          const p = completarCopia(p0, ctx);
+                          const e = estrategiaCompleta(p, ctx);
+                          const ini = precoInicial({ ...p, estrategia: e });
+                          const l = ini ? lucroNaLive(p, ini, ctx) : null;
+                          return (
+                            <span key={p.key}>
+                              {rotuloVar(p)}: <b>{ini ? BRL(ini) : "—"}</b>
+                              {l != null && <span className={l < 0 ? "bad" : "faint"}> · lucro {BRL(l)}</span>}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   {!bloqueada && (
                     <span className="live-plano-acoes">
-                      <button type="button" className="btn-icone" title="Subir" disabled={i === 0} onClick={() => mover(i, -1)}>
+                      <button type="button" className="btn-icone" title="Subir" disabled={gi === 0} onClick={() => moverGrupo(gi, -1)}>
                         ↑
                       </button>
-                      <button type="button" className="btn-icone" title="Descer" disabled={i === produtos.length - 1} onClick={() => mover(i, 1)}>
+                      <button type="button" className="btn-icone" title="Descer" disabled={gi === gruposLive.length - 1} onClick={() => moverGrupo(gi, 1)}>
                         ↓
                       </button>
-                      <button type="button" className="btn-icone" title="Tirar da live" onClick={() => setProdutos(produtos.filter((x) => x.key !== p.key))}>
+                      <button type="button" className="btn-icone" title="Tirar o anúncio inteiro da live" onClick={() => setProdutos(produtos.filter((x) => !g.itens.some((y) => y.key === x.key)))}>
                         ×
                       </button>
                     </span>
                   )}
                 </div>
-                <fieldset disabled={bloqueada} className="live-fieldset live-estrategia">
-                  <label className="live-campo">
-                    <span>Estratégia</span>
-                    <select value={e.tipo} onChange={(ev) => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: estrategiaPadrao(ev.target.value, p, ctx) })}>
-                      {[...estrategiasDoModo(ctx.modo), ...(estrategiaPermitida(ctx.modo, e.tipo) ? [] : [{ id: e.tipo, nome: "(não vale no desconto fixo)" }])].map((x) => (
-                        <option key={x.id} value={x.id} title={x.desc}>
-                          {x.nome}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <CamposEstrategia e={e} set={(ne) => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: ne })} />
-                  <label className="live-campo">
-                    <span>Vou ter pronto</span>
-                    <Num valor={p.pronto ?? null} onValor={(x) => setProd(p.key, { pronto: x == null ? null : Math.round(x) })} passo largura={56} placeholder={hist ? String(hist.pronto) : "—"} />
-                  </label>
-                </fieldset>
-                <div className="live-plano-texto">
-                  <b>Plano:</b> {ctx.modo === "fixo" && e.tipo === "fixo" ? `preço da loja (${BRL(Number(e.preco) || p.agora || p.salvo || p.sugerido || 0)}) a live toda — o desconto vem do cupom.${p.agora ? " Em rampa: é o preço de agora, não o alvo." : ""}` : planoEmTexto(e, p.salvo || p.sugerido)}{" "}
-                  {!bloqueada && (
-                    <button type="button" className="link-btn" onClick={() => setProd(p.key, { sugerido: p.sugerido ?? null, estrategia: estrategiaPadrao(e.tipo, p, ctx) })}>
-                      voltar à sugestão
-                    </button>
-                  )}
-                </div>
-                <div className="live-plano-info">
-                  <span>
-                    Abre em <b>{ini ? BRL(ini) : "—"}</b>
-                    {lucroIni != null && <span className={lucroIni < 0 ? "bad" : ""}> · lucro {BRL(lucroIni)}</span>}
-                  </span>
-                  {ctx.modo === "fixo" ? (
-                    <span className="faint">preço da loja — nada muda no anúncio; o desconto vem do cupom</span>
-                  ) : an && (
-                    <span className="faint">
-                      digitar: original {BRL(an.original)} · promo {an.promo}% → cliente paga {BRL(an.clientePaga)}
-                      {an.acimaDoRiscado && " (acima do riscado)"}
-                      <PromoAviso canal={canal} promo={an.promo} />
-                    </span>
-                  )}
-                  {hist ? (
-                    <span className="faint">
-                      {hist.lives === 1 ? "Na última live" : `Nas últimas ${hist.lives} lives`}: média {Math.round(hist.media * 10) / 10} por live
-                      {hist.ultima?.vendeuAte != null && ` · vendeu até ${BRL(hist.ultima.vendeuAte)}`} → tenha ~{hist.pronto} prontos
-                    </span>
-                  ) : (
-                    <span className="faint">primeira live com este produto</span>
-                  )}
-                </div>
+                {aberto && <div className="live-grupo-filhos">{g.itens.map((p0) => cartao(p0, { noGrupo: true }))}</div>}
               </div>
             );
           })}

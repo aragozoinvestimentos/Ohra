@@ -2321,3 +2321,9 @@ td.vendas-opcao { padding-left: 26px; }
 .payoff-tela .panel > h3 > .faint { margin-left: 8px; font-weight: 400; }
 .seletor-periodo { width: auto; min-height: 30px; padding: 4px 8px; }
 .pago-com { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; } .pago-com label { display: inline-flex; gap: 4px; align-items: center; }
+
+/* Live — anúncio agrupado no Planejar (21/10/2026) */
+.live-seta { border: 0; background: none; cursor: pointer; color: var(--accent); font-size: 14px; padding: 0 2px; }
+.live-grupo-resumo { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 12.5px; }
+.live-grupo-filhos { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 2px 34px; }
+.live-grupo-filhos .live-plano-item { background: var(--bg); }

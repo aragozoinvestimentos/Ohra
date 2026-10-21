@@ -763,10 +763,11 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           {ret != null && <div className="muted-cel" style={{ marginTop: 2 }}>{textoRetorno(ret)} (antes de descontar o R$ 1)</div>}
           {(() => {
             const o = origemDoGasto(av.ativo, l.semanas);
-            if (!o.mao.length) return null;
+            if (!o.mao.length && !o.fora.length) return null;
             return (
               <div className="muted-cel" style={{ marginTop: 2 }}>
-                Gasto vem de: CSV {o.csv ? `até ${dm(o.csv.ate)} ${BRL(o.csv.gasto)}` : "—"} · semanas {BRL(o.semanas)} (registradas à mão antes: {BRL(o.somaMao)}) → vale o maior.{" "}
+                Gasto vem de: CSV {o.csv ? `até ${dm(o.csv.ate)} ${BRL(o.csv.gasto)}` : "—"} · semanas {BRL(o.semanas)} (registradas à mão antes: {BRL(o.somaMao)}) → vale o maior.
+                {o.fora.length ? ` Há ${o.fora.length} semana${o.fora.length > 1 ? "s" : ""} à mão com Ads fora deste período (${BRL(o.fora.reduce((t, x) => t + Number(x.ads_gasto || 0), 0))}).` : ""}{" "}
                 <button type="button" className="link-btn" onClick={() => onCorrigir(av.ativo)}>✎ corrigir</button>
               </div>
             );
@@ -989,9 +990,10 @@ function CorrigirAdsDialog({ d, onCancelar, onToast }) {
   const { periodo, linha } = d;
   const o = origemDoGasto(periodo, linha.semanas);
   const [and, setAnd] = useState(() => ({ ate: o.csv?.ate || "", gasto: virg(o.csv?.gasto ?? ""), cliques: String(o.csv?.cliques ?? ""), vendas: String(o.csv?.vendas ?? "") }));
-  const [sem, setSem] = useState(() => Object.fromEntries(o.mao.map((s) => [s.id, { gasto: virg(s.ads_gasto ?? ""), vendas: String(s.ads_vendas ?? ""), cliques: String(s.ads_cliques ?? "") }])));
+  const todas = [...o.mao, ...o.fora];
+  const [sem, setSem] = useState(() => Object.fromEntries(todas.map((s) => [s.id, { gasto: virg(s.ads_gasto ?? ""), vendas: String(s.ads_vendas ?? ""), cliques: String(s.ads_cliques ?? "") }])));
   const [salvando, setSalvando] = useState(false);
-  const total = Math.max(num(and.gasto), Object.values(sem).reduce((t, x) => t + num(x.gasto), 0) + (o.semanas - o.somaMao));
+  const total = Math.max(num(and.gasto), o.mao.reduce((t, x) => t + num(sem[x.id]?.gasto), 0) + (o.semanas - o.somaMao));
   async function salvar() {
     setSalvando(true);
     try {
@@ -999,7 +1001,7 @@ function CorrigirAdsDialog({ d, onCancelar, onToast }) {
         const r = await salvarAndamentoAds(periodo, { ate: and.ate, gasto: num(and.gasto), cliques: Math.round(num(and.cliques)), vendas: Math.round(num(and.vendas)), ...(periodo.parcial?.receita != null ? { receita: periodo.parcial.receita } : {}), historico: (periodo.parcial?.historico || []).filter((h) => num(h.gasto) <= num(and.gasto) + 0.01) });
         if (!r.ok) throw new Error(r.msg);
       }
-      for (const s of o.mao) {
+      for (const s of todas) {
         const x = sem[s.id];
         if (!x) continue;
         if (num(x.gasto) === num(s.ads_gasto) && Math.round(num(x.vendas)) === num(s.ads_vendas) && Math.round(num(x.cliques)) === num(s.ads_cliques)) continue;
@@ -1032,16 +1034,20 @@ function CorrigirAdsDialog({ d, onCancelar, onToast }) {
         <p className="hint">Sem andamento do CSV neste período.</p>
       )}
       <h4 style={{ margin: "10px 0 4px" }}>Semanas registradas à mão (antes)</h4>
-      {o.mao.length ? (
+      {todas.length ? (
         <table className="tabela-ads">
-          <thead><tr><th>Semana até</th><th className="num">Gasto (R$)</th><th className="num">Vendas via Ads</th><th className="num">Cliques</th></tr></thead>
+          <thead><tr><th>Semana até</th><th className="num">Gasto (R$)</th><th className="num">Vendas via Ads</th><th className="num">Cliques</th><th></th></tr></thead>
           <tbody>
-            {o.mao.map((s) => (
+            {todas.map((s) => (
               <tr key={s.id}>
-                <td>{dm(somarDias(String(s.data).slice(0, 10), -1))}</td>
+                <td>
+                  {dm(somarDias(String(s.data).slice(0, 10), -1))}
+                  {!o.mao.includes(s) && <div className="muted-cel">fora deste período — ainda soma no Ads da semana, no teto e em Vendas do mês</div>}
+                </td>
                 <td className="num">{campo(sem[s.id].gasto, (v) => setSem((m) => ({ ...m, [s.id]: { ...m[s.id], gasto: v } })))}</td>
                 <td className="num">{campo(sem[s.id].vendas, (v) => setSem((m) => ({ ...m, [s.id]: { ...m[s.id], vendas: v } })))}</td>
                 <td className="num">{campo(sem[s.id].cliques, (v) => setSem((m) => ({ ...m, [s.id]: { ...m[s.id], cliques: v } })))}</td>
+                <td><button type="button" className="link-btn" title="Zera o Ads desta semana (as vendas da semana continuam)" onClick={() => setSem((m) => ({ ...m, [s.id]: { gasto: "0", vendas: "0", cliques: "0" } }))}>zerar</button></td>
               </tr>
             ))}
           </tbody>
