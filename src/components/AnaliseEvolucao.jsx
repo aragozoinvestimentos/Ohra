@@ -3,6 +3,7 @@ import { BRL } from "../lib/format.js";
 import { agruparPorItem, evolucaoSemanal, inicioSemana, metricas, porDiaDaSemana, precoVsVendas, ultimasSemanas, PLATAFORMAS, somarDias } from "../lib/pedidos.js";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
+import { useLembrado } from "../hooks/useLembrado.js";
 import { adsNaJanela } from "../lib/ads.js";
 
 // Análise → 3 · Evolução e métricas. Só leitura e só informativo: nenhuma
@@ -79,6 +80,24 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
       })
       .sort((x, y) => y.v.reduce((t, n) => t + n, 0) + y.agoraQ - (x.v.reduce((t, n) => t + n, 0) + x.agoraQ));
   }, [linhas, semanas, esc.itens, f.plat, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Ranking da tabela (21/10/2026, pedido do Gustavo): padrão = quem mais lucrou
+  // na última semana fechada; empate → lucro das 8 semanas → esta semana.
+  const [ordem, setOrdem] = useLembrado("ohra:analise:evo-ordem", "fechada");
+  const evoOrd = useMemo(() => {
+    const ult = (e) => e.lucroSem[e.lucroSem.length - 1] || 0;
+    const oito = (e) => e.lucroSem.reduce((t, n) => t + n, 0);
+    const chave = {
+      fechada: (e) => [ult(e), oito(e), e.agoraLucro],
+      oito: (e) => [oito(e), ult(e), e.agoraLucro],
+      agora: (e) => [e.agoraLucro, ult(e), oito(e)],
+      tendencia: (e) => [e.tendencia ?? -Infinity, ult(e), oito(e)],
+    }[ordem] || ((e) => [ult(e), oito(e), e.agoraLucro]);
+    return [...evo].sort((a, b) => {
+      const ka = chave(a), kb = chave(b);
+      for (let i = 0; i < ka.length; i++) if (kb[i] !== ka[i]) return kb[i] - ka[i];
+      return 0;
+    });
+  }, [evo, ordem]);
   const dias = useMemo(() => porDiaDaSemana(atual), [atual]);
   const maxD = Math.max(1, ...dias.map((d) => d.n));
   const elas = useMemo(() => precoVsVendas(cres.linhas), [cres.linhas]);
@@ -166,10 +185,22 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
         <h3>
           Por produto — semana a semana <span className="dir">unidades por semana completa (seg–dom) · tendência = 2 últimas semanas × 2 anteriores · "esta semana" só acompanha (não entra na tendência)</span>
         </h3>
+        <div className="toolbar">
+          <label>
+            Ordenar por{" "}
+            <select value={ordem} onChange={(e) => setOrdem(e.target.value)}>
+              <option value="fechada">Lucro da semana fechada</option>
+              <option value="oito">Lucro das 8 semanas</option>
+              <option value="agora">Lucro desta semana (até hoje)</option>
+              <option value="tendencia">Tendência</option>
+            </select>
+          </label>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
+                <th className="num">#</th>
                 <th>Produto</th>
                 {semanas.map((s) => (
                   <th key={s} className="num">{dm(s)}</th>
@@ -187,12 +218,13 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
               </tr>
             </thead>
             <tbody>
-              {evo.map((e) => {
+              {evoOrd.map((e, idx) => {
                 const t = e.tendencia;
                 const cls = t == null ? "faint" : t > 0.15 ? "ana-sobe" : t < -0.15 ? "ana-desce" : "faint";
                 const txt = t == null ? "—" : t > 0.15 ? `↑ ${pct(t, 0)}` : t < -0.15 ? `↓ ${pct(-t, 0)}` : "≈ estável";
                 return (
                   <tr key={e.chave}>
+                    <td className="num faint">{idx + 1}º</td>
                     <td>
                       <b>{e.nome}</b>
                       <span className="ana-tags" style={{ marginLeft: 6 }}>
