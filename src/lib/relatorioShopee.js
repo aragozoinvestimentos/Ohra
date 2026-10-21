@@ -377,6 +377,87 @@ export function juntarAds(relatorios) {
   return { tipo: "ads", periodo, porItem, total, loja, arquivo: lista.map((r) => r.arquivo).join(" + "), arquivos: lista.length, periodosDiferentes: !iguais };
 }
 
+// ---------- CSV de Ads em JANELAS de datas (21/10/2026) ----------
+// Pedido do Gustavo: não precisar exportar desde o início do período (campanha
+// que roda meses, GMV). Cada envio = uma janela (o período exportado); as
+// janelas guardadas se SOMAM, campanha por campanha, sem repetir dia (a mesma
+// janela substitui; janela maior engole as menores — juntarJanela de
+// gmvLoja.js). A Shopee manda o TOTAL do período (não o dia a dia), então
+// janela que cruza só em parte com uma anterior não dá pra somar exato: o app
+// oferece usar só os dias novos ESTIMANDO pela média por dia (recortarAds) ou
+// exportar o período exato.
+const diasEntre = (de, ate) => Math.round((new Date(`${ate}T12:00:00`) - new Date(`${de}T12:00:00`)) / 86400000) + 1;
+export function somarJanelasAds(relatorios) {
+  const lista = (relatorios || []).filter((r) => r?.tipo === "ads" && r.periodo?.de);
+  if (!lista.length) return null;
+  if (lista.length === 1) return lista[0];
+  lista.sort((a, b) => a.periodo.de.localeCompare(b.periodo.de));
+  const porItem = new Map();
+  for (const r of lista)
+    for (const [id, a] of r.porItem) {
+      const t = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, nome: a.nome, camp: new Map() };
+      if (a.status) t.status = a.status; // o da janela mais recente
+      t.gasto += num0(a.gasto);
+      t.cliques += num0(a.cliques);
+      t.vendas += num0(a.vendas);
+      const ls = Array.isArray(a.linhas) && a.linhas.length && typeof a.linhas[0] === "object" ? a.linhas : null;
+      if (ls)
+        for (const x of ls) {
+          const c = t.camp.get(x.k) || { k: x.k, g: 0, cl: 0, v: 0 };
+          c.g += num0(x.g);
+          c.cl += num0(x.cl);
+          c.v += num0(x.v);
+          t.camp.set(x.k, c);
+        }
+      else t.semLinhas = true;
+      porItem.set(id, t);
+    }
+  const total = { gasto: 0, cliques: 0, vendas: 0 };
+  for (const t of porItem.values()) {
+    t.gasto = Math.round(t.gasto * 100) / 100;
+    if (!t.semLinhas && t.camp.size) t.linhas = [...t.camp.values()].map((c) => ({ ...c, g: Math.round(c.g * 100) / 100 }));
+    delete t.camp;
+    delete t.semLinhas;
+    total.gasto += t.gasto;
+    total.cliques += t.cliques;
+    total.vendas += t.vendas;
+  }
+  total.gasto = Math.round(total.gasto * 100) / 100;
+  let loja = null;
+  for (const r of lista)
+    if (r.loja) {
+      loja = loja || { gasto: 0, cliques: 0, vendas: 0, receita: 0, inicio: r.loja.inicio };
+      loja.gasto = Math.round((loja.gasto + num0(r.loja.gasto)) * 100) / 100;
+      loja.cliques += num0(r.loja.cliques);
+      loja.vendas += num0(r.loja.vendas);
+      loja.receita = Math.round((loja.receita + num0(r.loja.receita)) * 100) / 100;
+      if (r.loja.status) loja.status = r.loja.status;
+    }
+  return { tipo: "ads", periodo: { de: lista[0].periodo.de, ate: lista.map((r) => r.periodo.ate).sort().pop() }, porItem, total, loja, arquivo: lista.map((r) => r.arquivo).filter(Boolean).join(" + "), janelas: lista.length, estimado: lista.some((r) => r.estimado) };
+}
+/** Só os dias de `de` até o fim do relatório, pela média por dia (estimado). */
+export function recortarAds(r, de) {
+  if (!r?.periodo || de <= r.periodo.de) return r;
+  const f = diasEntre(de, r.periodo.ate) / diasEntre(r.periodo.de, r.periodo.ate);
+  const esc = (x) => Math.round(num0(x) * f * 100) / 100;
+  const porItem = new Map();
+  for (const [id, a] of r.porItem) {
+    const ls = Array.isArray(a.linhas) && a.linhas.length && typeof a.linhas[0] === "object" ? a.linhas.map((x) => ({ ...x, g: esc(x.g), cl: esc(x.cl), v: esc(x.v) })) : a.linhas;
+    porItem.set(id, { ...a, gasto: esc(a.gasto), cliques: esc(a.cliques), vendas: esc(a.vendas), linhas: ls });
+  }
+  const loja = r.loja ? { ...r.loja, gasto: esc(r.loja.gasto), cliques: esc(r.loja.cliques), vendas: esc(r.loja.vendas), receita: esc(r.loja.receita) } : null;
+  return { ...r, periodo: { de, ate: r.periodo.ate }, porItem, loja, estimado: true, fracao: f };
+}
+/** Janela nova cruza só em parte com as anteriores (começa dentro de uma delas)? → dia a partir do qual é nova. */
+export function inicioNovoDaJanela(janelas, nova) {
+  const cruzaInicio = (janelas || []).filter((j) => j.de < nova.de && j.ate >= nova.de && j.ate < nova.ate);
+  if (!cruzaInicio.length) return null;
+  const ate = cruzaInicio.map((j) => j.ate).sort().pop();
+  const d = new Date(`${ate}T12:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 // Desempenho do produto: a Shopee separa os anúncios em listas ("produto com
 // melhor desempenho", "produtos recém-cadastrados"…), cada uma com o seu
 // Exportar. Vários arquivos do MESMO período viram um relatório só (anúncio
@@ -678,7 +759,7 @@ export function andamentoDoCsv(lidos, todas, lojaLinha = null) {
   };
   for (const l of shopee) {
     if (l.av?.ativo && res.periodo?.de && res.periodo.de > l.av.ativo.inicio)
-      avisos.push(`${l.item.nome}: o CSV começa em ${dm(res.periodo.de)}, mas o período de Ads começou em ${dm(l.av.ativo.inicio)} — exporte desde o início do período (o andamento é acumulado).`);
+      avisos.push(`${l.item.nome}: sem dados de Ads antes de ${dm(res.periodo.de)} (o período começou em ${dm(l.av.ativo.inicio)}) — o app conta a partir do 1º envio; se quiser o total desde o início, mande também de ${dm(l.av.ativo.inicio)} a ${dm(somar(res.periodo.de, -1))}.`);
     const x = res.porChave[l.chave];
     if (x) tratar(l, x, l.chave);
   }

@@ -124,3 +124,14 @@ export async function estenderPeriodoAds(periodo, fim) {
   const { error } = await supabase.from("ads_periodos").update({ fim }).eq("id", periodo.id);
   return error ? { ok: false, msg: msgErro(error) } : { ok: true };
 }
+
+// ✎ Corrigir os números de Ads de uma semana registrada à MÃO antes (Registrar
+// semana antigo): o período usa o maior entre essas semanas e o CSV, então uma
+// semana antiga errada segura o gasto lá em cima mesmo reenviando o CSV.
+// Semana da rampa → rampa_registros; fora de rampa → afiliado_registros.
+export async function corrigirSemanaAds(semana, { ads_gasto, ads_vendas, ads_cliques }) {
+  if (!semana?.id || semana.auto) return { ok: false, msg: "Esta semana é montada pelas importações — corrija pelo CSV" };
+  const tabela = semana.rampa_id ? "rampa_registros" : "afiliado_registros";
+  const { error } = await supabase.from(tabela).update({ ads_gasto, ads_vendas, ads_cliques }).eq("id", semana.id);
+  return error ? { ok: false, msg: msgErro(error) } : { ok: true };
+}

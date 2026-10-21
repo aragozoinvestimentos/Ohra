@@ -840,3 +840,21 @@ export function avaliarAdsLoja({ periodos = [], equilibrio, hoje, regras = REGRA
   }
   return sit("loja-vale", "ok", "Vale a pena", `ROAS ${um(roas)} · equilíbrio da loja ${um(equilibrio)} · ${textoRetorno(retorno)}.`, { numeros });
 }
+
+// De onde vem o gasto de um período (✎ corrigir no Ads, 21/10/2026): o app usa
+// o MAIOR entre o andamento do CSV e a soma das semanas do período — e uma
+// semana registrada À MÃO antes (Registrar semana antigo) com Ads errado segura
+// o número lá em cima mesmo reenviando o CSV. Mostra as duas partes.
+export function origemDoGasto(periodo, semanas) {
+  if (!periodo) return { csv: null, semanas: 0, mao: [], somaMao: 0 };
+  const ss = semanasNoPeriodo(semanas || [], periodo);
+  const mao = ss.filter((s) => !s.auto && s.id && (num(s.ads_gasto) > 0 || num(s.ads_vendas) > 0 || num(s.ads_cliques) > 0));
+  const par = periodo.parcial;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  return {
+    csv: par?.ate ? { gasto: r2(num(par.gasto)), vendas: num(par.vendas), cliques: num(par.cliques), ate: String(par.ate).slice(0, 10) } : null,
+    semanas: r2(ss.reduce((t, s) => t + num(s.ads_gasto), 0)),
+    mao,
+    somaMao: r2(mao.reduce((t, s) => t + num(s.ads_gasto), 0)),
+  };
+}

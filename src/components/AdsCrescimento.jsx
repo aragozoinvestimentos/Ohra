@@ -3,7 +3,7 @@ import { trocarSubAba } from "../lib/subAbas.js";
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { andamentoValido, capacidadeDoItem, faseDaLoja, periodoLigado, resumoPeriodo, retornoAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS } from "../lib/ads.js";
+import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, resumoPeriodo, retornoAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS } from "../lib/ads.js";
 import { porSemana } from "../lib/rampa.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { adsPorItemApp, valoresDoPeriodo, cruzarGrupos, lerRelatorio } from "../lib/relatorioShopee.js";
@@ -16,7 +16,7 @@ import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import { EncerrarAdsDialog, NAO_RECOMENDA, PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
-import { ajustarPeriodoAds, despausarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, reviseiSemVendaAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
+import { ajustarPeriodoAds, despausarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, reviseiSemVendaAds, salvarAndamentoAds, corrigirSemanaAds } from "../lib/adsAcoes.js";
 import { supabase } from "../lib/supabaseClient.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import { AgoraRampa } from "./RampaAgora.jsx";
@@ -172,6 +172,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   const [ajusteDlg, setAjusteDlg] = useState(null); // { linha, orcamento, meta }
   const [encerrarDlg, setEncerrarDlg] = useState(null); // { linha }
   const [excluirDlg, setExcluirDlg] = useState(null); // { periodo }
+  const [corrigirDlg, setCorrigirDlg] = useState(null); // { linha, periodo } — ✎ corrigir números de Ads
   const [verRegras, setVerRegras] = useState(false);
   const [andamentoDlg, setAndamentoDlg] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -585,6 +586,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                               onAjuste={(sug) => setAjusteDlg({ linha: l, ...sug })}
                               onEncerrar={() => setEncerrarDlg({ linha: l })}
                               onExcluir={(periodo) => setExcluirDlg({ periodo, rampa: l.rampa?.r || null })}
+                              onCorrigir={(periodo) => setCorrigirDlg({ linha: l, periodo })}
                               onPausar={() => rodar(() => pausarPeriodoAds(l.av.ativo, hoje), "Pausado pra revisar — o período continua; marque “Despausei” quando religar")}
                               onDespausar={() => rodar(() => despausarPeriodoAds(l.av.ativo, hoje), "Despausado — a conferência recomeça em 3 dias")}
                               onRevisei={() => rodar(() => reviseiSemVendaAds(l.av.ativo, hoje), "Ok — o app confere de novo em 3 dias")}
@@ -622,6 +624,13 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
       )}
       {ajusteDlg && <AjusteDialog d={ajusteDlg} hoje={hoje} salvando={salvando} onCancelar={() => setAjusteDlg(null)} onSalvar={salvarAjuste} onToast={onToast} />}
       {encerrarDlg && <EncerrarAdsDialog nome={encerrarDlg.linha.item.nome} teste={encerrarDlg.linha.av.ativo?.tipo === "teste"} hoje={hoje} salvando={salvando} onCancelar={() => setEncerrarDlg(null)} onSalvar={encerrar} />}
+      {corrigirDlg && (
+        <CorrigirAdsDialog
+          d={corrigirDlg}
+          onCancelar={() => setCorrigirDlg(null)}
+          onToast={onToast}
+        />
+      )}
       {excluirDlg && (
         <ConfirmDialog
           titulo="Excluir este período de Ads?"
@@ -649,7 +658,7 @@ function passosSemVenda(l) {
   return passos;
 }
 
-function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, onFazer, onPausar, onDespausar, onRevisei, onSemAds, onAndamento }) {
+function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, onCorrigir, onFazer, onPausar, onDespausar, onRevisei, onSemAds, onAndamento }) {
   const av = l.av;
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
@@ -752,6 +761,16 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
             <div><span>Retorno</span><b className={`ads-roas${ret == null ? "" : ret >= 1 ? " bom" : " ruim"}`}>{ret != null ? `${um(ret)}×` : "—"}</b></div>
           </div>
           {ret != null && <div className="muted-cel" style={{ marginTop: 2 }}>{textoRetorno(ret)} (antes de descontar o R$ 1)</div>}
+          {(() => {
+            const o = origemDoGasto(av.ativo, l.semanas);
+            if (!o.mao.length) return null;
+            return (
+              <div className="muted-cel" style={{ marginTop: 2 }}>
+                Gasto vem de: CSV {o.csv ? `até ${dm(o.csv.ate)} ${BRL(o.csv.gasto)}` : "—"} · semanas {BRL(o.semanas)} (registradas à mão antes: {BRL(o.somaMao)}) → vale o maior.{" "}
+                <button type="button" className="link-btn" onClick={() => onCorrigir(av.ativo)}>✎ corrigir</button>
+              </div>
+            );
+          })()}
           {andamento && (
             <div className="ads-andamento">
               <span className="ads-rotulo">Andamento até {dm(andamento.ate)}</span>
@@ -836,6 +855,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
                       {r.resultado && !ativo ? <div className="muted-cel">{r.resultado.texto}{p.motivo_fim && p.motivo_fim !== "encerrado" ? ` · ${p.motivo_fim}` : ""}</div> : null}
                     </td>
                     <td className="acao">
+                      <button type="button" className="btn-icone" title="Corrigir os números de Ads deste período" onClick={() => onCorrigir(p)}>✎</button>
                       <button type="button" className="btn-icone" title="Excluir este período" onClick={() => onExcluir(p)}>×</button>
                     </td>
                   </tr>
@@ -843,7 +863,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
               })}
             </tbody>
           </table>
-          <p className="hint" style={{ margin: "4px 0 0" }}>Os números vêm do CSV do Shopee Ads (andamento) ou das semanas, o que estiver mais completo.</p>
+          <p className="hint" style={{ margin: "4px 0 0" }}>Os números vêm do CSV do Shopee Ads (andamento) ou das semanas, o que for maior. Número estranho? ✎ mostra de onde vem e deixa corrigir.</p>
         </div>
       )}
     </div>
@@ -960,6 +980,77 @@ function DetalheLoja({ l, hoje, onFazer, onNovo, onAjuste, onEncerrar, onPausar,
         </div>
       )}
     </div>
+  );
+}
+
+// ✎ Corrigir os números de Ads de um período: o andamento do CSV e as semanas
+// registradas à mão antes (o app usa o maior dos dois). Nada some do histórico.
+function CorrigirAdsDialog({ d, onCancelar, onToast }) {
+  const { periodo, linha } = d;
+  const o = origemDoGasto(periodo, linha.semanas);
+  const [and, setAnd] = useState(() => ({ ate: o.csv?.ate || "", gasto: virg(o.csv?.gasto ?? ""), cliques: String(o.csv?.cliques ?? ""), vendas: String(o.csv?.vendas ?? "") }));
+  const [sem, setSem] = useState(() => Object.fromEntries(o.mao.map((s) => [s.id, { gasto: virg(s.ads_gasto ?? ""), vendas: String(s.ads_vendas ?? ""), cliques: String(s.ads_cliques ?? "") }])));
+  const [salvando, setSalvando] = useState(false);
+  const total = Math.max(num(and.gasto), Object.values(sem).reduce((t, x) => t + num(x.gasto), 0) + (o.semanas - o.somaMao));
+  async function salvar() {
+    setSalvando(true);
+    try {
+      if (o.csv && and.ate && (num(and.gasto) !== o.csv.gasto || Math.round(num(and.vendas)) !== o.csv.vendas || Math.round(num(and.cliques)) !== o.csv.cliques)) {
+        const r = await salvarAndamentoAds(periodo, { ate: and.ate, gasto: num(and.gasto), cliques: Math.round(num(and.cliques)), vendas: Math.round(num(and.vendas)), ...(periodo.parcial?.receita != null ? { receita: periodo.parcial.receita } : {}), historico: (periodo.parcial?.historico || []).filter((h) => num(h.gasto) <= num(and.gasto) + 0.01) });
+        if (!r.ok) throw new Error(r.msg);
+      }
+      for (const s of o.mao) {
+        const x = sem[s.id];
+        if (!x) continue;
+        if (num(x.gasto) === num(s.ads_gasto) && Math.round(num(x.vendas)) === num(s.ads_vendas) && Math.round(num(x.cliques)) === num(s.ads_cliques)) continue;
+        const r = await corrigirSemanaAds(s, { ads_gasto: num(x.gasto), ads_vendas: Math.round(num(x.vendas)), ads_cliques: Math.round(num(x.cliques)) });
+        if (!r.ok) throw new Error(r.msg);
+      }
+      window.dispatchEvent(new Event("focus"));
+      onToast?.("Números de Ads corrigidos");
+      onCancelar();
+    } catch (e) {
+      onToast?.(e.message || "Não foi possível salvar");
+    }
+    setSalvando(false);
+  }
+  const campo = (val, on) => <input type="text" inputMode="decimal" style={{ width: 80, textAlign: "right" }} value={val} onChange={(e) => on(e.target.value)} />;
+  return (
+    <EditarDialog titulo={`Corrigir Ads — ${linha.nome || linha.item?.nome || ""} (${dm(periodo.inicio)}–${periodo.fim ? dm(periodo.fim) : "agora"})`} salvando={salvando} onSalvar={salvar} onCancelar={onCancelar} classe="modal-box-md">
+      <p className="hint" style={{ marginTop: 0 }}>
+        O gasto do período = o <b>maior</b> entre o CSV (andamento) e a soma das semanas. Se uma semana antiga, registrada à mão, ficou com o Ads errado, ela segura o número lá em cima mesmo reenviando o CSV — corrija aqui. Hoje: CSV {o.csv ? BRL(o.csv.gasto) : "—"} · semanas {BRL(o.semanas)} → vale {BRL(Math.max(o.csv?.gasto || 0, o.semanas))}.
+      </p>
+      <h4 style={{ margin: "8px 0 4px" }}>Andamento (CSV do Shopee Ads)</h4>
+      {o.csv ? (
+        <div className="grid-auto">
+          <div className="field"><label>Até</label><input type="date" value={and.ate} onChange={(e) => setAnd((a) => ({ ...a, ate: e.target.value }))} /></div>
+          <div className="field"><label>Gasto (R$)</label>{campo(and.gasto, (v) => setAnd((a) => ({ ...a, gasto: v })))}</div>
+          <div className="field"><label>Vendas via Ads</label>{campo(and.vendas, (v) => setAnd((a) => ({ ...a, vendas: v })))}</div>
+          <div className="field"><label>Cliques</label>{campo(and.cliques, (v) => setAnd((a) => ({ ...a, cliques: v })))}</div>
+        </div>
+      ) : (
+        <p className="hint">Sem andamento do CSV neste período.</p>
+      )}
+      <h4 style={{ margin: "10px 0 4px" }}>Semanas registradas à mão (antes)</h4>
+      {o.mao.length ? (
+        <table className="tabela-ads">
+          <thead><tr><th>Semana até</th><th className="num">Gasto (R$)</th><th className="num">Vendas via Ads</th><th className="num">Cliques</th></tr></thead>
+          <tbody>
+            {o.mao.map((s) => (
+              <tr key={s.id}>
+                <td>{dm(somarDias(String(s.data).slice(0, 10), -1))}</td>
+                <td className="num">{campo(sem[s.id].gasto, (v) => setSem((m) => ({ ...m, [s.id]: { ...m[s.id], gasto: v } })))}</td>
+                <td className="num">{campo(sem[s.id].vendas, (v) => setSem((m) => ({ ...m, [s.id]: { ...m[s.id], vendas: v } })))}</td>
+                <td className="num">{campo(sem[s.id].cliques, (v) => setSem((m) => ({ ...m, [s.id]: { ...m[s.id], cliques: v } })))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="hint">Nenhuma — as semanas deste período vêm das importações (corrija reenviando o CSV).</p>
+      )}
+      <p style={{ margin: "8px 0 0" }}>Depois de salvar, o período fica com <b>{BRL(total)}</b> de gasto.</p>
+    </EditarDialog>
   );
 }
 
