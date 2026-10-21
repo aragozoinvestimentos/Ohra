@@ -55,7 +55,7 @@ export const REGRAS_ADS = {
   paradaVendas: 3, // gastou o equivalente a 3 vendas (pelo custo por venda dele) sem vender = parou de vez
   lojaGastoMinDia: 1, // campanha da loja gastando < R$ 1/dia por 7 dias = meta alta demais
   lojaMetaFator: 2, // campanha da loja: meta alta = 2× o equilíbrio da loja
-  decisaoDias: 3, // depois de cada ajuste: decide de novo em 3 dias (método do Luan, 16/10/2026)
+  decisaoDias: 7, // depois de cada ajuste: decide de novo em 7 dias (21/10/2026, Gustavo: "20% na semana — 3 dias não é nada")
   metaFator: 1.3, // meta sugerida = equilíbrio × 1,3
   metaAltaFator: 2, // meta > 2× o equilíbrio = alta pra começar
   escada: { manterAte: 1.2, dobroAte: [2, 3] }, // retorno: < 1,2 manter · < 2 +20% · ≥ 2 +30% (aumentoMax)
@@ -80,7 +80,7 @@ export const REGRAS_ADS = {
   aquecerDias: 45, // Aquecer começa 45 dias antes da data-limite
   ajustarDias: 21, // Ajustar começa 21 dias antes da data-limite
   corteDias: 7, // Corte: pausa 7 dias antes da data (a entrega não chega mais)
-  metaSazonalFator: 2, // Ads sazonal deixa ≥ metade do lucro: meta mínima = 2× o equilíbrio
+  metaSazonalFator: 2, // SEM USO desde 21/10/2026 (a régua é o equilíbrio pra todos, inclusive na temporada)
   alavancarAumento: 0.3, // no Alavancar o aumento pode ser de até 30%
   alavancarAprendizado: 3, // e decide a cada 3 dias (pelo andamento)
   andamentoMaxDias: 4, // andamento mais velho que isso: atualize antes de decidir
@@ -438,6 +438,21 @@ function medidaDaDecisao(ativo, ss, refDecisao, gapDias, preco) {
   return { fonte: "semana", ate: somarDiasIso(String(ult.data).slice(0, 10), -1), dias: 7, gasto: num(ult.ads_gasto), vendas: num(ult.ads_vendas), cliques: num(ult.ads_cliques), roas: roasDe(ult, preco), semana: ult, depois };
 }
 
+// Redução POR NÍVEIS (21/10/2026, Gustavo: "reduz 1 nível, não vários de uma
+// vez"): volta pro orçamento de antes do último aumento (histórico de ajustes
+// do período); sem histórico, −20%. Nunca abaixo do mínimo da Shopee.
+export function degrauAnterior(periodo, orcamento, regras = REGRAS_ADS) {
+  const min = num(regras.minDiario) || 10;
+  const hist = [num(periodo?.orcamento_diario), ...(Array.isArray(periodo?.ajustes) ? periodo.ajustes : []).filter((a) => !a.tipo && a.orcamento != null).map((a) => num(a.orcamento))].filter((v) => v > 0);
+  let anterior = null;
+  for (let k = hist.length - 1; k >= 0; k--)
+    if (hist[k] < orcamento - 0.004) {
+      anterior = hist[k];
+      break;
+    }
+  return Math.max(min, anterior ?? Math.floor(orcamento * 0.8));
+}
+
 // A avaliação. `semanas` = registros semanais do item (tipo semana, em ordem
 // de data, qualquer formato com vendas/ads_*/data/periodo_inicio).
 // `anuncio` = aviso de Revisar anúncio da Rampa (funil/teste), se houver.
@@ -445,11 +460,12 @@ function medidaDaDecisao(ativo, ss, refDecisao, gapDias, preco) {
 export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodos = [], anuncio = null, hoje, regras = REGRAS_ADS, tetoLoja = null, sazonal = null, capacidadeDia = null }) {
   const ss = (semanas || []).map(porSemana).sort((a, b) => String(a.data).localeCompare(String(b.data)));
   const empate = roasEmpate(preco, lucro);
-  // Ads sazonal (faseAdsSazonal): na temporada o Ads tem que deixar pelo menos
-  // metade do lucro — o "mínimo" das decisões vira 2× o equilíbrio.
+  // Régua ÚNICA = o ROAS de equilíbrio, pra todos os produtos (21/10/2026,
+  // opção C do Gustavo — antes, na temporada, exigia 2× o equilíbrio). As
+  // fases do sazonal (Aquecer/Ajustar/Alavancar/Corte) continuam.
   const naTemporada = !!sazonal && ["aquecer", "ajustar", "alavancar"].includes(sazonal.fase);
-  const minimo = empate ? (naTemporada ? empate * num(regras.metaSazonalFator || 2) : empate) : null;
-  const nomeMin = naTemporada ? `o mínimo da temporada (ROAS ${minimo ? um(minimo) : "—"}, metade do lucro)` : `o equilíbrio (ROAS ${empate ? um(empate) : "—"})`;
+  const minimo = empate || null;
+  const nomeMin = `o equilíbrio (ROAS ${empate ? um(empate) : "—"})`;
   const alavancar = sazonal?.fase === "alavancar";
   const rAum = alavancar ? { ...regras, aumento: num(regras.alavancarAumento) || regras.aumento } : regras;
   const ativo = periodoAtivo(periodos, hoje);
@@ -497,6 +513,10 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const refVolta = rev?.data || ativo.inicio;
     const diasRodando = diasEntre(ativo.inicio, hoje) - pz.diasPausados;
     const diasDesdeVolta = diasEntre(refVolta, hoje);
+    // Alertas de 3 dias (sem venda / prejuízo forte) só na 1ª semana do
+    // período ou da volta/revisão (21/10/2026). Depois disso vale a regra
+    // semanal: sobe ou desce 1 degrau por semana, até pausar.
+    const primeiraSemana = diasRodando < regras.aprendizadoDias || (!!rev && diasDesdeVolta < regras.aprendizadoDias);
     const vendasTot = Math.max(r.vendas, a00?.vendas || 0);
     const base = rev ? acumuladoAntesDe(ativo, rev.data) : { gasto: 0, cliques: 0, vendas: 0 };
     const desde = {
@@ -509,7 +529,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const quandoRev = rev ? ` desde ${rev.tipo === "volta" ? "que voltou" : "a revisão"} (${dm(rev.data)})` : "";
     // Tem número cobrindo os 3 dias? (andamento até ≥ ref + 2, ou semana registrada depois)
     const temDado = (a00 && a00.ate >= somarDiasIso(refVolta, dia3 - 1)) || semanasNoPeriodo(ss, ativo).some((x) => x.data > somarDiasIso(refVolta, dia3 - 1));
-    if (diasDesdeVolta >= dia3 && vendasDesdeVolta === 0) {
+    if (primeiraSemana && diasDesdeVolta >= dia3 && vendasDesdeVolta === 0) {
       if (temDado)
         return sitA("sem-venda-dia3", "resolver", `${diasDesdeVolta} dias pagando Ads sem venda${quandoRev} — pare e arrume o anúncio`, `O Ads só traz gente até o anúncio; se em ${diasDesdeVolta} dias ninguém comprou, mais dinheiro não resolve. Pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"} antes de gastar mais.`, { numeros, semVenda: { dias: diasDesdeVolta, gasto: desde.gasto, cliques: desde.cliques, podeEsperar: true, desdeRevisao: !!rev } });
       if (diasRodando < regras.aprendizadoDias || rev)
@@ -530,7 +550,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
       // "vendeu, espera os 7 dias pra fechar o ROAS"): não pede pra parar —
       // decide no 7º dia. Sem venda, o aviso do dia 3 já cobriu.
       const esperaAprendizado = !rev && vendasDes > 0 && diasRodando < regras.aprendizadoDias;
-      if (!esperaAprendizado && diasDesdeVolta >= dia3 && gastoTot >= gastoMin && empate && retTot != null && retTot < num(regras.prejuizoRetorno || 0.5))
+      if (primeiraSemana && !esperaAprendizado && diasDesdeVolta >= dia3 && gastoTot >= gastoMin && empate && retTot != null && retTot < num(regras.prejuizoRetorno || 0.5))
         return sitA(
           "ads-prejuizo",
           "resolver",
@@ -552,9 +572,9 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
       }
       return sitA("virar-meta", "atencao", `Não se pagou no aprendizado — meta ${um(sugerida)} ou pause`, `No automático o ROAS ficou ${um(roasA)}, abaixo de ${nomeMin}. Troque pra meta de ROAS ${um(sugerida)} (equilíbrio × 1,3 — nunca uma meta que dê prejuízo) ou pause e arrume o anúncio.`, { numeros, novaMeta: sugerida, roasAuto: roasA });
     }
-    // Ritmo (plano 14/10/2026): 7 dias de aprendizado no começo do período;
-    // depois de cada ajuste, decide de novo em 3 dias.
-    // Voltar do pause ou revisar o anúncio também recomeça a contagem (3 dias).
+    // Ritmo: 7 dias de aprendizado no começo do período; depois de cada ajuste
+    // (ou volta/revisão), decide de novo em 7 dias (decisaoDias, 21/10/2026 —
+    // antes 3). Alavancar (sazonal) continua decidindo a cada 3 dias.
     const refAj = [ultimoAjuste, rev?.data].filter((d) => d && d > ativo.inicio).sort().pop();
     const refDecisao = refAj || ativo.inicio;
     const depoisDeAjuste = refDecisao !== ativo.inicio;
@@ -577,7 +597,10 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
       );
     // Queda com o Ads ligado (17/10/2026): últimos 3 dias × os 14 antes.
     {
-      const q = quedaAds(ativo, { desde: refDecisao, preco, empate, orcamento, regras });
+      // Depois da 1ª semana, só a queda de 7 dias pede ação (os sinais de 3
+      // dias — parou/prejuízo/queda — viraram a decisão semanal, 21/10/2026).
+      const q0 = quedaAds(ativo, { desde: refDecisao, preco, empate, orcamento, regras });
+      const q = q0?.tipo === "queda-7" ? q0 : null;
       const pct = (x) => `${Math.round(x * 100)}%`;
       const vtxt = (n) => `${Math.round(n * 10) / 10} venda${Math.round(n * 10) / 10 === 1 ? "" : "s"}`;
       if (q?.tipo === "parou")
@@ -599,12 +622,12 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
           { numeros, queda: q, semVenda: { dias: q.r3.dias, gasto: q.r3.g, cliques: Math.round(q.r3.cl), podeEsperar: true, prejuizo: true } }
         );
       if (q?.tipo === "queda-7") {
-        const novoOrc = orcamento ? Math.max(num(regras.minDiario), Math.floor(orcamento * 0.8)) : null;
+        const novoOrc = orcamento ? degrauAnterior(ativo, orcamento, regras) : null;
         return sitA(
           "queda-ads",
           "resolver",
           `Vendas pelo Ads caíram há ${q.r7.dias} dias — reduza ou suba a meta`,
-          `Nos últimos ${q.r7.dias} dias o ROAS ficou ${um(q.r7.roas)}, abaixo do equilíbrio (${um(empate)}), e as vendas via Ads caíram ${pct(Math.max(0, q.queda))} em relação ao ritmo de antes (${vtxt(q.ritmoB)}/dia → ${vtxt(q.ritmo3)}/dia). Reduza ~20%${novoOrc ? ` (pra ${moeda(novoOrc)}/dia)` : ""} ou suba a meta; se continuar, pause.`,
+          `Nos últimos ${q.r7.dias} dias o ROAS ficou ${um(q.r7.roas)}, abaixo do equilíbrio (${um(empate)}), e as vendas via Ads caíram ${pct(Math.max(0, q.queda))} em relação ao ritmo de antes (${vtxt(q.ritmoB)}/dia → ${vtxt(q.ritmo3)}/dia). Volte 1 degrau${novoOrc ? ` (pra ${moeda(novoOrc)}/dia)` : ""} ou suba a meta; se continuar, pause.`,
           { numeros, queda: q, novoOrcamento: novoOrc }
         );
       }
@@ -649,8 +672,8 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
         const novaMeta = Math.max(sugerida || 0, meta ? Math.ceil(meta * 1.2 * 10) / 10 : 0);
         return sitA("subir-meta", "atencao", `Subir a meta pra ${um(novaMeta)} ou pausar`, `ROAS ${um(roas)} ${quando}, abaixo de ${nomeMin}, e o orçamento já está no mínimo da Shopee (${moeda(regras.minDiario)}/dia). Suba a meta (ROAS alvo) pra ${um(novaMeta)} — a Shopee fica mais seletiva e só entrega pra quem tem mais chance de comprar — ou pause.`, { numeros: semana, novaMeta });
       }
-      const novoOrc = Math.max(num(regras.minDiario), Math.floor(orcamento * 0.8));
-      return sitA("reduzir", "atencao", `Reduzir o orçamento pra ${moeda(novoOrc)}/dia`, `ROAS ${um(roas)} ${quando}, abaixo de ${nomeMin}. Reduza ~20% (de ${moeda(orcamento)} pra ${moeda(novoOrc)}/dia) ou suba a meta. Se repetir, pause.`, { numeros: semana, novoOrcamento: novoOrc });
+      const novoOrc = degrauAnterior(ativo, orcamento, regras);
+      return sitA("reduzir", "atencao", `Voltar 1 degrau: orçamento pra ${moeda(novoOrc)}/dia`, `ROAS ${um(roas)} ${quando}, abaixo de ${nomeMin}. Volte 1 degrau (de ${moeda(orcamento)} pra ${moeda(novoOrc)}/dia — o orçamento de antes do último aumento) e espere 1 semana. Se continuar abaixo, volta mais 1; no mínimo da Shopee, suba a meta ou pause.`, { numeros: semana, novoOrcamento: novoOrc });
     }
     // A Shopee não está gastando o orçamento: a meta está segurando a entrega.
     if (usoOrc != null && usoOrc < regras.gastoBaixo) {
