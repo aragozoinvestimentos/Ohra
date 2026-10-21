@@ -8,18 +8,17 @@ import { usePedidos } from "../hooks/usePedidos.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { enriquecer } from "../lib/pedidos.js";
 import { hojeSP } from "../lib/datas.js";
-import CentralImportacao from "./CentralImportacao.jsx";
 import AnaliseABC from "./AnaliseABC.jsx";
 import AnaliseEvolucao from "./AnaliseEvolucao.jsx";
 
-// Aba Análise (schema v55): 1 · Importar dados | 2 · Curva ABC | 3 · Evolução
-// e métricas. As vendas vêm SÓ dos pedidos importados (Olist, um arquivo por
+// Aba Análise (schema v55): Curva ABC | Curva XYZ | Evolução e métricas (a
+// importação virou o item "Atualizar dados" no remap de 21/10/2026). As vendas vêm SÓ dos pedidos importados (Olist, um arquivo por
 // plataforma) + vendas físicas — `enriquecer` calcula pago/lucro com o custo e
 // as taxas de HOJE (ao vivo). A sub-aba fica no cabeçalho (ohra:analise-sub).
-const SUBABAS_ANALISE = ["importar", "abc", "xyz", "evolucao"];
+const SUBABAS_ANALISE = ["abc", "xyz", "evolucao"];
 
 export default function Analise({ onToast }) {
-  const [sub] = useSubAba("ohra:analise-sub", "importar", SUBABAS_ANALISE);
+  const [sub] = useSubAba("ohra:analise-sub", "abc", SUBABAS_ANALISE);
   const esc = useEscada();
   const cres = useCrescimento();
   const ped = usePedidos();
@@ -36,7 +35,6 @@ export default function Analise({ onToast }) {
   const opcaoDoSku = useOpcaoDoSku(esc.itens, esc.precos);
   const linhas = useMemo(() => enriquecer(ped.pedidos, { itens: esc.itens, canais: esc.canais, cfgDoProduto: esc.cfgDoProduto, opcaoDoSku }), [ped.pedidos, esc.itens, esc.canais, esc.cfgDoProduto, opcaoDoSku]);
 
-  if (sub === "importar") return <CentralImportacao esc={esc} ped={ped} linhas={linhas} linhasAds={cres.linhasAds} cres={cres} hoje={hoje} onToast={onToast} />;
   if (!ped.disponivel)
     return (
       <div className="panel">
@@ -48,7 +46,7 @@ export default function Analise({ onToast }) {
   if (!linhas.length)
     return (
       <div className="panel">
-        <div className="empty">Ainda não há vendas pra analisar. Importe os pedidos da Olist (ou registre uma venda física) em Análise → Importar dados.</div>
+        <div className="empty">Ainda não há vendas pra analisar. Importe os pedidos da Olist (ou registre uma venda física) em Atualizar dados.</div>
       </div>
     );
   if (sub === "abc" || sub === "xyz") return <AnaliseABC esc={esc} cres={cres} linhas={linhas} hoje={hoje} farmConfig={farmConfig} onToast={onToast} parte={sub} />;

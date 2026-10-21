@@ -12,15 +12,18 @@ export const REPETIR = [
 
 // Abas que uma tarefa pode abrir; `item` = a aba recebe o item escolhido.
 export const ABAS_TAREFA = [
-  { key: "historico", rotulo: "Produtos precificados", item: true },
-  { key: "producao", rotulo: "Custo de Produção", item: "produto" },
+  { key: "anuncio", rotulo: "Painel do anúncio", item: true },
+  { key: "produto", rotulo: "Página do produto", item: "produto" },
+  { key: "historico", rotulo: "Preços salvos", item: true },
+  { key: "producao", rotulo: "Simular custo", item: "produto" },
   { key: "avulso", rotulo: "Precificação · 1º Avulso", item: true },
   { key: "quantidade", rotulo: "Precificação · 2º Por quantidade", item: true },
   { key: "ficha", rotulo: "Precificação · 3º Ficha do anúncio", item: true },
   { key: "lancamento", rotulo: "Precificação · 4º Lançamento", item: true },
   { key: "publicar", rotulo: "Precificação · 5º Anunciar" },
-  { key: "cadastros", rotulo: "Cadastros" },
-  { key: "crescimento", rotulo: "Crescimento" },
+  { key: "cadastros", rotulo: "Produtos" },
+  { key: "importar", rotulo: "Atualizar dados" },
+  { key: "crescimento", rotulo: "Vender mais" },
   { key: "promocoes", rotulo: "Promoções" },
   { key: "orcamento", rotulo: "Orçamento" },
   { key: "registroImpressoes", rotulo: "Registro de Impressões" },

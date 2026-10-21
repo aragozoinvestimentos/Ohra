@@ -246,7 +246,7 @@ export function montarPendencias({
     const irLoja = { aba: "crescimento", pedido: { sub: "ads", adsChave: ads.lojaLinha.chave } };
     const dmI = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
     for (const f of gmv.furos || [])
-      add({ id: `gmv-furo|${f.de}|${f.ate}`, grupo: "rotina", ordem: 3, tom: "warn", titulo: `GMV Max da Loja: ${f.de === f.ate ? `falta o dia ${dmI(f.de)}` : `faltam os dias ${dmI(f.de)} a ${dmI(f.ate)}`}`, texto: "exporte esse período na Shopee e envie em Importar dados → GMV Max da Loja (soma sem duplicar)", ir: { aba: "analise", pedido: { sub: "importar" } }, rotulo: "Abrir a importação" });
+      add({ id: `gmv-furo|${f.de}|${f.ate}`, grupo: "rotina", ordem: 3, tom: "warn", titulo: `GMV Max da Loja: ${f.de === f.ate ? `falta o dia ${dmI(f.de)}` : `faltam os dias ${dmI(f.de)} a ${dmI(f.ate)}`}`, texto: "exporte esse período na Shopee e envie em Importar dados → GMV Max da Loja (soma sem duplicar)", ir: { aba: "importar" }, rotulo: "Abrir a importação" });
     for (const p of (gmv.produtos || []).filter((x) => x.aviso)) {
       const nome = p.ligado?.nome || p.nome.slice(0, 40).trim();
       add({ id: `gmv|${p.id}|${p.aviso.tipo}`, grupo: p.aviso.estado === "oportunidade" ? "oportunidade" : "rotina", ordem: 3, tom: p.aviso.estado === "oportunidade" ? "good" : "warn", titulo: `${nome}: ${p.aviso.titulo}`, texto: `Shopee · GMV Max da Loja · ${p.aviso.texto}`, ir: irLoja, rotulo: "Ver no Ads" });
@@ -283,7 +283,7 @@ export function montarPendencias({
       continue;
     }
     if (av.chave === "conferir-dia3") {
-      add({ id: `ads|${l.chave}|conferir`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()} do Ads`, texto: `${l.canal.nome} · pra saber se já vendeu (sem venda em 3 dias = parar e arrumar o anúncio)`, ir: { aba: "analise", pedido: { sub: "importar" } }, rotulo: "Abrir importação" });
+      add({ id: `ads|${l.chave}|conferir`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()} do Ads`, texto: `${l.canal.nome} · pra saber se já vendeu (sem venda em 3 dias = parar e arrumar o anúncio)`, ir: { aba: "importar" }, rotulo: "Abrir importação" });
       continue;
     }
     if (av.chave === "virar-meta") {
@@ -331,8 +331,8 @@ export function montarPendencias({
         ordem: 2,
         tom: "warn",
         titulo: `Atualizar o andamento do Ads — ${atr.semEnvio ? `${atr.periodo._nome} sem envio há ${atr.dias} dias` : `último envio há ${atr.dias} dias`}`,
-        texto: "CSV do Shopee Ads (do início de cada período até ontem) em Análise → Importar dados — as decisões do Ads e as semanas usam ele",
-        ir: { aba: "analise", pedido: { sub: "importar" } },
+        texto: "CSV do Shopee Ads (do início de cada período até ontem) em Atualizar dados — as decisões do Ads e as semanas usam ele",
+        ir: { aba: "importar" },
         rotulo: "Abrir a central",
       });
   }
@@ -361,7 +361,7 @@ export function montarPendencias({
         tom: "warn",
         titulo: "Importar os pedidos da semana",
         texto: `${atrasados.join(" · ")} — vendas, caixa e curva ABC usam os pedidos`,
-        ir: { aba: "analise", pedido: { sub: "importar" } },
+        ir: { aba: "importar" },
         rotulo: "Abrir a central",
       });
   }
@@ -376,7 +376,7 @@ export function montarPendencias({
       tom: "warn",
       titulo: `Atualizar as avaliações — ${n} anúncio${n > 1 ? "s venderam" : " vendeu"} sem conferir`,
       texto: `${importacoes.avaliacoes.slice(0, 3).map((v) => v.canal.nome).filter((x, i, a) => a.indexOf(x) === i).join(", ")} · os portões da Rampa (avaliações, nota, 1–2★) usam o bloco Avaliações`,
-      ir: { aba: "analise", pedido: { sub: "importar" } },
+      ir: { aba: "importar" },
       rotulo: "Abrir a central",
     });
   }

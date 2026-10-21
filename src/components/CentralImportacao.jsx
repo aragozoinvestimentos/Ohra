@@ -22,7 +22,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import AvaliacoesBloco from "./AvaliacoesBloco.jsx";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 
-// Aba Análise → 1 · Importar dados (schema v55): UM lugar pra subir todos os
+// Aba Atualizar dados (schema v55): UM lugar pra subir todos os
 // arquivos. Um bloco por plataforma (padrão igual pra todas): pedidos da
 // Olist + os relatórios de anúncio da plataforma (Shopee: Desempenho e Ads).
 // Cada botão mostra de onde puxar, o último envio e ✓/✗; arquivo errado não

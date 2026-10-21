@@ -6,7 +6,7 @@ let seq = 0;
 
 // Avaliações (schema v58, tabela avaliacoes_produto) com realtime — o total
 // por estrela que a plataforma mostra em cada atualização do bloco Avaliações
-// (Análise → Importar dados). lib/semanasAuto.js transforma em registros
+// (Atualizar dados). lib/semanasAuto.js transforma em registros
 // "avaliacao" pros portões da Rampa.
 // Sem a tabela (SQL não rodado), `disponivel` = false e a lista fica vazia.
 export function useAvaliacoes() {

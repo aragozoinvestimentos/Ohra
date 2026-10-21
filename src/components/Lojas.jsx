@@ -6,8 +6,6 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import Ajuda from "./Ajuda.jsx";
 import PinPrompt from "./PinPrompt.jsx";
-import MetasPrecoLoja from "./MetasPrecoLoja.jsx";
-import CalendarioLoja from "./CalendarioLoja.jsx";
 
 const BUCKET = "loja-icones";
 const TAMANHO_MAX_MB = 3;
@@ -347,8 +345,9 @@ export default function Lojas({ onToast }) {
           </div>
         </div>
       )}
-      <MetasPrecoLoja onToast={onToast} />
-      <CalendarioLoja onToast={onToast} />
+      <div className="alerta alerta-neutro">
+        Metas de preço, calendário de vendas e as outras regras da loja ficam em <b>Configuração → Regras</b>.
+      </div>
       <div className="panel">
         <h3 className="section-title">
           Suas lojas

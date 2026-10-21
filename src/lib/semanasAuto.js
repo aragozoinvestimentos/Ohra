@@ -1,4 +1,4 @@
-// Semanas AUTOMÁTICAS (16/10/2026, "tudo ao vivo pela Análise → Importar
+// Semanas AUTOMÁTICAS (16/10/2026, "tudo ao vivo pela Atualizar dados
 // dados"): a semana de cada produto em rampa / com Ads é montada na hora a
 // partir do que foi importado — nada é gravado. O "Registrar semana" saiu.
 //

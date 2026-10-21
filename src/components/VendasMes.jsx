@@ -10,7 +10,6 @@ import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
 import BuscaItem from "./BuscaItem.jsx";
 import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { juntarMeses, mesesDoPeriodo, saldoReserva, vendasDoMes } from "../lib/vendasMes.js";
-import { trocarSubAba } from "../lib/subAbas.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
 import { gastoAdsNaJanela, regrasAds, tetoDaLoja } from "../lib/ads.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
@@ -196,7 +195,7 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
     const preco = Number(String(f.preco).replace(",", "."));
     if (!f.itemId) return onToast?.("Escolha o produto, variação ou kit");
     if (!f.canalId) return onToast?.("Escolha o canal");
-    if (emRampaNoCanal(f.itemId, f.canalId)) return onToast?.("Esse produto está em rampa nesse canal — as vendas dele entram pelos pedidos importados (Análise → Importar dados)");
+    if (emRampaNoCanal(f.itemId, f.canalId)) return onToast?.("Esse produto está em rampa nesse canal — as vendas dele entram pelos pedidos importados (Atualizar dados)");
     if (!(unidades > 0)) return onToast?.("Informe quantas unidades vendeu");
     if (!(preco > 0)) return onToast?.("Informe o preço de venda");
     if (!f.ate) return onToast?.("Informe a data (Até)");
@@ -347,9 +346,9 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
           <span>
           Vendas por produto
           <span className="badge info" style={{ marginLeft: 8 }}>{t.real > 0 ? (t.real >= t.unidades ? "real" : "real + estimado") : "estimado"}</span>
-          <Ajuda texto="REAL: pedidos importados na aba Análise (Olist) e vendas físicas — o valor pago de verdade, com o custo e as taxas de hoje; nas semanas com pedidos importados a estimativa daquela plataforma sai. ESTIMADO (onde ainda não há pedidos): das semanas registradas antes no Crescimento: produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Venda fora dos marketplaces: registre em Análise → Importar dados → Venda física. As vendas orgânicas lançadas à mão antes continuam contando aqui." />
+          <Ajuda texto="REAL: pedidos importados na aba Análise (Olist) e vendas físicas — o valor pago de verdade, com o custo e as taxas de hoje; nas semanas com pedidos importados a estimativa daquela plataforma sai. ESTIMADO (onde ainda não há pedidos): das semanas registradas antes no Crescimento: produtos em rampa e itens com afiliado ou Ads. Cada venda vale o preço daquela semana (o de agora na época), com o custo e as taxas de hoje. Unidades vendidas em kit contam como unidades no preço da semana. A semana entra no mês do último dia dela. Venda fora dos marketplaces: registre em Atualizar dados → Venda física. As vendas orgânicas lançadas à mão antes continuam contando aqui." />
           </span>
-          <button type="button" className="btn btn-mini" onClick={() => irParaAba("analise", { sub: "importar" })} title="Venda fora dos marketplaces (balcão, feira, Pix): um lugar só, na Análise">
+          <button type="button" className="btn btn-mini" onClick={() => irParaAba("importar")} title="Venda fora dos marketplaces (balcão, feira, Pix): um lugar só, na Análise">
             + Venda física (Análise)
           </button>
         </h3>
@@ -361,8 +360,8 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
         {!v.linhas.length ? (
           <div className="empty">
             Nenhuma venda registrada em {rotuloPeriodo}. Importe os pedidos em{" "}
-            <button type="button" className="link-btn" onClick={() => irParaAba("analise", { sub: "importar" })}>
-              Análise → Importar dados →
+            <button type="button" className="link-btn" onClick={() => irParaAba("importar")}>
+              Atualizar dados →
             </button>
           </div>
         ) : (
@@ -562,7 +561,7 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
           {emRampaNoCanal(vendaOrg.itemId, vendaOrg.canalId) && (
             <div className="alerta alerta-warn">
               <b>Produto em rampa nesse canal</b> As vendas dele já entram pelos pedidos importados — registrar aqui contaria duas vezes.{" "}
-              <button type="button" className="link-btn" onClick={() => { setVendaOrg(null); irParaAba("analise", { sub: "importar" }); }}>
+              <button type="button" className="link-btn" onClick={() => { setVendaOrg(null); irParaAba("importar"); }}>
                 ir pra Importar dados →
               </button>
             </div>
@@ -577,8 +576,8 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
             if (!canal || !(reais.cobertura.cobre(canal, de) || reais.cobertura.cobre(canal, ate))) return null;
             return (
               <div className="alerta alerta-warn">
-                <b>Este canal já tem pedidos importados nesse período</b> As vendas da {canal.nome} nesses dias já entram pelos pedidos (aba Análise) — e esta venda à mão não seria contada. O registro à mão é pra venda fora da Olist: use “+ Registrar venda física” em Análise → Importar dados.{" "}
-                <button type="button" className="link-btn" onClick={() => { setVendaOrg(null); trocarSubAba("ohra:analise-sub", "importar"); irParaAba("analise"); }}>
+                <b>Este canal já tem pedidos importados nesse período</b> As vendas da {canal.nome} nesses dias já entram pelos pedidos (aba Análise) — e esta venda à mão não seria contada. O registro à mão é pra venda fora da Olist: use “+ Registrar venda física” em Atualizar dados.{" "}
+                <button type="button" className="link-btn" onClick={() => { setVendaOrg(null); irParaAba("importar"); }}>
                   ir pra Análise →
                 </button>
               </div>

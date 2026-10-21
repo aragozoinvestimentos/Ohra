@@ -28,7 +28,7 @@ export default function GraficoOrigem({ semanas }) {
         <span title="Vendas de amigos/família: contam no caixa, não no orgânico"><i style={{ background: COR.conhecidos }} />Conhecidos</span>
       </div>
       {vazio ? (
-        <div className="empty">Sem semanas fechadas ainda — importe os pedidos em Análise → Importar dados.</div>
+        <div className="empty">Sem semanas fechadas ainda — importe os pedidos em Atualizar dados.</div>
       ) : (
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Vendas por origem por semana">
           {ticks.map((v) => (

@@ -63,7 +63,7 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
         <div className="table-wrap">
           <table>
             <tbody>
-              <tr><td>Pedidos importados (Análise → Importar dados) — o repasse das plataformas, já sem taxas</td><td className="num">{BRL(p.origem.pedidos)}</td></tr>
+              <tr><td>Pedidos importados (Atualizar dados) — o repasse das plataformas, já sem taxas</td><td className="num">{BRL(p.origem.pedidos)}</td></tr>
               <tr><td>Vendas lançadas à mão no Caixa</td><td className="num">{BRL(p.origem.aMao)}</td></tr>
               {p.origem.encomenda > 0 && <tr><td>Encomendas diretas</td><td className="num">{BRL(p.origem.encomenda)}</td></tr>}
               <tr className="linha-total"><td>Entrou de vendas</td><td className="num">{BRL(p.entrou)}</td></tr>
@@ -154,7 +154,7 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
           Ritmo de vendas <span className="faint">pedidos, não produtos — o detalhe por produto fica em Análise → Evolução</span>
         </h3>
         {!ritmo.temDados ? (
-          <div className="empty">Importe os pedidos em Análise → Importar dados pra ver o ritmo.</div>
+          <div className="empty">Importe os pedidos em Atualizar dados pra ver o ritmo.</div>
         ) : (
           <div className="payoff-minis">
             <Mini rotulo="Pedidos por semana" valor={um(ritmo.porSemana)} v={ritmo.varSemana} sub="média das 4 últimas semanas completas × as 4 antes" barras={ritmo.semanas.map((x) => x.n)} />

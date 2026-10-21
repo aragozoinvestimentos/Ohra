@@ -213,10 +213,10 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
         <div className="panel qual-opcao">
           <h3>
             Qual opção vende <small>últimos {vendasOp.dias} dias{vendasOp.ultima ? ` · importado até ${vendasOp.ultima.split("-").reverse().slice(0, 2).join("/")}` : ""}</small>
-            <Ajuda texto="Vendas deste anúncio por opção, vindas dos pedidos importados em Análise → Importar dados (o app reconhece o anúncio pelo SKU de cada variação — use os SKUs desta Ficha na Shopee). Entram só no dinheiro (Vendas do mês); não contam pra rampa dos produtos." />
+            <Ajuda texto="Vendas deste anúncio por opção, vindas dos pedidos importados em Atualizar dados (o app reconhece o anúncio pelo SKU de cada variação — use os SKUs desta Ficha na Shopee). Entram só no dinheiro (Vendas do mês); não contam pra rampa dos produtos." />
           </h3>
           {!vendasOp.temRegistros ? (
-            <div className="empty">Nenhuma venda importada ainda. Importe os pedidos da Olist em Análise → Importar dados.</div>
+            <div className="empty">Nenhuma venda importada ainda. Importe os pedidos da Olist em Atualizar dados.</div>
           ) : (
             <>
               <div className="table-wrap">

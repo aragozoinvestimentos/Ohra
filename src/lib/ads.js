@@ -383,6 +383,16 @@ export function quedaAds(periodo, { desde, preco, empate, orcamento, regras = RE
 }
 
 // Resumo de um período (pra histórico e resultado).
+// Números do período: o maior entre as semanas e o andamento (CSV) — o que
+// estiver mais completo. Conta ÚNICA (avaliarAds, Painel do anúncio).
+export function numerosDoPeriodo(ativo, ss, preco, empate, regras = REGRAS_ADS) {
+  const r = resumoPeriodo(ativo, ss, preco, empate, regras);
+  const aN = andamentoValido(ativo, ss);
+  return aN && aN.gasto > r.gasto
+    ? { ...r, gasto: aN.gasto, vendas: aN.vendas, cliques: Math.max(r.cliques, aN.cliques), receita: aN.vendas * preco, roas: aN.gasto > 0 ? (aN.vendas * preco) / aN.gasto : null, retorno: retornoAds(aN.gasto > 0 ? (aN.vendas * preco) / aN.gasto : null, empate), custoPorVenda: aN.vendas > 0 ? aN.gasto / aN.vendas : null, fonte: "andamento", ate: aN.ate }
+    : r;
+}
+
 export function resumoPeriodo(periodo, semanas, preco, empate, regras = REGRAS_ADS) {
   const ss = semanasNoPeriodo(semanas, periodo);
   const gasto = ss.reduce((t, s) => t + num(s.ads_gasto), 0);
@@ -478,11 +488,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const { orcamento, meta, ultimoAjuste } = valoresAtuais(ativo);
     const dias = diasEntre(ativo.inicio, hoje);
     const r = resumoPeriodo(ativo, ss, preco, empate, regras);
-    // Números do período: o maior entre as semanas e o andamento (CSV) — o que estiver mais completo.
-    const aN = andamentoValido(ativo, ss);
-    const rN = aN && aN.gasto > r.gasto
-      ? { ...r, gasto: aN.gasto, vendas: aN.vendas, cliques: Math.max(r.cliques, aN.cliques), receita: aN.vendas * preco, roas: aN.gasto > 0 ? (aN.vendas * preco) / aN.gasto : null, retorno: retornoAds(aN.gasto > 0 ? (aN.vendas * preco) / aN.gasto : null, empate), custoPorVenda: aN.vendas > 0 ? aN.gasto / aN.vendas : null, fonte: "andamento" }
-      : r;
+    const rN = numerosDoPeriodo(ativo, ss, preco, empate, regras);
     const numeros = { orcamento, meta, dias, ...rN };
     // Meta alta pra começar (> 2× o equilíbrio) num período sem ajuste: avisa
     // junto de qualquer situação, com o botão "Registrar ajuste: meta X".
@@ -533,7 +539,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
       if (temDado)
         return sitA("sem-venda-dia3", "resolver", `${diasDesdeVolta} dias pagando Ads sem venda${quandoRev} — pare e arrume o anúncio`, `O Ads só traz gente até o anúncio; se em ${diasDesdeVolta} dias ninguém comprou, mais dinheiro não resolve. Pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"} antes de gastar mais.`, { numeros, semVenda: { dias: diasDesdeVolta, gasto: desde.gasto, cliques: desde.cliques, podeEsperar: true, desdeRevisao: !!rev } });
       if (diasRodando < regras.aprendizadoDias || rev)
-        return sitA("conferir-dia3", "atencao", `${rev ? `${diasDesdeVolta} dias${quandoRev}` : `Dia ${diasRodando + 1}`}: atualize o andamento`, `Pra saber se o Ads já vendeu: envie o CSV do Shopee Ads (Análise → Importar dados) ou o número à mão em "Atualizar andamento". Sem venda em 3 dias = parar e arrumar o anúncio.`, { numeros });
+        return sitA("conferir-dia3", "atencao", `${rev ? `${diasDesdeVolta} dias${quandoRev}` : `Dia ${diasRodando + 1}`}: atualize o andamento`, `Pra saber se o Ads já vendeu: envie o CSV do Shopee Ads (Atualizar dados) ou o número à mão em "Atualizar andamento". Sem venda em 3 dias = parar e arrumar o anúncio.`, { numeros });
     }
     // Ads no PREJUÍZO (16/10/2026, Gustavo: "anúncio no prejuízo precisa
     // aparecer — a decisão é imediata"): a partir do 3º dia (desde o início ou
@@ -648,7 +654,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
         return sitA("atualizar-andamento", "atencao", "Atualizar o andamento do Ads", `Fase Alavancar (${sazonal.nome}): a decisão é a cada 3–4 dias pelo andamento. ${a0 ? `O último é de ${dm(a0.ate)}.` : "Ainda não tem andamento."} Use "Atualizar andamento" no topo do Ads (gasto, cliques e vendas via Ads desde o início do período).`, { numeros });
     }
     const m = medidaDaDecisao(ativo, ss, refDecisao, gapDias, preco);
-    if (!m) return sitA("aguardando", "info", depoisDeAjuste ? "Aguardando números depois do ajuste" : "Aguardando números depois do aprendizado", 'Envie o CSV do Shopee Ads em Análise → Importar dados pra avaliar.', { numeros });
+    if (!m) return sitA("aguardando", "info", depoisDeAjuste ? "Aguardando números depois do ajuste" : "Aguardando números depois do aprendizado", 'Envie o CSV do Shopee Ads em Atualizar dados pra avaliar.', { numeros });
     const roas = m.roas;
     const retorno = retornoAds(roas, minimo);
     const lucroReal = retornoAds(roas, empate);

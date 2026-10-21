@@ -30,7 +30,7 @@ function Cruzamento({ live, cruz, plataforma, onToast }) {
       <div className="panel">
         <h3>Conferir com os pedidos</h3>
         <div className="empty">
-          Importe os pedidos de {plataforma} do dia {dm(live.data)} em <b>Análise → Importar dados</b> — aí o app separa o que foi da live (mesmo dia, mesmo produto, preço da live) e confere com o que você marcou.
+          Importe os pedidos de {plataforma} do dia {dm(live.data)} em <b>Atualizar dados</b> — aí o app separa o que foi da live (mesmo dia, mesmo produto, preço da live) e confere com o que você marcou.
         </div>
       </div>
     );

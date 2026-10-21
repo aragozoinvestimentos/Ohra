@@ -83,7 +83,7 @@ function useCalculoCrescimento() {
   const avalH = useAvaliacoes();
 
   // ---------- Semanas AO VIVO (16/10/2026, lib/semanasAuto.js) ----------
-  // Tudo que vem dos marketplaces sai da Análise → Importar dados: vendas =
+  // Tudo que vem dos marketplaces sai da Atualizar dados: vendas =
   // pedidos, funil = Desempenho, Ads = CSV, avaliações = bloco Avaliações.
   // Nada é gravado: as semanas são montadas aqui e entram onde antes entravam
   // as do "Registrar semana" (que saiu). Registros gravados continuam valendo.

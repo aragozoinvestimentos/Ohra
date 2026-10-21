@@ -1569,7 +1569,7 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
                   </div>
                   {t.status === "andamento" ? (
                     <p className="teste-texto">
-                      {t.diasRestantes} dia(s) restante(s) · envie o CSV do Shopee Ads em Análise → Importar dados (pode ser todo dia). O teste acaba sozinho ao bater {t.meta} vendas, gastar o orçamento, passar {t.prazo} dias ou chegar a {regras.testeCliquesSemVenda} cliques sem venda.
+                      {t.diasRestantes} dia(s) restante(s) · envie o CSV do Shopee Ads em Atualizar dados (pode ser todo dia). O teste acaba sozinho ao bater {t.meta} vendas, gastar o orçamento, passar {t.prazo} dias ou chegar a {regras.testeCliquesSemVenda} cliques sem venda.
                     </p>
                   ) : (
                     t.resultado &&
@@ -1825,10 +1825,10 @@ function FunilAnuncio({ funil }) {
     <div className="secao-rampa">
       <h4 className="sub-h">
         Funil do anúncio <span className="muted-cel">· 2 semanas no preço atual</span>
-        <Ajuda texto="Do relatório de Desempenho do produto da Shopee, importado em Análise → Importar dados (impressões, cliques e pedidos). CTR = Cliques ÷ Impressões; Taxa de Conversão de Pedidos = Pedidos ÷ Cliques (sem pedidos informados, usa as vendas). Usa as 2 últimas semanas no preço atual, de preferência sem Ads (o Ads infla as impressões). Diagnóstico na ordem: pouca exibição → pouca gente clica → clicam mas não compram. Com 5+ produtos com funil, a referência é a média (mediana) da loja: abaixo da metade dela é problema. Os limites ficam em Regras dos portões." />
+        <Ajuda texto="Do relatório de Desempenho do produto da Shopee, importado em Atualizar dados (impressões, cliques e pedidos). CTR = Cliques ÷ Impressões; Taxa de Conversão de Pedidos = Pedidos ÷ Cliques (sem pedidos informados, usa as vendas). Usa as 2 últimas semanas no preço atual, de preferência sem Ads (o Ads infla as impressões). Diagnóstico na ordem: pouca exibição → pouca gente clica → clicam mas não compram. Com 5+ produtos com funil, a referência é a média (mediana) da loja: abaixo da metade dela é problema. Os limites ficam em Regras dos portões." />
       </h4>
       {funil.status === "sem-dados" ? (
-        <div className="empty">Importe o relatório de Desempenho do produto da Shopee em Análise → Importar dados pra ver onde o anúncio trava (Impressões e Cliques Por Produto).</div>
+        <div className="empty">Importe o relatório de Desempenho do produto da Shopee em Atualizar dados pra ver onde o anúncio trava (Impressões e Cliques Por Produto).</div>
       ) : (
         <>
           <div className="funil-anuncio">
@@ -1876,7 +1876,7 @@ function FunilAnuncio({ funil }) {
   );
 }
 
-function RegrasPortoes({ regras, loja, atualizar, onToast }) {
+export function RegrasPortoes({ regras, loja, atualizar, onToast }) {
   const campos = [
     ["avaliacoes", "Avaliações por degrau", 1],
     ["vendas", "Vendas por degrau", 1],

@@ -1,5 +1,6 @@
 import { PASSOS } from "./lib/passosPreco.js";
 import { trocarSubAba, useSubAba } from "./lib/subAbas.js";
+import { pegarPedido, pegarPedidoSemConsumir } from "./lib/navegar.js";
 import { assinarMarcas, lerMarcas, somarMarcas } from "./lib/marcas.js";
 import { CrescimentoProvider } from "./hooks/useCrescimento.js";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -61,6 +62,13 @@ const Analise = lazyAba(() => import("./components/Analise.jsx"));
 const Live = lazyAba(() => import("./components/Live.jsx"));
 const MinhaFarm = lazyAba(() => import("./components/MinhaFarm.jsx"));
 const Inicio = lazyAba(() => import("./components/Inicio.jsx"));
+const AtualizarDados = lazyAba(() => import("./components/AtualizarDados.jsx"));
+const Anuncios = lazyAba(() => import("./components/Anuncios.jsx"));
+const PainelAnuncio = lazyAba(() => import("./components/PainelAnuncio.jsx"));
+const PaginaProduto = lazyAba(() => import("./components/PaginaProduto.jsx"));
+const ResumoMes = lazyAba(() => import("./components/ResumoMes.jsx"));
+const CompararPeriodos = lazyAba(() => import("./components/CompararPeriodos.jsx"));
+const Insumos = lazyAba(() => import("./components/Insumos.jsx"));
 
 const THEME_KEY = "ohra:theme";
 
@@ -74,16 +82,21 @@ function loadTheme() {
   return "light";
 }
 
-// Menu de 7 itens (out/2026, aprovado pelo Gustavo pelo protótipo): cada item
-// junta telas que já existiam; as telas (e as chaves das abas) são as mesmas —
-// só a navegação mudou. As sub-abas de cada item ficam no cabeçalho
-// (`abas`: tab = chave da aba, s = sub-aba dentro dela). Links antigos,
-// irPara e aba lembrada continuam funcionando pelas chaves das abas.
+// Menu do REMAP (21/10/2026, aprovado pelo Gustavo pela prévia remap-v1): dois
+// "centros" por produto — Página do produto (o produto em si, todos os canais)
+// e Painel do anúncio (o produto NUM canal). As telas de antes continuam com as
+// MESMAS chaves de aba (irPara, irParaAba, aba lembrada e links do Início
+// seguem valendo); só mudaram de item no menu. Entradas com `oculta` não
+// aparecem no cabeçalho (são abertas por clique: produto, anúncio) e `tambem`
+// marca a sub-aba como ativa quando a tela aberta é uma dessas.
 const SEP = { sep: true };
 const MENU = [
   {
     grupo: null,
-    itens: [{ key: "m-inicio", label: "Início", icone: "inicio", sub: "O que pede atenção hoje e como a loja está", abas: [{ tab: "inicio", label: "Início" }] }],
+    itens: [
+      { key: "m-inicio", label: "Início", icone: "inicio", sub: "O que pede atenção hoje e como a loja está", abas: [{ tab: "inicio", label: "Início" }] },
+      { key: "m-atualizar", label: "Atualizar dados", icone: "analise", sub: "Pedidos, desempenho, Ads, GMV Max, avaliações e venda física — tudo que vem dos marketplaces", abas: [{ tab: "importar", label: "Atualizar dados" }] },
+    ],
   },
   {
     grupo: "Loja",
@@ -92,42 +105,42 @@ const MENU = [
         key: "m-produtos",
         label: "Produtos",
         icone: "cadastros",
-        sub: "Catálogo, cadastros e custo de cada peça",
+        sub: "Catálogo, cadastro e custo de cada peça — clique num produto pra ver tudo dele",
         abas: [
-          { tab: "cadastros", s: "catalogo", label: "Catálogo" },
-          { tab: "cadastros", s: "produtos", label: "Produtos" },
+          { tab: "cadastros", s: "catalogo", label: "Catálogo", tambem: "produto" },
+          { tab: "produto", label: "Página do produto", oculta: true },
+          { tab: "cadastros", s: "produtos", label: "Cadastro de produtos" },
           { tab: "cadastros", s: "kits", label: "Kits" },
-          { tab: "cadastros", s: "materiais", label: "Materiais" },
-          { tab: "cadastros", s: "embalagens", label: "Embalagens" },
           SEP,
-          { tab: "producao", label: "Custo de produção" },
+          { tab: "producao", label: "Simular custo" },
         ],
       },
       {
-        key: "m-precos",
-        label: "Preços",
+        key: "m-anuncios",
+        label: "Anúncios",
         icone: "historico",
-        sub: "Preço alvo de cada item em cada canal e o anúncio",
+        sub: "Cada produto em cada canal — preço, vendas, rampa, Ads e o que digitar",
         abas: [
-          { tab: "historico", label: "Produtos precificados" },
+          { tab: "anuncios", label: "Todos os anúncios", tambem: "anuncio" },
+          { tab: "anuncio", label: "Painel do anúncio", oculta: true },
+          { tab: "historico", label: "Preços salvos" },
+          { tab: "canal", s: "comparar", label: "Comparar canais" },
           SEP,
           ...PASSOS.map((p) => ({ tab: "canal", s: p.key, label: p.label, ordem: p.ordem })),
-          SEP,
-          { tab: "canal", s: "comparar", label: "Comparar canais" },
-          { tab: "orcamento", label: "Orçamento" },
         ],
       },
       {
-        key: "m-crescer",
-        label: "Crescimento",
+        key: "m-vender",
+        label: "Vender mais",
         icone: "crescimento",
-        sub: "Rampa de preço, Ads, afiliados e promoções",
+        sub: "Rampa de preço, Ads, afiliados, promoções e atacado",
         abas: [
           { tab: "crescimento", s: "rampa", label: "Rampa de preço" },
           { tab: "crescimento", s: "ads", label: "Ads" },
           { tab: "crescimento", s: "afiliados", label: "Afiliados" },
           SEP,
-          { tab: "promocoes", label: "Promoções" },
+          { tab: "promocoes", label: "Promoções e cupons" },
+          { tab: "orcamento", label: "Orçamento e atacado" },
         ],
       },
       {
@@ -147,22 +160,13 @@ const MENU = [
     grupo: "Operação",
     itens: [
       {
-        key: "m-producao",
-        label: "Produção",
-        icone: "registroImpressoes",
-        sub: "Impressões, planejamento e as impressoras",
-        abas: [
-          { tab: "registroImpressoes", label: "Registro de impressões" },
-          { tab: "otimizacao", label: "Otimização" },
-          { tab: "farm", label: "Minha farm" },
-        ],
-      },
-      {
         key: "m-dinheiro",
         label: "Dinheiro",
         icone: "caixa",
-        sub: "Caixa, contas, vendas do mês, payoff, metas e retorno por item",
+        sub: "Resumo do mês, caixa, contas, vendas, payoff, metas e retorno por item",
         abas: [
+          { tab: "resumoMes", label: "Resumo do mês" },
+          SEP,
           { tab: "caixa", s: "caixa", label: "Caixa", ordem: "1" },
           { tab: "caixa", s: "contas", label: "Contas fixas e parcelas", ordem: "2" },
           { tab: "caixa", s: "vendas", label: "Vendas do mês", ordem: "3" },
@@ -176,12 +180,26 @@ const MENU = [
         key: "m-analise",
         label: "Análise",
         icone: "analise",
-        sub: "Pedidos reais: importar, curva ABC e evolução",
+        sub: "Pedidos reais: curva ABC, XYZ, evolução e comparar períodos",
         abas: [
-          { tab: "analise", s: "importar", label: "Importar dados", ordem: "1" },
-          { tab: "analise", s: "abc", label: "Curva ABC", ordem: "2" },
-          { tab: "analise", s: "xyz", label: "Curva XYZ", ordem: "3" },
-          { tab: "analise", s: "evolucao", label: "Evolução e métricas", ordem: "4" },
+          { tab: "analise", s: "abc", label: "Curva ABC" },
+          { tab: "analise", s: "xyz", label: "Curva XYZ" },
+          { tab: "analise", s: "evolucao", label: "Evolução e métricas" },
+          { tab: "compararPeriodos", label: "Comparar períodos" },
+        ],
+      },
+      {
+        key: "m-producao",
+        label: "Produção",
+        icone: "registroImpressoes",
+        sub: "Impressões, planejamento, as impressoras e os insumos",
+        abas: [
+          { tab: "registroImpressoes", label: "Registro de impressões" },
+          { tab: "otimizacao", label: "Otimização" },
+          { tab: "farm", label: "Minha farm" },
+          SEP,
+          { tab: "insumos", s: "materiais", label: "Materiais" },
+          { tab: "insumos", s: "embalagens", label: "Embalagens" },
         ],
       },
     ],
@@ -193,11 +211,12 @@ const MENU = [
         key: "m-config",
         label: "Configuração",
         icone: "config",
-        sub: "Lojas, canais e taxas dos marketplaces",
+        sub: "Lojas, canais, taxas e as regras do app",
         abas: [
           { tab: "config", s: "lojas", label: "Lojas" },
           { tab: "config", s: "canais", label: "Canais" },
           { tab: "config", s: "taxas", label: "Taxas dos marketplaces" },
+          { tab: "config", s: "regras", label: "Regras" },
         ],
       },
     ],
@@ -213,7 +232,7 @@ const TABS = [...new Set(ITENS_MENU.flatMap((i) => i.abas.filter((a) => a.tab).m
 
 const TAB_KEY = "ohra:ultima-aba";
 // Chaves das sub-abas lembradas das telas (as mesmas que as telas já usavam).
-const SUB_CHAVE = { cadastros: "ohra:cadastros-sub", crescimento: "ohra:crescimento-sub", caixa: "ohra:caixa:sub", analise: "ohra:analise-sub", live: "ohra:live-sub" };
+const SUB_CHAVE = { cadastros: "ohra:cadastros-sub", crescimento: "ohra:crescimento-sub", caixa: "ohra:caixa:sub", analise: "ohra:analise-sub", live: "ohra:live-sub", insumos: "ohra:insumos-sub" };
 
 // O app abre no Início (sessão nova do navegador). Recarregar a página na
 // mesma sessão continua na aba em que estava — só aceita uma chave que ainda
@@ -227,6 +246,8 @@ function loadTab() {
     if (saved === "comparativo") return "canal";
     // "Importar vendas" saiu do menu (out/2026): virou Fluxo de Caixa → Vendas do mês
     if (saved === "importarVendas") return "caixa";
+    // Remap (21/10/2026): Importar dados virou aba própria.
+    if (saved === "analise" && localStorage.getItem("ohra:analise-sub") === "importar") return "importar";
     if (saved && TABS.some((t) => t.key === saved)) return saved;
   } catch {
     // sem problema, usa o padrão
@@ -244,10 +265,11 @@ export default function App() {
   const [visitadas, setVisitadas] = useState(() => new Set([tab, "inicio"]));
   if (!visitadas.has(tab)) setVisitadas(new Set(visitadas).add(tab));
   const [configSub, setConfigSub] = useState("lojas");
-  const [cadastrosSub] = useSubAba(SUB_CHAVE.cadastros, "catalogo");
+  const [cadastrosSub] = useSubAba(SUB_CHAVE.cadastros, "catalogo", ["catalogo", "produtos", "kits"]);
   const [crescimentoSub] = useSubAba(SUB_CHAVE.crescimento, "rampa");
   const [caixaSub] = useSubAba(SUB_CHAVE.caixa, "caixa");
-  const [analiseSub] = useSubAba(SUB_CHAVE.analise, "importar");
+  const [analiseSub] = useSubAba(SUB_CHAVE.analise, "abc", ["abc", "xyz", "evolucao"]);
+  const [insumosSub] = useSubAba(SUB_CHAVE.insumos, "materiais", ["materiais", "embalagens"]);
   const [liveSub] = useSubAba(SUB_CHAVE.live, "planejar");
   // Última tela aberta dentro de cada item do menu (estado derivado da aba atual).
   const [ultimaDoMenu, setUltimaDoMenu] = useState({});
@@ -366,6 +388,11 @@ export default function App() {
       key = "canal";
     }
     if (key === "importarVendas") key = "caixa";
+    // Remap (21/10/2026): Importar dados virou o item "Atualizar dados".
+    if (key === "analise" && pegarPedidoSemConsumir("analise")?.sub === "importar") {
+      pegarPedido("analise");
+      key = "importar";
+    }
     if (key === "publicar" || key === "lancamento" || key === "ficha" || key === "quantidade" || key === "avulso") {
       setCanalSub(key);
       key = "canal";
@@ -382,15 +409,16 @@ export default function App() {
   });
 
   function irParaMateriais() {
-    setTab("cadastros");
+    trocarSubAba(SUB_CHAVE.insumos, "materiais");
+    setTab("insumos");
   }
 
   const menuAtual = menuDaAba(tab);
   const grupoAtual = tab === "tutorial" ? "Ajuda" : menuAtual?.grupo || "Margem Real";
   const tituloAtual = tab === "tutorial" ? TUTORIAL.label : menuAtual?.label;
   const subtituloAtual = tab === "tutorial" ? TUTORIAL.sub : menuAtual?.sub;
-  const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub, analise: analiseSub, live: liveSub };
-  const abaAtiva = (a) => a.tab === tab && (!a.s || a.s === subDaAba[a.tab]);
+  const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub, analise: analiseSub, live: liveSub, insumos: insumosSub };
+  const abaAtiva = (a) => (a.tab === tab && (!a.s || a.s === subDaAba[a.tab])) || (a.tambem && a.tambem === tab);
   // Vai pra uma sub-aba do cabeçalho: troca a aba e a sub-aba dela.
   function irParaEntrada(a) {
     if (a.tab === "canal") setCanalSub(a.s);
@@ -402,7 +430,7 @@ export default function App() {
   // Item do menu: volta pra última tela usada dentro dele (senão a 1ª).
   function irParaMenu(item) {
     const ultima = ultimaDoMenu[item.key];
-    const entrada = (ultima && item.abas.find((a) => !a.sep && a.tab === ultima)) || item.abas[0];
+    const entrada = (ultima && item.abas.find((a) => !a.sep && a.tab === ultima)) || item.abas.find((a) => !a.sep && !a.oculta);
     if (entrada.tab === ultima) {
       setTab(entrada.tab);
       setMenuAberto(false);
@@ -480,9 +508,9 @@ export default function App() {
               <div key={t.key} id={`acoes-${t.key}`} className="topbar-acoes-slot" hidden={t.key !== tab} />
             ))}
           </div>
-          {menuAtual && menuAtual.abas.length > 1 && (
+          {menuAtual && menuAtual.abas.filter((a) => !a.oculta).length > 1 && (
             <nav className="topbar-abas" aria-label={`Telas de ${menuAtual.label}`}>
-              {menuAtual.abas.map((a, i) =>
+              {menuAtual.abas.filter((a) => !a.oculta).map((a, i) =>
                 a.sep ? (
                   <span key={`sep${i}`} className="topbar-abas-sep" />
                 ) : (
@@ -641,6 +669,62 @@ export default function App() {
           )}
         </section>
 
+        <section className={`view ${tab === "importar" ? "active" : ""}`}>
+          {visitadas.has("importar") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <AtualizarDados key={lojaId || "sem-loja"} onToast={showToast} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "anuncios" ? "active" : ""}`}>
+          {visitadas.has("anuncios") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Anuncios key={lojaId || "sem-loja"} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "anuncio" ? "active" : ""}`}>
+          {visitadas.has("anuncio") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <PainelAnuncio key={lojaId || "sem-loja"} onToast={showToast} ativo={tab === "anuncio"} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "produto" ? "active" : ""}`}>
+          {visitadas.has("produto") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <PaginaProduto key={lojaId || "sem-loja"} onToast={showToast} onEditar={editarItemCompleto} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "resumoMes" ? "active" : ""}`}>
+          {visitadas.has("resumoMes") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <ResumoMes key={lojaId || "sem-loja"} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "compararPeriodos" ? "active" : ""}`}>
+          {visitadas.has("compararPeriodos") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <CompararPeriodos key={lojaId || "sem-loja"} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "insumos" ? "active" : ""}`}>
+          {visitadas.has("insumos") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Insumos onToast={showToast} />
+            </Suspense>
+          )}
+        </section>
+
         <section className={`view ${tab === "tutorial" ? "active" : ""}`}>
           {visitadas.has("tutorial") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
@@ -667,8 +751,8 @@ export default function App() {
 // 4 itens do menu + "Mais" (abre o menu lateral). No PC fica escondida.
 const NAV_CELULAR = [
   { key: "m-inicio", rot: "Início" },
-  { key: "m-precos", rot: "Preços" },
-  { key: "m-crescer", rot: "Crescer" },
+  { key: "m-anuncios", rot: "Anúncios" },
+  { key: "m-vender", rot: "Vender" },
   { key: "m-dinheiro", rot: "Dinheiro" },
 ];
 function NavCelular({ menuAtual, irParaMenu, menuAberto, abrirMenu }) {

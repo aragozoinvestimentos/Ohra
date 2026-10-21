@@ -5,7 +5,7 @@ import { excluirAvaliacao, salvarAvaliacao } from "../lib/avaliacoesAcoes.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 
-// Bloco "Avaliações" de cada plataforma (Análise → Importar dados, schema
+// Bloco "Avaliações" de cada plataforma (Atualizar dados, schema
 // v58): avaliação não vem em nenhum arquivo, então é o único dado digitado.
 // 1º a plataforma (o bloco já é dela), depois o anúncio — os chips são os que
 // VENDERAM desde a última atualização; "+ outro" escolhe qualquer um.

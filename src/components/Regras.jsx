@@ -1,0 +1,140 @@
+import { useState } from "react";
+import { useLoja } from "../lib/LojaContext.jsx";
+import { regrasDaLoja } from "../lib/rampa.js";
+import { regrasAds } from "../lib/ads.js";
+import { ESCADA_PADRAO } from "../lib/escada.js";
+import { ESTOQUE_PADRAO } from "../lib/pedidos.js";
+import { configAtacado } from "../lib/vendaDireta.js";
+import { irParaAba } from "../lib/navegar.js";
+import MetasPrecoLoja from "./MetasPrecoLoja.jsx";
+import CalendarioLoja from "./CalendarioLoja.jsx";
+import { RegrasPortoes } from "./Crescimento.jsx";
+import Ajuda from "./Ajuda.jsx";
+
+// Configuração → Regras (remap 21/10/2026): as regras da loja que ficavam
+// espalhadas (metas de preço, calendário, escada, portões da rampa, Ads,
+// estoque, atacado) num lugar só. Tudo continua gravando em
+// lojas.config_escada, nas MESMAS chaves de antes — as telas leem igual.
+const num = (v) => Number(String(v ?? "").replace(",", ".")) || 0;
+
+function Secao({ titulo, onde, ajuda, children, aberta = false }) {
+  return (
+    <details className="panel regras-sec" open={aberta}>
+      <summary>
+        <b>{titulo}</b>
+        {ajuda && <Ajuda texto={ajuda} />}
+        {onde && <span className="muted-cel">{onde}</span>}
+      </summary>
+      <div className="regras-corpo">{children}</div>
+    </details>
+  );
+}
+
+export default function Regras({ onToast }) {
+  const { lojas, lojaId, atualizar } = useLoja();
+  const loja = lojas.find((l) => l.id === lojaId) || null;
+  const cfg = loja?.config_escada || {};
+  const salvarChave = async (patch, msg) => {
+    if (!loja) return;
+    const r = await atualizar(loja.id, { configEscada: { ...(loja.config_escada || {}), ...patch } });
+    onToast?.(r.ok ? msg : `Não foi possível salvar: ${r.error}`);
+  };
+  return (
+    <div>
+      <div className="alerta alerta-neutro">
+        <b>Regras da loja {loja?.nome || ""}</b>
+        Cada seção vale pro app inteiro desta loja. As telas continuam com o atalho pras regras delas — é a mesma configuração.
+      </div>
+      <MetasPrecoLoja onToast={onToast} />
+      <CalendarioLoja onToast={onToast} />
+      <Secao titulo="Escada por quantidade (kits)" onde="usada em 2º Por quantidade, Produtos precificados e kits" ajuda="Curva de desconto dos kits: d(N) = desconto máximo × (1 − 1/N). As travas (mínimo aceitável, lucro sempre subindo, preço por peça caindo) continuam. Um produto pode ter a própria no 2º Por quantidade → Regras da escada.">
+        <RegraEscada cfg={cfg} onSalvar={(v) => salvarChave({ descontoMax: v }, "Escada salva pra loja")} />
+      </Secao>
+      <Secao titulo="Rampa de preço (portões)" onde="Vender mais → Rampa">
+        {loja && <RegrasPortoes regras={regrasDaLoja(cfg)} loja={loja} atualizar={atualizar} onToast={onToast} />}
+      </Secao>
+      <Secao titulo="Ads" onde="Vender mais → Ads (o teto por faixas fica no KPI Teto de Ads → ver tabela)">
+        <RegraAds cfg={cfg} onSalvar={(aumento) => salvarChave({ ads: { ...(cfg.ads || {}), aumento } }, "Regras do Ads salvas pra loja")} />
+      </Secao>
+      <Secao titulo="Estoque sugerido" onde="Análise → Curva XYZ" ajuda="Dias de cobertura por classe (AX, AY, BX) + folga da fila de impressão; o resto fica sob pedido. Só sugestão — o app não controla estoque.">
+        <RegraEstoque cfg={cfg} onSalvar={(estoque) => salvarChave({ estoque }, "Regras do estoque salvas")} />
+      </Secao>
+      <Secao titulo="Atacado e personalização" onde="Vender mais → Orçamento e atacado">
+        <ResumoAtacado cfg={cfg} />
+      </Secao>
+    </div>
+  );
+}
+
+function RegraEscada({ cfg, onSalvar }) {
+  const [v, setV] = useState(String(Math.round((cfg.descontoMax ?? ESCADA_PADRAO.descontoMax) * 100)));
+  return (
+    <div className="grid-auto">
+      <div className="field">
+        <label>Desconto máximo da curva (%)</label>
+        <input type="number" min="0" max="60" value={v} onChange={(e) => setV(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>&nbsp;</label>
+        <button type="button" className="btn primary" onClick={() => onSalvar(num(v) / 100)}>Salvar</button>
+      </div>
+      <p className="muted-cel">Padrão {Math.round(ESCADA_PADRAO.descontoMax * 100)}% → kit 2 com até {Math.round(ESCADA_PADRAO.descontoMax * 50)}% de desconto, kit 3 até {Math.round(ESCADA_PADRAO.descontoMax * 66.7)}%.</p>
+    </div>
+  );
+}
+
+function RegraAds({ cfg, onSalvar }) {
+  const ra = regrasAds(cfg);
+  const [v, setV] = useState(String(Math.round(ra.aumento * 100)));
+  return (
+    <div className="grid-auto">
+      <div className="field">
+        <label>Aumento por semana com retorno 1,2–2× (%)</label>
+        <input type="number" min="1" max="100" value={v} onChange={(e) => setV(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>&nbsp;</label>
+        <button type="button" className="btn primary" onClick={() => onSalvar(num(v) / 100)}>Salvar</button>
+      </div>
+      <p className="muted-cel">Retorno ≥ 2× sobe até {Math.round(ra.aumentoMax * 100)}%. Abaixo do equilíbrio volta 1 degrau no orçamento. Decisão 1× por semana.</p>
+    </div>
+  );
+}
+
+function RegraEstoque({ cfg, onSalvar }) {
+  const r0 = { ...ESTOQUE_PADRAO, ...(cfg.estoque || {}) };
+  const [f, setF] = useState(Object.fromEntries(Object.entries(r0).map(([k, v]) => [k, String(v)])));
+  const campos = [
+    ["AX", "AX: dias de cobertura"],
+    ["AY", "AY: dias de cobertura"],
+    ["BX", "BX: dias de cobertura"],
+    ["folgaFila", "Folga da fila de impressão (dias)"],
+  ];
+  return (
+    <div className="grid-auto">
+      {campos.map(([k, rot]) => (
+        <div className="field" key={k}>
+          <label>{rot}</label>
+          <input type="number" min="0" value={f[k] ?? ""} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+        </div>
+      ))}
+      <div className="field">
+        <label>&nbsp;</label>
+        <button type="button" className="btn primary" onClick={() => onSalvar(Object.fromEntries(campos.map(([k]) => [k, num(f[k])])))}>Salvar</button>
+      </div>
+    </div>
+  );
+}
+
+function ResumoAtacado({ cfg }) {
+  const a = configAtacado(cfg);
+  return (
+    <div>
+      <p>
+        Faixas: {a.faixas.map((f) => `${f.min}+ peças = ${String(f.mult).replace(".", ",")}× o custo`).join(" · ")}. Arte por pedido R$ {a.arte.toFixed(2).replace(".", ",")}, personalização R$ {a.porPeca.toFixed(2).replace(".", ",")} por peça
+        {a.isentarArte ? `, arte isenta a partir de ${a.isentarArteMin} peças` : ""}.
+      </p>
+      <button type="button" className="btn btn-mini" onClick={() => irParaAba("orcamento")}>Editar em Orçamento e atacado →</button>
+    </div>
+  );
+}

@@ -1,17 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useSubAba } from "../lib/subAbas.js";
-import Materiais from "./Materiais.jsx";
-import Embalagens from "./Embalagens.jsx";
 import Produtos from "./Produtos.jsx";
 import Kits from "./Kits.jsx";
 import CatalogoLista from "./CatalogoLista.jsx";
 
-// Sub-abas (Catálogo, Produtos, Kits, Materiais, Embalagens) ficam no cabeçalho do App (lib/subAbas.js).
+// Sub-abas (Catálogo, Produtos, Kits — Materiais e Embalagens foram pra Produção → Insumos) ficam no cabeçalho do App (lib/subAbas.js).
 
 export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdutoCriado }) {
-  const [sub, setSub] = useSubAba("ohra:cadastros-sub", "catalogo", ["catalogo", "materiais", "embalagens", "produtos", "kits"]);
-  // "✎ editar cadastro" vindo do Catálogo (mesmo caminho do "Editar completo").
-  const [abrirLocal, setAbrirLocal] = useState(null);
+  const [sub, setSub] = useSubAba("ohra:cadastros-sub", "catalogo", ["catalogo", "produtos", "kits"]);
 
   // Veio de "Salvar como Produto" (Custo de Produção) — troca pra
   // sub-aba Produtos automaticamente, mesmo se Cadastros já estava aberto
@@ -29,27 +25,20 @@ export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdu
   useEffect(() => {
     (() => {
       if (abrirItem?.seq) {
-        setAbrirLocal(null);
         setSub(abrirItem.tipo === "kit" ? "kits" : "produtos");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirItem?.seq]);
 
-  const abrir = abrirLocal || abrirItem;
+  const abrir = abrirItem;
   const abrirProdutoId = abrir?.id && abrir.tipo !== "kit" ? { id: abrir.id, seq: abrir.seq } : null;
   const abrirKitId = abrir?.id && abrir.tipo === "kit" ? { id: abrir.id, seq: abrir.seq } : null;
-  const editarDoCatalogo = (alvo) => {
-    setAbrirLocal({ ...alvo, seq: `c${Date.now()}` });
-    setSub(alvo.tipo === "kit" ? "kits" : "produtos");
-  };
 
   return (
     <div>
 
-      {sub === "catalogo" && <CatalogoLista onEditar={editarDoCatalogo} onToast={onToast} />}
-      {sub === "materiais" && <Materiais onToast={onToast} />}
-      {sub === "embalagens" && <Embalagens onToast={onToast} />}
+      {sub === "catalogo" && <CatalogoLista onToast={onToast} />}
       {sub === "produtos" && (
         <Produtos produtoRecebido={produtoRecebido} abrirProdutoId={abrirProdutoId} onToast={onToast} onProdutoCriado={onProdutoCriado} />
       )}

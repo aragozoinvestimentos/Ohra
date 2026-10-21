@@ -1,5 +1,4 @@
 import { irParaAba } from "../lib/navegar.js";
-import { trocarSubAba } from "../lib/subAbas.js";
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
@@ -378,8 +377,8 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
         <div className="alerta alerta-warn">
           <b>O gasto dos CSVs não bate com o Dinheiro</b>
           Até {dm(confAds.data)} saiu de verdade do saldo da Shopee {BRL(confAds.real)} (recargas {BRL(confAds.recargas)} − saldo {BRL(confAds.saldo)}), mas os CSVs somam {BRL(confAds.csv)} —{" "}
-          {confAds.diferenca > 0 ? `${BRL(confAds.diferenca)} a mais. Provável: uma campanha antiga contada no período antigo e no novo. Reenvie o CSV de Ads dos produtos em Análise → Importar dados — a conta nova põe cada campanha no período em que ela começou.` : `${BRL(-confAds.diferenca)} a menos. Falta enviar algum CSV (ou a GMV Max da Loja) desse período.`}{" "}
-          <button type="button" className="link-btn" onClick={() => irParaAba("analise", { sub: "importar" })}>Abrir a importação →</button>
+          {confAds.diferenca > 0 ? `${BRL(confAds.diferenca)} a mais. Provável: uma campanha antiga contada no período antigo e no novo. Reenvie o CSV de Ads dos produtos em Atualizar dados — a conta nova põe cada campanha no período em que ela começou.` : `${BRL(-confAds.diferenca)} a menos. Falta enviar algum CSV (ou a GMV Max da Loja) desse período.`}{" "}
+          <button type="button" className="link-btn" onClick={() => irParaAba("importar")}>Abrir a importação →</button>
         </div>
       ) : confAds ? (
         <div className="faint" style={{ margin: "0 0 8px" }}>✓ O gasto dos CSVs bate com o Dinheiro (saiu {BRL(confAds.real)} do saldo da Shopee até {dm(confAds.data)}).</div>
@@ -724,7 +723,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           <b>Anúncio com vários itens</b>
           {l.mix
             ? `Equilíbrio pelo mix das vendas dos últimos 30 dias (${l.ops.map((o) => `${o.rotulo} ${Math.round((l.mix.pesos.get(o.idx) || 0) * 100)}%`).join(" · ")}).`
-            : `Sem vendas por opção ainda: o equilíbrio é o da opção mais exigente (${l.pior?.rotulo || "—"}). O mix vem dos pedidos importados (Análise → Importar dados), pelo SKU de cada opção.`}
+            : `Sem vendas por opção ainda: o equilíbrio é o da opção mais exigente (${l.pior?.rotulo || "—"}). O mix vem dos pedidos importados (Atualizar dados), pelo SKU de cada opção.`}
         </div>
       )}
       {av.ativo && (
@@ -881,7 +880,7 @@ function GmvPorProduto({ g }) {
         Onde a campanha da loja gastou{g.janelas.length ? ` · ${g.janelas.map((j) => `${dm(j.de)}–${dm(j.ate)}`).join(" + ")}` : ""}
       </div>
       {g.furos.map((f) => (
-        <div key={f.de} className="ana-aviso">⚠ Furo: {f.de === f.ate ? `falta o dia ${dm(f.de)}` : `faltam os dias ${dm(f.de)} a ${dm(f.ate)}`} — exporte esse período em Análise → Importar dados → GMV Max da Loja.</div>
+        <div key={f.de} className="ana-aviso">⚠ Furo: {f.de === f.ate ? `falta o dia ${dm(f.de)}` : `faltam os dias ${dm(f.de)} a ${dm(f.ate)}`} — exporte esse período em Atualizar dados → GMV Max da Loja.</div>
       ))}
       {ps.length > 0 ? (
         <table className="tabela-ads">
@@ -1258,8 +1257,7 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
           className="btn btn-mini primary"
           onClick={() => {
             onCancelar();
-            trocarSubAba("ohra:analise-sub", "importar");
-            irParaAba("analise");
+            irParaAba("importar");
           }}
         >
           📥 CSV do Shopee Ads: enviar na central →

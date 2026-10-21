@@ -678,10 +678,10 @@ export default function Inicio({ onIrPara, onToast }) {
           ]}
         />
         <h4 className="sub-h">Vendas por origem</h4>
-        {semanasComVenda >= 2 ? <GraficoOrigem semanas={origem} /> : <div className="empty">Importe os pedidos de 2 semanas (Análise → Importar dados) pra ver o gráfico.</div>}
+        {semanasComVenda >= 2 ? <GraficoOrigem semanas={origem} /> : <div className="empty">Importe os pedidos de 2 semanas (Atualizar dados) pra ver o gráfico.</div>}
         {origem.some((w) => w.adsIncompleto && w.total > 0) && (
           <div className="hint" style={{ margin: "4px 0 0" }}>
-            Algumas semanas ainda não têm o CSV do Ads cobrindo todos os dias — as vendas via Ads delas aparecem como orgânico até você enviar o CSV (Análise → Importar dados).
+            Algumas semanas ainda não têm o CSV do Ads cobrindo todos os dias — as vendas via Ads delas aparecem como orgânico até você enviar o CSV (Atualizar dados).
           </div>
         )}
         {linhas.length > 0 && (

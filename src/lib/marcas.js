@@ -14,7 +14,7 @@ let mapa = (() => {
 const ouvintes = new Set();
 
 // Aba + sub-aba de destino de um aviso do Início → chave "aba" ou "aba:sub".
-const SUB_PADRAO = { crescimento: "rampa", caixa: "caixa", analise: "importar" };
+const SUB_PADRAO = { crescimento: "rampa", caixa: "caixa", analise: "abc" };
 export function chaveDoDestino(ir) {
   if (!ir?.aba) return null;
   if (ir.aba === "publicar") return "canal:publicar";

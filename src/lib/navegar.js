@@ -14,3 +14,8 @@ export function pegarPedido(aba) {
   delete pendentes[aba];
   return p;
 }
+
+// Olha o pedido sem tirar da fila (o App decide pra qual aba mandar).
+export function pegarPedidoSemConsumir(aba) {
+  return pendentes[aba] || null;
+}

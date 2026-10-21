@@ -4,19 +4,11 @@ import { useVendasReais } from "../hooks/useVendasReais.js";
 import { agruparPorItem, curvaABC, somarDias } from "../lib/pedidos.js";
 import { hojeSP } from "../lib/datas.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
-import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
-import { gruposPorItem } from "../lib/anunciosGrupo.js";
-import { custoProdutoPorPeca } from "../lib/calc.js";
 import { impressoraDoProduto } from "../lib/farm.js";
-import { linhasDoKit } from "../lib/planoKit.js";
-import { estadoDoAlerta } from "../lib/estados.js";
-import { irParaAba } from "../lib/navegar.js";
-import { pedirPasso } from "../lib/passosPreco.js";
-import { BRL, PCT } from "../lib/format.js";
+import { abrirProduto } from "../lib/anuncios.js";
+import { BRL } from "../lib/format.js";
 import CanalTag from "./CanalTag.jsx";
-import Estado from "./Estado.jsx";
 import Ajuda from "./Ajuda.jsx";
-import QuandoVende from "./QuandoVende.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import { excluirItemCompleto, kitsQueUsam } from "../lib/excluirItem.js";
 import { excluirVariacaoTodos } from "../lib/tirarDoCanal.js";
@@ -37,9 +29,9 @@ const num = (v) => {
 };
 const g = (v) => (v ? `${Math.round(v)} g` : "—");
 
-export default function CatalogoLista({ onEditar, onToast }) {
+export default function CatalogoLista({ onToast }) {
   const dados = useEscada();
-  const { itens, produtos, canais, precos, materiais, rampas, alertaDe, agoraDe, carregando } = dados;
+  const { itens, produtos, canais, precos, rampas, carregando } = dados;
   const { impressoras, produtos: produtosCrus } = useCatalogo();
   // × no fim da linha: excluir o produto/kit (ou a variação) com confirmação.
   const [excluir, setExcluir] = useState(null); // { item, aviso }
@@ -58,19 +50,15 @@ export default function CatalogoLista({ onEditar, onToast }) {
     }
     const r = await excluirItemCompleto(it, itens);
     if (!r.ok) return onToast?.(r.msg);
-    if (aberto === it.id) setAberto(null);
     setExcluir(null);
     onToast?.(`${it.tipo === "Kit" ? "Kit" : "Produto"} excluído`);
   }
-  const { grupos } = useAnunciosGrupo();
-  const mapaGrupos = useMemo(() => gruposPorItem(grupos), [grupos]);
   const [busca, setBusca] = useState("");
   const [filtros, setFiltros] = useState(FILTROS_VAZIO);
   const [verFiltros, setVerFiltros] = useState(false);
   const tipo = filtros.tipo;
   const { lojas, lojaId } = useLoja();
   const cal = useMemo(() => configCalendario(lojas.find((l) => l.id === lojaId)?.config_escada), [lojas, lojaId]);
-  const [aberto, setAberto] = useState(null); // id do item com o detalhe aberto
   // Curva ABC (aba Análise, v55): pelo lucro dos pedidos dos últimos 90 dias,
   // produto agrupado com as variações. Sem pedidos = sem selo.
   const reais = useVendasReais({ itens, canais, cfgDoProduto: dados.cfgDoProduto });
@@ -146,7 +134,7 @@ export default function CatalogoLista({ onEditar, onToast }) {
     const imp = prod ? impressoraDoProduto(prod, impressoras) : null;
     const salvos = canaisDo(it);
     return (
-      <tr key={it.id} className={`linha-clicavel${filho ? " linha-filha" : ""}`} onClick={() => setAberto(aberto === it.id ? null : it.id)}>
+      <tr key={it.id} className={`linha-clicavel${filho ? " linha-filha" : ""}`} onClick={() => (it.tipo === "Variação" ? abrirProduto(`p:${it.produtoId}`, "variacoes") : abrirProduto(it.id))} title="Abrir a página do produto">
         <td>
           {filho ? "↳ " : ""}
           <b>{filho ? it.nomeVariacao || it.nome : it.nome}</b>
@@ -207,167 +195,11 @@ export default function CatalogoLista({ onEditar, onToast }) {
     );
   };
 
-  const detalhe = (it) => {
-    const prod = it.tipo !== "Kit" ? produtos.find((p) => p.id === (it.produtoId || it.id.slice(2))) : null;
-    const r = it.tipo === "Produto" && prod?.producao_detalhe ? custoProdutoPorPeca(prod, materiais) : null;
-    const kitLinhas = it.tipo === "Kit" ? linhasDoKit(it.componentes, produtos) : [];
-    const emKits = it.tipo === "Produto" ? itens.filter((k) => k.tipo === "Kit" && (k.componentes || []).some((c) => c.produtoId === it.id.slice(2))) : [];
-    const emGrupos = mapaGrupos.get(it.id) || [];
-    const rampasDo = prod ? rampas.filter((x) => x.produto_id === prod.id) : [];
-    const editarAlvo = it.tipo === "Kit" ? { tipo: "kit", id: it.id.slice(2) } : { tipo: "produto", id: prod?.id };
-    // Composição do custo (barra + linhas): produção quebrada quando há detalhamento.
-    const partes = [];
-    if (r) {
-      const base = [
-        ["Material", r.material],
-        ["Energia", r.energia],
-        ["Máquina", r.roiPeca],
-        ["Manutenção", r.manutencao],
-        ["Falhas", r.falhas],
-        ["Acabamento", r.acabamento],
-      ];
-      base.forEach(([n, v]) => partes.push({ nome: n, valor: v }));
-      const resto = r.total - base.reduce((t, [, v]) => t + v, 0);
-      if (resto > 0.005) partes.push({ nome: "Consumíveis e modelagem", valor: resto });
-    } else if (kitLinhas.length) {
-      kitLinhas.forEach((l) => partes.push({ nome: `${l.quantidade} × ${l.produto.nome}`, valor: l.subtotal, sub: `${BRL(l.custoPeca)}/peça${l.manual ? " · à mão" : ` · chapa de ${l.pecasChapa}`}` }));
-    } else partes.push({ nome: "Produção", valor: it.custoProducao ?? 0 });
-    if (num(it.embalagem) > 0) partes.push({ nome: "Embalagem", valor: num(it.embalagem) });
-    const frete = num(it.freteProduto ?? it.frete);
-    if (frete > 0) partes.push({ nome: "Frete", valor: frete });
-    const total = partes.reduce((t, x) => t + x.valor, 0) || 1;
-    const salvosDet = canaisDo(it);
-    const imp = prod ? impressoraDoProduto(prod, impressoras) : null;
-    const info = [
-      `peso de envio ${g(it.peso)}`,
-      prod && it.tipo === "Produto" ? `${imp?.nome || "sem impressora"} · chapa de ${Math.max(1, num(prod.pecas_por_impressao) || 1)}` : null,
-      prod && !prod.producao_detalhe ? "custo de produção digitado à mão" : null,
-    ].filter(Boolean);
-    return (
-      <tr className="linha-detalhe">
-        <td colSpan={6}>
-          <div className="detalhe-cel catalogo-det">
-            <div className="cat-card">
-              <div className="cat-card-cab">
-                <span className="ads-rotulo">Custo de hoje</span>
-                <b className="cat-total">{BRL(it.custoTotal)}</b>
-              </div>
-              <div className="cat-barra" aria-hidden="true">
-                {partes.map((x, k) => (
-                  <span key={x.nome} className={`cat-cor-${k % 8}`} style={{ width: `${(x.valor / total) * 100}%` }} title={`${x.nome}: ${BRL(x.valor)}`} />
-                ))}
-              </div>
-              <div className="cat-linhas">
-                {partes.map((x, k) => (
-                  <div key={x.nome} className="cat-linha">
-                    <span className={`cat-ponto cat-cor-${k % 8}`} />
-                    <span className="cat-nome">
-                      {x.nome}
-                      {x.sub && <small>{x.sub}</small>}
-                    </span>
-                    <span className="cat-pct">{Math.round((x.valor / total) * 100)}%</span>
-                    <span className="cat-val">{BRL(x.valor)}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="cat-info">{info.join(" · ")}</div>
-            </div>
-
-            <div className="cat-card">
-              <div className="cat-card-cab">
-                <span className="ads-rotulo">Preço alvo e preço agora por canal</span>
-                {rampasDo.map((x) => (
-                  <Estado key={x.id} tipo="decisao">em rampa · {canais.find((c) => c.id === x.canal_id)?.nome || "canal"}</Estado>
-                ))}
-              </div>
-              {salvosDet.length ? (
-                <table className="cat-precos">
-                  <thead>
-                    <tr>
-                      <th>Canal</th>
-                      <th className="num">Preço</th>
-                      <th className="num" title="O que o canal repassa depois das taxas; dele sai o custo pra repor o produto">Recebe</th>
-                      <th className="num" title="Recebe − repor o produto (custo de hoje)">Lucro</th>
-                      <th className="num">Margem</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {salvosDet.map(({ c, s }) => {
-                      const est = estadoDoAlerta(alertaDe(it, c));
-                      // Em rampa (ou variação/kit derivado): alvo = preço salvo; agora = preço da Rampa.
-                      const aa = agoraDe(it, c);
-                      const ag = aa?.emRampa && Math.abs(aa.agora.preco - num(s.preco)) >= 0.005 ? aa.agora : null;
-                      const agora = ag ? ag.preco : null;
-                      const lucroAgora = ag ? ag.lucro : null;
-                      return (
-                        <Fragment key={c.id}>
-                          <tr className={agora != null ? "cat-alvo" : undefined}>
-                            <td>
-                              <CanalTag canal={c} />
-                              <small className="cat-rotulo">{agora != null ? "alvo (preço salvo)" : "alvo = agora"}</small>
-                            </td>
-                            <td className="num"><b>{BRL(s.preco)}</b></td>
-                            <td className="num muted-cel">{aa?.alvo ? BRL(aa.alvo.recebe) : "—"}</td>
-                            <td className="num" style={num(s.lucro) < 0 ? { color: "var(--bad)" } : undefined}>{BRL(s.lucro)}</td>
-                            <td className="num">{PCT(s.margem)}</td>
-                            <td>{est && <Estado tipo={est.tipo}>{est.motivo}</Estado>}</td>
-                          </tr>
-                          {agora != null && (
-                            <tr className="cat-agora">
-                              <td>
-                                <span className="cat-seta">↳</span> <small className="cat-rotulo">agora · {aa.acima ? "testando acima do alvo" : "em rampa"}</small>
-                              </td>
-                              <td className="num"><b>{BRL(agora)}</b></td>
-                              <td className="num muted-cel">{BRL(ag.recebe)}</td>
-                              <td className="num" style={lucroAgora != null && lucroAgora < 0 ? { color: "var(--bad)" } : undefined}>{lucroAgora != null ? BRL(lucroAgora) : "—"}</td>
-                              <td className="num">{lucroAgora != null && agora > 0 ? PCT(lucroAgora / agora) : "—"}</td>
-                              <td><Estado tipo="decisao">até chegar no alvo</Estado></td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="muted-cel">Sem preço salvo em nenhum canal.</div>
-              )}
-              {(emKits.length > 0 || emGrupos.length > 0) && (
-                <div className="cat-info">
-                  {emKits.length > 0 && <div>Nos kits: {emKits.map((k) => k.nome).join(", ")}</div>}
-                  {emGrupos.length > 0 && <div>Nos anúncios: {emGrupos.map((x) => x.grupo.nome).join(", ")}</div>}
-                </div>
-              )}
-            </div>
-
-            {it.tipo === "Produto" && prod && (
-              <div className="cat-card cat-quando">
-                <QuandoVende produtoId={prod.id} onToast={onToast} compacto />
-              </div>
-            )}
-
-            <div className="catalogo-acoes">
-              {editarAlvo.id && <button type="button" className="btn btn-mini" onClick={() => onEditar(editarAlvo)}>✎ editar cadastro</button>}
-              {prod && it.tipo === "Produto" && <button type="button" className="btn btn-mini" onClick={() => irParaAba("producao", { produtoId: prod.id })}>Calcular custo</button>}
-              {it.tipo !== "Variação" && (
-                <button type="button" className="btn btn-mini" onClick={() => { pedirPasso("avulso", it.id, null); irParaAba("avulso"); }}>
-                  Precificar
-                </button>
-              )}
-              <button type="button" className="btn btn-mini" onClick={() => irParaAba("historico", { busca: (prod?.nome || it.nome) })}>Produtos precificados →</button>
-            </div>
-          </div>
-        </td>
-      </tr>
-    );
-  };
-
   return (
     <div className="panel">
       <h3 className="section-title">
         Catálogo
-        <Ajuda texto="Tudo que você cadastrou, num lugar só, pra consultar: custo de hoje, peso, impressora/chapa e os preços salvos por canal. Clique numa linha pra ver o detalhe. Aqui nada é gravado — editar abre o cadastro." />
+        <Ajuda texto="Tudo que você cadastrou, num lugar só, pra consultar: custo de hoje, peso, impressora/chapa e os preços salvos por canal. Clique numa linha pra abrir a página do produto (custo, canais, cadastro, variações). Aqui nada é gravado — editar abre o cadastro." />
       </h3>
       <div className="toolbar">
         <input type="search" placeholder="Buscar por nome ou SKU" value={busca} onChange={(e) => setBusca(e.target.value)} style={{ maxWidth: 280 }} />
@@ -478,12 +310,10 @@ export default function CatalogoLista({ onEditar, onToast }) {
                 return (
                   <Fragment key={item.id}>
                     {linha(item, { nVars: variacoes.length, varsAbertas })}
-                    {aberto === item.id && detalhe(item)}
                     {varsAbertas &&
                       variacoes.map((v) => (
                         <Fragment key={v.id}>
                           {linha(v, { filho: true })}
-                          {aberto === v.id && detalhe(v)}
                         </Fragment>
                       ))}
                   </Fragment>
