@@ -1,5 +1,6 @@
 import { trocarSubAba, useSubAba } from "../lib/subAbas.js";
 import { canalDireto } from "../lib/canais.js";
+import { rampaNoCanal } from "../lib/rampaCanal.js";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { alertaPreco } from "../lib/estrategia.js";
 import { menorFinalComFreteGratis } from "../lib/freteGratis.js";
@@ -1974,7 +1975,7 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
   const ehKit = selItem.startsWith("k:");
   const produtoId = selItem && !ehKit ? selItem.slice(2) : "";
   const fixo = editar || base;
-  const canaisDoProduto = selItem ? canais.filter((c) => !canalDireto(c) && salvoDe(selItem, c.id) && (fixo ? c.id === fixo.canal_id : !temRampa(selItem, c.id))) : [];
+  const canaisDoProduto = selItem ? canais.filter((c) => !canalDireto(c) && rampaNoCanal(c, cfgLoja) && salvoDe(selItem, c.id) && (fixo ? c.id === fixo.canal_id : !temRampa(selItem, c.id))) : [];
   const [canalId, setCanalId] = useState(editar?.canal_id || base?.canal_id || canalInicial || "");
   const canal = canais.find((c) => c.id === (canalId || canaisDoProduto[0]?.id)) || null;
   const item = itens.find((i) => i.id === selItem);
@@ -2017,7 +2018,7 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
   const semanasReg = refazer ? (refazer.est.semanas || []).length : 0;
 
   const opcoesProduto = useMemo(() => {
-    const livre = (iid) => canais.some((c) => !canalDireto(c) && salvoDe(iid, c.id) && !temRampa(iid, c.id));
+    const livre = (iid) => canais.some((c) => !canalDireto(c) && rampaNoCanal(c, cfgLoja) && salvoDe(iid, c.id) && !temRampa(iid, c.id));
     const comPreco = produtos.filter((p) => livre(`p:${p.id}`));
     const kitsCom = (kits || []).filter((k) => livre(`k:${k.id}`));
     return [
@@ -2025,7 +2026,7 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
       ...(kitsCom.length ? [{ label: "Kits", itens: kitsCom.map((k) => ({ id: `k:${k.id}`, rotulo: `${k.nome}${k.sku ? ` · ${k.sku}` : ""}` })) }] : []),
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [produtos, kits, canais, precos, rampas]);
+  }, [produtos, kits, canais, precos, rampas, cfgLoja]);
 
   // Lista final: números válidos ≤ alvo, alvo no fim, e o preço de hoje incluído.
   function montarLista() {

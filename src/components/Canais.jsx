@@ -3,12 +3,14 @@ import { useCatalogo } from "../hooks/useCatalogo.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { rampaNoCanal } from "../lib/rampaCanal.js";
+import { useRampas } from "../hooks/useRampas.js";
 import { useSalvoFlash } from "../lib/useSalvoFlash.js";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
 import { MARKUP_PADRAO } from "../lib/escada.js";
-import { ordenarCanais } from "../lib/canais.js";
+import { canalDireto, ordenarCanais } from "../lib/canais.js";
 import { BRL } from "../lib/format.js";
 import { nomesReceita, receitaDoCanal, totalReceita } from "../lib/embalagemCanal.js";
 import { EmbalagemCanalDialog } from "./EmbalagemOrganico.jsx";
@@ -221,6 +223,39 @@ function CampoModoPreco({ canal, onToast }) {
   );
 }
 
+// Rampa por canal (19/10/2026, lib/rampaCanal.js): desligada = o app ignora as
+// rampas desse canal (ficam guardadas; religar volta tudo). TikTok nasce
+// desligado (canal da live — desconto por cupom). Grava em config_escada.
+function CampoRampa({ canal, rampasTodas, onToast }) {
+  const { lojas, lojaId, atualizar } = useLoja();
+  const [salvo, disparar] = useSalvoFlash();
+  const loja = lojas.find((l) => l.id === lojaId) || null;
+  const cfg = loja?.config_escada || null;
+  if (canalDireto(canal)) return <span className="muted-cel">—</span>;
+  const ligado = rampaNoCanal(canal, cfg);
+  const nesse = rampasTodas.filter((r) => r.canal_id === canal.id).length;
+  async function trocar(v) {
+    const novo = { ...(cfg || {}), rampaCanais: { ...(cfg?.rampaCanais || {}), [canal.id]: v } };
+    const r = await atualizar(lojaId, { configEscada: novo });
+    if (!r.ok) {
+      onToast(`Não foi possível salvar: ${r.error}`);
+      return;
+    }
+    disparar();
+    if (!v && nesse) onToast(`${nesse} rampa${nesse > 1 ? "s" : ""} neste canal ficam guardadas e o app passa a ignorar — religue pra voltar`);
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+      <label className="check-inline" title="Desligado = sem rampa neste canal (preço salvo direto; desconto por cupom). Nada é apagado.">
+        <input type="checkbox" checked={ligado} onChange={(e) => trocar(e.target.checked)} />
+        usar rampa
+      </label>
+      {!ligado && nesse > 0 && <span className="sub-num">{nesse} guardada{nesse > 1 ? "s" : ""}</span>}
+      {salvo && <span className="salvo-check">✓</span>}
+    </span>
+  );
+}
+
 export default function Canais({ onToast }) {
   const { lojaId } = useLoja();
   const { canaisTodos: canais, carregando, embalagens = [] } = useCatalogo();
@@ -229,6 +264,8 @@ export default function Canais({ onToast }) {
   const [salvandoNovo, setSalvandoNovo] = useState(false);
   const [edicoes, setEdicoes] = useState({});
   const [excluirAlvo, setExcluirAlvo] = useState(null);
+  const { rampas: rp, rampasGrupo: rg, rampasKit: rk } = useRampas({ todosCanais: true });
+  const rampasTodas = [...rp, ...rg, ...rk];
 
 
   function chave(id, campo) {
@@ -380,6 +417,7 @@ export default function Canais({ onToast }) {
                   <th className="num">Desconto no anúncio</th>
                   <th className="num" title="Pedido mínimo p/ frete grátis (R$) — vazio = não se aplica">Pedido mín. frete grátis</th>
                   <th title="Canal próprio: precificar por markup sobre o custo (venda direta)">Preço</th>
+                  <th title="Rampa de preço neste canal — desligado = preço salvo direto, desconto por cupom (ex.: TikTok, canal da live)">Rampa</th>
                   <th title="Canal próprio: embalagem própria (ex.: venda na loja) — marketplaces usam a do produto">Embalagem</th>
                   <th></th>
                 </tr>
@@ -423,6 +461,9 @@ export default function Canais({ onToast }) {
                       <CampoFreteGratis canal={c} onToast={onToast} />
                     </td>
                     <td>{c.tipo === "custom" ? <CampoModoPreco canal={c} onToast={onToast} /> : <span className="muted-cel">pela margem</span>}</td>
+                    <td>
+                      <CampoRampa canal={c} rampasTodas={rampasTodas} onToast={onToast} />
+                    </td>
                     <td>
                       {c.tipo === "custom" ? (
                         (() => {

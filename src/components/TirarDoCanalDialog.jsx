@@ -15,7 +15,7 @@ const pct = (v) => `${Math.round(Number(v) * 1000) / 10}%`.replace(".", ",");
 export default function TirarDoCanalDialog({ item, canal, onClose, onToast }) {
   const cat = useCatalogo();
   const { itens } = useRankingData();
-  const { rampas, registros } = useRampas({ comRegistros: true });
+  const { rampas, registros } = useRampas({ comRegistros: true, todosCanais: true });
   const af = useAfiliados();
   const [modo, setModo] = useState("relancar");
   const [familia, setFamilia] = useState(true);

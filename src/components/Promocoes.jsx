@@ -1,14 +1,27 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { pegarPedido } from "../lib/navegar.js";
 import PromocaoSimulador from "./PromocaoSimulador.jsx";
 import PromocoesSalvas from "./PromocoesSalvas.jsx";
+import CupomLoja from "./CupomLoja.jsx";
 
 const SUBABAS = [
   { key: "simular", label: "Simular promoção" },
   { key: "salvas", label: "Promoções salvas" },
+  { key: "cupom", label: "Cupom da loja" },
 ];
 
 export default function Promocoes({ onToast }) {
-  const [sub, setSub] = useState("simular");
+  const [sub, setSub] = useState(() => pegarPedido("promocoes")?.sub || "simular");
+  // "simular cupom da loja" (Produtos precificados / 1º Avulso) abre aqui.
+  useEffect(() => {
+    const ouvir = (e) => {
+      if (e.detail.aba !== "promocoes") return;
+      const p = pegarPedido("promocoes");
+      if (p?.sub) setSub(p.sub);
+    };
+    window.addEventListener("ohra:ir-para", ouvir);
+    return () => window.removeEventListener("ohra:ir-para", ouvir);
+  }, []);
 
   return (
     <div>
@@ -27,6 +40,7 @@ export default function Promocoes({ onToast }) {
 
       {sub === "simular" && <PromocaoSimulador onToast={onToast} />}
       {sub === "salvas" && <PromocoesSalvas onToast={onToast} />}
+      {sub === "cupom" && <CupomLoja />}
     </div>
   );
 }

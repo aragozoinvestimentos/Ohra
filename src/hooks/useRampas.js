@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
+import { useCatalogo } from "./useCatalogo.js";
+import { canaisSemRampa } from "../lib/rampaCanal.js";
 
 let seq = 0;
 
@@ -8,8 +10,14 @@ let seq = 0;
 // tabela (SQL não rodado), `disponivel` = false e as listas ficam vazias —
 // nenhuma tela quebra. `comRegistros` = também carrega rampa_registros (só a
 // aba Crescimento precisa).
-export function useRampas({ comRegistros = false } = {}) {
-  const { lojaId } = useLoja();
+// Rampas em canal com a rampa DESLIGADA (lib/rampaCanal.js, ex.: TikTok) ficam
+// guardadas mas o app as ignora (lista, avisos, preço de agora, Anunciar…);
+// `todosCanais` = vê todas (Tirar do canal, que precisa poder apagá-las).
+export function useRampas({ comRegistros = false, todosCanais = false } = {}) {
+  const { lojaId, lojas } = useLoja();
+  const { canaisTodos } = useCatalogo();
+  const cfgLoja = (lojas || []).find((l) => l.id === lojaId)?.config_escada;
+  const fora = useMemo(() => (todosCanais ? new Set() : canaisSemRampa(canaisTodos, cfgLoja)), [todosCanais, canaisTodos, cfgLoja]);
   const [estado, setEstado] = useState({ rampas: [], registros: [], disponivel: true, carregando: !!supabase });
 
   useEffect(() => {
@@ -58,9 +66,11 @@ export function useRampas({ comRegistros = false } = {}) {
 
   // Rampas de anúncio com vários itens (v54, grupo_id) ficam à parte: as telas
   // de produto continuam vendo só as rampas por produto.
-  const rampas = useMemo(() => estado.rampas.filter((r) => r.produto_id), [estado.rampas]);
-  const rampasGrupo = useMemo(() => estado.rampas.filter((r) => r.grupo_id), [estado.rampas]);
+  const validas = useMemo(() => estado.rampas.filter((r) => !fora.has(r.canal_id)), [estado.rampas, fora]);
+  const rampas = useMemo(() => validas.filter((r) => r.produto_id), [validas]);
+  const rampasGrupo = useMemo(() => validas.filter((r) => r.grupo_id), [validas]);
   // Rampa de KIT (v62, kit_id): kit vendido no anúncio próprio, degraus em R$.
-  const rampasKit = useMemo(() => estado.rampas.filter((r) => r.kit_id), [estado.rampas]);
-  return { ...estado, rampas, rampasGrupo, rampasKit, recarregar: () => window.dispatchEvent(new Event("focus")) };
+  const rampasKit = useMemo(() => validas.filter((r) => r.kit_id), [validas]);
+  const ignoradas = estado.rampas.length - validas.length;
+  return { ...estado, rampas, rampasGrupo, rampasKit, ignoradas, recarregar: () => window.dispatchEvent(new Event("focus")) };
 }

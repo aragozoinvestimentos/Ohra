@@ -1,4 +1,5 @@
 import { canalDireto } from "../lib/canais.js";
+import { rampaNoCanal } from "../lib/rampaCanal.js";
 import { useEffect, useState } from "react";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
@@ -25,7 +26,7 @@ const virgula = (v) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits
 // subir degrau e registrar semana continuam no Crescimento.
 export default function Lancamento({ onToast, onSub }) {
   const { dados, rampasH, regras, linhas } = useCrescimento();
-  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, cobraNoCanal, clientePagaHoje } = dados;
+  const { itens, canais, precos, produtos, kits, publicacoesCanal, mapaRampa, cobraNoCanal, clientePagaHoje, cfgLoja } = dados;
   const { grupos } = useAnunciosGrupo();
   const { porPasso, pedido } = useSelecaoPasso();
   const [sel, setSel] = useState(null); // null = segue o da Ficha
@@ -73,7 +74,7 @@ export default function Lancamento({ onToast, onSub }) {
 
   const emRampa = !!rampaDoProduto;
   const derivado = (tipo === "variacao" && emRampa) || pecasEmRampa.length > 0;
-  const estado = !item || !canal ? "vazio" : !alvo ? "sem-preco" : canalDireto(canal) ? "direto" : emRampa || derivado ? "rampa" : publicado || noAlvo[chave] ? "alvo" : tipo === "produto" ? "pergunta" : "alvo";
+  const estado = !item || !canal ? "vazio" : !alvo ? "sem-preco" : canalDireto(canal) ? "direto" : emRampa || derivado ? "rampa" : !rampaNoCanal(canal, cfgLoja) ? "sem-rampa" : publicado || noAlvo[chave] ? "alvo" : tipo === "produto" ? "pergunta" : "alvo";
 
   const quadroAnuncio = ({ titulo, a, nota }) =>
     a ? (
@@ -250,6 +251,17 @@ export default function Lancamento({ onToast, onSub }) {
           </div>
         )}
 
+        {estado === "sem-rampa" && (
+          <>
+            <div className="lanc-pergunta">
+              <b>Este canal não usa rampa: anuncie no preço salvo ({BRL(alvo)})</b>
+              <p className="hint" style={{ margin: "4px 0 0" }}>
+                O desconto aqui é por <b>cupom</b> — na live (Live → Planejar) e, fora dela, o cupom da loja (Crescimento → Promoções). Pra voltar a usar rampa neste canal: Configuração → Canais → coluna “Rampa”.
+              </p>
+            </div>
+            {quadroAnuncio({ titulo: "Anunciar no preço salvo", a: anAlvo })}
+          </>
+        )}
         {estado === "alvo" && quadroAnuncio({ titulo: "Anunciar no alvo", a: anAlvo, nota: "Pode iniciar a rampa depois pelo Crescimento." })}
 
         {estado === "rampa" && (

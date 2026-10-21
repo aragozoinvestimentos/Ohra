@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
 import { canalDireto } from "../lib/canais.js";
+import { rampaNoCanal } from "../lib/rampaCanal.js";
 import { EVENTO_INICIAR_GRUPO, opcoesNoCanal, PASSO_GRUPO, PCT_INICIO_GRUPO, precosDoDegrau, sugerirDegrausGrupo } from "../lib/grupoRampa.js";
 import { estadoSugestaoRampa } from "../lib/estados.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -453,17 +454,17 @@ function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar, comAgora = f
 
 function IniciarRampaGrupo({ dados, linhasGrupo, hoje, onToast, onClose }) {
   const { lojaId } = useLoja();
-  const { gruposAnuncio: grupos = [], canais, itens, precos, cfgDoProduto } = dados;
+  const { gruposAnuncio: grupos = [], canais, itens, precos, cfgDoProduto, cfgLoja } = dados;
   const pares = useMemo(() => {
     const out = [];
     for (const g of grupos)
       for (const c of canais) {
-        if (canalDireto(c)) continue;
+        if (canalDireto(c) || !rampaNoCanal(c, cfgLoja)) continue;
         if (linhasGrupo.some((l) => l.grupo.id === g.id && l.canal.id === c.id)) continue;
         if (opcoesNoCanal({ grupo: g, canal: c, itens, precos, cfgDoProduto }).length) out.push({ g, c, chave: `${g.id}|${c.id}` });
       }
     return out;
-  }, [grupos, canais, itens, precos, cfgDoProduto, linhasGrupo]);
+  }, [grupos, canais, itens, precos, cfgDoProduto, cfgLoja, linhasGrupo]);
   const [par, setPar] = useState(() => (pares.find((p) => p.c.tipo === "shopee") || pares[0])?.chave || "");
   const [inicio, setInicio] = useState(String(PCT_INICIO_GRUPO));
   const [aval, setAval] = useState("");

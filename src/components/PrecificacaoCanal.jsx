@@ -24,6 +24,8 @@ import { EmbalagemOrganicoDialog } from "./EmbalagemOrganico.jsx";
 import { configAtacado, personalizacaoDoPedido } from "../lib/vendaDireta.js";
 import { configEscada, referenciasAvulso, sugestaoKit, kitVsSeparado, rotuloMinimo, sugestaoAncora, calcularAnuncio, descontoDoItem, descontoPadraoCanal } from "../lib/escada.js";
 import { useRampas } from "../hooks/useRampas.js";
+import { rampaNoCanal } from "../lib/rampaCanal.js";
+import CupomMaximo from "./CupomMaximo.jsx";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import CanalTag from "./CanalTag.jsx";
@@ -687,6 +689,9 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
         },
       ]}
     />
+    {canalCadastrado && !rampaNoCanal(canalCadastrado, cfgLojaAtual) && !semCusto && resultado.preco > 0 && (
+      <CupomMaximo item={{ custoTotal: resultado.custoTotal, peso: pesoSel }} canal={canalCadastrado} preco={resultado.preco} cfg={cfgEscada} />
+    )}
     {(refs || precoExistente) && (
       <div className="refs-linha refs-avulso">
         {precoExistente && (

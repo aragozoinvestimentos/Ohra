@@ -40,13 +40,14 @@ export const nomeEstrategia = (tipo) => ESTRATEGIAS.find((e) => e.id === tipo)?.
 // "fixo" = PREÇO DA LOJA + CUPOM (desconto fixo): o cupom é criado antes e o
 //   preço não muda durante a live (o produto entra no que o cliente paga hoje,
 //   inclusive o degrau da Rampa) — padrão na Shopee.
-// "subir" = mudar o preço ao vivo (escada, primeiros N, relâmpago) — padrão no TikTok.
+// "subir" = mudar o preço ao vivo (escada, primeiros N, relâmpago). Desde 19/10/2026 o
+//   TikTok também abre no "fixo" (canal da live: preço pela margem + cupom).
 // Guardado em live.pedidos._modo (sem SQL).
 export const MODOS_LIVE = [
   { id: "fixo", nome: "Preço da loja + cupom (desconto fixo)", desc: "Os produtos ficam no preço da loja e o desconto vem do cupom criado antes da live. Nada muda durante a live." },
   { id: "subir", nome: "Mudar o preço ao vivo", desc: "Escada subindo, primeiros N, relâmpago — pra plataforma que deixa mudar o preço durante a live." },
 ];
-export const MODO_PADRAO = { shopee: "fixo", tiktok: "subir" };
+export const MODO_PADRAO = { shopee: "fixo", tiktok: "fixo" };
 export const modoPadraoDoCanal = (canal) => MODO_PADRAO[canal?.tipo] || "subir";
 export const modoDaLive = (live, canal) => (live?.pedidos?._modo === "fixo" || live?.pedidos?._modo === "subir" ? live.pedidos._modo : modoPadraoDoCanal(canal));
 export const estrategiasDoModo = (modo) => (modo === "fixo" ? ESTRATEGIAS.filter((e) => e.id === "fixo" || e.id === "brinde") : ESTRATEGIAS);

@@ -25,6 +25,8 @@ import CanalTag from "./CanalTag.jsx";
 import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
 import { useLembrado } from "../hooks/useLembrado.js";
 import { pegarPedido } from "../lib/navegar.js";
+import { rampaNoCanal } from "../lib/rampaCanal.js";
+import CupomMaximo from "./CupomMaximo.jsx";
 import OndeSeDecide from "./OndeSeDecide.jsx";
 import { CartoesAlvoAgora, DiferencaAlvoAgora, LinhaAgora } from "./AlvoAgora.jsx";
 import TirarDoCanalDialog from "./TirarDoCanalDialog.jsx";
@@ -367,6 +369,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
         </div>
         <div className="detalhe-cel-avisos">
           <DiferencaAlvoAgora aa={info?.aa} />
+          {p && !rampaNoCanal(canalObj, cfgLoja) && (
+            <CupomMaximo item={itemNoCanal(item, canalObj)} canal={canalObj} preco={p.preco} cfg={cfgDoProduto(item.produtoId || (item.id.startsWith("p:") ? item.id.slice(2) : null))} />
+          )}
           {revisoesDireto.has(`${item.id}|${canalObj.id}`) && (
             <div className="aviso-cel atencao">
               <b>Vale revisar o preço?</b> {revisoesDireto.get(`${item.id}|${canalObj.id}`).motivos.map((x) => x.texto).join(" · ")}. Venda direta parte do custo: confira o preço pelo markup no 1º Avulso (o aviso some quando você salvar um preço novo).
