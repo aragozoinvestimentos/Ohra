@@ -56,6 +56,16 @@ function useCalculoCrescimento() {
   // Itens que só existem dentro de um anúncio com vários itens: saem dos avisos
   // individuais de rampa e da lista de Ads (entram pelo anúncio inteiro).
   const soNoGrupo = useMemo(() => itensSoNoGrupo({ grupos, itens, precos }), [grupos, itens, precos]);
+  // Períodos de Ads do anúncio com vários itens: os do anúncio + os das opções
+  // que só existem nele. Período de opção com o MESMO andamento de um período
+  // do anúncio (o CSV gravado nos dois) sai — senão o gasto conta 2×.
+  const periodosDoAnuncio = (gid, canalId, idsSo) => {
+    const doAnuncio = periodosDoItem(adsH.periodos, "grupo", gid, canalId);
+    const sig = (p) => (p.parcial?.ate ? `${p.parcial.ate}|${Number(p.parcial.gasto) || 0}` : null);
+    const vistos = new Set(doAnuncio.map(sig).filter(Boolean));
+    const dasOpcoes = idsSo.flatMap((id) => periodosDoItem(adsH.periodos, itemTipoDoId(id), id.slice(2), canalId)).filter((p) => !sig(p) || !vistos.has(sig(p)));
+    return { doAnuncio, dasOpcoes };
+  };
   const af = useAfiliados();
   const regras = useMemo(() => regrasDaLoja(cfgLoja), [cfgLoja]);
   const hoje = hojeISO();
@@ -220,7 +230,13 @@ function useCalculoCrescimento() {
       } else if (r.grupo_id) {
         vendasEm = vendasDoGrupo(canal.id, r.grupo_id);
         funis = canal.tipo === "shopee" ? funisDoGrupo(r.grupo_id, canal.id) : [];
-        periodosR = periodosDoItem(adsH.periodos, "grupo", r.grupo_id, canal.id);
+        // Ads do anúncio inteiro = os períodos do anúncio + os das opções que só
+        // existem nele (a MESMA lista da linha do anúncio no Ads — 21/10/2026:
+        // antes a Rampa via só os do anúncio e o ROAS/gasto não batia com o Ads).
+        const grupo = (grupos || []).find((g) => g.id === r.grupo_id);
+        const idsSo = grupo ? opcoesDoGrupo(grupo).map(idDoItemOpcao).filter((id) => id && soNoGrupo.has(id)) : [];
+        const pa = periodosDoAnuncio(r.grupo_id, canal.id, idsSo);
+        periodosR = [...pa.doAnuncio, ...pa.dasOpcoes];
         aval = avaliacoesDe("grupo", r.grupo_id, canal.id);
       } else {
         const ids = new Set([`p:${r.produto_id}`, ...itens.filter((i) => i.id.startsWith("v:") && i.produtoId === r.produto_id).map((i) => i.id)]);
@@ -235,7 +251,7 @@ function useCalculoCrescimento() {
       if (parcial) parciais.set(r.id, parcial);
     }
     return { registros: juntarRegistros(regs, []), parciais };
-  }, [rampas, rampasGrupo, rampasKit, registrosGravados, canais, itens, produtos, kits, adsH.periodos, avalH.registros, pedidosPorCanal, skuGrupo, desempenhos, reais.cobertura, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rampas, rampasGrupo, rampasKit, registrosGravados, canais, itens, produtos, kits, adsH.periodos, avalH.registros, pedidosPorCanal, skuGrupo, desempenhos, reais.cobertura, hoje, grupos, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
   const registros = vivo.registros;
   const rampasHV = useMemo(() => ({ ...rampasH, registros }), [rampasH, registros]);
 
@@ -319,14 +335,15 @@ function useCalculoCrescimento() {
       // Ads do anúncio inteiro OU de uma opção que só existe nele (é o mesmo
       // anúncio na Shopee — igual à linha do Ads).
       const idsSo = opcoesDoGrupo(grupo).map(idDoItemOpcao).filter((id) => id && soNoGrupo.has(id));
-      const adsAtivo = periodoAtivo([...periodosDoItem(adsH.periodos, "grupo", grupo.id, canal.id), ...idsSo.flatMap((id) => periodosDoItem(adsH.periodos, itemTipoDoId(id), id.slice(2), canal.id))], hoje);
+      const paR = periodosDoAnuncio(grupo.id, canal.id, idsSo);
+      const adsAtivo = periodoAtivo([...paR.doAnuncio, ...paR.dasOpcoes], hoje);
       const regs = registros.filter((g) => g.rampa_id === r.id);
       const g = estadoRampaGrupo({ rampa: r, registros: regs, regras, grupo, canal, itens, produtos, kits, precos, publicacoes: publicacoesCanal, cfgDoProduto, organicas: organicasVivas, hoje, sazonal, funilLoja, adsAtivo, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null });
       if (!g) continue;
       out.push({ r, grupo, canal, produto: { id: null, nome: `Anúncio: ${grupo.nome}`, sku: "" }, item: null, ehGrupo: true, g, est: g.est, regs });
     }
     return out.sort((a, b) => a.grupo.nome.localeCompare(b.grupo.nome));
-  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, hoje, calendario, funilLoja, adsH.periodos, campanha, soNoGrupo]);
+  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, hoje, calendario, funilLoja, adsH.periodos, campanha, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Comissão de afiliado por item × canal (ao vivo).
   const linhasAf = useMemo(
@@ -404,7 +421,7 @@ function useCalculoCrescimento() {
               canal,
               vendasEm: vendasDoGrupo(canal.id, grupo.id),
               preco: eq.preco,
-              periodos: [...periodosDoItem(adsH.periodos, "grupo", grupo.id, canal.id), ...opsSo.flatMap((o) => periodosDoItem(adsH.periodos, itemTipoDoId(o.itemId), o.itemId.slice(2), canal.id))],
+              periodos: (() => { const pa = periodosDoAnuncio(grupo.id, canal.id, opsSo.map((o) => o.itemId)); return [...pa.doAnuncio, ...pa.dasOpcoes]; })(),
               funis: canal.tipo === "shopee" ? funisDoGrupo(grupo.id, canal.id) : [],
             });
         // histórico de Ads das opções (antes do anúncio virar uma linha só)
@@ -418,10 +435,8 @@ function useCalculoCrescimento() {
         // Os do próprio anúncio vêm primeiro; das opções, o que mais gastou (o
         // anúncio com Ads de verdade) antes — o 1º ligado é o "período atual".
         const gastoDe = (p) => Number(p.parcial?.gasto) || 0;
-        const periodos = [
-          ...periodosDoItem(adsH.periodos, "grupo", grupo.id, canal.id),
-          ...opsSo.flatMap((o) => periodosDoItem(adsH.periodos, itemTipoDoId(o.itemId), o.itemId.slice(2), canal.id)).sort((a, b) => gastoDe(b) - gastoDe(a) || String(b.inicio).localeCompare(String(a.inicio))),
-        ];
+        const paL = periodosDoAnuncio(grupo.id, canal.id, opsSo.map((o) => o.itemId));
+        const periodos = [...paL.doAnuncio, ...paL.dasOpcoes.sort((a, b) => gastoDe(b) - gastoDe(a) || String(b.inicio).localeCompare(String(a.inicio)))];
         const caps = ops.map((o) => capacidadeDoItem(o.item, produtos, impressoras, farmConfig));
         const item = { id: idGrupo(grupo.id), nome: `Anúncio: ${grupo.nome}`, sku: "", grupo: true };
         base.push({
