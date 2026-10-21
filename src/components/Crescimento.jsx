@@ -85,7 +85,7 @@ function Copiavel({ valor, texto }) {
 // Sub-aba (Rampa de preço / Ads / Afiliados) fica no cabeçalho do App (lib/subAbas.js).
 
 export default function Crescimento({ onToast }) {
-  const { dados, rampasH, af, regras, hoje, linhas, linhasGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds } = useCrescimento();
+  const { dados, rampasH, af, regras, hoje, linhas, linhasGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, pedidosValidos } = useCrescimento();
   const [sub, setSub] = useSubAba("ohra:crescimento-sub", "rampa", ["rampa", "ads", "afiliados"]);
   const [selId, setSelId] = useState(null); // rampa aberta no Detalhe
   const [adsChave, setAdsChave] = useState(null); // linha do Ads aberta (pedido do Início)
@@ -146,6 +146,8 @@ export default function Crescimento({ onToast }) {
           semana={semanaAf}
           hoje={hoje}
           onToast={onToast}
+          pedidos={pedidosValidos}
+          linhasAds={linhasAds}
         />
       )}
     </>

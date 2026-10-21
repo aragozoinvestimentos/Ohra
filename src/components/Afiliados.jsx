@@ -17,7 +17,8 @@ import {
   resumoParceiro,
   statusEfetivo,
   sugestoesAfiliado,
-  vendasPorOrigem,
+  periodosDeAdsDaLoja,
+  vendasPorOrigemReais,
 } from "../lib/afiliados.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -39,7 +40,7 @@ const dataBR = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—")
 const TIPO_ROTULO = { produto: "produto", variacao: "variação", kit: "kit" };
 const msgV35 = (e) => (/afiliado|schema cache|does not exist/.test(e?.message || "") ? "Falta rodar o supabase/schema_v35.sql no Supabase" : `Não foi possível salvar: ${e?.message}`);
 
-export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf, semana, hoje, onToast }) {
+export default function Afiliados({ dados, af, regras, linhasAf, mapaAf, semana, hoje, onToast, pedidos, linhasAds }) {
   const { lojaId } = useLoja();
   const { itens, canais } = dados;
   const { config, parceiros, registros, disponivel, carregando } = af;
@@ -56,8 +57,8 @@ export default function Afiliados({ dados, af, rampasH, regras, linhasAf, mapaAf
     [linhasAf, parceiros, registros, regras, itens, hoje]
   );
   const origem = useMemo(
-    () => vendasPorOrigem({ afRegistros: registros, rampaRegistros: rampasH.registros, rampas: rampasH.rampas, hoje }),
-    [registros, rampasH.registros, rampasH.rampas, hoje]
+    () => vendasPorOrigemReais({ pedidos, periodos: periodosDeAdsDaLoja(linhasAds), afRegistros: registros, hoje }),
+    [registros, pedidos, linhasAds, hoje]
   );
 
   const ativos = linhasAf.filter((l) => l.conf.ativo);

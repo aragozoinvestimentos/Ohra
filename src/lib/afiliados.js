@@ -7,6 +7,7 @@ import { itemTipoDoId } from "./variacoes.js";
 import { alertaPreco, estrategiaEfetiva } from "./estrategia.js";
 import { dataSP } from "./datas.js";
 import { conhecidosDe, porSemana, vendasParaDecisao } from "./rampa.js";
+import { adsDaSemana, somarDiasIso } from "./semanasAuto.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -287,6 +288,57 @@ export function vendasPorOrigem({ afRegistros, rampaRegistros, rampas, hoje, n =
     const r1 = (v) => Math.round(v * 10) / 10;
     const total = Math.max(m.total, m.ads + m.afiliado + m.conhecidos);
     return { ...m, total: r1(total), ads: r1(m.ads), afiliado: r1(m.afiliado), conhecidos: r1(m.conhecidos), organico: r1(Math.max(0, total - m.ads - m.afiliado - m.conhecidos)) };
+  });
+}
+
+// Vendas por origem pelas IMPORTAÇÕES (21/10/2026 — antes só contava rampas de
+// produto e registros à mão: o Ads do anúncio com vários itens e dos produtos
+// fora de rampa caía no "orgânico"). Total = unidades dos pedidos importados
+// (marketplaces, sem venda física); Ads = vendas via Ads dos CSVs de TODOS os
+// períodos (produtos, anúncios com vários itens, GMV Max da Loja), interpolado
+// entre os envios; afiliado/conhecidos = registros antigos à mão.
+// `adsIncompleto` = algum período ligado ainda sem CSV cobrindo a semana.
+export function periodosDeAdsDaLoja(linhasAds) {
+  const vistos = new Map();
+  for (const l of [...(linhasAds?.linhas || []), ...(linhasAds?.lojaLinha ? [linhasAds.lojaLinha] : [])]) for (const p of l.periodos || []) if (p?.id && !vistos.has(p.id)) vistos.set(p.id, p);
+  return [...vistos.values()];
+}
+export function vendasPorOrigemReais({ pedidos, periodos, afRegistros, hoje, n = 6 }) {
+  const fim = semanaDe(hoje);
+  const semanas = Array.from({ length: n }, (_, k) => somarDias(fim, -7 * (n - 1 - k)));
+  const ontem = somarDiasIso(hoje, -1);
+  return semanas.map((ini) => {
+    const ate0 = somarDiasIso(ini, 6);
+    const ate = ate0 > ontem ? ontem : ate0;
+    let total = 0;
+    for (const l of pedidos || []) if (l.valido && l.canal_id && l.data >= ini && l.data <= ate) total += num(l.q);
+    let ads = 0;
+    let adsGasto = 0;
+    let incompleto = false;
+    if (ate >= ini)
+      for (const p of periodos || []) {
+        const a = adsDaSemana([p], ini, ate);
+        if (!a) continue;
+        if (a.desconhecido) {
+          incompleto = true;
+          continue;
+        }
+        ads += num(a.vendas);
+        adsGasto += num(a.gasto);
+      }
+    let afiliado = 0;
+    let conhecidos = 0;
+    let comissao = 0;
+    for (const g0 of afRegistros || []) {
+      const g = porSemana(g0);
+      if (semanaDe(g.data) !== ini) continue;
+      afiliado += num(g.vendas);
+      comissao += num(g.comissao);
+      if (g.vendas_total != null) conhecidos += conhecidosDe(g);
+    }
+    const r1 = (v) => Math.round(v * 10) / 10;
+    const tot = Math.max(total, ads + afiliado + conhecidos);
+    return { semana: ini, total: r1(tot), ads: r1(ads), afiliado: r1(afiliado), conhecidos: r1(conhecidos), comissao, adsGasto: Math.round(adsGasto * 100) / 100, organico: r1(Math.max(0, tot - ads - afiliado - conhecidos)), adsIncompleto: incompleto };
   });
 }
 

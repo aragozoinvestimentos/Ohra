@@ -24,7 +24,7 @@ import { avisosDesgaste } from "../lib/farm.js";
 import { avisosManutencao } from "../lib/manutencao.js";
 import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
-import { sugestoesAfiliado, vendasPorOrigem } from "../lib/afiliados.js";
+import { periodosDeAdsDaLoja, sugestoesAfiliado, vendasPorOrigemReais } from "../lib/afiliados.js";
 import { calcTaxaFalhaAtual, TAXA_FALHA_PRIOR_PCT } from "../lib/registroImpressao.js";
 import { AREAS_PENDENCIA, GRUPOS_PENDENCIA, agruparPorAnuncio, areaPendencia, montarPendencias, statusInicio } from "../lib/inicio.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
@@ -266,8 +266,8 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- Vendas ---
   const origem = useMemo(
-    () => vendasPorOrigem({ afRegistros: af.registros, rampaRegistros: rampasH.registros, rampas: rampasH.rampas, hoje, n: 6 }),
-    [af.registros, rampasH.registros, rampasH.rampas, hoje]
+    () => vendasPorOrigemReais({ pedidos: pedidosValidos, periodos: periodosDeAdsDaLoja(linhasAds), afRegistros: af.registros, hoje, n: 6 }),
+    [af.registros, pedidosValidos, linhasAds, hoje]
   );
   const semanasComVenda = origem.filter((w) => w.total > 0).length;
   const temSemana = linhas.some((l) => l.est.lucroSemana != null);
@@ -678,7 +678,12 @@ export default function Inicio({ onIrPara, onToast }) {
           ]}
         />
         <h4 className="sub-h">Vendas por origem</h4>
-        {semanasComVenda >= 2 ? <GraficoOrigem semanas={origem} /> : <div className="empty">Registre 2 semanas pra ver o gráfico.</div>}
+        {semanasComVenda >= 2 ? <GraficoOrigem semanas={origem} /> : <div className="empty">Importe os pedidos de 2 semanas (Análise → Importar dados) pra ver o gráfico.</div>}
+        {origem.some((w) => w.adsIncompleto && w.total > 0) && (
+          <div className="hint" style={{ margin: "4px 0 0" }}>
+            Algumas semanas ainda não têm o CSV do Ads cobrindo todos os dias — as vendas via Ads delas aparecem como orgânico até você enviar o CSV (Análise → Importar dados).
+          </div>
+        )}
         {linhas.length > 0 && (
           <ul className="inicio-mini">
             {linhas.map((l) => (
