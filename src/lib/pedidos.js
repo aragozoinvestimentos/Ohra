@@ -138,7 +138,17 @@ export const tipoEIdDoItem = (it) => (it ? { item_tipo: TIPO[it.id[0]], item_id:
 
 // ---------- Valores de cada linha ----------
 export const valorBruto = (p) => num(p.quantidade) * num(p.valor_unitario);
-export const valorPago = (p) => Math.max(0, valorBruto(p) - num(p.desconto_item) - num(p.desconto_pedido));
+// TikTok (1º pedido real, 21/10/2026): o "Desconto item" que a Olist manda não
+// é o do vendedor (veio R$ 19,06 num item de R$ 22 — o TikTok mostrou só R$ 4,10
+// de desconto do vendedor, que é o "Desconto do pedido rateado"). Nele o
+// desconto do item não conta; e em qualquer plataforma, desconto maior que o
+// próprio item é leitura errada → vale só o desconto do pedido.
+export const descontoItem = (p) => {
+  if (p.plataforma === "tiktok") return 0;
+  const d = num(p.desconto_item);
+  return d + num(p.desconto_pedido) >= valorBruto(p) - 0.004 ? 0 : d;
+};
+export const valorPago = (p) => Math.max(0, valorBruto(p) - descontoItem(p) - num(p.desconto_pedido));
 const PREF = { produto: "p", variacao: "v", kit: "k" };
 export const idItemDoPedido = (p) => (p.item_tipo && p.item_id ? `${PREF[p.item_tipo]}:${p.item_id}` : null);
 
@@ -414,7 +424,7 @@ export function metricas(linhas, { precoAlvoDe = () => null } = {}) {
       fat += l.pago;
       bruto += l.bruto;
       unid += l.q;
-      cupom += num(l.desconto_item) + num(l.desconto_pedido);
+      cupom += descontoItem(l) + num(l.desconto_pedido);
       const alvo = precoAlvoDe(l);
       const cheio = alvo && alvo > num(l.valor_unitario) ? alvo : num(l.valor_unitario);
       descPreco += (cheio - num(l.valor_unitario)) * l.q;
