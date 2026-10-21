@@ -40,6 +40,15 @@ function pontosDoPeriodo(p) {
   for (const h of [...(Array.isArray(par?.historico) ? par.historico : []), ...(par?.ate ? [par] : [])])
     if (h?.ate) m.set(h.ate, { ate: h.ate, gasto: num(h.gasto), cliques: num(h.cliques), vendas: num(h.vendas) });
   const lista = [...m.values()].sort((a, b) => a.ate.localeCompare(b.ate));
+  // O acumulado nunca diminui: envio antigo MAIOR que um mais novo (ex.: CSV de
+  // antes de 19/10, com a campanha antiga contada 2×) fica no valor do mais
+  // novo — senão a semana dele ganhava o "pico" e a seguinte não descontava
+  // (Ads da semana passava do gasto total, 21/10/2026).
+  for (let k = lista.length - 2; k >= 0; k--) {
+    const x = lista[k];
+    const y = lista[k + 1];
+    lista[k] = { ...x, gasto: Math.min(x.gasto, y.gasto), cliques: Math.min(x.cliques, y.cliques), vendas: Math.min(x.vendas, y.vendas) };
+  }
   return [{ ate: somarDiasIso(p.inicio, -1), gasto: 0, cliques: 0, vendas: 0 }, ...lista.filter((x) => x.ate >= p.inicio)];
 }
 export function acumuladoAdsEm(p, dia) {
