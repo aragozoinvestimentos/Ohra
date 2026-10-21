@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { BRL } from "../lib/format.js";
-import { agruparPorItem, evolucaoSemanal, metricas, porDiaDaSemana, precoVsVendas, ultimasSemanas, PLATAFORMAS, somarDias } from "../lib/pedidos.js";
+import { agruparPorItem, evolucaoSemanal, inicioSemana, metricas, porDiaDaSemana, precoVsVendas, ultimasSemanas, PLATAFORMAS, somarDias } from "../lib/pedidos.js";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { adsNaJanela } from "../lib/ads.js";
@@ -70,8 +70,15 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
       linhas.filter((l) => l.data >= semanas[0] && daPlat(l)),
       { itens: esc.itens, porPai: true }
     );
-    return evolucaoSemanal(g, semanas);
-  }, [linhas, semanas, esc.itens, f.plat]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Semana atual (até hoje): só acompanha — fora das 8 semanas e da tendência.
+    const atualIni = inicioSemana(hoje);
+    return evolucaoSemanal(g, semanas)
+      .map((e) => {
+        const ls = e.linhas.filter((l) => inicioSemana(l.data) === atualIni);
+        return { ...e, agoraQ: ls.reduce((t, l) => t + l.q, 0), agoraLucro: ls.reduce((t, l) => t + (l.lucro || 0), 0) };
+      })
+      .sort((x, y) => y.v.reduce((t, n) => t + n, 0) + y.agoraQ - (x.v.reduce((t, n) => t + n, 0) + x.agoraQ));
+  }, [linhas, semanas, esc.itens, f.plat, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
   const dias = useMemo(() => porDiaDaSemana(atual), [atual]);
   const maxD = Math.max(1, ...dias.map((d) => d.n));
   const elas = useMemo(() => precoVsVendas(cres.linhas), [cres.linhas]);
@@ -157,7 +164,7 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
 
       <div className="panel">
         <h3>
-          Por produto — semana a semana <span className="dir">unidades por semana completa (seg–dom) · tendência = 2 últimas semanas × 2 anteriores</span>
+          Por produto — semana a semana <span className="dir">unidades por semana completa (seg–dom) · tendência = 2 últimas semanas × 2 anteriores · "esta semana" só acompanha (não entra na tendência)</span>
         </h3>
         <div className="table-wrap">
           <table>
@@ -169,7 +176,14 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
                 ))}
                 <th>8 semanas</th>
                 <th className="num">Tendência</th>
-                <th className="num">Lucro na semana</th>
+                <th className="num">
+                  Lucro semana fechada
+                  <div className="sub-num">{dm(semanas[semanas.length - 1])}–{dm(somarDias(semanas[semanas.length - 1], 6))}</div>
+                </th>
+                <th className="num">
+                  Esta semana
+                  <div className="sub-num">{dm(inicioSemana(hoje))} até hoje</div>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -195,6 +209,16 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
                     </td>
                     <td className={`num ${cls}`}>{txt}</td>
                     <td className="num">{BRL(e.lucroSem[e.lucroSem.length - 1] || 0)}</td>
+                    <td className="num">
+                      {e.agoraQ ? (
+                        <>
+                          {e.agoraQ} un.
+                          <div className="sub-num">lucro {BRL(e.agoraLucro)}</div>
+                        </>
+                      ) : (
+                        <span className="faint">0</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
