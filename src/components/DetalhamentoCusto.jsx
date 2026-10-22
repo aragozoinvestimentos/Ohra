@@ -1,5 +1,7 @@
 import { BRL } from "../lib/format.js";
 import SeletorItens from "./SeletorItens.jsx";
+import ParteArtesanal from "./ParteArtesanal.jsx";
+import { custoArtesanal } from "../lib/calc.js";
 
 // Campo numérico compacto que mostra "(era X)" do lado do rótulo quando o
 // valor atual difere do que estava salvo antes dessa edição — pra você ver
@@ -38,6 +40,7 @@ export default function DetalhamentoCusto({
   impressoraId = null,
   maquina = null,
   onChangeImpressora,
+  materiais = [],
 }) {
   if (!detalhe) {
     return (
@@ -56,9 +59,13 @@ export default function DetalhamentoCusto({
   const padrao = ativas.find((i) => i.padrao) || ativas[0] || null;
 
   const pecasPorPlaca = Number(pecasPorImpressao) || 1;
+  const sem3d = !!detalhe.sem3d;
+  const art = custoArtesanal(detalhe, materiais);
 
   return (
     <div className="detalhe-producao">
+      <ParteArtesanal embutido valor={{ artesanal: detalhe.artesanal, sem3d }} materiais={materiais} onChange={({ artesanal, sem3d: s3 }) => onChange({ ...detalhe, artesanal, sem3d: s3 })} />
+      {!sem3d && (<>
       <CampoNum label="Peças por impressão/chapa" valor={pecasPorImpressao ?? 1} anterior={pecasPorImpressaoSalvo} onChange={onChangePecasPorImpressao} />
       {pecasPorPlaca > 1 && (
         <div className="hint" style={{ marginTop: -8 }}>
@@ -150,10 +157,12 @@ export default function DetalhamentoCusto({
           </div>
         </>
       )}
+      </>)}
 
       {resultado && (
         <div className="detalhe-resultado">
           <div className="kv"><span className="k">Peso estimado</span><span className="v">{Number(resultado.peso || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} g</span></div>
+          {!sem3d && (<>
           <div className="kv"><span className="k">Material</span><span className="v">{BRL(resultado.material)}</span></div>
           <div className="kv"><span className="k">Energia</span><span className="v">{BRL(resultado.energia)}</span></div>
           <div className="kv"><span className="k">Manutenção</span><span className="v">{BRL(resultado.manutencao)}</span></div>
@@ -162,6 +171,10 @@ export default function DetalhamentoCusto({
           <div className="kv"><span className="k">Consumíveis</span><span className="v">{BRL(custoConsumiveis)}</span></div>
           <div className="kv"><span className="k">{usaFarm ? "Máquina (desgaste + manutenção/h)" : "ROI da máquina"}</span><span className="v">{BRL(resultado.roiPeca)}</span></div>
           <div className="kv"><span className="k">Modelagem</span><span className="v">{BRL(detalhe.modelagem)}</span></div>
+          </>)}
+          {(sem3d || (art && !art.vazio)) && (
+            <div className="kv"><span className="k">Parte artesanal{art?.lote > 1 ? ` (lote de ${art.lote})` : ""}</span><span className="v">{BRL(resultado.artesanal)}</span></div>
+          )}
           <div className="kv total"><span className="k">Total (bate com "Custo de produção" acima)</span><span className="v">{BRL(resultado.total)}</span></div>
         </div>
       )}

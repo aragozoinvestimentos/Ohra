@@ -742,7 +742,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
 // Produção (Minha farm): peças por dia que a farm faz de UM produto (todas as
 // impressoras ativas × horas/dia ÷ tempo por peça). Só informa.
 export function pecasPorDia(produto, impressoras, farmConfig) {
-  if (!produto) return null;
+  if (!produto || produto.producao_detalhe?.sem3d) return null; // só artesanal: não usa impressora
   const min = num(produto.tempo_impressao_horas) > 0 ? num(produto.tempo_impressao_horas) * 60 : num(produto.producao_detalhe?.tempo);
   const porPeca = min > 0 ? min / Math.max(1, num(produto.pecas_por_impressao) || 1) : 0;
   const ativas = (impressoras || []).filter((i) => i.ativa !== false).length || 1;
@@ -753,7 +753,7 @@ export function pecasPorDia(produto, impressoras, farmConfig) {
 export function capacidadeDoItem(item, produtos, impressoras, farmConfig) {
   if (!item) return null;
   if (item.id.startsWith("k:")) {
-    const caps = (item.componentes || []).map((c) => {
+    const caps = (item.componentes || []).filter((c) => !produtos.find((p) => p.id === c.produtoId)?.producao_detalhe?.sem3d).map((c) => {
       const cap = pecasPorDia(produtos.find((p) => p.id === c.produtoId), impressoras, farmConfig);
       return cap != null ? cap / Math.max(1, num(c.quantidade) || 1) : null;
     });

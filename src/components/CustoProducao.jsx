@@ -1,7 +1,8 @@
 import { pegarPedido } from "../lib/navegar.js";
 import { useEffect, useMemo, useState } from "react";
 import { usePreferencia } from "../hooks/usePreferencia.js";
-import { calcProducao, DEFAULTS_PRODUCAO } from "../lib/calc.js";
+import { calcProducao, custoArtesanal, DEFAULTS_PRODUCAO } from "../lib/calc.js";
+import ParteArtesanal from "./ParteArtesanal.jsx";
 import { salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -122,6 +123,10 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     filamentos.find((m) => m.nome === f.materialNome) || filamentos[filamentos.length - 1] || null;
 
   const custoConsumiveis = totalItens(consumiveisCatalogo, f.consumiveisItens);
+  // Parte artesanal (vela, cimento…) — recolhida; soma no custo da peça.
+  const art = custoArtesanal({ artesanal: f.artesanal }, materiais);
+  const temArt = !!art && !art.vazio;
+  const sem3d = !!f.sem3d;
 
   // Máquina da impressora escolhida (Minha farm); sem farm → campos antigos.
   const maquinaSel = usaFarm ? maquinaDoProduto({ impressora_id: f.impressoraId || null }, impressoras, farmConfig) : null;
@@ -145,12 +150,15 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       modelagem: n(f.modelagem),
       markupRapido: n(f.markupRapido) / 100,
       pecasPorPlaca: n(f.pecasPorPlaca) || 1,
+      sem3d,
+      artesanal: art?.porPeca || 0,
+      pesoArtesanal: art?.pesoPorPeca || 0,
       ...(maquinaSel ? { kwh: maquinaSel.tarifa, consumo: maquinaSel.potencia, custoHoraMaquina: maquinaSel.custoHoraMaquina } : {}),
     });
   const resultado = useMemo(
     () => calcProducao(entradaCalc(materialSelecionado?.preco ?? 0)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [f, materialSelecionado, custoConsumiveis, maquinaSel?.custoHora, maquinaSel?.tarifa, maquinaSel?.potencia]
+    [f, materialSelecionado, custoConsumiveis, art?.porPeca, art?.pesoPorPeca, maquinaSel?.custoHora, maquinaSel?.tarifa, maquinaSel?.potencia]
   );
 
   // Preço de venda de referência no canal principal (Shopee, ou o 1º canal):
@@ -193,6 +201,8 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         horasDia: n(f.horasDia),
         diasMes: n(f.diasMes),
         modelagem: n(f.modelagem),
+        artesanal: f.artesanal || null,
+        sem3d,
       },
       pecas_por_impressao: Math.max(1, n(f.pecasPorPlaca) || 1),
       ...(maquinaSel ? { impressora_id: maquinaSel.impressoraId, _maquina: maquinaSel } : {}),
@@ -255,6 +265,8 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         horasDia: n(f.horasDia),
         diasMes: n(f.diasMes),
         modelagem: n(f.modelagem),
+        artesanal: f.artesanal || null,
+        sem3d,
       },
     });
   }
@@ -278,8 +290,15 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     <Kpis
       itens={[
         { label: "Custo por peça", valor: BRL(resultado.total), tom: "destaque", sub: n(f.pecasPorPlaca) > 1 ? `chapa com ${n(f.pecasPorPlaca)} peças` : "custo de produção total" },
-        { label: "Material", valor: BRL(resultado.material), sub: `${pesoTxt} de ${materialSelecionado?.nome || "filamento"}` },
-        { label: "Máquina e energia", valor: BRL(resultado.energia + resultado.manutencao + resultado.roiPeca), sub: usaFarm ? "energia + manutenção + desgaste da máquina" : "energia + manutenção + ROI" },
+        ...(temArt || sem3d
+          ? [
+              { label: "Parte 3D", valor: sem3d ? "—" : BRL(resultado.total - resultado.artesanal), sub: sem3d ? "produto só artesanal" : `${materialSelecionado?.nome || "filamento"} · máquina e energia` },
+              { label: "Parte artesanal", valor: BRL(resultado.artesanal), sub: art?.lote > 1 ? `lote de ${art.lote} peças` : `${art?.linhas.length || 0} itens` },
+            ]
+          : [
+              { label: "Material", valor: BRL(resultado.material), sub: `${pesoTxt} de ${materialSelecionado?.nome || "filamento"}` },
+              { label: "Máquina e energia", valor: BRL(resultado.energia + resultado.manutencao + resultado.roiPeca), sub: usaFarm ? "energia + manutenção + desgaste da máquina" : "energia + manutenção + ROI" },
+            ]),
         { label: canalRef ? `Sugerido na ${canalRef.nome || "Shopee"}` : "Preço sugerido", valor: sugeridoCanal != null ? BRL(sugeridoCanal) : "—", sub: sugeridoCanal != null ? `margem ${Math.round(cfgLoja.margemDesejada * 100)}% · já com as taxas` : "cadastre um canal" },
       ]}
     />
@@ -287,6 +306,24 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     {produtoId && <ImpactoCusto impacto={impacto} titulo="Impacto se atualizar o produto" />}
     <div className="grid2">
       <div>
+        <ParteArtesanal valor={{ artesanal: f.artesanal, sem3d }} materiais={materiais} onChange={({ artesanal, sem3d: s3 }) => setF((prev) => ({ ...prev, artesanal, sem3d: s3 }))} />
+        {sem3d && (
+          <div className="panel">
+            <div className="hint" style={{ margin: 0 }}>Produto só artesanal: os campos de impressão 3D ficam escondidos. {supabase && "Pra carregar ou atualizar um produto cadastrado, escolha ele aqui:"}</div>
+            {supabase && (
+              <div className="field" style={{ marginTop: 8 }}>
+                <label>Produto cadastrado (opcional)</label>
+                <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+                  <option value="">— novo cálculo —</option>
+                  {produtos.map((p) => (
+                    <option key={p.id} value={p.id}>{p.nome}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+        {!sem3d && (<>
         <div className="panel">
           <h3 className="section-title">
             <span>
@@ -457,11 +494,14 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
             <input type="number" step="0.01" value={f.modelagem} onChange={set("modelagem")} />
           </div>
         </div>
+        </>)}
       </div>
 
       <div>
         <div className="panel">
           <h3>Resultado</h3>
+          {(temArt || sem3d) && !sem3d && <div className="res-parte res-3d">Parte 3D</div>}
+          {!sem3d && (<>
           <div className="kv">
             <span className="k">Peso estimado da peça</span>
             <span className="v">{isFinite(Number(resultado.peso)) ? Number(resultado.peso).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " g" : "—"}</span>
@@ -474,6 +514,32 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           <div className="kv"><span className="k">Consumíveis</span><span className="v">{BRL(custoConsumiveis)}</span></div>
           <div className="kv"><span className="k">{usaFarm ? "Máquina nesta peça (desgaste + manutenção/h)" : "ROI da máquina nesta peça"}</span><span className="v">{BRL(resultado.roiPeca)}</span></div>
           <div className="kv"><span className="k">Administrativo</span><span className="v">{BRL(n(f.modelagem))}</span></div>
+          </>)}
+          {(temArt || sem3d) && (
+            <>
+              {!sem3d && <div className="kv"><span className="k"><b>Subtotal 3D</b></span><span className="v"><b>{BRL(resultado.total - resultado.artesanal)}</b></span></div>}
+              <div className="res-parte res-art">Parte artesanal{art?.lote > 1 ? ` · lote de ${art.lote} (÷ ${art.lote})` : ""}</div>
+              {(art?.linhas || []).map((l, i) => (
+                <div className="kv" key={i}>
+                  <span className="k">{l.nome}{l.avulso ? <span className="muted-cel"> · avulso</span> : <span className="muted-cel"> · {String(l.quantidade).replace(".", ",")} {l.unidade || ""}</span>}</span>
+                  <span className="v">{BRL(l.custo / (art.lote || 1))}</span>
+                </div>
+              ))}
+              {!art?.linhas.length && <div className="hint">Nenhum item artesanal ainda.</div>}
+              <div className="kv"><span className="k"><b>Subtotal artesanal</b></span><span className="v"><b>{BRL(resultado.artesanal)}</b></span></div>
+              {!sem3d && resultado.total > 0 && (
+                <>
+                  <div className="res-barra">
+                    <div className="res-barra-3d" style={{ width: `${((resultado.total - resultado.artesanal) / resultado.total) * 100}%` }} />
+                    <div className="res-barra-art" style={{ width: `${(resultado.artesanal / resultado.total) * 100}%` }} />
+                  </div>
+                  <div className="muted-cel" style={{ marginBottom: 4 }}>
+                    3D {Math.round(((resultado.total - resultado.artesanal) / resultado.total) * 100)}% · artesanal {Math.round((resultado.artesanal / resultado.total) * 100)}% do custo
+                  </div>
+                </>
+              )}
+            </>
+          )}
           <div className="kv total"><span className="k">Custo de produção total</span><span className="v">{BRL(resultado.total)}</span></div>
         </div>
         <div className="panel">

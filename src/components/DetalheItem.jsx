@@ -52,8 +52,9 @@ export default function DetalheItem({ it, onEditar, onToast }) {
         ["Falhas", r.falhas],
         ["Acabamento", r.acabamento],
       ];
-      base.forEach(([n, v]) => partes.push({ nome: n, valor: v }));
-      const resto = r.total - base.reduce((t, [, v]) => t + v, 0);
+      base.forEach(([n, v]) => v > 0.005 && partes.push({ nome: n, valor: v }));
+      if (r.artesanal > 0.005) partes.push({ nome: "Parte artesanal", valor: r.artesanal });
+      const resto = r.total - base.reduce((t, [, v]) => t + v, 0) - (r.artesanal || 0);
       if (resto > 0.005) partes.push({ nome: "Consumíveis e modelagem", valor: resto });
     } else if (kitLinhas.length) {
       kitLinhas.forEach((l) => partes.push({ nome: `${l.quantidade} × ${l.produto.nome}`, valor: l.subtotal, sub: `${BRL(l.custoPeca)}/peça${l.manual ? " · à mão" : ` · chapa de ${l.pecasChapa}`}` }));
@@ -66,7 +67,7 @@ export default function DetalheItem({ it, onEditar, onToast }) {
     const imp = prod ? impressoraDoProduto(prod, impressoras) : null;
     const info = [
       `peso de envio ${g(it.peso)}`,
-      prod && it.tipo === "Produto" ? `${imp?.nome || "sem impressora"} · chapa de ${Math.max(1, num(prod.pecas_por_impressao) || 1)}` : null,
+      prod && it.tipo === "Produto" && prod.producao_detalhe?.sem3d ? "só artesanal" : prod && it.tipo === "Produto" ? `${imp?.nome || "sem impressora"} · chapa de ${Math.max(1, num(prod.pecas_por_impressao) || 1)}` : null,
       prod && !prod.producao_detalhe ? "custo de produção digitado à mão" : null,
     ].filter(Boolean);
     return (

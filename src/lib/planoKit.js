@@ -7,7 +7,7 @@
 //    comprimento (m, total), materialNome }).
 // O PREÇO do kit continua vindo das peças (custo por peça × qtd, como no
 // catálogo); a chapa do kit só COMPARA e avisa a diferença.
-import { calcProducao, DEFAULTS_PRODUCAO, entradaDoDetalhe } from "./calc.js";
+import { calcProducao, custoArtesanal, DEFAULTS_PRODUCAO, entradaDoDetalhe } from "./calc.js";
 import { totalItens } from "../components/SeletorItens.jsx";
 
 export const DIFERENCA_AVISO = 0.5; // R$ por kit
@@ -74,8 +74,10 @@ export function custoChapaKit(chapa, linhas, materiais) {
     if (!d) continue;
     consumiveis += totalItens(consCat, d.consumiveisItens || []) * l.quantidade;
     modelagem += num(d.modelagem) * l.quantidade;
+    // Parte artesanal (vela, cimento…) não vai pra chapa: soma por peça.
+    modelagem += (custoArtesanal(d, materiais)?.porPeca || 0) * l.quantidade;
   }
-  const entrada = entradaDoDetalhe({ ...detBase, comprimento: num(c.comprimento), tempo: num(c.tempo), materialNome: material?.nome || nomeMat, modelagem: 0 }, {
+  const entrada = entradaDoDetalhe({ ...detBase, comprimento: num(c.comprimento), tempo: num(c.tempo), materialNome: material?.nome || nomeMat, modelagem: 0, sem3d: false }, {
     precoKg: material?.preco ?? 0,
     consumiveis: 0,
     pecasPorPlaca: kitsPorChapa,

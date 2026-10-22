@@ -5,7 +5,7 @@ import ImpactoCusto from "./ImpactoCusto.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { impactoProduto } from "../lib/impactoCusto.js";
 import { arredondarPreco } from "../lib/format.js";
-import { calcProducao, DEFAULTS_PRODUCAO, entradaDoDetalhe } from "../lib/calc.js";
+import { calcProducao, custoArtesanal, DEFAULTS_PRODUCAO, entradaDoDetalhe } from "../lib/calc.js";
 import { impressoraPadrao, maquinaDoProduto } from "../lib/farm.js";
 import { lerUltimosPercentuais, salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
 import { supabase } from "../lib/supabaseClient.js";
@@ -178,10 +178,10 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     const d = form.producao_detalhe;
     const material = filamentos.find((m) => m.nome === d.materialNome) || filamentos[0] || null;
     return calcProducao(
-      entradaDoDetalhe(d, { precoKg: material?.preco ?? 0, consumiveis: custoConsumiveisDetalhe, pecasPorPlaca: form.pecas_por_impressao, maquina: maquinaForm })
+      entradaDoDetalhe(d, { precoKg: material?.preco ?? 0, consumiveis: custoConsumiveisDetalhe, pecasPorPlaca: form.pecas_por_impressao, maquina: maquinaForm, artesanal: custoArtesanal(d, materiais) })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.producao_detalhe, form.pecas_por_impressao, filamentos, custoConsumiveisDetalhe, maquinaForm]);
+  }, [form.producao_detalhe, form.pecas_por_impressao, filamentos, custoConsumiveisDetalhe, maquinaForm, materiais]);
 
   // Impacto da edição no lucro do produto, das variações e dos kits (ao vivo).
   const dadosVivos = useEscada();
@@ -548,6 +548,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           salvo={detalheSalvo}
           filamentos={filamentos}
           consumiveisCatalogo={consumiveisCatalogo}
+          materiais={materiais}
           resultado={resultadoDetalhe}
           custoConsumiveis={custoConsumiveisDetalhe}
           onChange={(detalhe) => setForm((prev) => ({ ...prev, producao_detalhe: detalhe }))}

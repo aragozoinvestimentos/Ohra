@@ -137,6 +137,13 @@ export const DEFAULTS_PRODUCAO = {
 // Consumíveis e modelagem continuam por peça (já têm sua própria
 // quantidade em SeletorItens), não entram nessa divisão.
 export function calcProducao(i) {
+  // Produto só artesanal (detalhe.sem3d): a parte impressa some — sobra a parte
+  // artesanal (custo e peso por peça, já divididos pelo lote — custoArtesanal).
+  if (i.sem3d) {
+    const art = Number(i.artesanal) || 0;
+    const z = 0;
+    return { peso: Number(i.pesoArtesanal) || 0, material: z, energia: z, manutencao: z, falhas: z, acabamento: z, roiPeca: z, consumiveis: z, modelagem: z, artesanal: art, total: art, precoRapido: art * (1 + (i.markupRapido || 0)) };
+  }
   const pecas = Math.max(1, Number(i.pecasPorPlaca) || 1);
   const pesoChapa = Math.PI * Math.pow(i.diametro / 2, 2) * i.comprimento * i.densidade;
   const materialChapa = (i.precoKg / 1000) * pesoChapa;
@@ -155,15 +162,16 @@ export function calcProducao(i) {
   const falhas = falhasChapa / pecas;
   const acabamento = acabamentoChapa / pecas;
   const roiPeca = roiPecaChapa / pecas;
-  const total = material + energia + manutencao + falhas + acabamento + i.consumiveis + roiPeca + i.modelagem;
+  const artesanal = Number(i.artesanal) || 0;
+  const total = material + energia + manutencao + falhas + acabamento + i.consumiveis + roiPeca + i.modelagem + artesanal;
   const precoRapido = total * (1 + i.markupRapido);
-  return { peso, material, energia, manutencao, falhas, acabamento, roiPeca, total, precoRapido };
+  return { peso: peso + (Number(i.pesoArtesanal) || 0), peso3d: peso, material, energia, manutencao, falhas, acabamento, roiPeca, consumiveis: i.consumiveis, modelagem: i.modelagem, artesanal, total, precoRapido };
 }
 
 // Entrada do calcProducao a partir do detalhamento salvo (producao_detalhe).
 // `maquina` = produto._maquina (lib/farm.js): energia e máquina vêm da
 // impressora/farm; sem ela, dos campos antigos do detalhamento.
-export function entradaDoDetalhe(detalhe, { precoKg = 0, consumiveis = 0, pecasPorPlaca = 1, maquina = null, markupRapido = 0 } = {}) {
+export function entradaDoDetalhe(detalhe, { precoKg = 0, consumiveis = 0, pecasPorPlaca = 1, maquina = null, markupRapido = 0, artesanal = null } = {}) {
   const n = (v) => {
     const x = Number(v);
     return isFinite(x) ? x : 0;
@@ -189,7 +197,38 @@ export function entradaDoDetalhe(detalhe, { precoKg = 0, consumiveis = 0, pecasP
     modelagem: n(d.modelagem),
     markupRapido,
     pecasPorPlaca: n(pecasPorPlaca) || 1,
+    sem3d: !!d.sem3d,
+    artesanal: artesanal ? artesanal.porPeca : 0,
+    pesoArtesanal: artesanal ? artesanal.pesoPorPeca : 0,
   };
+}
+
+// Parte ARTESANAL do produto (22/10/2026 — vela, suporte de cimento, molde…):
+// producao_detalhe.artesanal = { itens: [{itemId, quantidade}] (Materiais →
+// Consumíveis, preço ao vivo), avulsos: [{nome, valor}] (valor digitado), lote
+// (a receita rende N peças; padrão 1), peso (g da parte artesanal por peça) }.
+// Só custo: sem falhas, sem mão de obra. Soma no custo de produção da peça.
+export function custoArtesanal(detalhe, materiais) {
+  const a = detalhe?.artesanal;
+  if (!a) return null;
+  const n = (v) => {
+    const x = Number(String(v ?? "").replace(",", "."));
+    return isFinite(x) ? x : 0;
+  };
+  const cat = (materiais || []).filter((m) => m.tipo === "consumivel");
+  const linhas = [];
+  for (const it of a.itens || []) {
+    const m = cat.find((c) => c.id === it.itemId);
+    if (!m) continue;
+    linhas.push({ nome: m.nome, quantidade: n(it.quantidade), unidade: m.unidade, preco: n(m.preco), custo: n(m.preco) * n(it.quantidade) });
+  }
+  for (const av of a.avulsos || []) {
+    if (!String(av.nome || "").trim() && !n(av.valor)) continue;
+    linhas.push({ nome: av.nome || "item avulso", avulso: true, custo: n(av.valor) });
+  }
+  const lote = Math.max(1, n(a.lote) || 1);
+  const totalLote = linhas.reduce((t, l) => t + l.custo, 0);
+  return { linhas, lote, totalLote, porPeca: totalLote / lote, pesoPorPeca: n(a.peso), vazio: !linhas.length };
 }
 
 // Custo de produção por peça de um produto JÁ CADASTRADO (com detalhamento
@@ -215,6 +254,7 @@ export function custoProdutoPorPeca(produto, materiais) {
     consumiveis: custoConsumiveis,
     pecasPorPlaca: n(produto.pecas_por_impressao) || 1,
     maquina: produto._maquina,
+    artesanal: custoArtesanal(detalhe, materiais),
   }));
 }
 
