@@ -391,7 +391,6 @@ export function juntarAds(relatorios) {
 // gmvLoja.js). A Shopee manda o TOTAL do período (não o dia a dia), então
 // janela que repete dias de uma anterior entra só com a DIFERENÇA (os dias
 // novos, estimados — recortarAdsDiferenca, 22/10/2026).
-const diasEntre = (de, ate) => Math.round((new Date(`${ate}T12:00:00`) - new Date(`${de}T12:00:00`)) / 86400000) + 1;
 export function somarJanelasAds(relatorios) {
   const lista = (relatorios || []).filter((r) => r?.tipo === "ads" && r.periodo?.de);
   if (!lista.length) return null;
