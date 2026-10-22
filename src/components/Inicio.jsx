@@ -1,4 +1,5 @@
 import { vendasDoMes, saldoReserva } from "../lib/vendasMes.js";
+import { comCupomAtivo, cuponsAtivos } from "../lib/cupomLoja.js";
 import { vendasPeloComeco } from "../lib/vinculoSku.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
 import { PLATAFORMAS } from "../lib/pedidos.js";
@@ -140,6 +141,27 @@ export default function Inicio({ onIrPara, onToast }) {
     }
     return out;
   }, [avalH, dados.canais, pedidosValidos, anuncioDoPedido, hoje]);
+  // Cupons ativos da loja (Configuração → Regras): anúncio (já anunciado) que numa
+  // compra de 1 un. fica no prejuízo/abaixo do mínimo com o cupom da faixa.
+  const cupomRuins = useMemo(() => {
+    const out = [];
+    for (const c of dados.canais || []) {
+      const faixas = cuponsAtivos(dados.cfgLoja, c.id);
+      if (!faixas.length) continue;
+      for (const p of dados.precos || []) {
+        if (p.canal_id !== c.id) continue;
+        const pre = { produto: "p", variacao: "v", kit: "k" }[p.item_tipo];
+        const it = (dados.itens || []).find((i) => i.id === `${pre}:${p.item_id}`);
+        if (!it || (dados.cobraNoCanal && !dados.cobraNoCanal(it, c))) continue;
+        if (!(dados.publicacoesCanal || []).some((x) => x.item_id === p.item_id && x.canal_id === c.id)) continue;
+        const preco = dados.agoraDe?.(it, c)?.agora?.preco || Number(p.preco);
+        const cfg = dados.cfgDoProduto(it.produtoId || (pre === "p" ? p.item_id : null));
+        const r = comCupomAtivo({ canal: c, preco, custo: Number(it.custoTotal) || 0, peso: Number(it.peso) || 0, cfg }, faixas);
+        if (r && (r.estado === "prejuizo" || r.estado === "abaixo")) out.push({ item: it, canal: c, ...r });
+      }
+    }
+    return out;
+  }, [dados]);
   const peloComeco = useMemo(() => vendasPeloComeco(reais.linhas, { produtos: dados.produtos, kits: dados.kits, hoje }), [reais.linhas, dados.produtos, dados.kits, hoje]);
   const impCentral = useMemo(
     () => (reais.carregando ? null : { disponivel: reais.disponivel, lista: reais.importacoes, plataformas: PLATAFORMAS.filter((p) => (dados.canais || []).some((c) => c.tipo === p.tipo)), avaliacoes: avaliacoesPend, peloComeco }),
@@ -293,8 +315,8 @@ export default function Inicio({ onIrPara, onToast }) {
   const [baseAds] = usePreferencia("caixa:saldo-ads-base", null);
   const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos: gestao.lancamentos, periodos: adsP.periodos, hoje, base: baseAds }) : null), [adsP.disponivel, adsP.periodos, gestao.lancamentos, hoje, baseAds]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, hoje }),
-    [precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, hoje }),
+    [cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.

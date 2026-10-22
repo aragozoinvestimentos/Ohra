@@ -9,6 +9,7 @@ import { irParaAba } from "../lib/navegar.js";
 import MetasPrecoLoja from "./MetasPrecoLoja.jsx";
 import CalendarioLoja from "./CalendarioLoja.jsx";
 import { RegrasPortoes } from "./Crescimento.jsx";
+import CuponsAtivos from "./CuponsAtivos.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 // Configuração → Regras (remap 21/10/2026): as regras da loja que ficavam
@@ -47,6 +48,9 @@ export default function Regras({ onToast }) {
       </div>
       <MetasPrecoLoja onToast={onToast} />
       <CalendarioLoja onToast={onToast} />
+      <Secao titulo="Cupons ativos da loja" aberta onde="Rampa (O que digitar), Painel do anúncio e Promoções → Cupom da loja" ajuda="Os cupons que estão ligados na plataforma (ex.: Shopee 2% acima de R$ 5 · 5% acima de R$ 20). O app calcula o lucro de 1 unidade com o cupom da faixa que o preço alcança — o pior caso — e avisa se algum anúncio fica no prejuízo. Nenhum preço muda.">
+        <CuponsAtivos onToast={onToast} />
+      </Secao>
       <Secao titulo="Escada por quantidade (kits)" onde="usada em 2º Por quantidade, Produtos precificados e kits" ajuda="Curva de desconto dos kits: d(N) = desconto máximo × (1 − 1/N). As travas (mínimo aceitável, lucro sempre subindo, preço por peça caindo) continuam. Um produto pode ter a própria no 2º Por quantidade → Regras da escada.">
         <RegraEscada cfg={cfg} onSalvar={(v) => salvarChave({ descontoMax: v }, "Escada salva pra loja")} />
       </Secao>

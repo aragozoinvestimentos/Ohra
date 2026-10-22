@@ -2467,3 +2467,8 @@ td.vendas-opcao { padding-left: 26px; }
 .regras-sec > summary::before { content: "▸"; color: var(--accent); }
 .regras-sec[open] > summary::before { content: "▾"; }
 .regras-corpo { padding: 4px 14px 14px; border-top: 1px solid var(--border); }
+
+/* Cupons ativos da loja (22/10/2026) */
+.cupons-edit { display: flex; flex-direction: column; gap: 6px; }
+.cupons-faixa { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cupons-faixa select, .cupons-faixa input { padding: 4px 6px; }

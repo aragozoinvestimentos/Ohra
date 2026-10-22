@@ -379,7 +379,7 @@ export default function App() {
   }
 
   function irPara(key) {
-    if (key === "lojas" || key === "canais" || key === "taxas") {
+    if (key === "lojas" || key === "canais" || key === "taxas" || key === "regras") {
       setConfigSub(key);
       key = "config";
     }

@@ -64,6 +64,7 @@ export function montarPendencias({
   adsSazonal = [], // [{ chave, item, canal, aviso }] fases do Ads sazonal (ads.js → avisoAdsSazonal)
   importacoes = null, // { disponivel, lista, plataformas: [{ id, nome }] } — central da aba Análise (v55)
   saldoDeAds = null, // saldoAds (lib/saldoAds.js): recargas − gasto dos CSVs
+  cupomRuins = [], // [{ item, canal, lucro, estado }] cupom ativo da loja deixando anúncio no prejuízo/abaixo (cupomLoja.js)
   hoje = "",
 }) {
   const out = [];
@@ -378,6 +379,21 @@ export function montarPendencias({
       texto: `${importacoes.avaliacoes.slice(0, 3).map((v) => v.canal.nome).filter((x, i, a) => a.indexOf(x) === i).join(", ")} · os portões da Rampa (avaliações, nota, 1–2★) usam o bloco Avaliações`,
       ir: { aba: "importar" },
       rotulo: "Abrir a central",
+    });
+  }
+
+  // Cupons ativos da loja (22/10/2026): anúncio que fica no prejuízo/abaixo do mínimo com o cupom.
+  if (cupomRuins?.length) {
+    const prej = cupomRuins.filter((x) => x.estado === "prejuizo");
+    add({
+      id: "cupom|loja",
+      grupo: "rotina",
+      ordem: 2,
+      tom: "warn",
+      titulo: `Cupom da loja: ${cupomRuins.length} anúncio${cupomRuins.length > 1 ? "s" : ""} ${prej.length ? "no prejuízo" : "abaixo do mínimo"} com o cupom`,
+      texto: `${cupomRuins.slice(0, 2).map((x) => `${x.item.nome} (${x.canal.nome}): lucro ${brl(x.lucro)} numa compra de 1 un.`).join(" · ")}${cupomRuins.length > 2 ? "…" : ""} — suba o pedido mínimo do cupom ou tire esses itens dele`,
+      ir: { aba: "promocoes", pedido: { sub: "cupom" } },
+      rotulo: "Ver cupom da loja",
     });
   }
 

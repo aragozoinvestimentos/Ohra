@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useEscada } from "../hooks/useEscada.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
+import { comCupomAtivo, cuponsAtivos, textoFaixa } from "../lib/cupomLoja.js";
 import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { irParaAba, pegarPedido } from "../lib/navegar.js";
 import { pedirPasso } from "../lib/passosPreco.js";
@@ -616,6 +617,28 @@ function AbaPreco({ l, esc }) {
             <DiferencaAlvoAgora aa={aa} />
             {l.alerta?.minimo != null && <p className="muted-cel">Mínimo aceitável neste canal: {BRL(l.alerta.minimo)}.</p>}
             {l.alerta?.tipo && <p><Estado tipo={estadoDoAlerta(l.alerta)?.tipo || "info"}>{estadoDoAlerta(l.alerta)?.motivo || l.alerta.tipo}</Estado></p>}
+            {(() => {
+              // Cupom ativo da loja (Configuração → Regras): lucro de 1 un. no preço de agora.
+              const faixas = cuponsAtivos(esc.cfgLoja, l.canal.id);
+              if (!faixas.length || !l.agora?.preco || !l.item) return null;
+              const cfg = esc.cfgDoProduto(l.item.produtoId || (l.itemId.startsWith("p:") ? l.itemId.slice(2) : null));
+              const c = comCupomAtivo({ canal: l.canal, preco: l.agora.preco, custo: Number(l.item.custoTotal) || 0, peso: Number(l.item.peso) || 0, cfg }, faixas);
+              if (!c) return null;
+              return (
+                <p className="muted-cel">
+                  Cupom da loja ({faixas.map(textoFaixa).join(" · ")}):{" "}
+                  {c.faixa ? (
+                    <>
+                      numa compra de 1 un. o cliente paga {BRL(c.clientePaga)} e você lucra <b style={{ color: c.estado === "prejuizo" ? "var(--bad)" : undefined }}>{BRL(c.lucro)}</b>
+                      {c.estado === "prejuizo" ? " — ! prejuízo" : c.estado === "abaixo" ? " — ⚠ abaixo do mínimo" : ""}
+                    </>
+                  ) : (
+                    "1 unidade não alcança o pedido mínimo do cupom"
+                  )}
+                  .
+                </p>
+              );
+            })()}
             <div className="pa-botoes">
               <button type="button" className="btn btn-mini primary" onClick={() => irParaAba("historico", { busca: l.item?.nome || l.nome })}>✎ Editar preço salvo</button>
               <button type="button" className="btn btn-mini" onClick={() => abrir("avulso")}>Calculadora (1º Avulso)</button>

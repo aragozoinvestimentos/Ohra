@@ -3,7 +3,10 @@ import { useEscada } from "../hooks/useEscada.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 import { canalDireto } from "../lib/canais.js";
 import { rampaNoCanal } from "../lib/rampaCanal.js";
-import { cupomMaximo, simularCupom, comparaComLive } from "../lib/cupomLoja.js";
+import { cupomMaximo, simularCupom, comparaComLive, cuponsAtivos, comCupomAtivo, cupomIdeal, cupomReal, textoFaixa } from "../lib/cupomLoja.js";
+import { useCrescimento } from "../hooks/useCrescimento.js";
+import { hojeSP } from "../lib/datas.js";
+import { irParaAba } from "../lib/navegar.js";
 import { BRL } from "../lib/format.js";
 import { normalizarTexto } from "../lib/texto.js";
 import CanalTag from "./CanalTag.jsx";
@@ -35,6 +38,20 @@ export default function CupomLoja() {
   const pctLive = pref.live ?? "10";
   const set = (k) => (e) => setPref({ ...pref, canalId, [k]: e.target.value });
   const [busca, setBusca] = useState("");
+  const { pedidosValidos } = useCrescimento();
+  const hoje = hojeSP();
+  const ativos = useMemo(() => (canal ? cuponsAtivos(cfgLoja, canal.id) : []), [cfgLoja, canal]);
+  // Unidades vendidas por item nos últimos 90 dias neste canal — peso do cupom ideal.
+  const vendas90 = useMemo(() => {
+    const m = new Map();
+    if (!canal) return m;
+    const d = new Date(`${hoje}T12:00:00`);
+    d.setDate(d.getDate() - 90);
+    const de = d.toISOString().slice(0, 10);
+    for (const l of pedidosValidos || []) if (l.valido && l.canal_id === canal.id && String(l.data) >= de && l.id_item) m.set(l.id_item, (m.get(l.id_item) || 0) + (Number(l.q) || 0));
+    return m;
+  }, [pedidosValidos, canal, hoje]);
+  const real = useMemo(() => (canal ? cupomReal(pedidosValidos, canal.id, hoje) : null), [pedidosValidos, canal, hoje]);
 
   const linhas = useMemo(() => {
     if (!canal) return [];
@@ -50,12 +67,12 @@ export default function CupomLoja() {
       const x = { canal, preco: Number(p.preco), custo: Number(item.custoTotal) || 0, peso: Number(item.peso) || 0, cfg };
       const max = cupomMaximo(x);
       if (!max) continue;
-      out.push({ item, preco: x.preco, max, sim: simularCupom(x, cupom) });
+      out.push({ item, preco: x.preco, max, sim: simularCupom(x, cupom), ativo: comCupomAtivo(x, ativos), vendas: vendas90.get(item.id) || 0 });
     }
     return out.sort((a, b) => a.item.nome.localeCompare(b.item.nome));
     // cupom é recriado a cada render: depende dos valores
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canal, precos, itens, cfgDoProduto, cobraNoCanal, itemNoCanal, cupom.tipo, cupom.valor, cupom.minimo]);
+  }, [canal, precos, itens, cfgDoProduto, cobraNoCanal, itemNoCanal, cupom.tipo, cupom.valor, cupom.minimo, ativos, vendas90]);
 
   const filtradas = busca ? linhas.filter((l) => normalizarTexto(`${l.item.nome} ${l.item.sku || ""}`).includes(normalizarTexto(busca))) : linhas;
   const contam = linhas.filter((l) => l.sim?.alcanca);
@@ -63,6 +80,8 @@ export default function CupomLoja() {
   const naoCabem = contam.length - cabem;
   const menorMax = linhas.length ? Math.min(...linhas.map((l) => l.max.pct)) : null;
   const vsLive = comparaComLive(cupom, num(pctLive));
+  const ideal = cupomIdeal(linhas);
+  const ativosRuins = linhas.filter((l) => l.ativo && (l.ativo.estado === "prejuizo" || l.ativo.estado === "abaixo"));
 
   if (!opcoesCanal.length) return <div className="panel"><p className="hint">Cadastre um canal em Configuração → Canais.</p></div>;
 
@@ -115,6 +134,38 @@ export default function CupomLoja() {
       </div>
 
       {canal && (
+        <div className="panel">
+          <h3>
+            Cupons ativos em {canal.nome}
+            <Ajuda texto="Ativos = os cupons que você deixou ligados na plataforma (Configuração → Regras). Real = quanto de desconto de cupom/do vendedor os pedidos importados tiveram nos últimos 90 dias. Ideal = o maior % em que os itens que somam 80% das suas vendas (90 dias) ainda ficam com lucro acima do mínimo, numa compra de 1 unidade — o pior caso." />
+            <button type="button" className="btn btn-mini" onClick={() => irParaAba("regras")}>{ativos.length ? "✎ Editar" : "+ Cadastrar"} em Regras</button>
+          </h3>
+          <div className="pa-corpo">
+            <Kpis
+              itens={[
+                { label: "Cupons ativos", valor: ativos.length ? ativos.map(textoFaixa).join(" · ") : "nenhum", sub: ativosRuins.length ? `${ativosRuins.length} item(ns) abaixo do mínimo ou no prejuízo com eles` : ativos.length ? "todos os itens aguentam" : "cadastre em Configuração → Regras", tom: ativosRuins.some((l) => l.ativo.estado === "prejuizo") ? "bad" : ativosRuins.length ? "warn" : undefined },
+                { label: "Cupom real (90 dias)", valor: real ? `${(real.pct * 100).toFixed(1).replace(".", ",")}%` : "—", sub: real ? `${BRL(real.desconto)} em ${real.comCupom} de ${real.pedidos} pedidos` : "sem pedidos importados" },
+                {
+                  label: "Cupom ideal da loja",
+                  valor: ideal && ideal.pct > 0 ? `até ${ideal.pct}%` : "sem espaço",
+                  tom: ideal && ideal.pct > 0 ? undefined : "warn",
+                  sub:
+                    ideal && ideal.pct > 0
+                      ? ideal.porVendas
+                        ? "80% das vendas aguentam (pior caso, 1 un.)"
+                        : "pelo catálogo (ainda sem vendas)"
+                      : (() => {
+                          const apertados = [...linhas].filter((l) => l.max.semEspaco || l.max.pct < 2).sort((a, b) => b.vendas - a.vendas).slice(0, 2);
+                          return apertados.length ? `os que mais vendem não têm folga: ${apertados.map((l) => l.item.nome).join(", ")} — cupom só com pedido mínimo acima do preço deles` : "sem itens com folga";
+                        })(),
+                },
+              ]}
+            />
+          </div>
+        </div>
+      )}
+
+      {canal && (
         <Kpis
           itens={[
             { label: "Itens com preço salvo", valor: linhas.length, sub: <CanalTag canal={canal} /> },
@@ -142,6 +193,7 @@ export default function CupomLoja() {
                   <th className="num">Cupom máximo</th>
                   <th className="num">Sugestão</th>
                   <th className="num">Com este cupom</th>
+                  {ativos.length > 0 && <th className="num">Com o cupom ativo</th>}
                   <th>Situação</th>
                 </tr>
               </thead>
@@ -185,6 +237,21 @@ export default function CupomLoja() {
                         "—"
                       )}
                     </td>
+                    {ativos.length > 0 && (
+                      <td className="num">
+                        {l.ativo?.faixa ? (
+                          <>
+                            paga {BRL(l.ativo.clientePaga)}
+                            <div className="sub-num">
+                              lucro {BRL(l.ativo.lucro)}
+                              {l.ativo.estado !== "cabe" && <span className={ESTADO[l.ativo.estado].cls} style={{ marginLeft: 4 }}>{ESTADO[l.ativo.estado].txt}</span>}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="muted-cel">não alcança</span>
+                        )}
+                      </td>
+                    )}
                     <td>
                       <span className={ESTADO[l.sim?.estado || "sem-dado"].cls}>{ESTADO[l.sim?.estado || "sem-dado"].txt}</span>
                     </td>

@@ -6,6 +6,7 @@ import { alertaPreco } from "../lib/estrategia.js";
 import { menorFinalComFreteGratis } from "../lib/freteGratis.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { supabase } from "../lib/supabaseClient.js";
+import { comCupomAtivo, cuponsAtivos, textoFaixa } from "../lib/cupomLoja.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
@@ -156,7 +157,7 @@ export default function Crescimento({ onToast }) {
 
 function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linhasGrupo = [], hoje, comissaoSemana, onToast, selId, setSelId }) {
   const { lojas, lojaId, atualizar } = useLoja();
-  const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal } = dados;
+  const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal, cfgLoja } = dados;
   const { rampas, disponivel, carregando } = rampasH;
   const [iniciar, setIniciar] = useState(null); // {} novo | { rampa } editar degraus
   const [mudar, setMudar] = useState(null); // { linha, dir: 1 | -1 }
@@ -234,13 +235,25 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
   const anuncio = useMemo(() => {
     if (!sel) return null;
     const { canal, est, cfg, r } = sel;
-    if (sel.ehKit) return anuncioDaRampaKit({ kitItem: sel.item, canal, preco: est.preco, alvo: est.alvo, cfg, itens, produtos, kits, publicacoes: publicacoesCanal });
+    // Cupom ativo da loja no canal (Configuração → Regras): lucro de 1 un. com ele.
+    const faixas = cuponsAtivos(cfgLoja, canal.id);
+    const comCupom = (l) => {
+      if (!faixas.length || !(l.clientePaga > 0)) return l;
+      const it = itens.find((i) => i.id === l.itemId);
+      if (!it) return l;
+      const cfgI = l.itemId?.startsWith("k:") ? cfg : cfgDoProduto(it.produtoId || (l.itemId.startsWith("p:") ? l.itemId.slice(2) : null)) || cfg;
+      return { ...l, cupom: comCupomAtivo({ canal, preco: l.clientePaga, custo: Number(it.custoTotal) || 0, peso: Number(it.peso) || 0, cfg: cfgI }, faixas) };
+    };
+    if (sel.ehKit) {
+      const rk = anuncioDaRampaKit({ kitItem: sel.item, canal, preco: est.preco, alvo: est.alvo, cfg, itens, produtos, kits, publicacoes: publicacoesCanal });
+      return rk ? { ...rk, faixas, linhas: (rk.linhas || []).map(comCupom) } : rk;
+    }
     const res = anuncioDaRampa({ produtoId: r.produto_id, canal, preco: est.preco, alvo: est.alvo, cfg, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoes: publicacoesCanal });
     // Lucro do avulso = o da rampa (mesmo custo/taxas ao vivo). Variação não
     // anunciada no canal (2º Por quantidade → Anunciado em) fica de fora.
     const linhasA = res.linhas.filter((l) => l.id === "avulso" || !l.itemId?.startsWith("v:") || anunciadoNoCanal(itens.find((i) => i.id === l.itemId), canal));
-    return { ...res, linhas: linhasA.map((l) => (l.id === "avulso" ? { ...l, lucro: est.lucroAtual } : l)) };
-  }, [sel, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal]);
+    return { ...res, faixas, linhas: linhasA.map((l) => comCupom(l.id === "avulso" ? { ...l, lucro: est.lucroAtual } : l)) };
+  }, [sel, itens, produtos, kits, precos, precosRampa, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal, cfgLoja]);
 
   // --- KPIs ---
   const lucroSemana = linhas.reduce((s, l) => s + (l.est.lucroSemana || 0), 0) - (comissaoSemana || 0);
@@ -1616,6 +1629,11 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
                   <th className="num">Promo</th>
                   <th className="num">Cliente paga</th>
                   <th className="num">Lucro</th>
+                  {anuncio?.faixas?.length > 0 && (
+                    <th className="num" title={`Cupons ativos da loja: ${anuncio.faixas.map(textoFaixa).join(" · ")} (Configuração → Regras). Pedido de 1 unidade — o pior caso.`}>
+                      Com o cupom da loja
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1655,6 +1673,21 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
                       {BRL(a.lucro)}
                       {a.lucroSeparado != null && <div className="sub-num">{a.kit ? "separado" : `${a.n} avulsos`}: {BRL(a.lucroSeparado)}</div>}
                     </td>
+                    {anuncio?.faixas?.length > 0 && (
+                      <td className="num" style={{ color: a.cupom?.estado === "prejuizo" ? "var(--bad)" : undefined }}>
+                        {a.cupom?.faixa ? (
+                          <>
+                            {BRL(a.cupom.lucro)}
+                            <div className="sub-num">
+                              −{BRL(a.cupom.desconto)} ({textoFaixa(a.cupom.faixa).split(" acima")[0]}) · paga {BRL(a.cupom.clientePaga)}
+                              {a.cupom.estado === "prejuizo" ? " · ! prejuízo" : a.cupom.estado === "abaixo" ? " · ⚠ abaixo do mínimo" : ""}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="muted-cel">não alcança</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

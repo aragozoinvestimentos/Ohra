@@ -10,6 +10,7 @@ import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CalculadoraPreco from "./CalculadoraPreco.jsx";
 import CompraMaterialDialog from "./CompraMaterialDialog.jsx";
+import TrocarFilamentoDialog from "./TrocarFilamentoDialog.jsx";
 import { precoMedio } from "../lib/comprasMaterial.js";
 
 const VAZIO = { nome: "", preco: "", unidade: "un", tipo: "filamento", observacao: "" };
@@ -41,7 +42,7 @@ function CampoPreco({ material, edicoes, setEdicoes, onSalvar }) {
   );
 }
 
-function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes, onSalvarPreco, onEditar, onExcluir, onCompra, compras }) {
+function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes, onSalvarPreco, onEditar, onExcluir, onCompra, compras, onUsarEm }) {
   return (
     <div className="panel">
       <h3>{titulo}</h3>
@@ -82,6 +83,13 @@ function TabelaMateriais({ titulo, itens, vazio, comUnidade, edicoes, setEdicoes
                     <button className="btn btn-mini" title="Registrar compra deste material (atualiza o preço pela média e lança a saída no caixa)" onClick={() => onCompra(m)}>
                       + Compra
                     </button>{" "}
+                    {onUsarEm && (
+                      <>
+                        <button className="btn btn-mini" title="Trocar o filamento de vários produtos pra este — o preço salvo não muda, o lucro acompanha o custo" onClick={() => onUsarEm(m)}>
+                          Usar em produtos…
+                        </button>{" "}
+                      </>
+                    )}
                     <button className="del" title="Editar" onClick={() => onEditar(m)}>✎</button>
                     <button className="del" title="Excluir" onClick={() => onExcluir(m)}>×</button>
                   </td>
@@ -108,6 +116,7 @@ export default function Materiais({ onToast }) {
   const [edicaoForm, setEdicaoForm] = useState(VAZIO);
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [compraAlvo, setCompraAlvo] = useState(null); // { materialId } com a janela de compra aberta
+  const [usarEm, setUsarEm] = useState(null); // filamento com a janela "usar em produtos…" aberta
   const [compras, setCompras] = useState([]);
 
   // Compras registradas (schema v32) — só pra mostrar "média de N compras";
@@ -417,6 +426,7 @@ export default function Materiais({ onToast }) {
             onExcluir={pedirExclusao}
             onCompra={(m) => setCompraAlvo({ materialId: m.id })}
             compras={compras}
+            onUsarEm={setUsarEm}
           />
           <TabelaMateriais
             titulo="Consumíveis"
@@ -434,6 +444,7 @@ export default function Materiais({ onToast }) {
         </>
       )}
 
+      {usarEm && <TrocarFilamentoDialog material={usarEm} onToast={onToast} onClose={() => setUsarEm(null)} />}
       {compraAlvo && (
         <CompraMaterialDialog materialIdInicial={compraAlvo.materialId} onToast={onToast} onClose={() => setCompraAlvo(null)} />
       )}
