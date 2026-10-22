@@ -330,18 +330,21 @@ export const ACOES_XYZ = {
   CZ: ["revisar", "Revisar ou tirar"],
 };
 /**
- * semanas = [semana iso…] (as últimas N COMPLETAS, mais antiga primeiro). abcPorChave = Map(chave → classe),
- * calculado na MESMA janela das colunas (as semanas completas).
+ * semanas = [semana iso…] (as últimas N COMPLETAS, mais antiga primeiro). abcPorChave = Map(chave → classe).
  * sazonalDe(item) → true se for produto "só na época de…" na temporada.
  * semanaAtual = segunda da semana em andamento (coluna à parte "esta semana", fora da média/variação);
- * diasAtual = dias já passados nela (1–7). primeiraVenda = Map(chave → 1ª data com venda, em todo o histórico):
- * item com menos de NOVO_SEMANAS semanas completas desde a 1ª venda = "novo — pouco histórico" (sem XYZ).
+ * diasAtual = dias já passados nela (1–7). primeiraVenda = Map(chave → 1ª data com venda): menos de
+ * POUCO_HISTORICO semanas completas = só uma dica (`poucoHistorico`), não muda nada.
+ * Estoque reage rápido (22/10/2026, Gustavo): ritmo = o MAIOR entre a média das 8 semanas, a das 2
+ * últimas e o ritmo desta semana até hoje — acelerou, a sugestão sobe na hora; esfriou, volta pela média.
+ * A/B "sob pedido" que acelerou (ritmo recente ≥ ACELERA_DIA/dia e ≥ 2× a média) → estoque pequeno (AY).
  */
-export const NOVO_SEMANAS = 4;
+export const POUCO_HISTORICO = 4;
+export const ACELERA_DIA = 0.5;
 export function curvaXYZ(grupos, { semanas, abcPorChave, produtos, farmConfig, regras = ESTOQUE_PADRAO, sazonalDe = () => false, semanaAtual = null, diasAtual = 7, primeiraVenda = null }) {
   const horasDia = num(farmConfig?.horas_dia_operacao) || 8;
   const fimCompletas = semanas.length ? somarDias(semanas[semanas.length - 1], 6) : null;
-  const limiteNovo = fimCompletas ? somarDias(fimCompletas, -7 * NOVO_SEMANAS + 1) : null;
+  const limitePouco = fimCompletas ? somarDias(fimCompletas, -7 * POUCO_HISTORICO + 1) : null;
   return grupos
     .map((g) => {
       const v = semanas.map((s) => g.linhas.filter((l) => inicioSemana(l.data) === s).reduce((t, l) => t + l.q, 0));
@@ -349,25 +352,28 @@ export function curvaXYZ(grupos, { semanas, abcPorChave, produtos, farmConfig, r
       const media = v.reduce((t, n) => t + n, 0) / v.length;
       const dp = Math.sqrt(v.reduce((t, n) => t + (n - media) ** 2, 0) / v.length);
       const cv = media > 0 ? dp / media : 9;
+      const xyz = cv <= 0.5 ? "X" : cv <= 1 ? "Y" : "Z";
+      const abc = abcPorChave.get(g.chave) || "C";
       const pv = primeiraVenda?.get(g.chave) || null;
-      const novo = !!(pv && limiteNovo && pv > limiteNovo);
-      const xyz = novo ? "—" : cv <= 0.5 ? "X" : cv <= 1 ? "Y" : "Z";
-      const abc = abcPorChave.get(g.chave) || (novo ? "—" : "C");
+      const poucoHistorico = !!(pv && limitePouco && pv > limitePouco);
       const sazonal = !!(g.item && sazonalDe(g.item));
-      const [acao0, titulo0] = novo ? ["novo", "Novo — pouco histórico"] : ACOES_XYZ[abc + xyz];
-      // Estoque: cobertura pela classe (sazonal na temporada = ritmo recente × 7 dias:
-      // o maior entre a média das 2 últimas semanas e o ritmo desta semana até hoje).
+      let [acao, titulo] = ACOES_XYZ[abc + xyz];
       const chapa = chapaDoItem(g.item, produtos);
       const horasChapa = (horasDoItem(g.item, produtos) || 0) * chapa;
       const lead = num(regras.folgaFila ?? 1) + horasChapa / horasDia;
-      let cobertura = novo ? 0 : num(regras[abc + xyz]) || 0;
-      let porDia = media / 7;
-      if (sazonal) {
-        const rec = Math.max((v[v.length - 1] + v[v.length - 2]) / 2 / 7, atual / Math.max(1, diasAtual));
-        if (rec > 0) {
-          cobertura = Math.max(cobertura, 7);
-          porDia = rec;
-        }
+      const ultimas2 = v.length >= 2 ? (v[v.length - 1] + v[v.length - 2]) / 2 / 7 : 0;
+      const estaSemana = atual / Math.max(1, diasAtual);
+      const recente = Math.max(ultimas2, estaSemana);
+      const porDia = Math.max(media / 7, recente);
+      let cobertura = num(regras[abc + xyz]) || 0;
+      if (sazonal && recente > 0) {
+        cobertura = Math.max(cobertura, 7);
+        acao = "estoque";
+        titulo = "Temporada: estoque pelo ritmo";
+      } else if (!cobertura && (abc === "A" || abc === "B") && recente >= ACELERA_DIA && recente >= 2 * (media / 7)) {
+        cobertura = num(regras.AY) || 4;
+        acao = "estoque";
+        titulo = "Acelerando: estoque pelo ritmo";
       }
       let manter = 0;
       let reimprimir = 0;
@@ -377,10 +383,9 @@ export function curvaXYZ(grupos, { semanas, abcPorChave, produtos, farmConfig, r
         if (chapa > 1) manter = Math.ceil(manter / chapa) * chapa;
         reimprimir = Math.max(1, Math.ceil(porDia * lead + seg * 0.5 - 1e-9));
       }
-      const estoque = sazonal && cobertura > 0;
-      return { ...g, v, atual, media, dp, cv, xyz, abc, novo, primeiraVenda: pv, sazonal, acao: estoque ? "estoque" : acao0, titulo: estoque ? "Temporada: estoque pelo ritmo" : titulo0, chapa, manter, reimprimir };
+      return { ...g, v, atual, media, dp, cv, xyz, abc, poucoHistorico, primeiraVenda: pv, sazonal, acao, titulo, chapa, manter, reimprimir, porDia };
     })
-    .sort((a, b) => "ABC—".indexOf(a.abc) - "ABC—".indexOf(b.abc) || b.media - a.media || b.atual - a.atual);
+    .sort((a, b) => "ABC".indexOf(a.abc) - "ABC".indexOf(b.abc) || b.media - a.media || b.atual - a.atual);
 }
 
 // ---------- Comprados juntos ----------

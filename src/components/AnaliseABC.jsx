@@ -134,8 +134,7 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
   const conc = useMemo(() => concentracao(curvaABC(agruparPorItem(filtradas, { itens: esc.itens, porPai: true }), { crit: "lucro" }).linhas), [filtradas, esc.itens]);
 
   // XYZ (8 semanas COMPLETAS + a semana em andamento numa coluna à parte; mesma plataforma do filtro, por variação/kit).
-  // A/B/C daqui usa a MESMA janela das colunas (só as semanas completas) — antes contava até hoje e um item
-  // que só vendeu nesta semana aparecia "A" com tudo zerado.
+  // A/B/C conta até hoje; a coluna "Esta semana" mostra de onde veio a venda de quem ainda não tem semana fechada.
   const semanas = useMemo(() => ultimasSemanas(somarDias(hoje, -7), 8), [hoje]); // 8 semanas COMPLETAS (seg–dom)
   const semanaAtual = useMemo(() => somarDias(semanas[semanas.length - 1], 7), [semanas]);
   const diasAtual = Math.max(1, Math.min(7, Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${semanaAtual}T12:00:00`)) / 86400000) + 1));
@@ -144,8 +143,7 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
     const daPlat = (l) => !f.plat || (l.origem === "fisico" ? "fisico" : l.plataforma) === f.plat;
     const doFiltro = linhas.filter((l) => l.data >= semanas[0] && daPlat(l));
     const g = agruparPorItem(doFiltro, { itens: esc.itens, porPai: false });
-    const completas = doFiltro.filter((l) => l.data < semanaAtual);
-    const abcP = curvaABC(agruparPorItem(completas, { itens: esc.itens, porPai: false }), { crit: "lucro", produtos: esc.produtos });
+    const abcP = curvaABC(g, { crit: "lucro", produtos: esc.produtos }); // A/B/C até hoje (com a semana em andamento)
     const mapa = new Map(abcP.linhas.map((l) => [l.chave, l.classe]));
     const primeiraVenda = new Map();
     for (const gg of agruparPorItem(linhas.filter(daPlat), { itens: esc.itens, porPai: false })) primeiraVenda.set(gg.chave, gg.linhas.reduce((m, l) => (!m || l.data < m ? l.data : m), null));
@@ -432,14 +430,8 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
             <FragmentoLinha key={a} a={a} xyz={xyz} />
           ))}
         </div>
-        {xyz.some((x) => x.novo) && (
-          <p className="hint" style={{ margin: "6px 14px" }}>
-            <b>Novos — pouco histórico</b> (menos de 4 semanas completas desde a 1ª venda, fora da matriz):{" "}
-            {xyz
-              .filter((x) => x.novo)
-              .map((x) => `${x.nome}${x.atual ? ` (${x.atual} esta semana)` : ""}`)
-              .join(" · ")}
-          </p>
+        {xyz.some((x) => x.poucoHistorico) && (
+          <p className="hint" style={{ margin: "6px 14px" }}>* pouco histórico (menos de 4 semanas completas desde a 1ª venda) — a letra X/Y/Z ainda pode mudar; o estoque sugerido já segue o ritmo recente.</p>
         )}
         <div className="table-wrap">
           <table>
@@ -449,7 +441,7 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
                 <th>Vendas por semana</th>
                 <th className="num">
                   Esta semana{" "}
-                  <Ajuda texto={`Vendas de segunda até hoje (${diasAtual} de 7 dias). Fica fora da média, da variação e do A/B/C — a semana ainda não fechou. Produto sazonal na temporada usa o ritmo desta semana no estoque sugerido.`} />
+                  <Ajuda texto={`Vendas de segunda até hoje (${diasAtual} de 7 dias). Fica fora da média e da variação (a semana ainda não fechou), mas conta no A/B/C e no estoque sugerido.`} />
                 </th>
                 <th className="num">Média/sem</th>
                 <th className="num">Variação</th>
@@ -457,7 +449,7 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
                 <th>O que fazer</th>
                 <th>
                   Estoque sugerido{" "}
-                  <Ajuda texto="Sugestão, o app não controla estoque. Manter = vendas/dia × (dias de cobertura da classe + tempo pra reimprimir) + folga pela oscilação, arredondado pra chapa cheia. Reimprimir quando cair pra = o que vende enquanto a próxima chapa fica pronta. Sazonal na temporada usa o ritmo das 2 últimas semanas." />
+                  <Ajuda texto="Sugestão, o app não controla estoque. Vendas/dia = o MAIOR entre a média das 8 semanas, a das 2 últimas e o ritmo desta semana até hoje (acelerou, sobe na hora; esfriou, volta pela média). Manter = vendas/dia × (dias de cobertura da classe + tempo pra reimprimir) + folga pela oscilação, arredondado pra chapa cheia. Reimprimir quando cair pra = o que vende enquanto a próxima chapa fica pronta. A/B “sob pedido” acelerando (≥ 0,5 venda/dia e ≥ 2× a média) e produto de temporada passam a ter estoque." />
                 </th>
               </tr>
             </thead>
@@ -473,20 +465,16 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
                   </td>
                   <td className="num">{x.atual ? <b>{x.atual}</b> : <span className="faint">0</span>}</td>
                   <td className="num">{x.media.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</td>
-                  <td className="num">{x.media > 0 && !x.novo ? pct(x.cv, 0) : "—"}</td>
+                  <td className="num">{x.media > 0 ? pct(x.cv, 0) : "—"}</td>
                   <td>
-                    {x.novo ? (
-                      <span className="faint" title={`1ª venda em ${x.primeiraVenda?.slice(8, 10)}/${x.primeiraVenda?.slice(5, 7)} — menos de 4 semanas completas`}>
-                        {x.abc !== "—" && <span className={`ana-selo ${x.abc}`}>{x.abc}</span>} novo
-                      </span>
-                    ) : (
-                      <>
-                        <span className={`ana-selo ${x.abc}`}>{x.abc}</span> <b>{x.xyz}</b>
-                      </>
-                    )}
+                    <span className={`ana-selo ${x.abc}`}>{x.abc}</span>{" "}
+                    <b title={x.poucoHistorico ? `Pouco histórico: 1ª venda em ${x.primeiraVenda?.slice(8, 10)}/${x.primeiraVenda?.slice(5, 7)} — a letra ainda pode mudar` : undefined}>
+                      {x.xyz}
+                      {x.poucoHistorico && <sup className="faint">*</sup>}
+                    </b>
                   </td>
                   <td>
-                    <span className={`ana-chip ${x.acao === "estoque" ? "op" : x.acao === "revisar" ? "at" : ""}`} title={x.novo ? "Menos de 4 semanas completas desde a 1ª venda: ainda não dá pra dizer se vende sempre ou de vez em quando." : undefined}>{x.titulo}</span>
+                    <span className={`ana-chip ${x.acao === "estoque" ? "op" : x.acao === "revisar" ? "at" : ""}`}>{x.titulo}</span>
                   </td>
                   <td>
                     {x.manter > 0 ? (
