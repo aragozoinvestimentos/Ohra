@@ -340,6 +340,35 @@ function serieAds(periodo, desde) {
   return lista.filter((p) => p.ate >= corte);
 }
 
+// Quanto do orçamento a Shopee gastou (22/10/2026, combinado com o Gustavo:
+// "pela média dos 7 dias nunca bate — os primeiros dias gastam pouco").
+// 1) Só dias INTEIROS: do envio do dia do ajuste (ou do início) até o último
+//    envio de ANTES de hoje — o dia do ajuste (mudado à noite) e o hoje pela
+//    metade ficam de fora. 2) Últimos ~2 dias entre dois envios do CSV.
+// Vale o MAIOR dos dois. Sem envios suficientes → null (usa a conta antiga).
+export function usoDoOrcamento(periodo, { desde, orcamento, hoje }) {
+  if (!(num(orcamento) > 0)) return null;
+  const pts = serieAds(periodo, desde).filter((p) => p.ate >= somarDiasIso(desde, -1));
+  if (pts.length < 2) return null;
+  const taxa = (a, b) => {
+    const d = diasEntre(a.ate, b.ate);
+    return d > 0 ? Math.max(0, b.g - a.g) / (num(orcamento) * d) : null;
+  };
+  const inteiros = pts.filter((p) => p.ate < hoje);
+  const ini = pts.find((p) => p.ate >= desde) || pts[0];
+  const fim = inteiros[inteiros.length - 1];
+  const media = fim && fim.ate > ini.ate ? taxa(ini, fim) : null;
+  const diasMedia = media != null ? diasEntre(ini.ate, fim.ate) : 0;
+  // Últimos dias também só com dias inteiros (o envio de hoje está pela metade).
+  const base = inteiros.length >= 2 ? inteiros : pts;
+  const ult = base[base.length - 1];
+  const ant = [...base].reverse().find((p) => diasEntre(p.ate, ult.ate) >= 2 && p.ate >= ini.ate);
+  const ultimos = ant ? taxa(ant, ult) : null;
+  if (media == null && ultimos == null) return null;
+  const uso = Math.max(media ?? 0, ultimos ?? 0);
+  return { uso, media, diasMedia, ultimos, ultimosDe: ant?.ate || null, ultimosAte: ult.ate, pelosUltimos: ultimos != null && ultimos > (media ?? 0) };
+}
+
 // Queda com o Ads ligado (17/10/2026, combinado com o Gustavo): olha os
 // ÚLTIMOS ~3 dias (pelos envios do CSV) contra o ritmo dos 14 dias antes.
 // Anúncio novo/que vende pouco: parou de vender ou caiu no prejuízo na
@@ -670,12 +699,19 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const roas = m.roas;
     const retorno = retornoAds(roas, minimo);
     const lucroReal = retornoAds(roas, empate);
-    const usoOrc = orcamento ? m.gasto / (orcamento * m.dias) : null;
+    const usoBruto = orcamento ? m.gasto / (orcamento * m.dias) : null;
+    const usoD = m.fonte === "andamento" ? usoDoOrcamento(ativo, { desde: refDecisao, orcamento, hoje }) : null;
+    const usoOrc = usoD ? usoD.uso : usoBruto;
+    // "gastou 96% do orçamento nos últimos 2 dias (média 78%)"
+    const usoTxt = (u) =>
+      usoD?.pelosUltimos
+        ? `${Math.round(u * 100)}% do orçamento nos últimos ${diasEntre(usoD.ultimosDe, usoD.ultimosAte)} dias${usoD.media != null ? ` (média dos dias inteiros ${Math.round(usoD.media * 100)}%)` : ""}`
+        : `${Math.round(u * 100)}% do orçamento${usoD?.media != null ? ` (dias inteiros, ${usoD.diasMedia} dias)` : ""}`;
     const ult = m.semana || null;
     const organico = ult && vendasParaDecisao(ult) > 0 ? Math.max(0, vendasParaDecisao(ult) - num(ult.ads_vendas)) / vendasParaDecisao(ult) : null;
     const quando = m.fonte === "andamento" ? `no andamento até ${dm(m.ate)}` : "na última semana";
     const const3 = m.fonte === "andamento" ? constanciaAds(ativo, regras) : null;
-    const semana = { ...numeros, roasSemana: roas, gastoSemana: m.gasto, usoOrc, organico, medida: m, retorno, lucroPorReal: lucroReal, constancia: const3, andamento: m.fonte === "andamento" ? a0 : null };
+    const semana = { ...numeros, roasSemana: roas, gastoSemana: m.gasto, usoOrc, usoOrcamento: usoD, organico, medida: m, retorno, lucroPorReal: lucroReal, constancia: const3, andamento: m.fonte === "andamento" ? a0 : null };
     const retTxt = lucroReal != null ? ` (${textoRetorno(lucroReal)})` : "";
     const depois = (m.depois || semanasNoPeriodo(ss, ativo).filter((s) => s.data > somarDiasIso(refDecisao, gapDias - 1) && num(s.ads_gasto) > 0)).slice(-2);
     const abaixo2 = depois.length === 2 && depois.every((s) => (roasDe(s, preco) ?? 0) < minimo) && (roas ?? 0) < minimo;
@@ -697,8 +733,8 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     if (usoOrc != null && usoOrc < regras.gastoBaixo) {
       const novaMeta = meta ? Math.max(minimo, Math.round(meta * 0.9 * 10) / 10) : null;
       return novaMeta && meta && novaMeta < meta - 0.05
-        ? sitA("meta-alta", "info", `Baixe a meta pra ${um(novaMeta)}`, `Gastou só ${Math.round(usoOrc * 100)}% do orçamento ${quando}: a meta ${um(meta)} está deixando a Shopee seletiva demais. Baixe ~10% pra ${um(novaMeta)} (mais alcance; nunca abaixo de ${nomeMin}).${retTxt}`, { numeros: semana, novaMeta })
-        : sitA("pouca-procura", "info", "Pouca entrega mesmo no equilíbrio", `Gastou só ${Math.round(usoOrc * 100)}% do orçamento com a meta já no equilíbrio: pouca procura pra esse produto. Mantenha ou pause.${retTxt}`, { numeros: semana });
+        ? sitA("meta-alta", "info", `Baixe a meta pra ${um(novaMeta)}`, `Gastou só ${usoTxt(usoOrc)} ${quando}: a meta ${um(meta)} está deixando a Shopee seletiva demais. Baixe ~10% pra ${um(novaMeta)} (mais alcance; nunca abaixo de ${nomeMin}).${retTxt}`, { numeros: semana, novaMeta })
+        : sitA("pouca-procura", "info", "Pouca entrega mesmo no equilíbrio", `Gastou só ${usoTxt(usoOrc)} com a meta já no equilíbrio: pouca procura pra esse produto. Mantenha ou pause.${retTxt}`, { numeros: semana });
     }
     if (!naTemporada && organico != null && organico >= regras.organicoAlto && depois.length >= 2)
       return sitA("reduzir-aos-poucos", "info", "Reduzir aos poucos", `${Math.round(organico * 100)}% das vendas já são orgânicas: o Ads cumpriu o papel. Corte ~20% por semana e veja se as vendas se mantêm.`, { numeros: semana });
@@ -719,11 +755,11 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
       if (tetoLoja && tetoLoja.passaria((novo - orcamento) * 30))
         return sitA("teto", "info", "Bom resultado, mas no teto da loja", `ROAS ${um(roas)} ${quando}${retTxt}, mas aumentar passaria do teto de Ads da loja (${moeda(tetoLoja.teto)} no mês, fase ${tetoLoja.fase}). Mantenha ${moeda(orcamento)}/dia.`, { numeros: semana });
       const rotulo = `Aumentar ${Math.round(p * 100)}%`;
-      const motivo = caiu && !cheio ? ` As vendas via Ads caíram ${Math.round(-const3.variacao * 100)}% nos últimos 3 dias com o retorno bom: mais verba recupera o ritmo.` : ` Gastou ${Math.round((usoOrc ?? 1) * 100)}% do orçamento.`;
+      const motivo = caiu && !cheio ? ` As vendas via Ads caíram ${Math.round(-const3.variacao * 100)}% nos últimos 3 dias com o retorno bom: mais verba recupera o ritmo.` : ` Gastou ${usoTxt(usoOrc ?? 1)}.`;
       return sitA("aumentar", "oportunidade", `${rotulo} → ${moeda(novo)}/dia`, `ROAS ${um(roas)} ${quando} = ${um(retorno)}× ${naTemporada ? "o mínimo da temporada" : "o equilíbrio"}${retTxt}.${motivo} Suba de ${moeda(orcamento)} pra ${moeda(novo)}/dia e reavalie em ${alavancar ? 3 : num(regras.decisaoDias) || 3} dias.`, { numeros: semana, novoOrcamento: novo, passo: p });
     }
     if (passo > 0)
-      return sitA("manter", "ok", "Manter", `ROAS ${um(roas)} ${quando}${retTxt}, mas a Shopee gastou só ${Math.round(usoOrc * 100)}% do orçamento: aumentar agora não adianta. Mantenha.`, { numeros: semana });
+      return sitA("manter", "ok", "Manter", `ROAS ${um(roas)} ${quando}${retTxt}, mas a Shopee gastou só ${usoTxt(usoOrc)}: aumentar agora não adianta. Mantenha.`, { numeros: semana });
     return sitA("manter", "ok", "Manter", `ROAS ${um(roas)} ${quando}, entre ${nomeMin} e 1,2× ele${retTxt}. Mantenha orçamento e meta.`, { numeros: semana });
   }
 
