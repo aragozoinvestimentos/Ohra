@@ -543,7 +543,20 @@ function FragmentoLinha({ a, xyz }) {
               {a}
               {z} · {TIT[a + z]}
             </b>
-            {ps.length ? ps.map((x) => <div key={x.chave}>{x.nome + (x.sazonal ? " ❄" : "")}</div>) : <span className="faint">—</span>}
+            {ps.length ? (
+              ps.map((x) => {
+                // Exceção da tabela (ritmo recente): o quadro mostra o que fazer AGORA junto da classe.
+                const exc = x.manter > 0 && ACAO[a + z] !== "estoque" ? (x.titulo.startsWith("Temporada") ? `❄ estoque ${x.manter} (temporada)` : `↑ estoque ${x.manter} (acelerando)`) : null;
+                return (
+                  <div key={x.chave}>
+                    {x.nome + (x.sazonal && !exc ? " ❄" : "")}
+                    {exc && <span className="ana-chip op" style={{ marginLeft: 4 }}>{exc}</span>}
+                  </div>
+                );
+              })
+            ) : (
+              <span className="faint">—</span>
+            )}
           </div>
         );
       })}
