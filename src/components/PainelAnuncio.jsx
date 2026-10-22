@@ -769,6 +769,9 @@ function Medidor({ pontos }) {
           </span>
         ))}
         <span className="pa-medidor-eq" style={{ left: pos(1) }} title="ROAS de equilíbrio (retorno 1×)" />
+        {pontos.filter((p) => p.r != null).map((p) => (
+          <span key={`d${p.rot}`} className={`pa-medidor-dot${p.ruim ? " ruim" : ""}`} style={{ left: pos(p.r) }} title={`${p.rot}: retorno ${um(p.r)}×`} />
+        ))}
       </div>
       <div className="pa-medidor-leg">
         {faixas.map((f) => (

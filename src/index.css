@@ -2405,6 +2405,9 @@ td.vendas-opcao { padding-left: 26px; }
 .pa-medidor-pt { position: absolute; top: -28px; transform: translateX(-50%); background: var(--ink); color: var(--surface); font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
 .pa-medidor-pt::after { content: ""; position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--ink); border-bottom: 0; }
 .pa-medidor-pt.ruim { background: var(--st-resolver); }
+/* Bolinha da posição atual em cima da barra (22/10/2026) */
+.pa-medidor-dot { position: absolute; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); border-radius: 50%; background: var(--surface); border: 3px solid var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); z-index: 2; }
+.pa-medidor-dot.ruim { border-color: var(--st-resolver); }
 .pa-medidor-pt.ruim::after { border-top-color: var(--st-resolver); }
 .pa-medidor-leg { position: relative; height: 36px; margin-top: 6px; font-size: 11px; color: var(--ink-soft); }
 .pa-medidor-leg span { position: absolute; transform: translateX(-50%); text-align: center; white-space: nowrap; font-weight: 600; }
