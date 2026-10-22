@@ -2498,3 +2498,11 @@ td.vendas-opcao { padding-left: 26px; }
 .como-mediu { margin: 6px 0 8px; font-size: 12px; }
 .como-mediu summary { cursor: pointer; color: var(--ink-soft); }
 .como-mediu > div { margin-top: 4px; }
+/* Chave liga/desliga (Ignorar teto de Ads) */
+.chave-teto { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); cursor: pointer; }
+.chave-teto.ligada { color: var(--accent); font-weight: 700; }
+.chave-switch { position: relative; width: 36px; height: 20px; border-radius: 999px; border: 0; padding: 0; background: var(--line, #ccc); cursor: pointer; transition: background 0.15s; flex: 0 0 auto; }
+.chave-teto.ligada .chave-switch { background: var(--accent); }
+.chave-bolinha { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: left 0.15s; }
+.chave-teto.ligada .chave-bolinha { left: 18px; }
+.pa-agora-acoes { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }

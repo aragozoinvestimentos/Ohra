@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ComoMediuOrcamento from "./ComoMediuOrcamento.jsx";
+import ChaveTeto from "./ChaveTeto.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
@@ -836,7 +837,10 @@ function AbaAds({ l, hoje, ped }) {
         <h4>{av.titulo}</h4>
         {av.texto && <p>{av.texto}</p>}
         <ComoMediuOrcamento uso={av.numeros?.usoOrcamento} />
-        <button type="button" className="btn btn-mini primary" onClick={abrir}>Abrir no Ads (ajustar, pausar, novo período)</button>
+        <div className="pa-agora-acoes">
+          <button type="button" className="btn btn-mini primary" onClick={abrir}>Abrir no Ads (ajustar, pausar, novo período)</button>
+          {av.ativo && <ChaveTeto chave={l.ads?.chave} />}
+        </div>
       </div>
       {av.ativo && n ? (
         <>

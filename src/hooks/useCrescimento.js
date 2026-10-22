@@ -8,6 +8,7 @@ import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
 import { adsNaJanela, pausasDoPeriodo, valoresAtuais, avaliarAds, avaliarAdsLoja, capacidadeDoItem, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, roasEmpate, tetoDaLoja } from "../lib/ads.js";
 import { useLembretes } from "./useLembretes.js";
+import { usePreferencia } from "./usePreferencia.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { equilibrioDoGrupo, estadoRampaGrupo, itensSoNoGrupo, mixDoGrupo, opcoesNoCanal } from "../lib/grupoRampa.js";
 import { idGrupo, idDoItemOpcao, opcoesDoGrupo } from "../lib/anunciosGrupo.js";
@@ -361,6 +362,9 @@ function useCalculoCrescimento() {
   // do produto ou, fora de rampa, os registros semanais do item (afiliado_registros
   // com vendas_total, que também guardam os itens só com Ads).
   const regrasA = useMemo(() => regrasAds(cfgLoja), [cfgLoja]);
+  // "Ignorar teto de Ads" por anúncio (22/10/2026): a chave liga/desliga na
+  // tela do Ads; ligado = decide como se o teto da loja não existisse.
+  const [ignorarTeto] = usePreferencia("ads:ignorar-teto", {});
   const linhasAds = useMemo(() => {
     // Fora de rampa: os registros semanais gravados antes + as semanas
     // automáticas (pedidos, Desempenho, CSV do Ads) desde o 1º dia com pedidos.
@@ -577,7 +581,8 @@ function useCalculoCrescimento() {
     };
     const linhasA = base.map((b) => ({
       ...b,
-      av: avaliarAds({ preco: b.preco, lucro: b.lucro, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: (b.rampa || b.rampaGrupo)?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: teto, sazonal: b.sazonal, capacidadeDia: b.capacidadeDia }),
+      av: avaliarAds({ preco: b.preco, lucro: b.lucro, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: (b.rampa || b.rampaGrupo)?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: ignorarTeto?.[b.chave] ? null : teto, sazonal: b.sazonal, capacidadeDia: b.capacidadeDia }),
+      tetoIgnorado: !!ignorarTeto?.[b.chave],
     }));
     // Lembretes de virada de fase do Ads sazonal (Início): na 1ª semana de cada fase.
     const sazonal = [];
@@ -625,7 +630,7 @@ function useCalculoCrescimento() {
       }
     }
     return { loja, teto, sazonal, linhas: linhasA, lojaLinha, lembretesOk: lembretesH.disponivel };
-  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos, ignorarTeto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pedidosValidos = reais.linhas;
   return useMemo(
