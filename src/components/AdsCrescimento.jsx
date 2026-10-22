@@ -1,4 +1,5 @@
 import { irParaAba } from "../lib/navegar.js";
+import ComoMediuOrcamento from "./ComoMediuOrcamento.jsx";
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
@@ -682,6 +683,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           />
         );
       })()}
+      <ComoMediuOrcamento uso={av.numeros?.usoOrcamento} />
       {(av.chave === "sem-venda-dia3" || av.chave === "ads-prejuizo" || av.chave === "parou-ads") && (
         <div className="ads-dia3">
           <ol className="passos-ads">

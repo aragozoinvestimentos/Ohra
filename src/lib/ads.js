@@ -348,8 +348,20 @@ function serieAds(periodo, desde) {
 // Vale o MAIOR dos dois. Sem envios suficientes → null (usa a conta antiga).
 export function usoDoOrcamento(periodo, { desde, orcamento, hoje }) {
   if (!(num(orcamento) > 0)) return null;
-  const pts = serieAds(periodo, desde).filter((p) => p.ate >= somarDiasIso(desde, -1));
-  if (pts.length < 2) return null;
+  let pts = serieAds(periodo, desde).filter((p) => p.ate >= somarDiasIso(desde, -1));
+  // Troca de base (22/10/2026): o acumulado guardado passou de "desde o início
+  // do período" pra "soma das janelas enviadas" — um envio com gasto MENOR que
+  // o anterior marca uma base nova: a conta recomeça nele.
+  let rebase = null;
+  for (let i = 1; i < pts.length; i++)
+    if (pts[i].g < pts[i - 1].g - 0.01) {
+      rebase = pts[i].ate;
+      pts = pts.slice(i);
+      i = 0;
+    }
+  const pontos = pts.map((p) => ({ ate: p.ate, gasto: p.g }));
+  const falha = (motivo) => ({ uso: null, motivo, pontos, rebase });
+  if (pts.length < 2) return falha("poucos envios do CSV depois do ajuste");
   const taxa = (a, b) => {
     const d = diasEntre(a.ate, b.ate);
     return d > 0 ? Math.max(0, b.g - a.g) / (num(orcamento) * d) : null;
@@ -362,11 +374,11 @@ export function usoDoOrcamento(periodo, { desde, orcamento, hoje }) {
   // Últimos dias também só com dias inteiros (o envio de hoje está pela metade).
   const base = inteiros.length >= 2 ? inteiros : pts;
   const ult = base[base.length - 1];
-  const ant = [...base].reverse().find((p) => diasEntre(p.ate, ult.ate) >= 2 && p.ate >= ini.ate);
+  const ant = [...base].reverse().find((p) => diasEntre(p.ate, ult.ate) >= 2 && p.ate >= ini.ate) || [...base].reverse().find((p) => diasEntre(p.ate, ult.ate) >= 1 && p.ate >= ini.ate);
   const ultimos = ant ? taxa(ant, ult) : null;
-  if (media == null && ultimos == null) return null;
+  if (media == null && ultimos == null) return falha("envios do CSV no mesmo dia — falta um envio de outro dia");
   const uso = Math.max(media ?? 0, ultimos ?? 0);
-  return { uso, media, diasMedia, ultimos, ultimosDe: ant?.ate || null, ultimosAte: ult.ate, pelosUltimos: ultimos != null && ultimos > (media ?? 0) };
+  return { uso, media, diasMedia, ultimos, ultimosDe: ant?.ate || null, ultimosAte: ult.ate, pelosUltimos: ultimos != null && ultimos > (media ?? 0), pontos, rebase };
 }
 
 // Queda com o Ads ligado (17/10/2026, combinado com o Gustavo): olha os
@@ -454,9 +466,28 @@ function precoViavel(preco, lucroEm, regras) {
 // (a) o ANDAMENTO (acumulado desde o início, menos as semanas que terminaram
 // antes do último ajuste) e (b) a última semana registrada depois do
 // aprendizado/ajuste. → { fonte, ate, dias, gasto, vendas, cliques, roas } ou null.
+// Último envio em que a soma do CSV mudou de base (gasto acumulado MENOR que o
+// do envio anterior — 21/10/2026 o andamento passou a ser a soma das janelas
+// enviadas). Antes dele, os acumulados não se comparam com os de depois.
+export function rebaseDoAndamento(periodo) {
+  const par = periodo?.parcial;
+  const pts = [...(Array.isArray(par?.historico) ? par.historico : []), ...(par?.ate ? [par] : [])]
+    .filter((h) => h?.ate)
+    .map((h) => ({ ate: String(h.ate).slice(0, 10), gasto: num(h.gasto), vendas: num(h.vendas), cliques: num(h.cliques) }))
+    .sort((a, b) => a.ate.localeCompare(b.ate));
+  let r = null;
+  for (let i = 1; i < pts.length; i++) if (pts[i].gasto < pts[i - 1].gasto - 0.01) r = pts[i];
+  return r;
+}
+
 function medidaDaDecisao(ativo, ss, refDecisao, gapDias, preco) {
   const noPer = semanasNoPeriodo(ss, ativo);
   const a = andamentoValido(ativo, ss);
+  // Base do CSV mudou depois do ajuste: o acumulado de agora já é recente
+  // (soma das janelas) — mede por ele inteiro, sem descontar a base antiga.
+  const rb = a ? rebaseDoAndamento(ativo) : null;
+  if (a && rb && rb.ate > refDecisao && a.gasto > 0 && a.ate >= somarDiasIso(refDecisao, gapDias - 1))
+    return { fonte: "andamento", ate: a.ate, dias: Math.max(3, diasEntre(refDecisao, a.ate)), gasto: a.gasto, vendas: a.vendas, cliques: a.cliques, roas: (a.vendas * preco) / a.gasto, rebase: rb.ate };
   if (a) {
     const antes = noPer.filter((s) => s.data <= refDecisao);
     // Desconta o que veio antes do ajuste/volta: pelas semanas registradas ou
@@ -700,13 +731,15 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const retorno = retornoAds(roas, minimo);
     const lucroReal = retornoAds(roas, empate);
     const usoBruto = orcamento ? m.gasto / (orcamento * m.dias) : null;
-    const usoD = m.fonte === "andamento" ? usoDoOrcamento(ativo, { desde: refDecisao, orcamento, hoje }) : null;
-    const usoOrc = usoD ? usoD.uso : usoBruto;
+    const usoD = usoDoOrcamento(ativo, { desde: refDecisao, orcamento, hoje });
+    const usoOrc = usoD?.uso != null ? usoD.uso : usoBruto;
     // "gastou 96% do orçamento nos últimos 2 dias (média 78%)"
     const usoTxt = (u) =>
-      usoD?.pelosUltimos
-        ? `${Math.round(u * 100)}% do orçamento nos últimos ${diasEntre(usoD.ultimosDe, usoD.ultimosAte)} dias${usoD.media != null ? ` (média dos dias inteiros ${Math.round(usoD.media * 100)}%)` : ""}`
-        : `${Math.round(u * 100)}% do orçamento${usoD?.media != null ? ` (dias inteiros, ${usoD.diasMedia} dias)` : ""}`;
+      usoD?.uso == null
+        ? `${Math.round(u * 100)}% do orçamento (média simples — ${usoD?.motivo || "sem envios do CSV"}; não deu pra medir os últimos dias)`
+        : usoD.pelosUltimos
+          ? `${Math.round(u * 100)}% do orçamento ${diasEntre(usoD.ultimosDe, usoD.ultimosAte) === 1 ? "no último dia" : `nos últimos ${diasEntre(usoD.ultimosDe, usoD.ultimosAte)} dias`}${usoD.media != null ? ` (média dos dias inteiros ${Math.round(usoD.media * 100)}%)` : ""}`
+          : `${Math.round(u * 100)}% do orçamento${usoD.media != null ? ` (dias inteiros, ${usoD.diasMedia} dias)` : ""}`;
     const ult = m.semana || null;
     const organico = ult && vendasParaDecisao(ult) > 0 ? Math.max(0, vendasParaDecisao(ult) - num(ult.ads_vendas)) / vendasParaDecisao(ult) : null;
     const quando = m.fonte === "andamento" ? `no andamento até ${dm(m.ate)}` : "na última semana";

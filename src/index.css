@@ -2495,3 +2495,6 @@ td.vendas-opcao { padding-left: 26px; }
 :root[data-theme="dark"] { --art: #a78bfa; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --art: #a78bfa; } }
 .ana-aval-estrelas .aval-mais1 { padding: 1px 6px; font-size: 11px; width: 72px; }
+.como-mediu { margin: 6px 0 8px; font-size: 12px; }
+.como-mediu summary { cursor: pointer; color: var(--ink-soft); }
+.como-mediu > div { margin-top: 4px; }
