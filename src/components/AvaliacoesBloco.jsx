@@ -53,8 +53,13 @@ export default function AvaliacoesBloco({ canal, cres, esc, hoje, onToast }) {
   const linhasItem = useMemo(() => (sel ? (avalH.registros || []).filter((a) => a.item_tipo === tipo && a.item_id === id && a.canal_id === canal.id) : []), [sel, tipo, id, avalH.registros, canal.id]);
   const sit = useMemo(() => situacaoAvaliacoes(linhasItem), [linhasItem]);
   const modoSimples = sit.simples && !completo;
-  const est = estrelas.map((x) => (x === "" ? null : Math.max(0, Math.round(num(x)))));
-  const cheio = est.every((x) => x != null);
+  // Campo em branco = o total da última atualização (ou 0 na primeira) — dá
+  // pra lançar só a estrela que mudou (ex.: chegou 1 avaliação de 5★).
+  const base = sit.estrelas || [0, 0, 0, 0, 0];
+  const est = estrelas.map((x, i) => (x === "" ? base[i] : Math.max(0, Math.round(num(x)))));
+  const digitou = estrelas.some((x) => x !== "");
+  const cheio = digitou || !!sit.estrelas;
+  const mais1 = (i) => setEstrelas((p) => p.map((x, j) => (j === i ? String((x === "" ? base[i] : Math.max(0, Math.round(num(x)))) + 1) : x)));
   const novas = cheio && sit.estrelas ? est.map((x, i) => x - sit.estrelas[i]) : null;
   const totalNovo = cheio ? est.reduce((t, x) => t + x, 0) : null;
   const notaNova = cheio ? notaDasEstrelas(est) : null;
@@ -167,14 +172,19 @@ export default function AvaliacoesBloco({ canal, cres, esc, hoje, onToast }) {
                       placeholder={sit.estrelas ? String(sit.estrelas[i]) : "0"}
                       onChange={(e) => setEstrelas((p) => p.map((x, j) => (j === i ? e.target.value : x)))}
                     />
+                    <button type="button" className="btn btn-mini aval-mais1" title={`Chegou mais 1 de ${r}`} onClick={() => mais1(i)}>
+                      +1
+                    </button>
                   </label>
                 ))}
               </div>
               <div className="ana-aval-linha">
                 <span className="faint">
                   {!cheio
-                    ? "Copie o total de cada estrela que aparece no anúncio (0 se não tiver)."
-                    : novas
+                    ? "Copie o total de cada estrela que aparece no anúncio (em branco = 0)."
+                    : !digitou
+                      ? "Sem avaliação nova? Salve assim. Chegou alguma: clique +1 na estrela (ou digite o total) — o que ficar em branco continua igual."
+                      : novas
                       ? (() => {
                           const n = novas.reduce((t, x) => t + Math.max(0, x), 0);
                           const desc = novas.map((x, i) => (x > 0 ? `${x}× ${ESTRELAS[i]}` : null)).filter(Boolean).join(", ");
@@ -184,7 +194,7 @@ export default function AvaliacoesBloco({ canal, cres, esc, hoje, onToast }) {
                       : `${totalNovo} avaliações · nota ${virg(notaNova)}`}
                 </span>
                 <button type="button" className="btn btn-mini primary" disabled={!cheio || salvando} onClick={() => salvar({ estrelas: est, total: totalNovo, nota: notaNova }, `Avaliações de ${nomeDe(tipo, id)} atualizadas`)}>
-                  Salvar avaliações
+                  {cheio && !digitou ? "Sem avaliação nova ✓" : "Salvar avaliações"}
                 </button>
                 <button type="button" className="btn btn-mini" onClick={() => escolher(null)}>
                   Fechar
