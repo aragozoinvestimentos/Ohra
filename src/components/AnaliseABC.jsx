@@ -133,26 +133,35 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
   const metaFat = Number(numMes.meta?.faturamento_objetivo) || null;
   const conc = useMemo(() => concentracao(curvaABC(agruparPorItem(filtradas, { itens: esc.itens, porPai: true }), { crit: "lucro" }).linhas), [filtradas, esc.itens]);
 
-  // XYZ (8 semanas, mesma plataforma do filtro, por variação/kit)
+  // XYZ (8 semanas COMPLETAS + a semana em andamento numa coluna à parte; mesma plataforma do filtro, por variação/kit).
+  // A/B/C daqui usa a MESMA janela das colunas (só as semanas completas) — antes contava até hoje e um item
+  // que só vendeu nesta semana aparecia "A" com tudo zerado.
   const semanas = useMemo(() => ultimasSemanas(somarDias(hoje, -7), 8), [hoje]); // 8 semanas COMPLETAS (seg–dom)
+  const semanaAtual = useMemo(() => somarDias(semanas[semanas.length - 1], 7), [semanas]);
+  const diasAtual = Math.max(1, Math.min(7, Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${semanaAtual}T12:00:00`)) / 86400000) + 1));
+  const calendario = cres.calendario;
   const xyz = useMemo(() => {
-    const doFiltro = linhas.filter((l) => l.data >= semanas[0] && (!f.plat || (l.origem === "fisico" ? "fisico" : l.plataforma) === f.plat));
+    const daPlat = (l) => !f.plat || (l.origem === "fisico" ? "fisico" : l.plataforma) === f.plat;
+    const doFiltro = linhas.filter((l) => l.data >= semanas[0] && daPlat(l));
     const g = agruparPorItem(doFiltro, { itens: esc.itens, porPai: false });
-    const abcP = curvaABC(g, { crit: "lucro", produtos: esc.produtos });
+    const completas = doFiltro.filter((l) => l.data < semanaAtual);
+    const abcP = curvaABC(agruparPorItem(completas, { itens: esc.itens, porPai: false }), { crit: "lucro", produtos: esc.produtos });
     const mapa = new Map(abcP.linhas.map((l) => [l.chave, l.classe]));
+    const primeiraVenda = new Map();
+    for (const gg of agruparPorItem(linhas.filter(daPlat), { itens: esc.itens, porPai: false })) primeiraVenda.set(gg.chave, gg.linhas.reduce((m, l) => (!m || l.data < m ? l.data : m), null));
     const sazonalDe = (item) => {
       const pids = item.id.startsWith("k:") ? (item.componentes || []).map((c) => c.produtoId) : [item.id.startsWith("p:") ? item.id.slice(2) : item.produtoId];
       return pids.some((pid) => {
         const p = esc.produtos.find((x) => x.id === pid);
-        const s = p ? infoSazonal(quandoVendeDe(p), cres.calendario, hoje) : null;
+        const s = p ? infoSazonal(quandoVendeDe(p), calendario, hoje) : null;
         return s && s.tipo === "epoca" && (s.fase === "subindo" || s.fase === "pico");
       });
     };
     return curvaXYZ(
       g.filter((x) => x.item),
-      { semanas, abcPorChave: mapa, produtos: esc.produtos, farmConfig, regras, sazonalDe }
+      { semanas, abcPorChave: mapa, produtos: esc.produtos, farmConfig, regras, sazonalDe, semanaAtual, diasAtual, primeiraVenda }
     );
-  }, [linhas, semanas, f.plat, esc.itens, esc.produtos, cres.calendario, hoje, farmConfig, regras]);
+  }, [linhas, semanas, semanaAtual, diasAtual, f.plat, esc.itens, esc.produtos, calendario, hoje, farmConfig, regras]);
 
   const cesta = useMemo(() => compradosJuntos(filtradas, { itens: esc.itens }), [filtradas, esc.itens]);
   const pedidosMulti = useMemo(() => {
@@ -409,7 +418,7 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
       <div className="panel">
         <h3>
           Curva XYZ — regularidade da venda
-          <span className="dir">8 semanas completas · pedidos + venda física{f.plat ? ` · ${nomePlat(f.plat)}` : ""}</span>
+          <span className="dir">8 semanas completas + esta semana à parte · pedidos + venda física{f.plat ? ` · ${nomePlat(f.plat)}` : ""}</span>
           <button type="button" className="btn btn-mini" onClick={() => setRegrasDlg({ AX: String(regras.AX), AY: String(regras.AY), BX: String(regras.BX), folgaFila: String(regras.folgaFila) })}>
             Regras do estoque
           </button>
@@ -423,12 +432,25 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
             <FragmentoLinha key={a} a={a} xyz={xyz} />
           ))}
         </div>
+        {xyz.some((x) => x.novo) && (
+          <p className="hint" style={{ margin: "6px 14px" }}>
+            <b>Novos — pouco histórico</b> (menos de 4 semanas completas desde a 1ª venda, fora da matriz):{" "}
+            {xyz
+              .filter((x) => x.novo)
+              .map((x) => `${x.nome}${x.atual ? ` (${x.atual} esta semana)` : ""}`)
+              .join(" · ")}
+          </p>
+        )}
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Produto</th>
                 <th>Vendas por semana</th>
+                <th className="num">
+                  Esta semana{" "}
+                  <Ajuda texto={`Vendas de segunda até hoje (${diasAtual} de 7 dias). Fica fora da média, da variação e do A/B/C — a semana ainda não fechou. Produto sazonal na temporada usa o ritmo desta semana no estoque sugerido.`} />
+                </th>
                 <th className="num">Média/sem</th>
                 <th className="num">Variação</th>
                 <th>ABC·XYZ</th>
@@ -449,13 +471,22 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
                   <td>
                     <span style={{ whiteSpace: "nowrap" }}><Mini v={x.v} /> <span className="faint">{x.v.join(" · ")}</span></span>
                   </td>
+                  <td className="num">{x.atual ? <b>{x.atual}</b> : <span className="faint">0</span>}</td>
                   <td className="num">{x.media.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</td>
-                  <td className="num">{x.media > 0 ? pct(x.cv, 0) : "—"}</td>
+                  <td className="num">{x.media > 0 && !x.novo ? pct(x.cv, 0) : "—"}</td>
                   <td>
-                    <span className={`ana-selo ${x.abc}`}>{x.abc}</span> <b>{x.xyz}</b>
+                    {x.novo ? (
+                      <span className="faint" title={`1ª venda em ${x.primeiraVenda?.slice(8, 10)}/${x.primeiraVenda?.slice(5, 7)} — menos de 4 semanas completas`}>
+                        {x.abc !== "—" && <span className={`ana-selo ${x.abc}`}>{x.abc}</span>} novo
+                      </span>
+                    ) : (
+                      <>
+                        <span className={`ana-selo ${x.abc}`}>{x.abc}</span> <b>{x.xyz}</b>
+                      </>
+                    )}
                   </td>
                   <td>
-                    <span className={`ana-chip ${x.acao === "estoque" ? "op" : x.acao === "revisar" ? "at" : ""}`}>{x.titulo}</span>
+                    <span className={`ana-chip ${x.acao === "estoque" ? "op" : x.acao === "revisar" ? "at" : ""}`} title={x.novo ? "Menos de 4 semanas completas desde a 1ª venda: ainda não dá pra dizer se vende sempre ou de vez em quando." : undefined}>{x.titulo}</span>
                   </td>
                   <td>
                     {x.manter > 0 ? (
@@ -471,7 +502,7 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
               ))}
               {!xyz.length && (
                 <tr>
-                  <td colSpan={7} className="faint">Sem vendas nas últimas 8 semanas.</td>
+                  <td colSpan={8} className="faint">Sem vendas nas últimas 8 semanas.</td>
                 </tr>
               )}
             </tbody>

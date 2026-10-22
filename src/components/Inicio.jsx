@@ -1,4 +1,5 @@
 import { vendasDoMes, saldoReserva } from "../lib/vendasMes.js";
+import { vendasPeloComeco } from "../lib/vinculoSku.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
 import { PLATAFORMAS } from "../lib/pedidos.js";
 import { useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
@@ -139,9 +140,10 @@ export default function Inicio({ onIrPara, onToast }) {
     }
     return out;
   }, [avalH, dados.canais, pedidosValidos, anuncioDoPedido, hoje]);
+  const peloComeco = useMemo(() => vendasPeloComeco(reais.linhas, { produtos: dados.produtos, kits: dados.kits, hoje }), [reais.linhas, dados.produtos, dados.kits, hoje]);
   const impCentral = useMemo(
-    () => (reais.carregando ? null : { disponivel: reais.disponivel, lista: reais.importacoes, plataformas: PLATAFORMAS.filter((p) => (dados.canais || []).some((c) => c.tipo === p.tipo)), avaliacoes: avaliacoesPend }),
-    [reais.carregando, reais.disponivel, reais.importacoes, dados.canais, avaliacoesPend]
+    () => (reais.carregando ? null : { disponivel: reais.disponivel, lista: reais.importacoes, plataformas: PLATAFORMAS.filter((p) => (dados.canais || []).some((c) => c.tipo === p.tipo)), avaliacoes: avaliacoesPend, peloComeco }),
+    [reais.carregando, reais.disponivel, reais.importacoes, dados.canais, avaliacoesPend, peloComeco]
   );
   // Lembrete de temporada (Quando vende = pico/época): 60 dias antes da data.
   const temporadas = useMemo(

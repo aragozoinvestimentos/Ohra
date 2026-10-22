@@ -191,3 +191,46 @@ export function vendasPorOpcao({ grupo, registros, itens, hoje, dias = 30, lucro
   const datas = doGrupo.map((r) => String(r.data).slice(0, 10)).sort();
   return { linhas, total, dias, ultima: datas[datas.length - 1] || null, sugestoes, temRegistros: doGrupo.length > 0 };
 }
+
+// Sugestão pra 2ª variação (ex.: Cor) a partir dos SKUs que a plataforma mostra
+// (variações do relatório de Desempenho e SKUs dos pedidos): quando o SKU vendido é
+// o SKU do item da opção + (meio) + "-XX" e o anúncio no app não monta esse SKU, a
+// venda só cai no item certo pela regra do "começo do SKU". Com a Cor (e o meio como
+// sufixo da opção) o app passa a reconhecer o SKU EXATO.
+// opcoes = [{ itemId, sufixo }] (como no formulário); observados = [{ sku, nome? }].
+// → { cores: [{ nome, sufixo }], sufixos: [{ i, de, para }] } ou null.
+export function sugestaoVariacao2({ opcoes, itens, observados, v2opcoes = [] }) {
+  const norm = (x) => String(x || "").trim().toUpperCase();
+  const bases = (opcoes || []).map((o, i) => ({ i, sku: norm((itens || []).find((x) => x.id === o.itemId)?.sku), suf: norm(o.sufixo) })).filter((b) => b.sku);
+  if (bases.length < 1) return null;
+  const cores = new Map();
+  const mids = new Map();
+  for (const ob of observados || []) {
+    const s = norm(ob.sku);
+    if (!s) continue;
+    let b = null;
+    for (const x of bases) if (s.startsWith(x.sku) && (!b || x.sku.length > b.sku.length)) b = x;
+    if (!b) continue;
+    const m = s.slice(b.sku.length).match(/^([A-Z0-9+]*)(-[A-Z0-9]{1,4})$/);
+    if (!m) continue;
+    const [, meio, cor] = m;
+    const nome = String(ob.nome || "").includes(",") ? String(ob.nome).split(",").pop().trim() : "";
+    const c = cores.get(cor) || { sufixo: cor, nomes: new Map() };
+    if (nome) c.nomes.set(nome, (c.nomes.get(nome) || 0) + 1);
+    cores.set(cor, c);
+    if (!mids.has(b.i)) mids.set(b.i, new Set());
+    mids.get(b.i).add(meio);
+  }
+  const ja = new Set((v2opcoes || []).map((o) => norm(o.sufixo)));
+  const listaCores = [...cores.values()]
+    .filter((c) => !ja.has(c.sufixo))
+    .map((c) => ({ sufixo: c.sufixo, nome: [...c.nomes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || c.sufixo.slice(1) }));
+  const sufixos = [];
+  for (const [i, set] of mids) {
+    if (set.size !== 1) continue;
+    const para = [...set][0];
+    const b = bases.find((x) => x.i === i);
+    if (para !== b.suf) sufixos.push({ i, de: b.suf, para });
+  }
+  return listaCores.length || sufixos.length ? { cores: listaCores, sufixos } : null;
+}

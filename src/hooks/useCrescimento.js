@@ -629,9 +629,9 @@ function useCalculoCrescimento() {
 
   const pedidosValidos = reais.linhas;
   return useMemo(
-    () => ({ dados, rampasH: rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, anuncioDoPedido, pedidosValidos }),
+    () => ({ dados, rampasH: rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, anuncioDoPedido, pedidosValidos, desempenhos }),
     // anuncioDoPedido muda junto com skuGrupo (mesma render)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dados, rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, skuGrupo, pedidosValidos]
+    [dados, rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, skuGrupo, pedidosValidos, desempenhos]
   );
 }

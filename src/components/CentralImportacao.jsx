@@ -20,6 +20,8 @@ import BuscaItem from "./BuscaItem.jsx";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import AvaliacoesBloco from "./AvaliacoesBloco.jsx";
+import Estado from "./Estado.jsx";
+import { vendasPeloComeco } from "../lib/vinculoSku.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 
 // Aba Atualizar dados (schema v55): UM lugar pra subir todos os
@@ -68,6 +70,8 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   const sigPergunta = (q) => `${q.tipo}|${q.status || ""}|${q.valores?.gasto ?? ""}`;
   const [fisico, setFisico] = useState(null); // form aberto
   const [excluir, setExcluir] = useState(null);
+  const [verComeco, setVerComeco] = useState(false);
+  const peloComeco = useMemo(() => vendasPeloComeco(linhas, { produtos, kits, hoje }), [linhas, produtos, kits, hoje]);
   const ignorados = useMemo(() => new Set((ped.ignorados || []).map((g) => normSku(g.sku))), [ped.ignorados]);
   const okOrdenadas = useMemo(() => (ped.importacoes || []).filter((i) => i.ok).sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em))), [ped.importacoes]);
   const ultimaImp = (rel) => [...okOrdenadas].reverse().find((i) => i.relatorio === rel) || null;
@@ -752,6 +756,49 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       </div>
 
       {cartaoOlist}
+      {peloComeco.length > 0 && (
+        <div className="panel">
+          <h3>
+            <Estado tipo="atencao">Conferir</Estado> Vendas ligadas só pelo começo do SKU
+            <Ajuda texto="O SKU destes pedidos não é igual ao de nenhum item (nem ao de uma opção de anúncio com vários itens, nem ao SKU + Cor da Ficha). O app ligou a venda ao item cujo SKU é o começo dele — pode estar certo, mas se o anúncio tiver opções/cores que o app não conhece, a venda pode cair na peça errada. Resolve: na 3º Ficha → Anúncio com vários itens, ✎ editar o anúncio (o app sugere a Cor e o sufixo de cada opção pelos SKUs vendidos), ou acerte o SKU do item no cadastro." />
+            <span className="dir">últimos 90 dias</span>
+          </h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU no pedido</th>
+                  <th>Foi pro item</th>
+                  <th className="num">Unidades</th>
+                  <th>Última</th>
+                </tr>
+              </thead>
+              <tbody>
+                {peloComeco.slice(0, verComeco ? undefined : 5).map((g) => (
+                  <tr key={g.sku}>
+                    <td><code>{g.sku}</code></td>
+                    <td>
+                      {g.item.nome} <span className="muted-cel">({g.item.sku})</span>
+                    </td>
+                    <td className="num">{g.unidades}</td>
+                    <td>{dm(g.ultima)} <span className="muted-cel">{[...g.canais].join(", ")}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="pa-corpo">
+            {peloComeco.length > 5 && (
+              <button type="button" className="link-btn" onClick={() => setVerComeco((v) => !v)}>
+                {verComeco ? "ver menos" : `ver todos (${peloComeco.length})`}
+              </button>
+            )}{" "}
+            <button type="button" className="btn btn-mini" onClick={() => irParaAba("ficha")}>
+              Abrir a Ficha (anúncio com vários itens) →
+            </button>
+          </div>
+        </div>
+      )}
       <div className="ana-fontes">
         {cards[0]}
         {cartaoFisico}

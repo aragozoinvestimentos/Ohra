@@ -8,7 +8,7 @@ import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { BRL, PCT } from "../lib/format.js";
 import { nomeCanal } from "../lib/canais.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
-import { LIMITE_NOME_OPCAO, MIN_VENDAS_SUGESTAO, fichaDoGrupo, idDoItemOpcao, opcoesDoGrupo, variacao2DoGrupo, vendasPorOpcao } from "../lib/anunciosGrupo.js";
+import { LIMITE_NOME_OPCAO, MIN_VENDAS_SUGESTAO, fichaDoGrupo, idDoItemOpcao, opcoesDoGrupo, sugestaoVariacao2, variacao2DoGrupo, vendasPorOpcao } from "../lib/anunciosGrupo.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { hojeSP } from "../lib/datas.js";
 import BuscaItem from "./BuscaItem.jsx";
@@ -43,7 +43,14 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
 
   // "Qual opção vende": vendas do anúncio pelos pedidos importados (SKU de cada
   // opção) + as lançadas antes em vendas_organicas.grupo_id — useCrescimento.
-  const { organicasVivas } = useCrescimento();
+  const { organicasVivas, desempenhos, pedidosValidos } = useCrescimento();
+  // SKUs que a plataforma mostra (variações do Desempenho + SKUs dos pedidos) — pra sugerir a Cor no anúncio.
+  const observados = useMemo(() => {
+    const m = new Map();
+    for (const d of desempenhos || []) for (const it of d.r?.itens || []) for (const v of it.variacoes || []) if (v.sku && !m.get(v.sku)?.nome) m.set(v.sku, { sku: v.sku, nome: v.nome });
+    for (const p of pedidosValidos || []) if (p.sku && p.origem !== "fisico" && !m.has(p.sku)) m.set(p.sku, { sku: p.sku, nome: "" });
+    return [...m.values()];
+  }, [desempenhos, pedidosValidos]);
   const vendasOp = useMemo(
     () =>
       grupo
@@ -451,7 +458,7 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
         </>
       )}
 
-      {editar && <GrupoDialog grupo={editar.grupo || null} itens={itens} canal={canal} canais={canais} salvando={salvando} onCancelar={() => setEditar(null)} onSalvar={salvarGrupo} onToast={onToast} />}
+      {editar && <GrupoDialog grupo={editar.grupo || null} observados={observados} itens={itens} canal={canal} canais={canais} salvando={salvando} onCancelar={() => setEditar(null)} onSalvar={salvarGrupo} onToast={onToast} />}
       {excluir && (
         <ConfirmDialog
           titulo={`Excluir o anúncio “${excluir.nome}”?`}
@@ -466,7 +473,7 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
   );
 }
 
-function GrupoDialog({ grupo, itens, canal, canais, salvando, onCancelar, onSalvar, onToast }) {
+function GrupoDialog({ grupo, observados, itens, canal, canais, salvando, onCancelar, onSalvar, onToast }) {
   const [montando, setMontando] = useState(false);
   const opcoesBusca = useMemo(() => gruposDoSeletor(itens), [itens]);
   const [f, setF] = useState(() => {
@@ -505,6 +512,7 @@ function GrupoDialog({ grupo, itens, canal, canais, salvando, onCancelar, onSalv
       if (p.v2opcoes.some((o) => o.sufixo === sufixo)) return p;
       return { ...p, v2opcoes: [...p.v2opcoes, { nome, sufixo }], novaCor: { nome: "", sufixo: "" } };
     });
+  const sug = useMemo(() => sugestaoVariacao2({ opcoes: f.opcoes, itens, observados, v2opcoes: f.v2ativo ? f.v2opcoes : [] }), [f.opcoes, f.v2ativo, f.v2opcoes, itens, observados]);
   const validas = f.opcoes.filter((o) => o.itemId);
   const repetidas = validas.length !== new Set(validas.map((o) => `${o.itemId}|${o.sufixo}`)).size;
   const ok = f.nome.trim() && validas.length >= 2 && !repetidas;
@@ -605,6 +613,34 @@ function GrupoDialog({ grupo, itens, canal, canais, salvando, onCancelar, onSalv
       )}
       {repetidas && <div className="alerta alerta-warn"><b>Opção repetida</b>O mesmo item com o mesmo sufixo aparece duas vezes.</div>}
 
+      {sug && (
+        <div className="alerta alerta-warn">
+          <b>A plataforma tem este anúncio com {f.v2nome || "Cor"}</b>
+          {sug.cores.length > 0 && <>Os SKUs vendidos terminam com {sug.cores.map((c) => `${c.nome} (${c.sufixo})`).join(", ")}. </>}
+          {sug.sufixos.map((x) => (
+            <span key={x.i}>
+              Na opção “{f.opcoes[x.i]?.rotulo || "—"}” o SKU continua com <code>{x.para || "(nada)"}</code> depois do SKU do item. </span>
+          ))}
+          Sem isso o app só liga a venda ao item pelo começo do SKU. Aplicando, ele reconhece o SKU exato — inclusive nos pedidos já importados.{" "}
+          <button
+            type="button"
+            className="btn btn-mini"
+            onClick={() =>
+              setF((p) => ({
+                ...p,
+                v2ativo: p.v2ativo || sug.cores.length > 0,
+                v2opcoes: [...(p.v2ativo ? p.v2opcoes : []), ...sug.cores.map((c) => ({ nome: c.nome, sufixo: c.sufixo }))],
+                opcoes: p.opcoes.map((o, i) => {
+                  const x = sug.sufixos.find((y) => y.i === i);
+                  return x ? { ...o, sufixo: x.para } : o;
+                }),
+              }))
+            }
+          >
+            Aplicar
+          </button>
+        </div>
+      )}
       <label className="check-inline" style={{ marginTop: 6 }}>
         <input type="checkbox" checked={f.v2ativo} onChange={(e) => setF((p) => ({ ...p, v2ativo: e.target.checked }))} /> Combinar com uma variação própria (ex.: Cor) — vale pra todas as opções
       </label>

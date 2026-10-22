@@ -1,4 +1,5 @@
 import ProximoPasso from "./ProximoPasso.jsx";
+import { lerVariacoes } from "../lib/vinculoSku.js";
 import { pedirPasso, publicarSelecao, useSelecaoPasso } from "../lib/passosPreco.js";
 import FichaGrupo from "./FichaGrupo.jsx";
 import { ehIdGrupo, idGrupo } from "../lib/anunciosGrupo.js";
@@ -25,13 +26,6 @@ const NOMES_SUGERIDOS = ["Cor", "Modelo", "Tamanho", "Estampa", "Acabamento"];
 const ATRIBUTOS_ML = ["cor", "tamanho"]; // quase sempre existem como atributo da categoria no ML/Shein
 const pctTxt = (d) => `${Math.round(d * 1000) / 10}`.replace(".", ",");
 
-// Lê `cores_anuncio` (schema v31): formato antigo = lista de opções de Cor
-// [{nome, sufixo}]; formato novo = { variacoes: [{ nome, opcoes: [{nome, sufixo}] }] }.
-function lerVariacoes(valor) {
-  if (Array.isArray(valor)) return valor.length ? [{ nome: "Cor", opcoes: valor.filter((o) => o && o.nome) }] : [];
-  if (valor && Array.isArray(valor.variacoes)) return valor.variacoes.filter((v) => v && v.nome).map((v) => ({ nome: v.nome, opcoes: (v.opcoes || []).filter((o) => o && o.nome) }));
-  return [];
-}
 const sufixoAuto = (nome) => `-${String(nome).normalize("NFD").replace(/[^A-Za-z0-9]/g, "").slice(0, 1).toUpperCase() || "X"}`;
 function combinacoes(variacoes) {
   const ativas = variacoes.filter((v) => v.opcoes.length);

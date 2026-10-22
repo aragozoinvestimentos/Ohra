@@ -144,9 +144,25 @@ export default function PaginaProduto({ onToast, onEditar }) {
   const canaisCom = esc.canais.filter((c) => meus.some((l) => l.canal.id === c.id));
   const passos = passosDoCadastro({ it, prod, kit, esc, produtoEmbalagens: esc.produtoEmbalagens, kitEmbalagens: cat.kitEmbalagens, impressoras: cat.impressoras || [], cal, canaisCom });
   const completos = passos.filter((p) => p.ok).length;
-  const vendas = meus.reduce((t, l) => ({ un: t.un + l.vendas.unidades, lucro: t.lucro + l.vendas.lucro, fat: t.fat + l.vendas.faturamento }), { un: 0, lucro: 0, fat: 0 });
+  // Vendas = TODAS as do item (anúncio próprio + por anúncio com vários itens): o item é
+  // um só, o anúncio é só por onde vendeu. Ads fica no nível do anúncio — o do próprio
+  // item soma aqui; o de um anúncio com vários itens aparece à parte (não dá pra dividir).
+  const vendas = meus.reduce((t, l) => ({ un: t.un + l.vendasItem.unidades, lucro: t.lucro + l.vendasItem.lucro, fat: t.fat + l.vendasItem.faturamento }), { un: 0, lucro: 0, fat: 0 });
+  const viaGrupos = new Map();
+  for (const l of meus)
+    for (const g of l.vendasItem.via) {
+      const x = viaGrupos.get(g.grupoId) || { ...g, unidades: 0 };
+      x.unidades += g.unidades;
+      viaGrupos.set(g.grupoId, x);
+    }
   const de30 = somarDias(hoje, -30);
   const ads30 = meus.reduce((t, l) => t + (l.ads ? adsNaJanela(l.ads.periodos, l.ads.semanas, de30, hoje).gasto : 0), 0);
+  const gruposDoItem = new Set([...(mapaGrupos.get(itemId) || []).map((x) => x.grupo.id), ...viaGrupos.keys()]);
+  const adsGrupos = linhas
+    .filter((l) => l.tipo === "grupo" && gruposDoItem.has(l.grupo.id) && l.ads)
+    .map((l) => ({ nome: l.grupo.nome, canal: l.canal.nome, gasto: adsNaJanela(l.ads.periodos, l.ads.semanas, de30, hoje).gasto }))
+    .filter((x) => x.gasto > 0);
+  const fabricacao = it.custoProducao != null ? it.custoProducao : Math.max(0, num(it.custoTotal) - num(it.embalagem) - num(it.frete));
   const emKits = !ehKit ? esc.itens.filter((k) => k.id.startsWith("k:") && (k.componentes || []).some((c) => c.produtoId === prod?.id)) : [];
   const emGrupos = mapaGrupos.get(it.id) || [];
   const editarCadastro = () => onEditar?.(ehKit ? "kit" : "produto", it.id.slice(2));
@@ -203,10 +219,20 @@ export default function PaginaProduto({ onToast, onEditar }) {
         <>
           <Kpis
             itens={[
-              { label: "Custo hoje (repor)", valor: BRL(it.custoTotal), sub: `fabricação ${BRL(it.custoProducao)} · embalagem ${BRL(it.embalagem)}` },
-              { label: "Vendas 30 dias", valor: `${vendas.un} un.`, sub: meus.filter((l) => l.vendas.unidades).map((l) => `${l.canal.nome} ${l.vendas.unidades}`).join(" · ") || "pedidos importados" },
+              { label: "Custo hoje (repor)", valor: BRL(it.custoTotal), sub: `${ehKit ? "peças" : "fabricação"} ${BRL(fabricacao)} · embalagem ${BRL(it.embalagem)}${num(it.frete) > 0 ? ` · frete ${BRL(it.frete)}` : ""}` },
+              {
+                label: "Vendas 30 dias",
+                valor: `${vendas.un} un.`,
+                sub:
+                  [meus.filter((l) => l.vendasItem.unidades).map((l) => `${l.canal.nome} ${l.vendasItem.unidades}`).join(" · "), [...viaGrupos.values()].map((g) => `${g.unidades} via anúncio ${g.nome}`).join(" · ")].filter(Boolean).join(" — ") ||
+                  "pedidos importados",
+              },
               { label: "Lucro 30 dias", valor: BRL(vendas.lucro), tom: vendas.lucro > 0 ? "good" : undefined, sub: "antes do Ads · custo e taxas de hoje" },
-              { label: "Ads 30 dias", valor: BRL(ads30), sub: ads30 > 0 ? `lucro depois do Ads ${BRL(vendas.lucro - ads30)}` : "sem Ads" },
+              {
+                label: "Ads 30 dias",
+                valor: BRL(ads30),
+                sub: [ads30 > 0 ? `lucro depois do Ads ${BRL(vendas.lucro - ads30)}` : adsGrupos.length ? "sem Ads próprio" : "sem Ads", ...adsGrupos.map((g) => `Ads do anúncio ${g.nome} (${g.canal}, anúncio inteiro): ${BRL(g.gasto)}`)].join(" · "),
+              },
             ]}
           />
           <div className="panel">
@@ -245,7 +271,8 @@ export default function PaginaProduto({ onToast, onEditar }) {
                     </b>
                     <span className="muted-cel">
                       lucro {l.agora ? BRL(l.agora.lucro) : "—"}
-                      {l.agora?.margem != null ? ` · ${PCT(l.agora.margem)}` : ""} · {l.vendas.unidades} vendas 30d
+                      {l.agora?.margem != null ? ` · ${PCT(l.agora.margem)}` : ""} · {l.vendasItem.unidades} vendas 30d
+                      {l.vendasItem.via.length > 0 && ` (${l.vendasItem.via.map((g) => `${g.unidades} via ${g.nome}`).join(", ")})`}
                       {l.adsNum?.retorno != null ? ` · Ads ${String(Math.round(l.adsNum.retorno * 10) / 10).replace(".", ",")}×` : ""}
                     </span>
                     {l.variacoes?.length > 0 && <span className="muted-cel">{l.variacoes.map((v) => v.nomeVariacao || v.nome).join(" · ")}</span>}
@@ -264,7 +291,10 @@ export default function PaginaProduto({ onToast, onEditar }) {
                   </button>
                 ))}
                 {emGrupos.map((x) => (
-                  <span key={x.grupo.id} className="chip-filtro">Anúncio: {x.grupo.nome}</span>
+                  <button key={x.grupo.id} type="button" className="chip-filtro" title="Abrir o Painel do anúncio (Ads, funil e rampa são do anúncio inteiro)" onClick={() => abrirAnuncio(`g:${x.grupo.id}`, null)}>
+                    Anúncio: {x.grupo.nome}
+                    {viaGrupos.get(x.grupo.id) ? ` · ${viaGrupos.get(x.grupo.id).unidades} vendas 30d` : ""}
+                  </button>
                 ))}
               </div>
             </div>

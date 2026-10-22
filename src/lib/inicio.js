@@ -381,6 +381,21 @@ export function montarPendencias({
     });
   }
 
+  // Vínculo de SKU (22/10/2026): venda ligada ao item só pelo começo do SKU (lib/vinculoSku.js).
+  if (importacoes?.peloComeco?.length) {
+    const ls = importacoes.peloComeco;
+    add({
+      id: "analise|sku-comeco",
+      grupo: "rotina",
+      ordem: 2,
+      tom: "warn",
+      titulo: `Conferir o SKU de ${ls.length} venda${ls.length > 1 ? "s" : ""} — ligada${ls.length > 1 ? "s" : ""} só pelo começo do SKU`,
+      texto: `${ls.slice(0, 2).map((g) => `${g.sku} → ${g.item.nome}`).join(" · ")}${ls.length > 2 ? "…" : ""} · se for opção de anúncio com vários itens, cadastre a Cor/sufixo na Ficha`,
+      ir: { aba: "importar" },
+      rotulo: "Ver em Atualizar dados",
+    });
+  }
+
   if (ads?.teto?.acimaTeto)
     add({ id: "ads|teto", grupo: "rotina", ordem: 2, tom: "warn", titulo: "Ads acima do teto da loja", texto: `${brl(ads.teto.gasto)} em 30 dias · teto ${brl(ads.teto.teto)} (fase ${ads.teto.fase})`, ir: irAds, rotulo: "Abrir Ads" });
 

@@ -145,6 +145,7 @@ export default function Anuncios() {
                         ) : (
                           <span className="muted-cel">0</span>
                         )}
+                        {l.vendasItem?.via?.length > 0 && <div className="sub-num" title="Vendas deste item por um anúncio com vários itens — contam lá, não neste anúncio">+ {l.vendasItem.via.reduce((t, g) => t + g.unidades, 0)} via {l.vendasItem.via.map((g) => g.nome).join(", ")}</div>}
                       </td>
                       <td>{est ? <Estado tipo="decisao" icone={null}>{est.noAlvo ? "no alvo" : `degrau ${est.i + 1} de ${est.degraus?.length || "?"}`}</Estado> : <span className="muted-cel">—</span>}</td>
                       <td className="num">

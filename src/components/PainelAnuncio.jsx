@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useEscada } from "../hooks/useEscada.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
-import { abrirProduto, montarAnuncios } from "../lib/anuncios.js";
+import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { irParaAba, pegarPedido } from "../lib/navegar.js";
 import { pedirPasso } from "../lib/passosPreco.js";
 import { adsNaJanela, resumoPeriodo, REGRAS_ADS } from "../lib/ads.js";
@@ -127,6 +127,18 @@ export default function PainelAnuncio() {
   const v = { un: soma(pedP, "q"), fat: soma(pedP, "pago"), lucro: soma(pedP, "lucro") };
   const vAnt = { un: soma(pedAnt, "q"), fat: soma(pedAnt, "pago"), lucro: soma(pedAnt, "lucro") };
   const adsJ = l.ads ? adsNaJanela(l.ads.periodos, l.ads.semanas, de, hoje) : { gasto: 0, vendas: 0 };
+  // O mesmo item também vende por anúncio(s) com vários itens: essas vendas ficam no
+  // painel daquele anúncio (Ads/funil são dele), mas avisamos aqui pra não parecer parado.
+  const pidV = l.tipo === "produto" ? l.itemId.slice(2) : null;
+  const viaG = new Map();
+  if (!ehGrupo)
+    for (const p of cres.pedidosValidos || []) {
+      if (!p.valido || !p.grupo || p.canal_id !== l.canal.id || String(p.data) <= de) continue;
+      if (p.id_item !== l.itemId && !(pidV && p.item?.produtoId === pidV)) continue;
+      const g = viaG.get(p.grupo.id) || { id: p.grupo.id, nome: p.grupo.nome, un: 0 };
+      g.un += num(p.q);
+      viaG.set(p.grupo.id, g);
+    }
   const lojaCfg = esc.cfgLoja;
   const marcas = marcasDasAbas(l);
 
@@ -206,6 +218,21 @@ export default function PainelAnuncio() {
         </span>
       </div>
 
+      {viaG.size > 0 && (
+        <div className="aviso-cel" style={{ margin: "0 0 8px" }}>
+          Este item também vendeu{" "}
+          {[...viaG.values()].map((g, i) => (
+            <span key={g.id}>
+              {i > 0 && " e "}
+              <b>{g.un} un.</b> pelo{" "}
+              <button type="button" className="link-btn" onClick={() => abrirAnuncio(`g:${g.id}`, l.canal.id)}>
+                anúncio {g.nome}
+              </button>
+            </span>
+          ))}{" "}
+          nos últimos {dias} dias — fora destes números (o Ads e o funil são daquele anúncio). A página do produto soma tudo.
+        </div>
+      )}
       <div className="pa-abas" role="tablist">
         {abas.map((a) => (
           <button key={a.k} type="button" role="tab" className={abaV === a.k ? "ativo" : ""} onClick={() => setAba(a.k)}>

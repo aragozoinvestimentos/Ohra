@@ -33,7 +33,11 @@ export function numerosAds(ads) {
 const ESTADO_ADS = { resolver: "resolver", atencao: "atencao", oportunidade: "oportunidade", decisao: "decisao" };
 
 /** Vendas reais (pedidos válidos) de um anúncio nos últimos `dias` dias até `hoje`. */
-export function vendasDoAnuncio(pedidos, { itemId, canalId, produtoId = null, grupoId = null }, hoje, dias = 30, ate = null) {
+// todos = true → TODAS as vendas do item (também as que vieram por um anúncio com
+// vários itens), com `via` = [{ grupoId, nome, unidades }] — é o que a Página do
+// produto mostra (o item é um só; o anúncio é só por onde vendeu). Sem `todos`,
+// só as do anúncio próprio dele (Painel do anúncio, lista de Anúncios).
+export function vendasDoAnuncio(pedidos, { itemId, canalId, produtoId = null, grupoId = null, todos = false }, hoje, dias = 30, ate = null) {
   const de = somarDias(ate || hoje, -dias);
   const fim = ate || hoje;
   let un = 0;
@@ -41,21 +45,28 @@ export function vendasDoAnuncio(pedidos, { itemId, canalId, produtoId = null, gr
   let lucro = 0;
   let pedidosN = 0;
   const vistos = new Set();
+  const via = new Map();
   for (const l of pedidos || []) {
     if (!l.valido || l.canal_id !== canalId) continue;
     const d = String(l.data);
     if (d <= de || d > fim) continue;
-    const meu = grupoId ? l.grupo?.id === grupoId : !l.grupo && (l.id_item === itemId || (produtoId && l.item?.produtoId === produtoId));
+    const doItem = l.id_item === itemId || (produtoId && l.item?.produtoId === produtoId);
+    const meu = grupoId ? l.grupo?.id === grupoId : doItem && (todos || !l.grupo);
     if (!meu) continue;
     un += num(l.q);
     fat += num(l.pago);
     lucro += num(l.lucro);
+    if (!grupoId && l.grupo) {
+      const g = via.get(l.grupo.id) || { grupoId: l.grupo.id, nome: l.grupo.nome, unidades: 0 };
+      g.unidades += num(l.q);
+      via.set(l.grupo.id, g);
+    }
     if (!vistos.has(l.pedido)) {
       vistos.add(l.pedido);
       pedidosN++;
     }
   }
-  return { unidades: un, faturamento: fat, lucro, pedidos: pedidosN };
+  return { unidades: un, faturamento: fat, lucro, pedidos: pedidosN, via: [...via.values()] };
 }
 
 /**
@@ -148,6 +159,8 @@ function linha({ esc, cres, pedidos, hoje, canal, item, tipo, variacoes, rampa, 
     anunciado: pub,
     soNoGrupo: (cres.soNoGrupo && cres.soNoGrupo.has?.(item.id)) || false,
     vendas: vendasDoAnuncio(pedidos, { itemId: item.id, canalId: canal.id, produtoId: tipo === "produto" ? id : null }, hoje),
+    // Todas as vendas do item neste canal (anúncio próprio + por anúncio com vários itens).
+    vendasItem: vendasDoAnuncio(pedidos, { itemId: item.id, canalId: canal.id, produtoId: tipo === "produto" ? id : null, todos: true }, hoje),
     estado: pior || op,
   };
 }
