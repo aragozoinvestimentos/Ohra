@@ -304,7 +304,7 @@ export function montarPendencias({
     else if (["pausar-corte", "atualizar-andamento"].includes(av.chave))
       add({ id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · ${av.chave === "pausar-corte" ? "último dia de entrega passou" : "fase Alavancar decide a cada 3–4 dias"}`, ir: irL, rotulo: "Abrir Ads" });
     else if (["aumentar", "meta-alta"].includes(av.chave))
-      add({ id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? `retorno ${av.numeros?.retorno != null ? av.numeros.retorno.toFixed(1).replace(".", ",") : "—"}× o equilíbrio` : "a Shopee gastou pouco do orçamento"}`, ir: irL, rotulo: "Abrir Ads" });
+      add({ id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? `retorno ${av.numeros?.retorno != null ? av.numeros.retorno.toFixed(1).replace(".", ",") : "—"}× o equilíbrio` : "a Shopee gastou pouco do orçamento"} · mude entre 22h e meia-noite`, ir: irL, rotulo: "Abrir Ads" });
     if (av.avisoMeta)
       add({ id: `ads|${l.chave}|meta-alta-inicio`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: meta de ROAS alta pra começar`, texto: `${l.canal.nome} · meta ${av.avisoMeta.meta.toFixed(1).replace(".", ",")} — comece com ${av.avisoMeta.sugerida.toFixed(1).replace(".", ",")}`, ir: irL, rotulo: "Abrir Ads" });
   }

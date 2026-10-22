@@ -750,6 +750,11 @@ export function pecasPorDia(produto, impressoras, farmConfig) {
   return porPeca > 0 ? Math.floor((ativas * horas * 60) / porPeca) : null;
 }
 // Quantos deste item (produto, variação ou kit) a farm faz por dia.
+// Melhor horário pra mexer no orçamento/meta (22/10/2026, Gustavo): o orçamento
+// diário zera à meia-noite — mudar entre 22h e 0h vale pro dia seguinte sem
+// reabrir o anúncio no pico (18h–22h) nem misturar o dia que fecha a medição.
+export const HORARIO_ADS = "Melhor horário pra mudar na Shopee: entre 22h e meia-noite (o orçamento do dia zera à 0h — a mudança vale pro dia seguinte).";
+
 export function capacidadeDoItem(item, produtos, impressoras, farmConfig) {
   if (!item) return null;
   if (item.id.startsWith("k:")) {

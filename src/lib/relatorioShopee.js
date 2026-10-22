@@ -239,6 +239,7 @@ export function interpretarAds(linhas, nomeArquivo) {
     gmv: achar(cab, "GMV"),
     status: achar(cab, "Status"),
     inicio: achar(cab, "Data de Início"),
+    lance: achar(cab, "Método de Lance"),
   };
   const porItem = new Map();
   const total = { gasto: 0, cliques: 0, vendas: 0 };
@@ -271,6 +272,10 @@ export function interpretarAds(linhas, nomeArquivo) {
     // estiver rodando prevalece quando o mesmo produto tem mais de uma linha.
     const st = c.status >= 0 ? String(l[c.status] || "").trim() : "";
     if (st && (!a.status || /andamento/i.test(st))) a.status = st;
+    // Método de Lance ("Fase 1: GMV Max - Lances Automáticos, Fase 2: GMV Max -
+    // Meta de ROAS"): o CSV diz o tipo, não o número da meta.
+    const lance = c.lance >= 0 ? String(l[c.lance] || "").trim() : "";
+    if (lance && (!a.lance || /andamento/i.test(st))) a.lance = lance;
     a.gasto += g;
     a.cliques += cl;
     a.vendas += v;
@@ -346,6 +351,7 @@ export function juntarAds(relatorios) {
     for (const [id, a] of r.porItem) {
       const t = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, nome: a.nome };
       if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
+      if (a.lance) t.lance = a.lance;
       porItem.set(id, t);
       const m = camp.get(id) || new Map();
       const linhasA = Array.isArray(a.linhas) && a.linhas.length && typeof a.linhas[0] === "object" ? a.linhas : [{ k: "*", g: a.gasto, cl: a.cliques, v: a.vendas }];
@@ -397,6 +403,7 @@ export function somarJanelasAds(relatorios) {
     for (const [id, a] of r.porItem) {
       const t = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, nome: a.nome, camp: new Map() };
       if (a.status) t.status = a.status; // o da janela mais recente
+      if (a.lance) t.lance = a.lance;
       t.gasto += num0(a.gasto);
       t.cliques += num0(a.cliques);
       t.vendas += num0(a.vendas);
@@ -587,6 +594,7 @@ export function adsPorItemApp(relatorios, itensApp) {
     if (!sku) continue;
     const t = porSku.get(sku) || { gasto: 0, cliques: 0, vendas: 0, ids: [], campanhas: [] };
     if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
+    if (a.lance) t.lance = a.lance;
     t.campanhas.push(...campanhasDe(a));
     t.gasto += a.gasto;
     t.cliques += a.cliques;
@@ -604,19 +612,20 @@ export function adsPorItemApp(relatorios, itensApp) {
     for (const id of ids) {
       const a = ads.porItem.get(id);
       if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
+      if (a.lance) t.lance = a.lance;
       t.campanhas.push(...campanhasDe(a));
       t.gasto += a.gasto;
       t.cliques += a.cliques;
       t.vendas += a.vendas;
       usados.add(id);
     }
-    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "", campanhas: t.campanhas };
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "", lance: t.lance || "", campanhas: t.campanhas };
   }
   for (const it of itensApp.filter((x) => !x.grupoId)) {
     const t = porSku.get(normSku(it.sku));
     if (!t) continue;
     t.ids.forEach((id) => usados.add(id));
-    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "", campanhas: t.campanhas };
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "", lance: t.lance || "", campanhas: t.campanhas };
   }
   const adsSemPar = [...ads.porItem.entries()].filter(([id, a]) => !usados.has(id) && a.gasto > 0).map(([id, a]) => ({ itemId: id, ...a, conhecido: !!idSku[id] || !!idGrupo[id] }));
   const avisos = [];
@@ -702,6 +711,25 @@ export function relatorioDoGuardado(d) {
  * sem período → criar. Mesma conta da central e da janela "Atualizar andamento".
  * todas = linhasAds.linhas (useCrescimento). → { porChave, zerados, periodo, avisos, perguntas }
  */
+// Lance automático no app, mas a Shopee já está na Fase 2 com Meta de ROAS
+// (22/10/2026 — Etapa 1 da GMV Max define a meta sozinha). O CSV diz o TIPO
+// ("Fase 2: GMV Max - Meta de ROAS"), não o número: a central pergunta a meta
+// que aparece na Shopee e registra como ajuste. Só depois de 7 dias do início.
+function metaNaShopee(lance, periodo, ate) {
+  if (!lance || !periodo || periodo.tipo !== "auto") return false;
+  const fase2 = String(lance).split(/fase\s*2\s*:/i)[1] || (/fase\s*1/i.test(lance) ? "" : lance);
+  if (!/meta de roas/i.test(fase2)) return false;
+  const temMeta = (Array.isArray(periodo.ajustes) ? periodo.ajustes : []).some((a) => a && a.meta != null && a.meta !== "" && !a.tipo);
+  if (temMeta || periodo.meta_roas != null) return false;
+  if (!ate || !periodo.inicio) return false;
+  const dias = Math.round((new Date(`${ate}T12:00:00`) - new Date(`${periodo.inicio}T12:00:00`)) / 864e5) + 1;
+  return dias >= 7;
+}
+function orcamentoAtual(periodo) {
+  const aj = (Array.isArray(periodo.ajustes) ? periodo.ajustes : []).filter((a) => a && !a.tipo && a.orcamento != null);
+  return Number(aj.length ? aj[aj.length - 1].orcamento : periodo.orcamento_diario) || null;
+}
+
 export function andamentoDoCsv(lidos, todas, lojaLinha = null) {
   const shopee = (todas || []).filter((l) => l.canal?.tipo === "shopee");
   const res = adsPorItemApp(lidos, shopee.map((l) => ({ chave: l.chave, sku: l.item.sku, grupoId: l.tipo === "grupo" ? l.id : null })));
@@ -738,6 +766,7 @@ export function andamentoDoCsv(lidos, todas, lojaLinha = null) {
     const valores = { gasto: x.gasto, cliques: Math.round(x.cliques || 0), vendas: Math.round(x.vendas || 0), ...(x.receita != null ? { receita: x.receita } : {}) };
     if (ativo) {
       if (parado(st) && !(/pausad/i.test(st) && pausadoNoApp(l.av))) perguntas.push({ chave, l, tipo: "parado", status: nomeSt(st), periodo: ativo, data: quandoParou(ativo, x.gasto), valores });
+      else if (metaNaShopee(x0?.lance, ativo, res.periodo?.ate)) perguntas.push({ chave: `${chave}|meta`, l, tipo: "meta-shopee", periodo: ativo, valores, orcamento: orcamentoAtual(ativo) });
       return;
     }
     if (!res.periodo?.de || !res.periodo?.ate || !(x.gasto > 0)) return;

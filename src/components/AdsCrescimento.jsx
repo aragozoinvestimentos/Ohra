@@ -2,7 +2,7 @@ import { irParaAba } from "../lib/navegar.js";
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, resumoPeriodo, retornoAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS } from "../lib/ads.js";
+import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, resumoPeriodo, retornoAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS, HORARIO_ADS } from "../lib/ads.js";
 import { porSemana } from "../lib/rampa.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { adsPorItemApp, valoresDoPeriodo, cruzarGrupos, lerRelatorio } from "../lib/relatorioShopee.js";
@@ -62,12 +62,12 @@ const PAUSAR = new Set(["pausar", "pausar-revisar", "pausar-corte", "inviavel-at
 function acaoDoAds(av) {
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
   const n = av.numeros || {};
-  const DEPOIS_AJ = "Depois de mudar na Shopee: registre aqui — o app espera uns dias pra decidir de novo.";
+  const DEPOIS_AJ = `${HORARIO_ADS} Depois de mudar na Shopee: registre aqui — o app espera uns dias pra decidir de novo.`;
   if (av.ativo) {
     if (av.chave === "sem-venda-dia3" || av.chave === "ads-prejuizo" || av.chave === "parou-ads") return { k: "abrir", botao: "Ver o que fazer", depois: "Pause na Shopee e arrume o anúncio; depois marque aqui." };
     if (av.chave === "pausado" || av.chave === "despausar" || av.chave === "pausa-longa") return { k: "despausar", botao: "Despausei", depois: "Depois de religar na Shopee: marque aqui — a conferência recomeça 3 dias depois." };
     if (av.chave === "conferir-dia3") return { k: "andamento", botao: "Atualizar andamento", depois: "Envie o CSV do Shopee Ads (ou o número à mão) pra saber se já vendeu." };
-    if (av.chave === "virar-meta" && av.novaMeta) return { k: "ajuste", botao: `Já troquei — meta ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "fim do lance automático: virou meta de ROAS" }, depois: "Na Shopee: editar a campanha → GMV Max – Meta de ROAS. Depois registre aqui." };
+    if (av.chave === "virar-meta" && av.novaMeta) return { k: "ajuste", botao: `Já troquei — meta ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "fim do lance automático: virou meta de ROAS" }, depois: `Na Shopee: editar a campanha → GMV Max – Meta de ROAS. ${HORARIO_ADS} Depois registre aqui.` };
     if (av.chave === "loja-abaixo" && av.novaMeta) return { k: "ajuste", botao: `Subi a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "campanha da loja abaixo do equilíbrio" }, depois: DEPOIS_AJ };
     if (av.chave === "loja-nao-gasta" && av.novaMeta) return { k: "ajuste", botao: `Baixei a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "campanha da loja quase não gasta" }, depois: DEPOIS_AJ };
     if (av.chave === "aguardando" && av.loja) return { k: "andamento", botao: "Atualizar andamento", depois: null };

@@ -7,7 +7,8 @@ import { PLATAFORMAS, caixaDosPedidos, interpretarPedidosOlist, ligarSku, plataf
 import { excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
 import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { canalComEmbalagem } from "../lib/embalagemCanal.js";
-import { encerrarPeriodoAds, estenderPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
+import { hojeSP } from "../lib/datas.js";
+import { ajustarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
 import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
 import { acumuladoDasJanelas, furosDasJanelas, janelaDoRelatorio, janelasDoPeriodo, juntarJanela, textoFuro } from "../lib/gmvLoja.js";
 import { recarregarPedidos } from "../hooks/usePedidos.js";
@@ -60,6 +61,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   const [resultado, setResultado] = useState({}); // relatorio → { t, txt }
   const [pend, setPend] = useState(null); // envio da Olist esperando resposta: { passo "plataforma"|"skus", porPlat, grupos, desconhecidos, pendentes, resolvidos, periodo, arquivo }
   const [perguntas, setPerguntas] = useState([]);
+  const [metaDigitada, setMetaDigitada] = useState({}); // pergunta meta-shopee → meta digitada
   const [avisos, setAvisos] = useState({}); // relatorio → [texto]
   const [ocupado, setOcupado] = useState(null);
   const [pendAds, setPendAds] = useState(null); // CSV de Ads que cruza só em parte com o já enviado
@@ -376,6 +378,11 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         if (r.ok && r.periodo) await salvarAndamentoAds(r.periodo, { ate: q.ate, ...q.valores });
         if (r.ok && r.periodo && q.tipo === "criar-encerrado") await encerrarPeriodoAds(r.periodo, { fim: q.ate, motivo: `${q.status.toLowerCase()} na Shopee` });
         msg = q.tipo === "criar-encerrado" ? `${nome}: gasto registrado como período encerrado (${dm(q.data)}–${dm(q.ate)})` : `${nome}: período de Ads criado desde ${dm(q.data)}`;
+      } else if (q.tipo === "meta-shopee") {
+        const meta = Number(String(metaDigitada[q.chave] || "").replace(",", "."));
+        if (!(meta > 0)) return onToast?.("Digite a meta de ROAS que aparece na Shopee (ex.: 3,3)");
+        r = await ajustarPeriodoAds(q.periodo, { data: hojeSP(), orcamento: q.orcamento, meta, motivo: "a Shopee definiu a meta na Etapa 1 (GMV Max → Meta de ROAS)" });
+        msg = `${nome}: meta de ROAS ${String(meta).replace(".", ",")} registrada — o app passa a medir contra ela`;
       } else if (q.tipo === "corrigir") {
         r = await salvarAndamentoAds(q.periodo, { ate: q.data, ...q.valores });
         msg = `${nome}: gasto do período corrigido pra ${BRL(q.valores.gasto)}`;
@@ -568,7 +575,9 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
                   {q.l.item.nome}: {BRL(q.valores.gasto)} de Ads no CSV{q.status ? ` · ${q.status} na Shopee` : ""}
                 </b>
                 <div>
-                  {q.tipo === "estender"
+                  {q.tipo === "meta-shopee"
+                    ? "A Shopee já passou este anúncio pra Meta de ROAS (Fase 2 da GMV Max), mas no app ele continua em lance automático. O CSV não traz o número: veja em Shopee Ads → o anúncio → Método de Lance (ex.: “Meta de ROAS: 3.3”) e registre aqui."
+                    : q.tipo === "estender"
                     ? `O período terminou em ${dm(q.periodo.fim)} no app, mas o CSV vai até ${dm(q.data)} com gasto e o anúncio está rodando. Estender o fim até ${dm(q.data)}?`
                     : q.tipo === "criar"
                       ? `Não há período de Ads ligado no app. Criar um período a partir de ${dm(q.data)}?`
@@ -581,7 +590,13 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
                             : `No app o período continua ligado. O gasto parou por volta de ${dm(q.data)} — você pausou? Encerre o período ou marque como pausado (pra revisar e voltar).`}
                 </div>
                 <div className="ana-pend-acoes">
-                  {q.tipo === "parado" ? (
+                  {q.tipo === "meta-shopee" ? (
+                    <>
+                      <input type="text" inputMode="decimal" placeholder="meta, ex.: 3,3" value={metaDigitada[q.chave] || ""} onChange={(e) => setMetaDigitada((m) => ({ ...m, [q.chave]: e.target.value }))} style={{ width: 120 }} />
+                      <button type="button" className="btn btn-mini primary" onClick={() => responder(q, "sim")}>Registrar meta</button>
+                      <button type="button" className="btn btn-mini" onClick={() => responder(q, "nao")}>Agora não</button>
+                    </>
+                  ) : q.tipo === "parado" ? (
                     <>
                       <button type="button" className="btn btn-mini primary" onClick={() => responder(q, "sim")}>Encerrar em {dm(q.data)}</button>
                       {q.status !== "Excluído" && <button type="button" className="btn btn-mini" onClick={() => responder(q, "pausar")}>Marcar como pausado</button>}
