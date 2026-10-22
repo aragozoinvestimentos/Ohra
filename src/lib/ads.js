@@ -494,7 +494,14 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     // junto de qualquer situação, com o botão "Registrar ajuste: meta X".
     const nAjustes = Array.isArray(ativo.ajustes) ? ativo.ajustes.length : 0;
     const avisoMeta = ativo.tipo !== "teste" && ativo.tipo !== "auto" && !nAjustes && metaAltaDemais(meta, minimo, regras) ? { meta, sugerida } : null;
-    const sitA = (chave, estado, titulo, texto, extra = {}) => sit(chave, estado, titulo, texto, { avisoMeta, ...extra });
+    // Decisão no 7º dia (22/10/2026, Gustavo: "o 7º dia quase não muda a média
+    // — quero saber cedo e mudar às 22h"): no ÚLTIMO dia da espera de 7 dias a
+    // recomendação já aparece, com "mude hoje entre 22h e meia-noite".
+    let noiteDecisao = false;
+    const sitA = (chave, estado, titulo, texto, extra = {}) =>
+      noiteDecisao && ACOES_NOITE.has(chave)
+        ? sit(chave, estado, `Hoje à noite: ${titulo}`, `${texto} Último dia da semana: os 6 dias já mostram o resultado — mude na Shopee hoje entre 22h e meia-noite (o orçamento zera à 0h).`, { avisoMeta, noite: true, ...extra })
+        : sit(chave, estado, titulo, texto, { avisoMeta, ...extra });
     // Teste de lançamento: orçamento fechado, regras e resultado na Rampa.
     if (ativo.tipo === "teste") {
       const total = ativo.fim ? diasEntre(ativo.inicio, ativo.fim) + 1 : regras.aprendizadoDias;
@@ -567,7 +574,8 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     }
     // Lance automático: aprende 7 dias (dias rodando), depois vira meta de ROAS.
     if (automatico) {
-      if (diasRodando < regras.aprendizadoDias)
+      if (diasRodando === regras.aprendizadoDias - 1) noiteDecisao = true;
+      else if (diasRodando < regras.aprendizadoDias)
         return sitA("auto-aprendendo", "decisao", `Lance automático · dia ${diasRodando + 1} de ${regras.aprendizadoDias}`, `Produto novo no automático: não mexa até o 7º dia. ${vendasTot > 0 ? `Já vendeu ${vendasTot} via Ads ✓.` : "O app confere no dia 3 se vendeu."}`, { numeros, decideEm: somarDiasIso(ativo.inicio, regras.aprendizadoDias + pz.diasPausados) });
       const gastoA = Math.max(r.gasto, a00?.gasto || 0);
       if (!(gastoA > 0)) return sitA("aguardando", "info", "Aguardando números do automático", 'Use "Atualizar andamento" (CSV do Shopee Ads) pra o app dizer a meta de ROAS.', { numeros });
@@ -591,7 +599,10 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     // a partir do 3º dia.
     if (desde.vendas === 0 && desde.cliques >= regras.cliquesSemVenda && (!rev || diasDesdeVolta >= dia3))
       return sitA("pausar-revisar", "resolver", "Pausar e revisar o anúncio", `${desde.cliques} cliques pagos${quandoRev} e nenhuma venda: o Ads está trazendo gente, mas a página não convence. Pause e revise ${anuncio?.porOnde || "foto, descrição, medidas e preço"} antes de gastar mais.`, { numeros });
-    if (diasDesde < gapDias)
+    // Espera de 7 dias: o último dia já decide (à noite). A de 3 dias do
+    // Alavancar continua inteira.
+    if (gapDias >= 7 && diasDesde === gapDias - 1) noiteDecisao = true;
+    else if (diasDesde < gapDias)
       return sitA(
         "aprendendo",
         "decisao",
@@ -653,7 +664,8 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
       if (!a0 || diasEntre(a0.ate, hoje) > num(regras.andamentoMaxDias || 4))
         return sitA("atualizar-andamento", "atencao", "Atualizar o andamento do Ads", `Fase Alavancar (${sazonal.nome}): a decisão é a cada 3–4 dias pelo andamento. ${a0 ? `O último é de ${dm(a0.ate)}.` : "Ainda não tem andamento."} Use "Atualizar andamento" no topo do Ads (gasto, cliques e vendas via Ads desde o início do período).`, { numeros });
     }
-    const m = medidaDaDecisao(ativo, ss, refDecisao, gapDias, preco);
+    // No 7º dia (decisão à noite) bastam os 6 dias fechados (CSV até ontem).
+    const m = medidaDaDecisao(ativo, ss, refDecisao, noiteDecisao ? gapDias - 1 : gapDias, preco);
     if (!m) return sitA("aguardando", "info", depoisDeAjuste ? "Aguardando números depois do ajuste" : "Aguardando números depois do aprendizado", 'Envie o CSV do Shopee Ads em Atualizar dados pra avaliar.', { numeros });
     const roas = m.roas;
     const retorno = retornoAds(roas, minimo);
@@ -754,6 +766,9 @@ export function pecasPorDia(produto, impressoras, farmConfig) {
 // diário zera à meia-noite — mudar entre 22h e 0h vale pro dia seguinte sem
 // reabrir o anúncio no pico (18h–22h) nem misturar o dia que fecha a medição.
 export const HORARIO_ADS = "Melhor horário pra mudar na Shopee: entre 22h e meia-noite (o orçamento do dia zera à 0h — a mudança vale pro dia seguinte).";
+
+// Situações que pedem mexer na Shopee — no 7º dia ganham o "hoje à noite".
+const ACOES_NOITE = new Set(["aumentar", "reduzir", "subir-meta", "meta-alta", "virar-meta", "pausar", "queda-ads", "arrumar-anuncio"]);
 
 export function capacidadeDoItem(item, produtos, impressoras, farmConfig) {
   if (!item) return null;
