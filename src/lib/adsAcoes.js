@@ -106,13 +106,17 @@ export const reviseiSemVendaAds = (periodo, data) => ajustarPeriodoAds(periodo, 
 
 // `historico` (opcional) substitui o histórico montado dos envios anteriores —
 // a GMV Max da Loja monta o dela pelas janelas importadas.
-export async function salvarAndamentoAds(periodo, { ate, gasto, cliques, vendas, receita, historico: histPronto }) {
+// `acerto` (✎ corrigir, 23/10/2026) = { ate, gasto, cliques, vendas, receita? }:
+// valor digitado à mão que vale até a data dele — as importações somam só os
+// envios depois dela. undefined = mantém o que havia; null = tira.
+export async function salvarAndamentoAds(periodo, { ate, gasto, cliques, vendas, receita, historico: histPronto, acerto }) {
   const ant = periodo?.parcial;
   const hist = [...(Array.isArray(ant?.historico) ? ant.historico : []), ...(ant?.ate ? [{ ate: ant.ate, gasto: ant.gasto, cliques: ant.cliques, vendas: ant.vendas, ...(ant.receita != null ? { receita: ant.receita } : {}) }] : [])]
     .filter((h) => h && h.ate && h.ate < ate)
     .reduce((m, h) => m.set(h.ate, h), new Map());
   const historico = Array.isArray(histPronto) ? histPronto.filter((h) => h?.ate && h.ate < ate).slice(-12) : [...hist.values()].sort((a, b) => a.ate.localeCompare(b.ate)).slice(-12);
-  const parcial = { ate, gasto, cliques, vendas, ...(receita != null ? { receita } : {}), em: new Date().toISOString(), historico };
+  const ac = acerto === undefined ? ant?.acerto || null : acerto;
+  const parcial = { ate, gasto, cliques, vendas, ...(receita != null ? { receita } : {}), em: new Date().toISOString(), historico, ...(ac ? { acerto: ac } : {}) };
   const { error } = await supabase.from("ads_periodos").update({ parcial }).eq("id", periodo.id);
   if (!error) return { ok: true };
   return { ok: false, msg: /parcial/.test(error.message) ? "Falta rodar o supabase/schema_v48.sql no Supabase" : msgErro(error) };

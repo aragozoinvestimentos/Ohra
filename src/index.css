@@ -2506,3 +2506,6 @@ td.vendas-opcao { padding-left: 26px; }
 .chave-bolinha { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: left 0.15s; }
 .chave-teto.ligada .chave-bolinha { left: 18px; }
 .pa-agora-acoes { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+/* Próximo envio do CSV de Ads (23/10/2026) */
+.ana-prox-envio { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.ana-prox-envio.pendente { color: var(--st-atencao); }

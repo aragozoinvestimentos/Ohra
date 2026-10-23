@@ -388,9 +388,9 @@ export function juntarAds(relatorios) {
 // que roda meses, GMV). Cada envio = uma janela (o período exportado); as
 // janelas guardadas se SOMAM, campanha por campanha, sem repetir dia (a mesma
 // janela substitui; janela maior engole as menores — juntarJanela de
-// gmvLoja.js). A Shopee manda o TOTAL do período (não o dia a dia), então
-// janela que repete dias de uma anterior entra só com a DIFERENÇA (os dias
-// novos, estimados — recortarAdsDiferenca, 22/10/2026).
+// gmvLoja.js). A Shopee manda o TOTAL do período (não o dia a dia): janela que
+// repete só PARTE de uma anterior é recusada (conferirJanelaNova, 23/10/2026 —
+// a estimativa pela média dos dias repetidos inflava o gasto).
 export function somarJanelasAds(relatorios) {
   const lista = (relatorios || []).filter((r) => r?.tipo === "ads" && r.periodo?.de);
   if (!lista.length) return null;
@@ -439,36 +439,6 @@ export function somarJanelasAds(relatorios) {
       if (r.loja.status) loja.status = r.loja.status;
     }
   return { tipo: "ads", periodo: { de: lista[0].periodo.de, ate: lista.map((r) => r.periodo.ate).sort().pop() }, porItem, total, loja, arquivo: lista.map((r) => r.arquivo).filter(Boolean).join(" + "), janelas: lista.length, estimado: lista.some((r) => r.estimado) };
-}
-/**
- * Ads: só os dias novos (trechoNovo de gmvLoja.js) pela DIFERENÇA — por
- * anúncio e por campanha: total novo − o que as janelas antigas tinham nos
- * dias repetidos (média por dia de cada uma). Anúncio que não estava nas
- * antigas = tudo novo.
- */
-export function recortarAdsDiferenca(r, tr, diferenca) {
-  const antigos = tr.sub.map(({ j, frac }) => ({ frac, rel: relatorioDoGuardado(j.rel) })).filter((x) => x.rel);
-  const de = (id) => antigos.map(({ frac, rel }) => [frac, rel.porItem?.get?.(id) || null]);
-  const porItem = new Map();
-  for (const [id, a] of r.porItem) {
-    const olds = de(id);
-    const val = (k) => diferenca(a[k], olds.map(([f, o]) => [f, o?.[k]]));
-    const ls = Array.isArray(a.linhas) && a.linhas.length && typeof a.linhas[0] === "object"
-      ? a.linhas.map((x) => {
-          const vx = (k) => diferenca(x[k], olds.map(([f, o]) => [f, (Array.isArray(o?.linhas) ? o.linhas : []).find((y) => y && y.k === x.k)?.[k]]));
-          return { ...x, g: Math.round(vx("g") * 100) / 100, cl: vx("cl"), v: vx("v") };
-        })
-      : a.linhas;
-    porItem.set(id, { ...a, gasto: Math.round(val("gasto") * 100) / 100, cliques: val("cliques"), vendas: val("vendas"), linhas: ls });
-  }
-  const loja = r.loja
-    ? (() => {
-        const o = antigos.map(({ frac, rel }) => [frac, rel.loja]);
-        const v = (k) => diferenca(r.loja[k], o.map(([f, l]) => [f, l?.[k]]));
-        return { ...r.loja, gasto: Math.round(v("gasto") * 100) / 100, cliques: v("cliques"), vendas: v("vendas"), receita: Math.round(v("receita") * 100) / 100 };
-      })()
-    : null;
-  return { ...r, periodo: { de: tr.de, ate: tr.ate }, porItem, loja, estimado: true };
 }
 
 // Desempenho do produto: a Shopee separa os anúncios em listas ("produto com

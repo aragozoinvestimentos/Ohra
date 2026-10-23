@@ -25,53 +25,42 @@ export function janelaDoRelatorio(r) {
   return { de: r.periodo.de, ate: r.periodo.ate, ...r.loja, porItem: r.lojaPorItem || [] };
 }
 
-const diasDe = (de, ate) => (ate >= de ? Math.round((new Date(`${ate}T12:00:00`) - new Date(`${de}T12:00:00`)) / 86400000) + 1 : 0);
-const sobreposto = (a, de, ate) => diasDe(a.de > de ? a.de : de, a.ate < ate ? a.ate : ate);
 
 /**
- * Período exportado que REPETE dias já enviados (22/10/2026, Gustavo: "não
- * deixa subir quando repete — quero só a diferença"). A Shopee manda o total
- * do período, não o dia a dia: os dias novos = o total do arquivo novo MENOS o
- * que as janelas antigas tinham nos dias repetidos (cada uma pela média por dia
- * dela). → null (não repete / mesma janela / engole as antigas) |
- * { erro } | { de, ate, sub: [{ j, frac }], diasNovos, diasNova }.
+ * Próximo envio (23/10/2026, Gustavo: "último envio até 12/10 → importe do dia
+ * 13 até ontem"): do dia seguinte ao último dia enviado até ONTEM (hoje ainda
+ * não fechou). → { ult, de, ate, emDia, soOntem }.
  */
-export function trechoNovo(janelas, nova) {
-  const sobre = (janelas || []).filter((j) => j.de <= nova.ate && nova.de <= j.ate);
-  if (!sobre.length || sobre.some((j) => j.de === nova.de && j.ate === nova.ate)) return null;
-  const parcial = sobre.filter((j) => !(j.de >= nova.de && j.ate <= nova.ate));
+export function proximoEnvio(janelas, hoje) {
+  const ult = (janelas || []).map((j) => j.ate).sort().pop() || null;
+  const ate = somar(hoje, -1);
+  if (!ult) return { ult: null, de: null, ate, emDia: false, soOntem: false };
+  const de = somar(ult, 1);
+  return { ult, de, ate, emDia: de > ate, soOntem: de === ate };
+}
+const deAte = (de, ate) => (de === ate ? `o dia ${dm(de)}` : `de ${dm(de)} até ${dm(ate)}`);
+export function textoProximoEnvio(p) {
+  if (!p?.ult) return null;
+  if (p.emDia) return `Último envio: até ${dm(p.ult)} — em dia. Amanhã use o atalho “Ontem”.`;
+  return `Último envio: até ${dm(p.ult)} → exporte ${deAte(p.de, p.ate)}${p.soOntem ? " (atalho “Ontem”)" : " (período personalizado)"}.`;
+}
+
+/**
+ * Confere o período do arquivo novo ANTES de juntar (23/10/2026 — substituiu a
+ * estimativa pela média dos dias repetidos, que inflava o gasto: a Shopee só
+ * manda o total do período, não o dia a dia). Termina hoje → recusa (o dia não
+ * fechou). Repete dias de um envio que ele não engole inteiro (ex.: “últimos 7
+ * dias” todo dia) → recusa com as datas certas. → null | { erro }.
+ * Engolir envios inteiros (mesmo início, até ontem) continua valendo: substitui.
+ */
+export function conferirJanelaNova(janelas, nova, hoje) {
+  if (nova.ate >= hoje) return { erro: `O arquivo vai até ${dm(nova.ate)} — o dia de hoje ainda não fechou na Shopee. Exporte até ontem (${dm(somar(hoje, -1))}). Nada foi importado.` };
+  const parcial = (janelas || []).filter((j) => j.de <= nova.ate && nova.de <= j.ate && !(j.de >= nova.de && j.ate <= nova.ate) && !(j.de === nova.de && j.ate === nova.ate));
   if (!parcial.length) return null;
-  if (parcial.some((j) => j.de <= nova.de && j.ate >= nova.ate))
-    return { erro: `Os dias ${dm(nova.de)} a ${dm(nova.ate)} já foram enviados antes — não há dia novo nesse arquivo. Nada foi importado.` };
-  let de = nova.de;
-  let ate = nova.ate;
-  for (const j of parcial) {
-    if (j.de <= nova.de) de = somar(j.ate, 1) > de ? somar(j.ate, 1) : de;
-    else ate = somar(j.de, -1) < ate ? somar(j.de, -1) : ate;
-  }
-  if (de > ate) return { erro: `O arquivo de ${dm(nova.de)} a ${dm(nova.ate)} só repete dias já enviados. Nada foi importado.` };
-  const sub = sobre
-    .map((j) => ({ j, frac: (sobreposto(j, nova.de, nova.ate) - sobreposto(j, de, ate)) / Math.max(1, diasDe(j.de, j.ate)) }))
-    .filter((x) => x.frac > 0);
-  return { de, ate, sub, diasNovos: diasDe(de, ate), diasNova: diasDe(nova.de, nova.ate) };
-}
-/** novo − Σ frac × antigo, entre 0 e o novo. */
-export function diferenca(novo, antigos) {
-  const n = Number(novo) || 0;
-  const v = n - antigos.reduce((t, [frac, x]) => t + frac * (Number(x) || 0), 0);
-  return Math.max(0, Math.min(n, v));
-}
-/** GMV Max da Loja: só os dias novos da janela (pela diferença). */
-export function recortarJanelaGmv(nova, tr) {
-  const campos = ["gasto", "cliques", "vendas", "receita", "impressoes"];
-  const out = { ...nova, de: tr.de, ate: tr.ate, estimado: true };
-  for (const k of campos) if (nova[k] != null) out[k] = (k === "gasto" || k === "receita" ? r2 : (x) => Math.round(x))(diferenca(nova[k], tr.sub.map(({ j, frac }) => [frac, j[k]])));
-  out.porItem = (nova.porItem || []).map((p) => {
-    const q = { ...p };
-    for (const k of campos) if (p[k] != null) q[k] = (k === "gasto" || k === "receita" ? r2 : (x) => Math.round(x * 100) / 100)(diferenca(p[k], tr.sub.map(({ j, frac }) => [frac, (j.porItem || []).find((x) => x.id === p.id)?.[k]])));
-    return q;
-  });
-  return out;
+  const p = proximoEnvio(janelas, hoje);
+  const ini = (janelas || []).map((j) => j.de).sort()[0];
+  const exp = p.emDia ? "Você já está em dia — nada a enviar até amanhã" : `Exporte ${deAte(p.de, p.ate)}${p.soOntem ? " (atalho “Ontem”)" : ""}`;
+  return { erro: `Este arquivo (${dm(nova.de)} a ${dm(nova.ate)}) repete dias já enviados — o último envio vai até ${dm(p.ult)}, e somaria esses dias 2 vezes. ${exp}, ou um período de ${dm(ini)} até ontem (ele substitui os envios antigos). Nada foi importado.` };
 }
 
 /**

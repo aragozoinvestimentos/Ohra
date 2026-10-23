@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { BRL } from "../lib/format.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { lerXls } from "../lib/lerXls.js";
-import { andamentoDoCsv, recortarAdsDiferenca, somarJanelasAds, juntarAds, juntarDesempenho, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioDoGuardado, relatorioParaGuardar } from "../lib/relatorioShopee.js";
+import { andamentoDoCsv, somarJanelasAds, juntarAds, juntarDesempenho, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioDoGuardado, relatorioParaGuardar } from "../lib/relatorioShopee.js";
 import { PLATAFORMAS, caixaDosPedidos, ehNaoPago, interpretarPedidosOlist, ligarSku, plataformaDoNumero, tipoEIdDoItem, normSku } from "../lib/pedidos.js";
 import { CHAVE_CARRINHOS, lembrarCarrinhos } from "../lib/carrinhos.js";
 import { excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
@@ -11,7 +11,7 @@ import { canalComEmbalagem } from "../lib/embalagemCanal.js";
 import { hojeSP } from "../lib/datas.js";
 import { ajustarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, salvarAndamentoAds } from "../lib/adsAcoes.js";
 import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
-import { acumuladoDasJanelas, diferenca, furosDasJanelas, janelaDoRelatorio, janelasDoPeriodo, juntarJanela, recortarJanelaGmv, textoFuro, trechoNovo } from "../lib/gmvLoja.js";
+import { acumuladoDasJanelas, conferirJanelaNova, furosDasJanelas, janelaDoRelatorio, janelasDoPeriodo, juntarJanela, proximoEnvio, textoFuro, textoProximoEnvio } from "../lib/gmvLoja.js";
 import { recarregarPedidos } from "../hooks/usePedidos.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -39,11 +39,6 @@ const num = (v) => {
 const dm = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}` : "");
 const diasDesde = (iso, hoje) => (iso ? Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${String(iso).slice(0, 10)}T12:00:00`)) / 86400000) : null);
 const dataDoEnvio = (imp) => (imp?.criado_em ? new Date(imp.criado_em).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }) : null);
-const somarDiasIso = (iso, n) => {
-  const d = new Date(`${iso}T12:00:00`);
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-};
 const ICONE = { ok: "✓", erro: "✗", velho: "!", nunca: "–", pend: "?" };
 const horaSP = (iso) => (iso ? new Date(iso).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "");
 // Identifica uma lista pelo conteúdo (os nomes dos arquivos da Shopee costumam ser iguais).
@@ -247,19 +242,14 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       // janelas se somam sem repetir dia. Cruzou só em parte com uma anterior →
       // pergunta se usa só os dias novos (estimado) ou se reexporta o exato.
       let janelasAds = null;
-      let repetiu = "";
       if (tipo === "ads") {
         if (!r.periodo?.de) throw new Error("Não achei o período no CSV. Nada foi importado.");
         const legado = ant?.dados && !ant.dados.janelas && ant.periodo_de ? [{ de: String(ant.periodo_de).slice(0, 10), ate: String(ant.periodo_ate).slice(0, 10), rel: { ...ant.dados, partes: undefined } }] : [];
         const jAnt = ant?.dados?.janelas || legado;
-        // Repetiu dias já enviados (22/10/2026): usa só a DIFERENÇA — total
-        // novo menos o que as janelas antigas tinham nos dias repetidos.
-        const tr = mesmoPeriodo ? null : trechoNovo(jAnt, r.periodo);
-        if (tr?.erro) throw new Error(tr.erro);
-        if (tr) {
-          repetiu = `repetia ${tr.diasNova - tr.diasNovos} dia${tr.diasNova - tr.diasNovos === 1 ? "" : "s"} já enviado${tr.diasNova - tr.diasNovos === 1 ? "" : "s"}: entrou só a diferença de ${dm(tr.de)} a ${dm(tr.ate)} (estimada)`;
-          r = recortarAdsDiferenca(r, tr, diferenca);
-        }
+        // Repetiu só parte de um envio anterior, ou vai até hoje → recusa com as
+        // datas certas (23/10/2026 — a estimativa pela média inflava o gasto).
+        const conf = mesmoPeriodo ? null : conferirJanelaNova(jAnt, r.periodo, hoje);
+        if (conf?.erro) throw new Error(conf.erro);
         const jr = juntarJanela(jAnt, { de: r.periodo.de, ate: r.periodo.ate, rel: relatorioParaGuardar(r) });
         if (jr.erro) throw new Error(jr.erro);
         janelasAds = jr.janelas;
@@ -287,7 +277,23 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         for (const l of (linhasAds?.linhas || []).filter((x) => x.av?.ativo && x.canal?.tipo === "shopee")) {
           const x = res.porChave[l.chave] || (res.zerados.includes(l.chave) ? { gasto: 0, cliques: 0, vendas: 0 } : null);
           if (!x || !res.periodo?.ate) continue;
-          const s = await salvarAndamentoAds(l.av.ativo, { ate: res.periodo.ate, gasto: num(x.gasto), cliques: Math.round(num(x.cliques)), vendas: Math.round(num(x.vendas)) });
+          let val = { ate: res.periodo.ate, gasto: num(x.gasto), cliques: Math.round(num(x.cliques)), vendas: Math.round(num(x.vendas)) };
+          // ✎ Acerto à mão (23/10/2026): o valor digitado vale até a data dele e
+          // os CSVs somam só os envios DEPOIS dela — até chegar um envio exato
+          // desde o início do período, que vale mais que o acerto.
+          const ac = l.av.ativo.parcial?.acerto;
+          let acerto;
+          if (ac?.ate) {
+            if (janelasAds.some((j) => j.de <= l.av.ativo.inicio && j.ate > ac.ate)) acerto = null;
+            else {
+              const depois = janelasAds.filter((j) => j.de > ac.ate);
+              if (!depois.length) continue;
+              const resD = andamentoDoCsv([somarJanelasAds(depois.map((j) => relatorioDoGuardado(j.rel)))], [l], null);
+              const y = resD.porChave[l.chave] || { gasto: 0, cliques: 0, vendas: 0 };
+              val = { ate: resD.periodo?.ate || val.ate, gasto: Math.round((num(ac.gasto) + num(y.gasto)) * 100) / 100, cliques: Math.round(num(ac.cliques) + num(y.cliques)), vendas: Math.round(num(ac.vendas) + num(y.vendas)) };
+            }
+          }
+          const s = await salvarAndamentoAds(l.av.ativo, { ...val, ...(acerto === null ? { acerto: null } : {}) });
           if (!s.ok) throw new Error(s.msg);
           n++;
         }
@@ -300,7 +306,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         setPerguntas((res.perguntas || []).filter((q) => adsIgnorados[q.chave] !== sigPergunta(q)));
         setInfos(res.infos || []);
         setAvisos((a) => ({ ...a, [rel]: [...furos.map((f) => `Ads: ${textoFuro(f)} — exporte esse período pra completar (o resto já foi somado).`), ...(res.avisos || [])] }));
-        resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${repetiu ? ` · ${repetiu}` : ""}${txtListas} · somado desde ${dm(soma.periodo.de)} (${janelasAds.length} envio${janelasAds.length === 1 ? "" : "s"}) · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado${txtLoja}`;
+        resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${txtListas} · somado desde ${dm(soma.periodo.de)} (${janelasAds.length} envio${janelasAds.length === 1 ? "" : "s"}) · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado${txtLoja}`;
         window.dispatchEvent(new Event("focus"));
       }
       const g = await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivo.name, periodo: r.periodo, ok: true, resumo, dados: { ...relatorioParaGuardar({ ...r, arquivo: arquivo.name }), partes: partes.map(relatorioParaGuardar), ...(janelasAds ? { janelas: janelasAds } : {}) } });
@@ -326,15 +332,10 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       let janelas = ultimaImp(rel)?.dados?.janelas || [];
       const infosJ = [];
       for (const x of lidos) {
-        let j = janelaDoRelatorio(x);
+        const j = janelaDoRelatorio(x);
         if (!j) throw new Error(`${x.arquivo}: não achei o período no arquivo. Nada foi importado.`);
-        // Repetiu dias já enviados: só a diferença (22/10/2026).
-        const tr = trechoNovo(janelas, j);
-        if (tr?.erro) throw new Error(tr.erro);
-        if (tr) {
-          j = recortarJanelaGmv(j, tr);
-          infosJ.push(`repetia ${tr.diasNova - tr.diasNovos} dia${tr.diasNova - tr.diasNovos === 1 ? "" : "s"} já enviado${tr.diasNova - tr.diasNovos === 1 ? "" : "s"}: entrou só a diferença de ${dm(tr.de)} a ${dm(tr.ate)} (estimada)`);
-        }
+        const conf = conferirJanelaNova(janelas, j, hoje);
+        if (conf?.erro) throw new Error(conf.erro);
         const r = juntarJanela(janelas, j);
         if (r.erro) throw new Error(r.erro);
         janelas = r.janelas;
@@ -346,9 +347,18 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       let txt = "";
       if (ativo) {
         const doPer = janelasDoPeriodo(janelas, ativo);
-        const ac = acumuladoDasJanelas(doPer);
+        // ✎ Acerto à mão: vale até a data dele; soma só os envios depois dela
+        // (um envio exato desde o início do período vale mais que o acerto).
+        const acM = ativo.parcial?.acerto;
+        const cobre = acM?.ate && doPer.some((j) => j.de <= ativo.inicio && j.ate > acM.ate);
+        let ac = acumuladoDasJanelas(acM?.ate && !cobre ? doPer.filter((j) => j.de > acM.ate) : doPer);
+        if (acM?.ate && !cobre && ac) {
+          const r2 = (x) => Math.round(x * 100) / 100;
+          const mais = (h) => ({ ...h, gasto: r2(num(acM.gasto) + num(h.gasto)), cliques: num(acM.cliques) + num(h.cliques), vendas: num(acM.vendas) + num(h.vendas), receita: r2(num(acM.receita) + num(h.receita)) });
+          ac = { ...mais(ac), ate: ac.ate, historico: [{ ate: acM.ate, gasto: num(acM.gasto), cliques: num(acM.cliques), vendas: num(acM.vendas), receita: num(acM.receita) }, ...(ac.historico || []).map(mais)] };
+        }
         if (ac) {
-          const s = await salvarAndamentoAds(ativo, { ate: ac.ate, gasto: ac.gasto, cliques: ac.cliques, vendas: ac.vendas, receita: ac.receita, historico: ac.historico });
+          const s = await salvarAndamentoAds(ativo, { ate: ac.ate, gasto: ac.gasto, cliques: ac.cliques, vendas: ac.vendas, receita: ac.receita, historico: ac.historico, ...(cobre ? { acerto: null } : {}) });
           if (!s.ok) throw new Error(s.msg);
           txt = ` · período da loja desde ${dm(ativo.inicio)}: ${BRL(ac.gasto)} gastos, ${ac.vendas} vendas, até ${dm(ac.ate)}`;
         }
@@ -506,7 +516,11 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     );
 
   const jAds = ultimaImp("shopee:ads")?.dados?.janelas || null;
-  const proxAds = jAds?.length ? somarDiasIso(jAds.map((j) => j.ate).sort().pop(), 1) : null;
+  // Próximo envio (23/10/2026): do dia seguinte ao último enviado até ontem.
+  const proxAds = proximoEnvio(jAds, hoje);
+  const proxGmv = proximoEnvio(ultimaImp("shopee:gmv")?.dados?.janelas || null, hoje);
+  const ProxEnvio = ({ p }) =>
+    p?.ult ? <div className={`ana-prox-envio${p.emDia ? "" : " pendente"}`}>{textoProximoEnvio(p)}</div> : <div className="ana-prox-envio">1º envio: exporte do início do Ads até ontem. Depois, todo dia, o atalho “Ontem”.</div>;
   const pendentesN = PLATAFORMAS.filter((p) => canais.some((c) => c.tipo === p.tipo)).filter((p) => ["velho", "nunca"].includes(status(`pedidos:${p.id}`, 7).t) && ultimaImp(`pedidos:${p.id}`)).length;
   const cards = PLATAFORMAS.map((p) => {
     const canal = canais.find((c) => c.tipo === p.tipo) || null;
@@ -548,14 +562,9 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
               onde: (
                 <>
                   Shopee → Marketing → Shopee Ads → <b>Exportar dados → Dados Gerais de Anúncios</b>.{" "}
-                  {proxAds ? (
-                    <>
-                      Pra ficar exato, exporte <b>de {dm(proxAds)} até ontem</b> (o dia seguinte ao último envio) — os envios <b>se somam sem repetir dia</b>.
-                    </>
-                  ) : (
-                    <>Pode ser “Últimos 7 dias”: o app conta a partir do 1º envio, e os próximos se somam sem repetir dia.</>
-                  )}{" "}
+                  Use <b>período até ontem</b> (hoje ainda não fechou) e <b>sem repetir dias</b> já enviados — todo dia, o atalho “Ontem”; pulou dias, o período personalizado que o app mostra abaixo.{" "}
                   Mais de uma lista (ex.: “melhor desempenho” e “recém-cadastrados”)? Exporte todas com o mesmo período e envie uma depois da outra. Só os Ads próprios dos produtos — a GMV Max da Loja vai no botão de baixo
+                  <ProxEnvio p={proxAds} />
                 </>
               ),
               onArquivo: (fs) => enviarShopee("ads", fs),
@@ -566,7 +575,12 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
               limite: 7,
               aceita: ".csv",
               multiplo: true,
-              onde: <>Shopee → Marketing → Shopee Ads → <b>GMV Max da Loja → Exportar</b> (“Dados do GMV MAX da Loja”). Pode mandar uma semana de cada vez: os períodos <b>se somam sem duplicar</b> (o mesmo período de novo substitui) e o app avisa se faltar algum dia. Os produtos do arquivo são só informação — não viram Ads próprio</>,
+              onde: (
+                <>
+                  Shopee → Marketing → Shopee Ads → <b>GMV Max da Loja → Exportar</b> (“Dados do GMV MAX da Loja”). Período <b>até ontem</b>, sem repetir dias já enviados (todo dia, o atalho “Ontem”) — os envios se somam e o app avisa se faltar algum dia. Os produtos do arquivo são só informação — não viram Ads próprio
+                  <ProxEnvio p={proxGmv} />
+                </>
+              ),
               onArquivo: (fs) => enviarGmv(fs),
             })}
             {perguntas.map((q) => (

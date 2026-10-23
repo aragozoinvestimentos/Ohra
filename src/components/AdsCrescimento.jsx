@@ -106,7 +106,7 @@ function proximaAds(av, hoje) {
 // "ver por produto" do teto (16/10/2026): onde foi o gasto dos 30 dias,
 // curto — até 5 linhas + "outros". Retorno = lucro que cada R$ 1 trouxe;
 // etiqueta cinza quando a Shopee não gasta nem metade do orçamento/dia.
-function GastoPorItem({ T, onAbrir }) {
+function GastoPorItem({ T, onAbrir, onCorrigir }) {
   const lista = T.porItem;
   const top = lista.slice(0, 5);
   const resto = lista.slice(5);
@@ -125,7 +125,20 @@ function GastoPorItem({ T, onAbrir }) {
                 {x.orcamentoUso != null && x.orcamentoUso < 0.5 && <span className="chip-cel" title="A Shopee não está gastando o orçamento por dia programado — só informativo.">gastou {Math.round(x.orcamentoUso * 100)}% do orçamento/dia</span>}
                 <div className="muted-cel">{x.fonte === "csv" ? `CSV até ${dm(x.ate)}` : "semanas registradas"}</div>
               </td>
-              <td className="num">{BRL(x.gasto)}</td>
+              <td className="num">
+                {BRL(x.gasto)}{" "}
+                <button
+                  type="button"
+                  className="btn-icone"
+                  title="Corrigir o gasto à mão (vale até a data digitada; os próximos CSVs somam só os dias depois)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCorrigir(x.chave);
+                  }}
+                >
+                  ✎
+                </button>
+              </td>
               <td className="num">
                 {x.retorno == null ? <span className="muted-cel">—</span> : x.retorno >= 1 ? <span title="lucro que cada R$ 1 investido trouxe">retorno {um(x.retorno)}×</span> : <Estado tipo="atencao">retorno {um(x.retorno)}×</Estado>}
               </td>
@@ -400,6 +413,12 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
             setSoLigados(false);
             setAberta(chave);
           }}
+          onCorrigir={(chave) => {
+            const l = chave === linhasAds.lojaLinha?.chave ? linhasAds.lojaLinha : linhasAds.linhas.find((x) => x.chave === chave);
+            const periodo = l?.av?.ativo || [...(l?.periodos || [])].filter((p) => p.parcial?.ate).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)))[0] || null;
+            if (!l || !periodo) return onToast?.("Este gasto vem só de semanas registradas — abra o anúncio e use ✎ no histórico de períodos.");
+            setCorrigirDlg({ linha: { ...l, nome: l.item?.nome }, periodo });
+          }}
         />
       )}
       {verTabela && T && <TabelaTeto regrasA={regrasA} T={T} salvando={salvando} onSalvar={(faixasTeto) => salvarRegras({ faixasTeto })} />}
@@ -505,7 +524,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                       {aberta === l.chave && (
                         <tr className="linha-detalhe">
                           <td colSpan={7}>
-                            <DetalheLoja l={l} hoje={hoje} onFazer={() => fazerLinha(l)} onNovo={() => setPeriodoDlg({ linha: l })} onAjuste={(sug) => setAjusteDlg({ linha: l, ...sug })} onEncerrar={() => setEncerrarDlg({ linha: l })} onPausar={() => rodar(() => pausarPeriodoAds(l.av.ativo, hoje), "Campanha da loja marcada como pausada")} onExcluir={(periodo) => setExcluirDlg({ periodo })} />
+                            <DetalheLoja l={l} hoje={hoje} onFazer={() => fazerLinha(l)} onNovo={() => setPeriodoDlg({ linha: l })} onAjuste={(sug) => setAjusteDlg({ linha: l, ...sug })} onEncerrar={() => setEncerrarDlg({ linha: l })} onPausar={() => rodar(() => pausarPeriodoAds(l.av.ativo, hoje), "Campanha da loja marcada como pausada")} onExcluir={(periodo) => setExcluirDlg({ periodo })} onCorrigir={(periodo) => setCorrigirDlg({ linha: { ...l, nome: l.item?.nome }, periodo })} />
                           </td>
                         </tr>
                       )}
@@ -768,7 +787,15 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           {ret != null && <div className="muted-cel" style={{ marginTop: 2 }}>{textoRetorno(ret)} (antes de descontar o R$ 1)</div>}
           {(() => {
             const o = origemDoGasto(av.ativo, l.semanas);
-            if (!o.mao.length && !o.fora.length) return null;
+            const acM = av.ativo.parcial?.acerto;
+            if (!o.mao.length && !o.fora.length)
+              return (
+                <div className="muted-cel" style={{ marginTop: 2 }}>
+                  {o.csv ? `Gasto pelo CSV até ${dm(o.csv.ate)}` : "Sem CSV ainda"}
+                  {acM?.ate ? ` · acertado à mão: ${BRL(Number(acM.gasto) || 0)} até ${dm(acM.ate)}` : ""}.{" "}
+                  <button type="button" className="link-btn" onClick={() => onCorrigir(av.ativo)}>✎ corrigir o gasto</button>
+                </div>
+              );
             return (
               <div className="muted-cel" style={{ marginTop: 2 }}>
                 Gasto vem de: CSV {o.csv ? `até ${dm(o.csv.ate)} ${BRL(o.csv.gasto)}` : "—"} · semanas {BRL(o.semanas)} (registradas à mão antes: {BRL(o.somaMao)}) → vale o maior.
@@ -924,7 +951,7 @@ function GmvPorProduto({ g }) {
   );
 }
 
-function DetalheLoja({ l, hoje, onFazer, onNovo, onAjuste, onEncerrar, onPausar, onExcluir }) {
+function DetalheLoja({ l, hoje, onFazer, onNovo, onAjuste, onEncerrar, onPausar, onExcluir, onCorrigir }) {
   const av = l.av;
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
@@ -951,6 +978,10 @@ function DetalheLoja({ l, hoje, onFazer, onNovo, onAjuste, onEncerrar, onPausar,
             <div><span>ROAS</span><b className={`ads-roas${n.roas == null || !l.equilibrio ? "" : n.roas >= l.equilibrio ? " bom" : " ruim"}`}>{um(n.roas)}</b></div>
             <div><span>Retorno</span><b>{n.retorno != null ? `${um(n.retorno)}×` : "—"}</b></div>
             <div><span>Andamento até</span><b>{n.ate ? dm(n.ate) : "—"}</b></div>
+          </div>
+          <div className="muted-cel" style={{ marginTop: 2 }}>
+            {av.ativo.parcial?.acerto?.ate ? `Acertado à mão: ${BRL(Number(av.ativo.parcial.acerto.gasto) || 0)} até ${dm(av.ativo.parcial.acerto.ate)}. ` : ""}
+            <button type="button" className="link-btn" onClick={() => onCorrigir(av.ativo)}>✎ corrigir o gasto</button>
           </div>
         </div>
       )}
@@ -1002,8 +1033,11 @@ function CorrigirAdsDialog({ d, onCancelar, onToast }) {
   async function salvar() {
     setSalvando(true);
     try {
-      if (o.csv && and.ate && (num(and.gasto) !== o.csv.gasto || Math.round(num(and.vendas)) !== o.csv.vendas || Math.round(num(and.cliques)) !== o.csv.cliques)) {
-        const r = await salvarAndamentoAds(periodo, { ate: and.ate, gasto: num(and.gasto), cliques: Math.round(num(and.cliques)), vendas: Math.round(num(and.vendas)), ...(periodo.parcial?.receita != null ? { receita: periodo.parcial.receita } : {}), historico: (periodo.parcial?.historico || []).filter((h) => num(h.gasto) <= num(and.gasto) + 0.01) });
+      if (and.ate && and.gasto !== "" && (!o.csv || and.ate !== o.csv.ate || num(and.gasto) !== o.csv.gasto || Math.round(num(and.vendas)) !== o.csv.vendas || Math.round(num(and.cliques)) !== o.csv.cliques)) {
+        // Vira ACERTO (23/10/2026): vale até a data digitada e os próximos CSVs
+        // somam só os dias depois dela. O histórico de envios recomeça aqui.
+        const val = { ate: and.ate, gasto: num(and.gasto), cliques: Math.round(num(and.cliques)), vendas: Math.round(num(and.vendas)), ...(periodo.parcial?.receita != null ? { receita: periodo.parcial.receita } : {}) };
+        const r = await salvarAndamentoAds(periodo, { ...val, historico: [], acerto: val });
         if (!r.ok) throw new Error(r.msg);
       }
       for (const s of todas) {
@@ -1028,16 +1062,16 @@ function CorrigirAdsDialog({ d, onCancelar, onToast }) {
         O gasto do período = o <b>maior</b> entre o CSV (andamento) e a soma das semanas. Se uma semana antiga, registrada à mão, ficou com o Ads errado, ela segura o número lá em cima mesmo reenviando o CSV — corrija aqui. Hoje: CSV {o.csv ? BRL(o.csv.gasto) : "—"} · semanas {BRL(o.semanas)} → vale {BRL(Math.max(o.csv?.gasto || 0, o.semanas))}.
       </p>
       <h4 style={{ margin: "8px 0 4px" }}>Andamento (CSV do Shopee Ads)</h4>
-      {o.csv ? (
-        <div className="grid-auto">
+      <p className="hint" style={{ margin: "0 0 6px" }}>
+        Digite o total que a Shopee mostra pra este anúncio do início do período ({dm(periodo.inicio)}) até a data. Esse valor vira o <b>ponto de partida</b>: os próximos CSVs somam só os dias <b>depois</b> dessa data (um envio exato desde o início do período, se você mandar, passa a valer no lugar).
+        {periodo.parcial?.acerto?.ate ? ` Acerto atual: ${BRL(num(periodo.parcial.acerto.gasto))} até ${dm(periodo.parcial.acerto.ate)}.` : ""}
+      </p>
+      <div className="grid-auto">
           <div className="field"><label>Até</label><input type="date" value={and.ate} onChange={(e) => setAnd((a) => ({ ...a, ate: e.target.value }))} /></div>
           <div className="field"><label>Gasto (R$)</label>{campo(and.gasto, (v) => setAnd((a) => ({ ...a, gasto: v })))}</div>
           <div className="field"><label>Vendas via Ads</label>{campo(and.vendas, (v) => setAnd((a) => ({ ...a, vendas: v })))}</div>
           <div className="field"><label>Cliques</label>{campo(and.cliques, (v) => setAnd((a) => ({ ...a, cliques: v })))}</div>
-        </div>
-      ) : (
-        <p className="hint">Sem andamento do CSV neste período.</p>
-      )}
+      </div>
       <h4 style={{ margin: "10px 0 4px" }}>Semanas registradas à mão (antes)</h4>
       {todas.length ? (
         <table className="tabela-ads">
