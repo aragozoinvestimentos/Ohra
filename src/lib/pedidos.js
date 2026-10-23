@@ -44,7 +44,11 @@ export const plataformaDoNumero = (ordem) => {
 // ---------- Situação ----------
 export const ehCancelado = (sit) => /cancel|devolv|n[ãa]o entreg|estorn/i.test(String(sit || ""));
 export const ehEntregue = (sit) => /entregue/i.test(String(sit || "")) && !ehCancelado(sit);
-export const ehValido = (p) => !ehCancelado(p.situacao);
+// Não pago (23/10/2026, arquivo real do TikTok): o cliente fechou o pedido mas
+// não pagou (carrinho abandonado) — a Olist traz "Dados incompletos", sem os
+// dados de envio. Não conta como venda; vai pra Análise → Carrinhos abandonados.
+export const ehNaoPago = (sit) => /dados incompletos|aguardando pagamento|pagamento pendente/i.test(String(sit || ""));
+export const ehValido = (p) => !ehCancelado(p.situacao) && !ehNaoPago(p.situacao);
 
 // ---------- Leitura do "Pedidos de venda" da Olist ----------
 const COLS = {
@@ -184,7 +188,7 @@ export function enriquecer(pedidos, { itens, canais, cfgDoProduto, itemNoCanal =
     // skuExato = o SKU do pedido é o do item (ou o de uma opção de anúncio com vários itens);
     // false = ligado só pela regra do "começo do SKU" (aviso em Atualizar dados).
     const skuExato = !item0 ? null : !!(op && porId.has(op.itemId)) || normSku(p.sku) === normSku(item0.sku);
-    return { ...p, id_item: id, item, grupo, canal, q, pago, bruto: valorBruto(p), lucro, recebe: lucro != null ? lucro + custo : pago, custo, valido: ehValido(p), entregue: ehEntregue(p.situacao), skuExato };
+    return { ...p, id_item: id, item, grupo, canal, q, pago, bruto: valorBruto(p), lucro, recebe: lucro != null ? lucro + custo : pago, custo, valido: ehValido(p), naoPago: ehNaoPago(p.situacao), entregue: ehEntregue(p.situacao), skuExato };
   });
 }
 
@@ -436,6 +440,7 @@ export function metricas(linhas, { precoAlvoDe = () => null } = {}) {
   let baseCheia = 0;
   let unid = 0;
   for (const l of linhas) {
+    if (ehNaoPago(l.situacao)) continue; // carrinho abandonado não é pedido nem cancelamento
     const p = pedidos.get(l.pedido) || { valido: l.valido, valor: 0, pecas: 0, cliente: l.cliente, data: l.data };
     if (!l.valido) p.valido = false;
     if (l.valido) {

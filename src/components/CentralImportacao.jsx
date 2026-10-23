@@ -3,7 +3,8 @@ import { BRL } from "../lib/format.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { lerXls } from "../lib/lerXls.js";
 import { andamentoDoCsv, recortarAdsDiferenca, somarJanelasAds, juntarAds, juntarDesempenho, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioDoGuardado, relatorioParaGuardar } from "../lib/relatorioShopee.js";
-import { PLATAFORMAS, caixaDosPedidos, interpretarPedidosOlist, ligarSku, plataformaDoNumero, tipoEIdDoItem, normSku } from "../lib/pedidos.js";
+import { PLATAFORMAS, caixaDosPedidos, ehNaoPago, interpretarPedidosOlist, ligarSku, plataformaDoNumero, tipoEIdDoItem, normSku } from "../lib/pedidos.js";
+import { CHAVE_CARRINHOS, lembrarCarrinhos } from "../lib/carrinhos.js";
 import { excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
 import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { canalComEmbalagem } from "../lib/embalagemCanal.js";
@@ -23,7 +24,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import AvaliacoesBloco from "./AvaliacoesBloco.jsx";
 import Estado from "./Estado.jsx";
 import { vendasPeloComeco } from "../lib/vinculoSku.js";
-import { usePreferencia } from "../hooks/usePreferencia.js";
+import { gravarPreferencia, lerPreferencia, usePreferencia } from "../hooks/usePreferencia.js";
 
 // Aba Atualizar dados (schema v55): UM lugar pra subir todos os
 // arquivos. Um bloco por plataforma (padrão igual pra todas): pedidos da
@@ -125,7 +126,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     const pendMap = new Map();
     for (const g of grupos)
       for (const i of g.ligados)
-        if (!i.it && i.sku && !ignorados.has(i.sku)) {
+        if (!i.it && i.sku && !ignorados.has(i.sku) && !ehNaoPago(i.situacao)) {
           const x = pendMap.get(i.sku) || { sku: i.sku, descricao: i.descricao, un: 0 };
           x.un += num(i.quantidade);
           pendMap.set(i.sku, x);
@@ -151,6 +152,10 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         rows.push({ ...resto, canal_id: g.canal.id, plataforma: g.plat.id, ...tipoEIdDoItem(it) });
       }
     }
+    // Carrinho abandonado (não pago): lembra antes de gravar — os que já estavam
+    // no banco e os deste arquivo —, pra contar como recuperado se for pago depois.
+    const memCarr = lembrarCarrinhos(lerPreferencia(CHAVE_CARRINHOS) || {}, [...(ped.pedidos || []), ...rows], hoje);
+    if (memCarr) await gravarPreferencia(CHAVE_CARRINHOS, memCarr, lojaId);
     if (rows.length) {
       const r = await gravarPedidos({ lojaId, linhas: rows });
       if (!r.ok) {
@@ -170,7 +175,9 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       const pedN = new Set(doPlat.map((x) => x.pedido)).size;
       const novos = doPlat.filter((x) => !existentes.has(x.chave)).length;
       const cancel = new Set(doPlat.filter((x) => /cancel|devolv/i.test(x.situacao)).map((x) => x.pedido)).size;
-      const resumo = `${dm(periodo.de)} a ${dm(periodo.ate)} · ${pedN ? `${pedN} pedido${pedN === 1 ? "" : "s"}, ${novos} ite${novos === 1 ? "m novo" : "ns novos"}${cancel ? ` (${cancel} cancelado${cancel > 1 ? "s" : ""})` : ""}` : "nenhum pedido no período"} · pelo arquivo da Olist`;
+      const naoPagos = new Set(doPlat.filter((x) => ehNaoPago(x.situacao)).map((x) => x.pedido)).size;
+      const extras = [cancel ? `${cancel} cancelado${cancel > 1 ? "s" : ""}` : "", naoPagos ? `${naoPagos} não pago${naoPagos > 1 ? "s" : ""} — carrinho abandonado` : ""].filter(Boolean).join(", ");
+      const resumo = `${dm(periodo.de)} a ${dm(periodo.ate)} · ${pedN ? `${pedN} pedido${pedN === 1 ? "" : "s"}, ${novos} ite${novos === 1 ? "m novo" : "ns novos"}${extras ? ` (${extras})` : ""}` : "nenhum pedido no período"} · pelo arquivo da Olist`;
       await registrarImportacao({ lojaId, relatorio: `pedidos:${plat.id}`, arquivo, periodo, ok: true, resumo });
       if (pedN) partes.push(`${plat.nome} ${pedN}`);
     }
