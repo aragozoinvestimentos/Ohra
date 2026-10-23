@@ -10,6 +10,8 @@ import { comCupomAtivo, cuponsAtivos, textoFaixa } from "../lib/cupomLoja.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
+import { adsNaJanela } from "../lib/ads.js";
+import { numerosAds } from "../lib/anuncios.js";
 
 // "2026-10-03" → "03/10" (sem passar por Date, que no fuso do Brasil voltaria um dia).
 // Frete grátis (v38) de um preço no canal — aviso único via alertaPreco.
@@ -1176,7 +1178,13 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
   const alt = (d) => 26 + ((d - minD) / Math.max(0.01, maxD - minD)) * 84;
   const faltam = e.portoes.filter((p) => !p.ok);
   const av = adsLinha?.av || null;
-  const roasPos = (v) => Math.max(2, Math.min(98, (v / Math.max(e.roasMin * 2, (e.roas || 0) * 1.2, 1)) * 100));
+  // Ads ao vivo (mesma conta do Painel do anúncio): período ligado pelo CSV.
+  const adsVivo = av?.ativo ? numerosAds(adsLinha) : null;
+  const hojeAds = hojeISO();
+  const ads7 = adsVivo ? adsNaJanela(adsLinha.periodos, adsLinha.semanas, new Date(new Date(`${hojeAds}T12:00:00`).getTime() - 7 * 86400000).toISOString().slice(0, 10), hojeAds) : null;
+  const roasV = adsVivo ? adsVivo.roas : e.roas;
+  const eqV = adsVivo ? av.empate ?? e.roasMin : e.roasMin;
+  const roasPos = (v) => Math.max(2, Math.min(98, (v / Math.max((eqV || 0) * 2, (roasV || 0) * 1.2, 1)) * 100));
   // Detalhe reorganizado (out/2026, prévia aprovada): "O que fazer agora", o
   // que o app está olhando e as abas (com marca onde há algo a fazer).
   const [aba, setAba] = useState(abaPedida?.aba || "plano");
@@ -1702,37 +1710,65 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
 
       {aba === "ads" && (
         <div className="aba-rampa">
-          <h4 className="sub-h">Ads {e.ultAds ? <span className="muted-cel">· semana de {dataBR(e.ultAds.data)}</span> : null}</h4>
+          {/* Ao vivo (23/10/2026, pedido do Gustavo: "igual ao Painel do anúncio"):
+              com período ligado, os números são os do período pelo andamento do
+              CSV (numerosAds — a MESMA conta do Painel do anúncio); sem período,
+              a última semana fechada com Ads. */}
+          {adsVivo ? (
+            <h4 className="sub-h">
+              Ads <span className="muted-cel">· período desde {dataBR(String(av.ativo.inicio).slice(0, 10))}{adsVivo.ate ? ` · CSV até ${dataBR(adsVivo.ate)}` : ""} · mesma conta do Painel do anúncio</span>
+            </h4>
+          ) : (
+            <h4 className="sub-h">Ads {e.ultAds ? <span className="muted-cel">· semana de {dataBR(e.ultAds.data)}</span> : null}</h4>
+          )}
           <div className="mini3">
             <div>
-              <small>ROAS real</small>
-              <b style={{ color: e.roas == null ? undefined : e.roas >= (e.roasMin || Infinity) ? "var(--good)" : "var(--bad)" }}>{e.roas != null ? virgula(e.roas, 1) : "—"}</b>
+              <small>{adsVivo ? "ROAS do período" : "ROAS real"}</small>
+              <b style={{ color: roasV == null ? undefined : roasV >= (eqV || Infinity) ? "var(--good)" : "var(--bad)" }}>{roasV != null ? virgula(roasV, 1) : "—"}</b>
+              {adsVivo?.retorno != null && <span className="muted-cel"> retorno {virgula(adsVivo.retorno, 1)}×</span>}
             </div>
             <div>
               <small>ROAS de equilíbrio</small>
-              <b>{e.roasMin != null ? virgula(e.roasMin, 1) : "—"}</b>
+              <b>{eqV != null ? virgula(eqV, 1) : "—"}</b>
             </div>
-            <div>
-              <small>Vendas orgânicas</small>
-              <b style={{ color: "var(--good)" }}>{e.organico != null ? `${Math.round(e.organico * 100)}%` : "—"}</b>
-              {e.organico != null && e.organicoAntes != null && <span className="muted-cel"> {e.organico >= e.organicoAntes ? "↑" : "↓"} de {Math.round(e.organicoAntes * 100)}%</span>}
-            </div>
+            {adsVivo ? (
+              <div>
+                <small>Gasto · vendas via Ads</small>
+                <b>
+                  {BRL(adsVivo.gasto || 0)} · {adsVivo.vendas || 0}
+                </b>
+                {ads7 && <span className="muted-cel"> 7 dias: {BRL(ads7.gasto)} · {ads7.vendas}</span>}
+              </div>
+            ) : (
+              <div>
+                <small>Vendas orgânicas</small>
+                <b style={{ color: "var(--good)" }}>{e.organico != null ? `${Math.round(e.organico * 100)}%` : "—"}</b>
+                {e.organico != null && e.organicoAntes != null && <span className="muted-cel"> {e.organico >= e.organicoAntes ? "↑" : "↓"} de {Math.round(e.organicoAntes * 100)}%</span>}
+              </div>
+            )}
           </div>
-          {e.roasMin != null && (
+          {adsVivo && (
+            <p className="hint" style={{ margin: "0 0 6px" }}>
+              {adsVivo.cliques ? `${adsVivo.cliques} cliques · ` : ""}
+              {adsVivo.custoPorVenda != null ? `${BRL(adsVivo.custoPorVenda)} por venda · ` : ""}
+              {e.organico != null ? `vendas orgânicas na última semana fechada: ${Math.round(e.organico * 100)}%` : "vendas orgânicas: aparece quando a 1ª semana fechar (pedidos dos 7 dias importados)"}
+            </p>
+          )}
+          {eqV != null && (
             <div className="roas-regua">
               <div className="trilho">
-                <span className="zona z-bad" style={{ width: `${roasPos(e.roasMin * 0.8)}%` }} />
-                <span className="zona z-warn" style={{ left: `${roasPos(e.roasMin * 0.8)}%`, width: `${roasPos(e.roasMin * 1.5) - roasPos(e.roasMin * 0.8)}%` }} />
-                <span className="zona z-good" style={{ left: `${roasPos(e.roasMin * 1.5)}%`, right: 0 }} />
-                <span className="marca" style={{ left: `${roasPos(e.roasMin)}%` }}>
-                  <em>mínimo {virgula(e.roasMin, 1)}</em>
+                <span className="zona z-bad" style={{ width: `${roasPos(eqV * 0.8)}%` }} />
+                <span className="zona z-warn" style={{ left: `${roasPos(eqV * 0.8)}%`, width: `${roasPos(eqV * 1.5) - roasPos(eqV * 0.8)}%` }} />
+                <span className="zona z-good" style={{ left: `${roasPos(eqV * 1.5)}%`, right: 0 }} />
+                <span className="marca" style={{ left: `${roasPos(eqV)}%` }}>
+                  <em>mínimo {virgula(eqV, 1)}</em>
                 </span>
-                {e.roas != null && <span className="eu" style={{ left: `${roasPos(e.roas)}%` }} title={`ROAS real ${virgula(e.roas, 1)}`} />}
+                {roasV != null && <span className="eu" style={{ left: `${roasPos(roasV)}%` }} title={`ROAS ${virgula(roasV, 1)}`} />}
               </div>
               <div className="leg">
                 <span>pausar</span>
                 <span>reduzir · manter</span>
-                <span>pode aumentar (≥ {virgula(e.roasMin * 1.5, 1)})</span>
+                <span>pode aumentar (≥ {virgula(eqV * 1.5, 1)})</span>
               </div>
             </div>
           )}
