@@ -32,8 +32,8 @@ export default function Cadastros({ produtoRecebido, abrirItem, onToast, onProdu
   }, [abrirItem?.seq]);
 
   const abrir = abrirItem;
-  const abrirProdutoId = abrir?.id && abrir.tipo !== "kit" ? { id: abrir.id, seq: abrir.seq } : null;
-  const abrirKitId = abrir?.id && abrir.tipo === "kit" ? { id: abrir.id, seq: abrir.seq } : null;
+  const abrirProdutoId = abrir?.id && abrir.tipo !== "kit" ? { id: abrir.id, seq: abrir.seq, lojaId: abrir.lojaId } : null;
+  const abrirKitId = abrir?.id && abrir.tipo === "kit" ? { id: abrir.id, seq: abrir.seq, lojaId: abrir.lojaId } : null;
 
   return (
     <div>

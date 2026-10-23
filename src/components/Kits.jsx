@@ -16,6 +16,9 @@ import { infoPeca } from "../lib/planoKit.js";
 
 const VAZIO = { nome: "", sku: "", observacao: "", produtosItens: [], embalagemItens: [] };
 
+// Pedido de "abrir kit pra editar" vale UMA vez e só na loja em que foi feito (23/10/2026).
+const pedidosUsados = new Set();
+
 export default function Kits({ abrirKitId, onToast }) {
   const { produtos: produtosVivos, itens: itensVivos, canais: canaisVivos, precos: precosVivos } = useRankingData();
   const { lojaId, lojas } = useLoja();
@@ -42,6 +45,10 @@ export default function Kits({ abrirKitId, onToast }) {
   // deixando o formulário em branco.
   useEffect(() => {
     if (!abrirKitId?.id) return;
+    const chavePedido = `kit|${abrirKitId.seq}`;
+    if (pedidosUsados.has(chavePedido)) return;
+    pedidosUsados.add(chavePedido);
+    if (abrirKitId.lojaId && abrirKitId.lojaId !== lojaId) return;
     (async () => {
       let k = kits.find((kk) => kk.id === abrirKitId.id) || null;
       if (k) {
@@ -50,7 +57,7 @@ export default function Kits({ abrirKitId, onToast }) {
       }
       if (!supabase) return;
       const { data: kitData } = await supabase.from("kits").select("*").eq("id", abrirKitId.id).single();
-      if (!kitData) return;
+      if (!kitData || (kitData.loja_id && lojaId && kitData.loja_id !== lojaId)) return;
       const [{ data: kp }, { data: ke }] = await Promise.all([
         supabase.from("kit_produtos").select("*").eq("kit_id", kitData.id),
         supabase.from("kit_embalagens").select("*").eq("kit_id", kitData.id),

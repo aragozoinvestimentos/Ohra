@@ -36,6 +36,19 @@ const VAZIO = {
   impressora_id: null,
 };
 
+// Pedidos de "abrir pra editar" vindos de outras telas (23/10/2026): cada um vale
+// UMA vez — o formulário remonta ao trocar de sub-aba e reaplicava um "Salvar
+// como produto" antigo por cima do produto pedido. E só na loja em que foi feito.
+const pedidosUsados = new Set();
+const pedidoNovo = (tipo, pedido, lojaId) => {
+  if (!pedido?.seq) return false;
+  const k = `${tipo}|${pedido.seq}`;
+  if (pedidosUsados.has(k)) return false;
+  pedidosUsados.add(k);
+  return !pedido.lojaId || pedido.lojaId === lojaId;
+};
+const daLoja = (p, lojaId) => !!p && (!p.loja_id || !lojaId || p.loja_id === lojaId);
+
 export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onProdutoCriado }) {
   const { lojaId } = useLoja();
   usePreferencia("producao:ultimos-percentuais", null); // carrega do banco os últimos % de falha/manutenção/acabamento
@@ -55,14 +68,14 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   // "editar cadastro completo" em Produtos precificados) — mesma ação de clicar
   // no ✎ da lista, só que disparada de fora.
   useEffect(() => {
-    if (!abrirProdutoId?.id) return;
+    if (!abrirProdutoId?.id || !pedidoNovo("abrir", abrirProdutoId, lojaId)) return;
     (async () => {
       let p = produtos.find((x) => x.id === abrirProdutoId.id) || null;
       if (!p && supabase) {
         const { data } = await supabase.from("produtos_cadastro").select("*").eq("id", abrirProdutoId.id).single();
         p = data || null;
       }
-      if (p) editar(p);
+      if (daLoja(p, lojaId)) editar(p);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirProdutoId?.seq]);
@@ -96,7 +109,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   // Quando "Salvar como Produto"/"Atualizar produto cadastrado" é clicado na
   // aba de Custo de Produção.
   useEffect(() => {
-    if (produtoRecebido == null) return;
+    if (produtoRecebido == null || !pedidoNovo("recebido", produtoRecebido, lojaId)) return;
     // Veio de um produto já cadastrado (escolhido lá em Simular Custo de
     // Produção) — entra direto no modo de edição desse mesmo produto, em vez
     // de criar um duplicado, preservando frete/embalagem/observação já salvos.
@@ -107,6 +120,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           const { data } = await supabase.from("produtos_cadastro").select("*").eq("id", produtoRecebido.id).single();
           pExistente = data || null;
         }
+        if (pExistente && !daLoja(pExistente, lojaId)) return; // produto de outra loja: nunca abre aqui
         let itens = [];
         if (supabase) {
           const { data } = await supabase.from("produto_embalagens").select("*").eq("produto_id", produtoRecebido.id);

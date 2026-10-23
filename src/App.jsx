@@ -357,13 +357,14 @@ export default function App() {
       nome: nome || "",
       pecasPorImpressao: pecasPorImpressao ?? 1,
       seq: (prev?.seq || 0) + 1,
+      lojaId, // o pedido vale só na loja em que foi feito
     }));
     setTab("cadastros");
     showToast(id ? "Detalhamento levado para atualizar o produto" : "Custo levado para o cadastro de Produtos");
   }
 
   function editarItemCompleto(tipo, id) {
-    setAbrirItem((prev) => ({ tipo, id, seq: (prev?.seq || 0) + 1 }));
+    setAbrirItem((prev) => ({ tipo, id, seq: (prev?.seq || 0) + 1, lojaId }));
     setTab("cadastros");
   }
 
