@@ -290,6 +290,13 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
     recarregarCatalogo();
   }
   const anuncioDe = (n) => (regra4x ? regra4x.grupos.findIndex((g) => g.includes(n)) + 1 : 1);
+  // "Cadastrar mesmo assim" (23/10/2026): quantidade NÃO anunciada no canal
+  // (na Shopee, a que passa da regra de 4×) — libera criar/aplicar a variação
+  // com aviso vermelho; ao salvar, a quantidade passa a anunciada no canal.
+  const motivoNaoAnunciada = (n) =>
+    canal?.tipo === "shopee" && regra4x && !regra4x.ok && anuncioDe(n) > 1
+      ? `Passa da regra de 4× da Shopee: o Kit ${n} não cabe no anúncio do avulso — no mesmo anúncio a Shopee/Olist recusa (“price ratio exceeds 4”). Só funciona num anúncio separado.`
+      : `O Kit ${n} não está marcado como anunciado em ${canal?.nome || "este canal"}.`;
   const k2 = kits.find((l) => l.n === 2);
   const melhor = kits.reduce((a, b) => (a == null || b.lucro > a.lucro ? b : a), null);
   // Frete grátis (schema v38): aviso por linha pelo que o cliente paga (salvo,
@@ -396,6 +403,9 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
         setExtras((prev) => ({ ...prev, [pid]: (prev[pid] ?? qtdsExtras).filter((n) => n !== c.linha.n) }));
       }
     }
+    // "Cadastrar mesmo assim": a quantidade passa a anunciada no canal (senão
+    // continuaria recolhida e fora da Anunciar/Ficha).
+    if (!error && c.forcar && !anunciadaPQ(c.linha.n)) await alternarAnunciada(c.linha.n);
     setSalvando(false);
     setConfirmar(null);
     if (error) {
@@ -1010,7 +1020,21 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
                               {l.nAnterior === 1 && l.n === 2 ? `2ª unidade por ${BRL(l.sugerido - dados.p1)}` : `+${l.n - l.nAnterior} un. por só ${BRL(l.maisQueAnterior)} a mais`}
                             </div>
                           </div>
+                          {!anunciada && !l.base && (
+                            <div className="aviso-cel ruim" style={{ marginTop: 6 }}>
+                              <b>Não recomendado</b> — {motivoNaoAnunciada(l.n)} Se ela já existe assim na sua loja (ou vai num anúncio próprio), dá pra cadastrar mesmo assim: o Kit {l.n} passa a contar como anunciado em {canal.nome}.
+                            </div>
+                          )}
                           <div className="detalhe-cel-acoes">
+                            {!anunciada && !l.base && (
+                              <button
+                                type="button"
+                                className="btn btn-mini danger"
+                                onClick={() => setConfirmar({ tipo: l.cadastrada ? "aplicar" : "criar", linha: l, forcar: true, precoEdit: l.cadastrada && l.salvo != null ? l.salvo.toFixed(2) : undefined })}
+                              >
+                                {l.cadastrada ? "Salvar preço mesmo assim" : "Cadastrar mesmo assim"}
+                              </button>
+                            )}
                             {anunciada && !l.naoCompensa && !l.naoVale && l.cadastrada && (
                               <button type="button" className={`btn btn-mini${igual ? "" : " primary"}`} onClick={() => setConfirmar({ tipo: "aplicar", linha: l, precoEdit: igual ? l.salvo.toFixed(2) : undefined })}>
                                 {igual ? "✎ Editar preço" : `Aplicar ${BRL(l.sugerido)} (editável)`}
@@ -1093,6 +1117,12 @@ export default function PrecoPorQuantidade({ onToast, onSub }) {
             salvarLabel={confirmar.tipo === "criar" ? `Criar e salvar ${BRL(res.preco)}` : `Salvar ${BRL(res.preco)}`}
             classe="modal-box-md"
           >
+            {confirmar.forcar && (
+              <div className="alerta alerta-bad" style={{ marginTop: 0 }}>
+                <b>Não recomendado — cadastrando mesmo assim</b>
+                {motivoNaoAnunciada(confirmar.linha.n)} Ao salvar, o Kit {confirmar.linha.n} passa a contar como anunciado em {nomeCanal(canal)} (dá pra tirar pelo × no chip “Anunciado em”).
+              </div>
+            )}
             <p className="hint" style={{ marginTop: 0 }}>
               {confirmar.tipo === "criar"
                 ? `Cria a variação "Kit ${confirmar.linha.n}" em ${dados?.itemPai.nome} (produção = custo por peça × ${confirmar.linha.n}; ajuste caixa/chapa depois em "revisar insumos") e salva o preço abaixo.`
