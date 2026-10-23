@@ -151,7 +151,7 @@ export function sinaisDaRampa(e) {
   }
   const c = e.lucroCheck;
   if (c) out.push({ chave: "lucro", titulo: "Lucro da semana", texto: c.status === "fica" ? "mantido depois de subir" : c.status === "voltar" ? "caiu depois de subir" : c.status === "sinaliza" ? "um pouco abaixo depois de subir" : "comparando com o degrau anterior", estado: c.status === "voltar" ? "ruim" : c.status === "sinaliza" ? "atencao" : c.status === "fica" ? "ok" : "espera" });
-  else out.push({ chave: "lucro", titulo: "Lucro da semana", texto: e.lucroSemana != null ? `${BRL(e.lucroSemana)} na última semana` : "fecha com os pedidos importados", estado: e.lucroSemana != null ? "ok" : "espera" });
+  else out.push({ chave: "lucro", titulo: "Lucro da semana", texto: e.lucroSemana != null ? `${BRL(e.lucroSemana)} nos últimos 7 dias` : "aparece com os pedidos importados", estado: e.lucroSemana != null ? "ok" : "espera" });
   out.push({ chave: "nota", titulo: "Nota", texto: `${e.nota != null ? `★${String(e.nota).replace(".", ",")}` : "sem nota ainda"}${e.ruins7 ? ` · ${e.ruins7} de 1–2★ em 7 dias` : " · sem 1–2★"}`, estado: e.alertaNota ? "ruim" : e.ruins7 ? "atencao" : e.nota != null ? "ok" : "espera" });
   const t = e.teste;
   if (t && t.status && !["nao-se-aplica"].includes(t.status)) {

@@ -531,11 +531,11 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
             sub: `${linhas.length} produto${linhas.length === 1 ? "" : "s"}${linhasGrupo.length ? ` · ${linhasGrupo.length} anúncio${linhasGrupo.length > 1 ? "s" : ""} com vários itens` : ""}`,
           },
           {
-            label: "Lucro da semana",
+            label: "Lucro · últimos 7 dias",
             valor: temSemana ? BRL(lucroSemana) : "—",
             sub: temSemana
               ? `${BRL(lucroSemanaAds)} depois de Ads${comissaoSemana > 0 ? ` · já sem ${BRL(comissaoSemana)} de comissão` : ""} · no alvo seria ${BRL(lucroSemanaAlvo)}`
-              : "fecha com os pedidos importados",
+              : "aparece com os pedidos importados",
           },
         ]}
       />

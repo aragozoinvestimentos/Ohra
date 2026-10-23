@@ -853,9 +853,12 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const lucroProx = lucroEm(sugestao.saltos === 2 ? degraus[i + 2] : proximo);
   const podePerder = lucroAtual > 0 && lucroProx > lucroAtual ? 1 - lucroAtual / lucroProx : null;
 
-  const lucroSemana = ultimaSemanaN && ultimaSemanaN.data > corte7 ? num(ultimaSemanaN.vendas) * (lucroEm(num(ultimaSemanaN.preco) || preco) ?? 0) : null;
-  const lucroSemanaAds = lucroSemana != null ? lucroSemana - num(ultimaSemanaN.ads_gasto) : null;
-  const lucroSemanaAlvo = ultimaSemanaN && ultimaSemanaN.data > corte7 ? num(ultimaSemanaN.vendas) * (lucroEm(alvo) ?? 0) : null;
+  // Lucro da semana AO VIVO (23/10/2026): com ctx.seteDias (pedidos dos últimos
+  // 7 dias + Ads do CSV), não espera a semana fechar; sem ele, a última semana fechada.
+  const sete = ctx.seteDias;
+  const lucroSemana = sete ? num(sete.vendas) * (lucroEm(preco) ?? 0) : ultimaSemanaN && ultimaSemanaN.data > corte7 ? num(ultimaSemanaN.vendas) * (lucroEm(num(ultimaSemanaN.preco) || preco) ?? 0) : null;
+  const lucroSemanaAds = lucroSemana != null ? lucroSemana - (sete ? num(sete.ads) : num(ultimaSemanaN.ads_gasto)) : null;
+  const lucroSemanaAlvo = sete ? num(sete.vendas) * (lucroEm(alvo) ?? 0) : ultimaSemanaN && ultimaSemanaN.data > corte7 ? num(ultimaSemanaN.vendas) * (lucroEm(alvo) ?? 0) : null;
 
   const alvoMudou = num(ctx.alvo) > 0 ? alvoMudouDaRampa(degraus, alvo, rampa.checklist) : null;
 

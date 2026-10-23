@@ -8,7 +8,7 @@ import { comCupomAtivo, cuponsAtivos, textoFaixa } from "../lib/cupomLoja.js";
 import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { irParaAba, pegarPedido } from "../lib/navegar.js";
 import { pedirPasso } from "../lib/passosPreco.js";
-import { adsNaJanela, resumoPeriodo, REGRAS_ADS } from "../lib/ads.js";
+import { adsNaJanela, numerosDoPeriodo, REGRAS_ADS } from "../lib/ads.js";
 import { acaoDaRampa, proximaConferencia } from "../lib/rampaAgora.js";
 import { estadoDoAlerta, ROTULO_ESTADO } from "../lib/estados.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
@@ -909,7 +909,7 @@ function AbaAds({ l, hoje, ped }) {
               </thead>
               <tbody>
                 {historico.map((p) => {
-                  const r = p.id === av.ativo?.id && n ? n : resumoPeriodo(p, ads.semanas, ads.preco, empate);
+                  const r = p.id === av.ativo?.id && n ? n : numerosDoPeriodo(p, ads.semanas, ads.preco, empate);
                   return (
                     <tr key={p.id}>
                       <td>

@@ -426,12 +426,29 @@ export function quedaAds(periodo, { desde, preco, empate, orcamento, regras = RE
 // Resumo de um período (pra histórico e resultado).
 // Números do período: o maior entre as semanas e o andamento (CSV) — o que
 // estiver mais completo. Conta ÚNICA (avaliarAds, Painel do anúncio).
+// Números do período ao vivo (23/10/2026, Gustavo: "subi o arquivo hoje, tem
+// que refletir já"): o andamento do CSV (acumulado até o último envio) vale
+// sempre que tiver gasto ≥ ao das semanas fechadas — mesmo quando uma semana já
+// cobre essas datas (a semana interpola as vendas entre os envios e podia ficar
+// com 0,4 venda ou 0). Vendas e cliques = o maior dos dois. Vale pra período
+// ligado e encerrado (histórico, "último período não se pagou").
 export function numerosDoPeriodo(ativo, ss, preco, empate, regras = REGRAS_ADS) {
   const r = resumoPeriodo(ativo, ss, preco, empate, regras);
-  const aN = andamentoValido(ativo, ss);
-  return aN && aN.gasto > r.gasto
-    ? { ...r, gasto: aN.gasto, vendas: aN.vendas, cliques: Math.max(r.cliques, aN.cliques), receita: aN.vendas * preco, roas: aN.gasto > 0 ? (aN.vendas * preco) / aN.gasto : null, retorno: retornoAds(aN.gasto > 0 ? (aN.vendas * preco) / aN.gasto : null, empate), custoPorVenda: aN.vendas > 0 ? aN.gasto / aN.vendas : null, fonte: "andamento", ate: aN.ate }
-    : r;
+  const par = ativo?.parcial;
+  const aN = andamentoValido(ativo, ss) || (par?.ate ? { ate: par.ate, gasto: num(par.gasto), cliques: num(par.cliques), vendas: num(par.vendas) } : null);
+  if (!aN || !(aN.gasto > 0 || aN.vendas > 0) || aN.gasto < r.gasto - 0.005) return r;
+  const gasto = Math.max(aN.gasto, r.gasto);
+  const vendas = Math.max(aN.vendas, Math.round(r.vendas));
+  const roas = gasto > 0 ? (vendas * preco) / gasto : null;
+  let resultado = r.resultado;
+  const cliques = Math.max(r.cliques, aN.cliques);
+  if (gasto > 0) {
+    if (vendas === 0 && cliques >= regras.cliquesSemVenda) resultado = { chave: "revisar", texto: "cliques sem venda — revisar o anúncio" };
+    else if (empate && roas >= empate) resultado = { chave: "valeu", texto: `pagou o Ads · ${textoRetorno(retornoAds(roas, empate))}` };
+    else if (empate && roas >= empate * 0.7) resultado = { chave: "aceitavel", texto: "perto do equilíbrio" };
+    else resultado = { chave: "caro", texto: "não se pagou" };
+  }
+  return { ...r, gasto, vendas, cliques, receita: vendas * preco, roas, retorno: retornoAds(roas, empate), custoPorVenda: vendas > 0 ? gasto / vendas : null, resultado, fonte: "andamento", ate: aN.ate };
 }
 
 export function resumoPeriodo(periodo, semanas, preco, empate, regras = REGRAS_ADS) {
@@ -807,7 +824,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
   }
   if (anuncio) return sit("arrumar", "atencao", "Arrume o anúncio antes", `${anuncio.titulo || "O anúncio precisa de revisão"}: o Ads só amplifica o que já converte. Comece por: ${anuncio.porOnde || "foto, título e descrição"}.`);
   if (ultimoFechado && diasEntre(ultimoFechado.fim, hoje) < regras.diasTentarDeNovo) {
-    const r = resumoPeriodo(ultimoFechado, ss, preco, empate, regras);
+    const r = numerosDoPeriodo(ultimoFechado, ss, preco, empate, regras);
     if (r.resultado && r.resultado.chave !== "valeu")
       return sit("aguardar", "info", "Último período não se pagou", `${dm(ultimoFechado.inicio)}–${dm(ultimoFechado.fim)}: ROAS ${r.roas != null ? um(r.roas) : "—"} (${r.resultado.texto}). Tente de novo a partir de ${dm(somarDiasIso(ultimoFechado.fim, regras.diasTentarDeNovo))} ou antes, se mudar preço, fotos ou avaliações.`, { ultimo: r });
   }

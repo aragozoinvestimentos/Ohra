@@ -4,7 +4,7 @@ import ChaveTeto from "./ChaveTeto.jsx";
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, resumoPeriodo, retornoAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS, HORARIO_ADS } from "../lib/ads.js";
+import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, numerosDoPeriodo, retornoAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS, HORARIO_ADS } from "../lib/ads.js";
 import { porSemana } from "../lib/rampa.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { adsPorItemApp, valoresDoPeriodo, cruzarGrupos, lerRelatorio } from "../lib/relatorioShopee.js";
@@ -682,7 +682,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
   const av = l.av;
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
-  const historico = [...l.periodos].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).map((p) => ({ p, r: p.id === av.ativo?.id && av.numeros?.fonte === "andamento" ? { ...resumoPeriodo(p, l.semanas, l.preco, av.empate, regrasA), ...av.numeros } : resumoPeriodo(p, l.semanas, l.preco, av.empate, regrasA) }));
+  const historico = [...l.periodos].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).map((p) => ({ p, r: p.id === av.ativo?.id && av.numeros?.fonte === "andamento" ? { ...numerosDoPeriodo(p, l.semanas, l.preco, av.empate, regrasA), ...av.numeros } : numerosDoPeriodo(p, l.semanas, l.preco, av.empate, regrasA) }));
   const totalDias = av.ativo?.fim ? diasEntre(av.ativo.inicio, av.ativo.fim) + 1 : null;
   const diaAtual = (n.dias ?? 0) + 1;
   const tomRoas = (r) => (r == null || !av.empate ? "" : r >= av.empate ? " bom" : " ruim");

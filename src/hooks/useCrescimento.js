@@ -212,6 +212,7 @@ function useCalculoCrescimento() {
   const vivo = useMemo(() => {
     const regs = [];
     const parciais = new Map();
+    const seteDias = new Map();
     const cobreDe = (canal) => (de, ate) => reais.cobertura.cobre(canal, de, ate);
     for (const r of [...rampas, ...(rampasGrupo || []), ...rampasKit]) {
       const canal = canais.find((c) => c.id === r.canal_id);
@@ -250,8 +251,11 @@ function useCalculoCrescimento() {
       const { semanas, parcial } = semanasAutomaticas({ chave: r.id, gravados: grav, hoje, vendasEm, cobre: cobreDe(canal), precoEm: precoDaRampa(r, grav), periodos: periodosR, funis });
       regs.push(...grav, ...semanas.map((w) => ({ ...w, rampa_id: r.id })), ...aval.filter((a) => a.data >= String(r.criado_em ? r.criado_em : "").slice(0, 10)).map((a) => ({ ...a, rampa_id: r.id })));
       if (parcial) parciais.set(r.id, parcial);
+      // Últimos 7 dias AO VIVO (23/10/2026): vendas pelos pedidos e Ads pelo
+      // CSV até hoje — "Lucro da semana" não espera a semana fechar.
+      seteDias.set(r.id, { vendas: vendasEm(somarDias(hoje, -6), hoje), ads: adsNaJanela(periodosR, [], somarDias(hoje, -7), hoje).gasto });
     }
-    return { registros: juntarRegistros(regs, []), parciais };
+    return { registros: juntarRegistros(regs, []), parciais, seteDias };
   }, [rampas, rampasGrupo, rampasKit, registrosGravados, canais, itens, produtos, kits, adsH.periodos, avalH.registros, pedidosPorCanal, skuGrupo, desempenhos, reais.cobertura, hoje, grupos, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
   const registros = vivo.registros;
   const rampasHV = useMemo(() => ({ ...rampasH, registros }), [rampasH, registros]);
@@ -279,7 +283,7 @@ function useCalculoCrescimento() {
         const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === r.produto_id && p.canal_id === r.canal_id);
         const adsAtivo = periodoAtivo(periodosDoItem(adsH.periodos, "produto", r.produto_id, r.canal_id), hoje);
         const sazonal = infoSazonal(quandoVendeDe(produto), calendario, hoje);
-        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null };
+        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null };
         const regs = registros.filter((g) => g.rampa_id === r.id);
         const est = estadoRampa(r, regs, regras, ctx, hoje);
         return { r, produto, canal, item, cfg, ctx, est, soNoGrupo: soNoGrupo.has(item.id) };
@@ -304,14 +308,14 @@ function useCalculoCrescimento() {
               break;
             }
           }
-          const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null };
+          const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null };
           const est = estadoRampa(r, registros.filter((g) => g.rampa_id === r.id), regras, ctx, hoje);
           return { r, produto: { id: null, nome: kit.nome, sku: kit.sku || "" }, kit, ehKit: true, canal, item, cfg, ctx, est, soNoGrupo: soNoGrupo.has(item.id) };
         })
       )
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, rampasKit, kits, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha, soNoGrupo, vivo.parciais]);
+  }, [rampas, rampasKit, kits, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha, soNoGrupo, vivo.parciais, vivo.seteDias]);
 
   // Rampa do ANÚNCIO com vários itens (v54, grupoRampa.js): degraus em % do
   // preço salvo de cada opção; mesma estadoRampa por dentro.
@@ -339,12 +343,12 @@ function useCalculoCrescimento() {
       const paR = periodosDoAnuncio(grupo.id, canal.id, idsSo);
       const adsAtivo = periodoAtivo([...paR.doAnuncio, ...paR.dasOpcoes], hoje);
       const regs = registros.filter((g) => g.rampa_id === r.id);
-      const g = estadoRampaGrupo({ rampa: r, registros: regs, regras, grupo, canal, itens, produtos, kits, precos, publicacoes: publicacoesCanal, cfgDoProduto, organicas: organicasVivas, hoje, sazonal, funilLoja, adsAtivo, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null });
+      const g = estadoRampaGrupo({ rampa: r, registros: regs, regras, grupo, canal, itens, produtos, kits, precos, publicacoes: publicacoesCanal, cfgDoProduto, organicas: organicasVivas, hoje, sazonal, funilLoja, adsAtivo, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null });
       if (!g) continue;
       out.push({ r, grupo, canal, produto: { id: null, nome: `Anúncio: ${grupo.nome}`, sku: "" }, item: null, ehGrupo: true, g, est: g.est, regs });
     }
     return out.sort((a, b) => a.grupo.nome.localeCompare(b.grupo.nome));
-  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, hoje, calendario, funilLoja, adsH.periodos, campanha, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, vivo.seteDias, hoje, calendario, funilLoja, adsH.periodos, campanha, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Comissão de afiliado por item × canal (ao vivo).
   const linhasAf = useMemo(
