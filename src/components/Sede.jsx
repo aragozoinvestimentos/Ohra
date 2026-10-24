@@ -215,12 +215,25 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
   // ---------- tela cheia ----------
   // Manual: botão (pede tela cheia do navegador junto); sai pelo botão, Esc ou
   // quando o navegador sai da tela cheia. Descanso: sai ao primeiro movimento.
+  // Só sai da tela cheia do navegador se foi a Sede que entrou nela (se o
+  // navegador já estava em tela cheia antes, continua).
+  const pediuTela = useRef(false);
+  const pedirTelaNavegador = () => {
+    if (document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+    document.documentElement
+      .requestFullscreen()
+      .then(() => {
+        pediuTela.current = true;
+      })
+      .catch(() => {});
+  };
   const entrarTela = () => {
-    document.documentElement.requestFullscreen?.().catch(() => {});
+    pedirTelaNavegador();
     pedirTelaSede("manual");
   };
   const sairTela = () => {
-    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    if (pediuTela.current && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    pediuTela.current = false;
     setPainelTela(false);
     onSairTela?.();
   };
@@ -230,6 +243,9 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
   });
   useEffect(() => {
     if (!tela) return undefined;
+    // descanso: tenta a tela cheia do navegador também (o navegador só deixa
+    // se ainda valer o último clique; se não deixar, a Sede cobre a página)
+    if (tela === "descanso") pedirTelaNavegador();
     const sair = () => sairTelaRef.current();
     const tecla = (e) => {
       if (e.key === "Escape") sair();
