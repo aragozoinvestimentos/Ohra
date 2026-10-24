@@ -177,7 +177,9 @@ export function quantidadeDaVariacao(nome) {
 
 // ---------- relatórios ----------
 // Desempenho do produto → { tipo: 'desempenho', periodo, itens: [{ itemId, nome,
-// sku, impressoes, cliques, pedidos, unidades, variacoes: [{ sku, nome, qtd, unidades }] }] }
+// sku, impressoes, cliques, pedidos, unidades, + (24/10/2026) visitantes, carrinho, carrinhoUnidades,
+// pedidosFeitos, unidadesFeitas, compradores, recompra (fração), diasRecompra, sairam, cliquesBusca,
+// curtidas, visualizacoes, vendasPagas; variacoes: [{ sku, nome, qtd, unidades, carrinho, carrinhoUnidades }] }] }
 export function interpretarDesempenho(planilhas, nomeArquivo) {
   for (const pl of planilhas) {
     const iCab = pl.linhas.findIndex((l) => achar(l, "ID do Item") >= 0 && achar(l, "SKU Principle", "SKU Principal") >= 0);
@@ -194,6 +196,26 @@ export function interpretarDesempenho(planilhas, nomeArquivo) {
       cli: achar(cab, "Cliques Por Produto"),
       ped: achar(cab, "Produto Pago", "Pedido Pago"),
       uni: achar(cab, "Unidades (Pedido pago)"),
+      // Colunas a mais do arquivo real (24/10/2026 — funil com carrinho, pedido
+      // feito × pago, compradores, recompra, rejeição, busca). Ausente = null.
+      vendasPagas: achar(cab, "Vendas (Pedido pago) (BRL)"),
+      pedFeito: achar(cab, "Pedido Feito"),
+      uniFeito: achar(cab, "Unidades (Pedido realizado)"),
+      compr: achar(cab, "Compradores (Pedidos pago)", "Compradores (Pedido pago)"),
+      visit: achar(cab, "Visitantes do Produto (Visita)"),
+      pagVis: achar(cab, "Visualizações da Página do Produto"),
+      sairam: achar(cab, "Visitantes que saíram da página"),
+      busca: achar(cab, "Cliques em buscas"),
+      curt: achar(cab, "Curtidas"),
+      carVis: achar(cab, "Visitantes do Produto (Adicionar ao Carrinho)"),
+      carUni: achar(cab, "Unidades (adicionar ao carrinho)"),
+      recompra: achar(cab, "Taxa de repetição de pedido (pedidos pagos)", "Taxa de Recompra (Pedido Realizado)"),
+      diasRec: achar(cab, "Média de dias para repetir pedido (pedidos pagos)"),
+    };
+    const col = (l, k, frac = false) => {
+      if (c[k] < 0) return null;
+      const v = numBR(l[c[k]]);
+      return v == null ? null : frac ? v / 100 : v;
     };
     const porId = new Map();
     for (const l of pl.linhas.slice(iCab + 1)) {
@@ -203,12 +225,25 @@ export function interpretarDesempenho(planilhas, nomeArquivo) {
       if (!porId.has(id)) porId.set(id, { itemId: id, nome: l[c.nome] || "", sku: normSku(l[c.sku]), impressoes: null, cliques: null, pedidos: null, unidades: null, variacoes: [] });
       const it = porId.get(id);
       if (ehVar) {
-        it.variacoes.push({ sku: normSku(l[c.skuVar] !== "-" ? l[c.skuVar] : ""), nome: l[c.nomeVar] || "", qtd: quantidadeDaVariacao(l[c.nomeVar]), unidades: numBR(l[c.uni]) || 0 });
+        it.variacoes.push({ sku: normSku(l[c.skuVar] !== "-" ? l[c.skuVar] : ""), nome: l[c.nomeVar] || "", qtd: quantidadeDaVariacao(l[c.nomeVar]), unidades: numBR(l[c.uni]) || 0, carrinho: col(l, "carVis"), carrinhoUnidades: col(l, "carUni") });
       } else {
         it.impressoes = numBR(l[c.imp]);
         it.cliques = numBR(l[c.cli]);
         it.pedidos = numBR(l[c.ped]);
         it.unidades = numBR(l[c.uni]);
+        it.vendasPagas = col(l, "vendasPagas");
+        it.pedidosFeitos = col(l, "pedFeito");
+        it.unidadesFeitas = col(l, "uniFeito");
+        it.compradores = col(l, "compr");
+        it.visitantes = col(l, "visit");
+        it.visualizacoes = col(l, "pagVis");
+        it.sairam = col(l, "sairam");
+        it.cliquesBusca = col(l, "busca");
+        it.curtidas = col(l, "curt");
+        it.carrinho = col(l, "carVis");
+        it.carrinhoUnidades = col(l, "carUni");
+        it.recompra = col(l, "recompra", true);
+        it.diasRecompra = col(l, "diasRec");
         if (!it.sku) it.sku = normSku(l[c.sku]);
       }
     }
