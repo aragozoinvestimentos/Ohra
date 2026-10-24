@@ -71,6 +71,7 @@ const CompararPeriodos = lazyAba(() => import("./components/CompararPeriodos.jsx
 const CarrinhosAbandonados = lazyAba(() => import("./components/CarrinhosAbandonados.jsx"));
 const AnaliseDiagnostico = lazyAba(() => import("./components/AnaliseDiagnostico.jsx"));
 const Insumos = lazyAba(() => import("./components/Insumos.jsx"));
+const Sede = lazyAba(() => import("./components/Sede.jsx"));
 
 const THEME_KEY = "ohra:theme";
 
@@ -96,7 +97,7 @@ const MENU = [
   {
     grupo: null,
     itens: [
-      { key: "m-inicio", label: "Início", icone: "inicio", sub: "O que pede atenção hoje e como a loja está", abas: [{ tab: "inicio", label: "Início" }] },
+      { key: "m-inicio", label: "Início", icone: "inicio", sub: "O que pede atenção hoje e como a loja está", abas: [{ tab: "inicio", label: "Início", tambem: "sede" }, { tab: "sede", label: "Sede", oculta: true }] },
       { key: "m-atualizar", label: "Atualizar dados", icone: "analise", sub: "Pedidos, desempenho, Ads, GMV Max, avaliações e venda física — tudo que vem dos marketplaces", abas: [{ tab: "importar", label: "Atualizar dados" }] },
     ],
   },
@@ -435,7 +436,7 @@ export default function App() {
   // Item do menu: volta pra última tela usada dentro dele (senão a 1ª).
   function irParaMenu(item) {
     const ultima = ultimaDoMenu[item.key];
-    const entrada = (ultima && item.abas.find((a) => !a.sep && a.tab === ultima)) || item.abas.find((a) => !a.sep && !a.oculta);
+    const entrada = (ultima && ultima !== "sede" && item.abas.find((a) => !a.sep && a.tab === ultima)) || item.abas.find((a) => !a.sep && !a.oculta);
     if (entrada.tab === ultima) {
       setTab(entrada.tab);
       setMenuAberto(false);
@@ -535,6 +536,14 @@ export default function App() {
           {visitadas.has("inicio") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
               <Inicio key={lojaId || "sem-loja"} onIrPara={irPara} onToast={showToast} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "sede" ? "active" : ""}`}>
+          {visitadas.has("sede") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Sede key={lojaId || "sem-loja"} onIrPara={irPara} ativo={tab === "sede"} />
             </Suspense>
           )}
         </section>

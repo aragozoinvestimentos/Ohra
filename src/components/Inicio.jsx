@@ -30,6 +30,7 @@ import { abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
 import { contarMarcas, publicarMarcas } from "../lib/marcas.js";
+import { publicarSede } from "../lib/sedeDados.js";
 import { irParaAba } from "../lib/navegar.js";
 import { BRL } from "../lib/format.js";
 import Kpis from "./Kpis.jsx";
@@ -116,7 +117,8 @@ const textoSemCanal = (p) => {
 // 4 Seus produtos. Cada pendência vem da aba que decide e o botão leva pra lá.
 // Única coisa gravada aqui: as tarefas manuais (schema v42, tabela tarefas).
 export default function Inicio({ onIrPara, onToast }) {
-  const { lojaId } = useLoja();
+  const { lojaId, lojas } = useLoja();
+  const nomeLoja = (lojas || []).find((l) => l.id === lojaId)?.nome || "loja";
   const { dados, rampasH, af, regras, hoje, linhas: linhasTodas, linhasGrupo, linhasAf, linhasAds, calendario, avalH, pedidosValidos, anuncioDoPedido } = useCrescimento();
   // Rampas de produtos que só existem dentro de um anúncio com vários itens
   // saem dos avisos (decide a rampa do anúncio inteiro, que entra no lugar).
@@ -389,6 +391,20 @@ export default function Inicio({ onIrPara, onToast }) {
     if (!carregando) publicarMarcas(marcas);
   }, [marcas, carregando]);
 
+  // O que a Sede mostra (avisos por sala + KPIs do topo): os mesmos números daqui.
+  const kpisSede = {
+    vendas: loja.atual.vendas,
+    pedidos: loja.atual.pedidos,
+    depoisAds: loja.atual.depoisAds,
+    temPedidos,
+    caixa: caixa ? caixa.saldoHoje : null,
+    metaPct: metaFat > 0 && temPedidos ? loja.atual.vendas / metaFat : null,
+    meta: metaFat,
+  };
+  useEffect(() => {
+    if (!carregando) publicarSede({ pendencias, kpis: kpisSede });
+  });
+
   // --- 4 · Seus produtos (últimos 7 dias) ---
   const semana = useMemo(() => produtosDaSemana(pedidosValidos, hoje, 6), [pedidosValidos, hoje]);
   const cartaoDoNome = new Map(cartoes.map((g) => [g.nome.toLowerCase(), g]));
@@ -468,6 +484,10 @@ export default function Inicio({ onIrPara, onToast }) {
 
   return (
     <div className="inicio">
+      <button type="button" className="inicio-sede" onClick={() => onIrPara?.("sede")}>
+        <span aria-hidden="true">🏢</span> Entrar na Sede da {nomeLoja}
+        <small>o escritório da loja, ao vivo</small>
+      </button>
       {/* 1 · Como a loja está */}
       <div className="panel">
         <h3 className="section-title">

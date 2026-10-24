@@ -2549,3 +2549,48 @@ td.vendas-opcao { padding-left: 26px; }
 .acao-tabela { width: 100%; max-width: 760px; font-size: 12.5px; }
 .acao-tabela th, .acao-tabela td { padding: 3px 8px; }
 .acao-concluir { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; }
+
+/* ===== Sede da <loja> (24/10/2026) — escritório em pixel art ===== */
+.inicio-sede { display: flex; align-items: baseline; gap: 8px; width: 100%; margin-bottom: 10px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: linear-gradient(90deg, var(--accent-soft, #fbe9df), var(--surface)); color: var(--ink); font: 800 14px Manrope, sans-serif; cursor: pointer; text-align: left; }
+.inicio-sede small { font-weight: 600; color: var(--ink-soft); font-size: 12px; }
+.inicio-sede:hover { border-color: var(--accent); }
+.sede-topo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.sede-titulo { font-size: 17px; }
+.sede-kpis { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-left: auto; }
+.sede-kpis > span { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px 10px; font-size: 12px; color: var(--ink-soft); }
+.sede-kpis b { color: var(--ink); font-size: 14px; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.sede-kpis b.sede-ruim { color: var(--st-resolver); }
+.sede-grade { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+@media (max-width: 1050px) { .sede-grade { grid-template-columns: minmax(0, 1fr); } }
+.sede-cena { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); background: #1d2430; }
+.sede-cena canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; cursor: pointer; }
+.sede-camada { position: absolute; inset: 0; pointer-events: none; }
+.sede-placa { pointer-events: auto; position: absolute; transform: translate(-50%, -50%); background: #2b2f38; color: #f4efe7; font: 800 clamp(9px, 1.05vw, 12px) Manrope, sans-serif; letter-spacing: .03em; padding: 3px 8px 3px 18px; border-radius: 5px; border: 2px solid #4a4f5a; white-space: nowrap; cursor: pointer; box-shadow: 0 2px 0 rgba(0,0,0,.35); }
+.sede-placa:hover { border-color: #ffb36b; }
+.sede-placa i { position: absolute; left: 6px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; }
+.sede-placa.r i { background: #ff5a4e; box-shadow: 0 0 6px #ff5a4e; }
+.sede-placa.a i { background: #ffc23d; box-shadow: 0 0 6px #ffc23d; }
+.sede-placa.o i { background: #41d27a; box-shadow: 0 0 6px #41d27a; }
+.sede-placa.n i { background: #8d95a3; }
+.sede-fala { position: absolute; left: 0; top: 0; max-width: 190px; background: #fff; color: #1b1a1d; font: 700 12.5px/1.25 Manrope, sans-serif; padding: 4px 9px; border-radius: 10px; border: 1.5px solid #2b2f38; box-shadow: 0 2px 0 rgba(0,0,0,.25); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; will-change: transform; }
+.sede-fala::after { content: ""; position: absolute; left: 50%; bottom: -6px; margin-left: -5px; border: 5px solid transparent; border-top-color: #2b2f38; border-bottom: 0; }
+@media (max-width: 700px) { .sede-fala { font-size: 10.5px; padding: 2px 6px; max-width: 130px; } }
+.sede-boas { position: absolute; left: 12px; top: 12px; max-width: 340px; background: rgba(255,255,255,.96); color: #18171a; border-radius: 10px; padding: 8px 12px; font-size: 12.5px; box-shadow: 0 4px 18px rgba(0,0,0,.25); transition: opacity .5s; cursor: pointer; }
+.sede-boas b { display: block; margin-bottom: 2px; }
+.sede-boas.saindo { opacity: 0; pointer-events: none; }
+.sede-agora { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; margin-top: 8px; font-size: 12.5px; }
+.sede-agora > b { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); }
+.sede-agora ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.sede-agora li { padding: 3px 0; border-top: 1px dashed var(--border); }
+.sede-agora li:first-child { border-top: none; }
+.sede-agora li span { color: var(--ink-faint); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.sede-painel { position: sticky; top: calc(var(--topbar-h, 61px) + 10px); }
+.sede-quem { font-size: 12px; color: var(--ink-faint); margin-bottom: 6px; }
+.sede-ok { font-size: 13px; color: var(--ink-soft); padding: 6px 0; }
+.sede-avisos { list-style: none; margin: 0; padding: 0; }
+.sede-avisos li { border-top: 1px dashed var(--border); padding: 8px 0; font-size: 13px; display: grid; gap: 3px; justify-items: start; }
+.sede-avisos li:first-child { border-top: none; }
+.sede-aviso-txt { color: var(--ink-soft); font-size: 12.5px; }
+.sede-nomes-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.sede-nomes-acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+@media (prefers-reduced-motion: reduce) { .sede-boas { transition: none; } }
