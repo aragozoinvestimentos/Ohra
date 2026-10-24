@@ -1,0 +1,202 @@
+// O consultor aprende (24/10/2026, pedido do Gustavo: "ele deve sempre
+// evoluir"). Sem IA: aprende guardando o que acontece e usando da próxima vez.
+//  1) respostas do Claude (e as que o Gustavo ensina) → responde perguntas
+//     parecidas sozinho;
+//  2) decisões do Gustavo por assunto → traz menos o que ele sempre adia e
+//     põe na frente o que ele costuma aprovar;
+//  3) resultado do que foi aprovado → o aviso sumiu ou continuou;
+//  4) novidades do app → cada mudança que fazemos entra em NOVIDADES_CONSULTOR.
+// Tudo puro; gravações em consultorAcoes.js (tabela consultor_registros, v65).
+import { CONVERSAS, normalizar } from "./consultor.js";
+
+const dm = (iso) => (iso ? `${String(iso).slice(8, 10)}/${String(iso).slice(5, 7)}` : "");
+const diasEntre = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
+
+// ---------- 1) respostas aprendidas ----------
+const VAZIAS = new Set(
+  "que qual quais como com sem pra para por uma uns umas dos das nos nas meu minha meus minhas esse essa isso este esta isto aqui tem ter foi sao ser estou voce voces quando onde ate the and".split(" ")
+);
+export function palavras(t) {
+  return [...new Set(normalizar(t).split(" ").filter((w) => w.length >= 3 && !VAZIAS.has(w)))];
+}
+/** Resposta já aprendida pra uma pergunta parecida (≥ 60% das palavras em comum e ao menos 2). */
+export function respostaAprendida(pergunta, registros) {
+  const a = palavras(pergunta);
+  if (!a.length) return null;
+  let melhor = null;
+  for (const r of registros || []) {
+    if (r.tipo !== "pergunta" || !r.dados?.resposta) continue;
+    const b = palavras(r.dados.texto);
+    const comum = a.filter((w) => b.includes(w)).length;
+    const uniao = new Set([...a, ...b]).size;
+    const score = uniao ? comum / uniao : 0;
+    const igual = normalizar(pergunta) === normalizar(r.dados.texto);
+    if ((igual || (comum >= Math.min(2, b.length) && score >= 0.6)) && (!melhor || score > melhor.score)) {
+      melhor = { id: r.id, registro: r, texto: r.dados.texto, resposta: r.dados.resposta, ensinada: !!r.dados.ensinada, data: String(r.atualizado_em || r.criado_em || "").slice(0, 10), score: igual ? 1 : score };
+    }
+  }
+  return melhor;
+}
+/** Perguntas aprendidas mais usadas — viram atalhos embaixo do campo. */
+export function perguntasAprendidas(registros, n = 3) {
+  return (registros || [])
+    .filter((r) => r.tipo === "pergunta" && r.dados?.resposta)
+    .sort((x, y) => (Number(y.dados?.usos) || 0) - (Number(x.dados?.usos) || 0))
+    .slice(0, n)
+    .map((r) => r.dados.texto);
+}
+
+// ---------- 2) decisões por assunto ----------
+const ROTULOS = {
+  queda: "vendas de um produto caindo",
+  concentracao: "loja dependendo de um produto",
+  "ads-pesado": "Ads pesando no lucro",
+  avisos: "muitos avisos acumulados",
+  "expansao-producao": "expansão da produção",
+  "expansao-expedicao": "expansão da expedição",
+  "proposta:acelerando": "produto vendendo acima do normal",
+};
+/** Assunto de uma consultoria/proposta pela chave (várias chaves → um assunto). */
+export function assuntoDe(chave) {
+  const c = String(chave || "");
+  if (c.startsWith("proposta|acelerando|")) return "proposta:acelerando";
+  if (c.startsWith("proposta|")) {
+    const id = c.slice(9);
+    const conv = CONVERSAS.find((x) => id.startsWith(x.prefixo));
+    return `proposta:${conv ? conv.prefixo.replace(/\|$/, "") : id.split("|")[0]}`;
+  }
+  return c.split("|")[0];
+}
+export function rotuloAssunto(assunto) {
+  if (ROTULOS[assunto]) return ROTULOS[assunto];
+  const conv = CONVERSAS.find((x) => `proposta:${x.prefixo.replace(/\|$/, "")}` === assunto);
+  return conv ? conv.fala.replace(/!$/, "").toLowerCase() : assunto;
+}
+const SIM = new Set(["quero", "aprovada", "levada", "resolvida"]);
+/** Histórico de decisões de um registro (antes do aprendizado só havia o status atual). */
+const historicoDe = (r) => (Array.isArray(r.dados?.historico) && r.dados.historico.length ? r.dados.historico : r.status ? [{ status: r.status, data: String(r.atualizado_em || r.criado_em || "").slice(0, 10) }] : []);
+
+/** { assunto: { sim, depois, nunca, resolveu, continuou, total } } */
+export function perfilDecisoes(registros) {
+  const p = {};
+  for (const r of registros || []) {
+    if (r.tipo !== "consultoria") continue;
+    const a = assuntoDe(r.chave);
+    const x = (p[a] ||= { sim: 0, depois: 0, nunca: 0, resolveu: 0, continuou: 0, total: 0 });
+    for (const h of historicoDe(r)) {
+      if (SIM.has(h.status)) x.sim++;
+      else if (h.status === "agora-nao") x.depois++;
+      else if (h.status === "nunca") x.nunca++;
+      else continue;
+      x.total++;
+    }
+    for (const res of Array.isArray(r.dados?.resultados) ? r.dados.resultados : []) {
+      if (res.status === "resolveu") x.resolveu++;
+      else if (res.status === "continuou") x.continuou++;
+    }
+  }
+  return p;
+}
+/** "Agora não": quanto tempo esperar antes de trazer de novo (o que ele sempre adia volta menos). */
+export function esperaAgoraNao(perf) {
+  if (!perf || perf.sim > 0) return 14;
+  if (perf.depois >= 4) return 45;
+  if (perf.depois >= 2) return 28;
+  return 14;
+}
+/** Frase do que o consultor aprendeu sobre esse assunto (null = ainda pouco). */
+export function notaDoPerfil(perf) {
+  if (!perf) return null;
+  const partes = [];
+  if (perf.total >= 2) {
+    if (perf.sim / perf.total >= 0.6) partes.push(`você costuma aprovar isso (${perf.sim} de ${perf.total})`);
+    else if (perf.sim === 0 && perf.depois >= 2) partes.push(`você costuma deixar pra depois (${perf.depois}×) — vou trazer com menos frequência`);
+  }
+  const res = perf.resolveu + perf.continuou;
+  if (res) partes.push(`das ${res} vez${res === 1 ? "" : "es"} que você agiu, ${perf.resolveu} resolve${perf.resolveu === 1 ? "u" : "ram"}`);
+  return partes.length ? partes.join(" · ") : null;
+}
+/** Ordem: urgente primeiro, depois o que ele mais aprova; o que ele sempre adia vai pro fim. */
+export function ordenarPeloPerfil(lista, perfil) {
+  const nota = (x) => {
+    const p = perfil[assuntoDe(x.chave)];
+    const base = p ? p.sim - p.depois * 0.5 - p.nunca + (p.resolveu - p.continuou) * 0.5 : 0;
+    return (x.urgente ? 100 : 0) + base;
+  };
+  return lista
+    .map((x, i) => ({ x, i, n: nota(x) }))
+    .sort((a, b) => b.n - a.n || a.i - b.i)
+    .map((o) => o.x);
+}
+/** Nova decisão → status + histórico (o histórico é o que ensina). */
+export function dadosComDecisao(dadosAntes, status, hoje) {
+  const historico = [...(Array.isArray(dadosAntes?.historico) ? dadosAntes.historico : []), { status, data: hoje }].slice(-30);
+  const novo = { ...(dadosAntes || {}), historico };
+  if (SIM.has(status)) novo.acompanhar = { desde: hoje }; // passa a medir o resultado
+  return novo;
+}
+
+// ---------- 3) resultado do que foi aprovado ----------
+// Aprovou → o app acompanha: se o assunto sumiu dos avisos em até 14 dias,
+// "resolveu"; se continua depois de 14 dias, "continuou". Grava uma vez só.
+const COM_MES = /\|\d{4}-\d{2}$/;
+export function resultadosParaGravar(registros, atuais, hoje) {
+  const chaves = new Set(atuais.map((x) => x.chave));
+  const assuntos = new Set(atuais.map((x) => assuntoDe(x.chave)));
+  const out = [];
+  for (const r of registros || []) {
+    if (r.tipo !== "consultoria" || !r.dados?.acompanhar?.desde) continue;
+    const desde = r.dados.acompanhar.desde;
+    const dias = diasEntre(desde, hoje);
+    if (dias < 2) continue;
+    const presente = chaves.has(r.chave) || (COM_MES.test(r.chave) && assuntos.has(assuntoDe(r.chave)));
+    let status = null;
+    if (!presente) status = "resolveu";
+    else if (dias >= 14) status = "continuou";
+    if (!status) continue;
+    const resultados = [...(Array.isArray(r.dados.resultados) ? r.dados.resultados : []), { status, desde, em: hoje, dias }].slice(-20);
+    const { acompanhar: _fora, ...resto } = r.dados;
+    out.push({ registro: r, dados: { ...resto, resultados } });
+  }
+  return out;
+}
+/** Último resultado de um assunto, pra mostrar no cartão quando ele volta. */
+export function ultimoResultado(registros, assunto) {
+  let u = null;
+  for (const r of registros || []) {
+    if (r.tipo !== "consultoria" || assuntoDe(r.chave) !== assunto) continue;
+    for (const res of r.dados?.resultados || []) if (!u || res.em > u.em) u = res;
+  }
+  if (!u) return null;
+  return u.status === "resolveu"
+    ? `da última vez (aprovada em ${dm(u.desde)}) o aviso sumiu em ${u.dias} dia${u.dias === 1 ? "" : "s"}`
+    : `da última vez (aprovada em ${dm(u.desde)}) o aviso continuou depois de ${u.dias} dias — talvez precise de outra solução`;
+}
+
+// ---------- resumo pro "Levar pro Claude" e pra aba Aprendi ----------
+export function resumoAprendizado(registros) {
+  const perf = perfilDecisoes(registros);
+  const assuntos = Object.entries(perf)
+    .filter(([, p]) => p.total || p.resolveu || p.continuou)
+    .map(([a, p]) => ({ assunto: a, rotulo: rotuloAssunto(a), ...p, nota: notaDoPerfil(p), espera: esperaAgoraNao(p) }))
+    .sort((a, b) => b.total - a.total);
+  const respostas = (registros || []).filter((r) => r.tipo === "pergunta" && r.dados?.resposta);
+  return { assuntos, respostas: respostas.length, ensinadas: respostas.filter((r) => r.dados.ensinada).length, usos: respostas.reduce((s, r) => s + (Number(r.dados.usos) || 0), 0) };
+}
+export function linhasAprendizado(registros) {
+  const r = resumoAprendizado(registros);
+  const l = [];
+  if (r.respostas) l.push(`Respostas aprendidas: ${r.respostas} (${r.ensinadas} ensinadas por você) · usadas ${r.usos}×`);
+  for (const a of r.assuntos.slice(0, 12)) l.push(`- ${a.rotulo}: aprovou ${a.sim} · adiou ${a.depois} · nunca ${a.nunca}${a.resolveu + a.continuou ? ` · resolveu ${a.resolveu}/${a.resolveu + a.continuou}` : ""}`);
+  return l;
+}
+
+// ---------- 4) o que o consultor aprendeu com as mudanças do app ----------
+// REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
+// nas perguntas (responderPergunta), consultorias e conversas da equipe.
+export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-24", texto: "Nasci na Sede: respondo vendas, lucro, Ads, meta, caixa, contas a pagar, produto pelo nome e o que fazer primeiro." },
+  { data: "2026-10-24", texto: "Proponho consultorias (queda de vendas, dependência de um produto, Ads pesado, muitos avisos) e expansão da produção/expedição quando lota." },
+  { data: "2026-10-24", texto: "A equipe conversa entre os setores e propõe soluções pra você aprovar." },
+  { data: "2026-10-24", texto: "Aprendo sozinho: guardo as respostas do Claude (e as que você me ensina), o que você costuma aprovar ou adiar, e se o que foi aprovado resolveu." },
+];

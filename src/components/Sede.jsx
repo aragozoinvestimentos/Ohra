@@ -11,6 +11,8 @@ import { ELENCO, SALAS_SEDE, avisosDaSede, ehOhra, nomesDaLoja, nomesPadrao, ocu
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useConsultor } from "../hooks/useConsultor.js";
 import { consultoriaVisivel, propostasDaEquipe, sugerirConsultorias } from "../lib/consultor.js";
+import { assuntoDe, esperaAgoraNao, ordenarPeloPerfil, perfilDecisoes, resultadosParaGravar } from "../lib/consultorAprende.js";
+import { gravarRegistro } from "../lib/consultorAcoes.js";
 import ConsultorPainel from "./ConsultorPainel.jsx";
 import { criarSede, TAMANHO_SEDE } from "../lib/sedeMotor.js";
 import { periodoLigado } from "../lib/ads.js";
@@ -75,8 +77,29 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   );
   const decisao = useMemo(() => new Map(cons.registros.filter((r) => r.tipo === "consultoria").map((r) => [r.chave, r])), [cons.registros]);
   const consultoriasTodas = useMemo(() => sugerirConsultorias(ctxConsultor), [ctxConsultor]);
-  const consultorias = consultoriasTodas.filter((c) => consultoriaVisivel(c, decisao.get(c.chave), hoje));
-  const propostas = useMemo(() => propostasDaEquipe(ctxConsultor), [ctxConsultor]).filter((c) => consultoriaVisivel(c, decisao.get(c.chave), hoje));
+  // o consultor aprende: o que ele sempre adia volta menos, o que aprova vem na frente
+  const perfil = useMemo(() => perfilDecisoes(cons.registros), [cons.registros]);
+  const visivel = (c) => consultoriaVisivel(c, decisao.get(c.chave), hoje, esperaAgoraNao(perfil[assuntoDe(c.chave)]));
+  const propostasTodas = useMemo(() => propostasDaEquipe(ctxConsultor), [ctxConsultor]);
+  const consultorias = ordenarPeloPerfil(consultoriasTodas.filter(visivel), perfil);
+  const propostas = ordenarPeloPerfil(propostasTodas.filter(visivel), perfil);
+  // resultado do que foi aprovado: o aviso sumiu (resolveu) ou continuou — grava uma vez
+  // (só depois de 15 s na Sede: os avisos do Início e os pedidos precisam ter carregado,
+  // senão "sumiu" seria só "ainda não carregou")
+  const resultadosGravados = useRef(new Set());
+  const [maduro, setMaduro] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setMaduro(true), 15000);
+    return () => clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    if (!maduro || !cons.disponivel || cons.carregando || !sede.pronto) return;
+    for (const { registro, dados } of resultadosParaGravar(cons.registros, [...consultoriasTodas, ...propostasTodas], hoje)) {
+      if (resultadosGravados.current.has(registro.id)) continue;
+      resultadosGravados.current.add(registro.id);
+      gravarRegistro(registro.loja_id, "consultoria", registro.chave, dados, registro.status);
+    }
+  }, [maduro, cons.registros, cons.disponivel, cons.carregando, consultoriasTodas, propostasTodas, hoje, sede.pronto]);
   const cheiasNovas = useMemo(() => Object.fromEntries(consultoriasTodas.filter((c) => c.cheia).map((c) => [c.sala, true])), [consultoriasTodas]);
   const nConsultor = consultorias.length + propostas.length;
 

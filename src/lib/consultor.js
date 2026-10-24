@@ -340,21 +340,22 @@ export function sugerirConsultorias(ctx) {
   return out;
 }
 
-// Decisão gravada → a sugestão aparece? (agora-nao: 14 dias; levada/resolvida: 30 dias; nunca: não volta)
-export function consultoriaVisivel(sug, registro, hoje) {
+// Decisão gravada → a sugestão aparece? (agora-nao: 14 dias — ou mais, se ele
+// sempre adia esse assunto (`espera`, de consultorAprende.js); levada/resolvida: 30 dias; nunca: não volta)
+export function consultoriaVisivel(sug, registro, hoje, espera = 14) {
   if (!registro) return true;
   const st = registro.status;
   if (st === "nunca" || st === "quero") return false;
   const desde = String(registro.atualizado_em || registro.criado_em || "").slice(0, 10);
   const dias = desde ? Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${desde}T12:00:00`)) / 86400000) : 999;
-  if (st === "agora-nao") return dias >= 14;
+  if (st === "agora-nao") return dias >= espera;
   if (st === "aprovada") return dias >= 7;
   if (st === "levada" || st === "resolvida") return dias >= 30;
   return true;
 }
 
 // ---------- pacote "Levar pro Claude" ----------
-export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, uso, kpis }) {
+export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, uso, kpis, aprendizado = [] }) {
   const l = [];
   l.push(`# Consultor da Sede — ${nomeLoja} — ${dm(hoje)}/${hoje.slice(0, 4)}`);
   if (kpis) l.push(`Mês até hoje: vendas ${BRL(kpis.vendas || 0)} · lucro depois do Ads ${BRL(kpis.depoisAds || 0)} · caixa ${kpis.caixa != null ? BRL(kpis.caixa) : "—"}${kpis.meta ? ` · meta ${BRL(kpis.meta)}` : ""}`);
@@ -379,6 +380,7 @@ export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, u
     l.push("", "## Uso das telas (últimos 30 dias)");
     l.push(uso.slice(0, 15).map((u) => `${u.rotulo} ${u.n}×`).join(" · "));
   }
+  if (aprendizado.length) l.push("", "## O que o consultor aprendeu (suas decisões e resultados)", ...aprendizado);
   if (!perguntas.length && !consultorias.length && !erros.length) l.push("", "(nada novo — só o resumo de uso)");
   return l.join("\n");
 }
@@ -408,7 +410,7 @@ export async function conferirSenhaApp(senha) {
 // Cada aviso do Início vira uma conversa entre quem cuida do assunto e quem
 // precisa saber, com uma PROPOSTA de solução que o Gustavo aprova ou não.
 // fala/resposta são curtas (balão na Sede); `proposta` é o texto completo.
-const CONVERSAS = [
+export const CONVERSAS = [
   { prefixo: "caixa|atrasados", de: "bia", para: "ceo1", fala: "Tem conta atrasada!", resposta: "Vejo isso hoje", proposta: "Pagar (ou confirmar que já pagou) as contas atrasadas no Caixa — multa e juros correm todo dia." },
   { prefixo: "caixa|proximos", de: "bia", para: "ceo2", fala: "Contas da semana chegando", resposta: "Já separo", proposta: "Conferir se o caixa cobre as contas dos próximos 7 dias." },
   { prefixo: "analise|importar", de: "ze", para: "celia", fala: "Tem pedido novo na Olist!", resposta: "Importa que eu analiso", proposta: "Importar os pedidos da Olist — sem eles vendas, lucro e rampa ficam desatualizados." },

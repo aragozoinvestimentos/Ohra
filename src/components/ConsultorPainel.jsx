@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EXEMPLOS_PERGUNTA, ROTULOS_ABA, conferirSenhaApp, montarPacote, responderPergunta, resumoUso } from "../lib/consultor.js";
 import { atualizarRegistros, excluirRegistro, gravarRegistro, lerNivelApp } from "../lib/consultorAcoes.js";
+import {
+  NOVIDADES_CONSULTOR,
+  assuntoDe,
+  dadosComDecisao,
+  linhasAprendizado,
+  notaDoPerfil,
+  perfilDecisoes,
+  perguntasAprendidas,
+  respostaAprendida,
+  resumoAprendizado,
+  ultimoResultado,
+} from "../lib/consultorAprende.js";
 import { hojeSP } from "../lib/datas.js";
 import Estado from "./Estado.jsx";
 
@@ -18,6 +30,7 @@ const ABAS = [
   { k: "perguntar", r: "Perguntar" },
   { k: "propostas", r: "Propostas" },
   { k: "levar", r: "Levar pro Claude" },
+  { k: "aprendi", r: "📚 Aprendi" },
   { k: "app", r: "🔒 App" },
 ];
 
@@ -44,8 +57,9 @@ export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros
         ))}
       </div>
       {aba === "perguntar" && <Perguntar ctx={ctx} lojaId={lojaId} disponivel={disponivel} registros={registros} onToast={onToast} telaAtual={telaAtual} />}
-      {aba === "propostas" && <Propostas lojaId={lojaId} disponivel={disponivel} consultorias={consultorias} propostas={propostas} aprovadas={aprovadas} nomes={nomes} abrir={abrir} onToast={onToast} />}
+      {aba === "propostas" && <Propostas lojaId={lojaId} disponivel={disponivel} registros={registros} hoje={hoje} consultorias={consultorias} propostas={propostas} aprovadas={aprovadas} nomes={nomes} abrir={abrir} onToast={onToast} />}
       {aba === "levar" && <Levar nomeLoja={nomeLoja} hoje={hoje} registros={registros} perguntas={perguntasAbertas} aprovadas={aprovadas} kpis={ctx.kpis} onToast={onToast} />}
+      {aba === "aprendi" && <Aprendi lojaId={lojaId} disponivel={disponivel} registros={registros} onToast={onToast} />}
       {aba === "app" && <NivelApp />}
     </div>
   );
@@ -59,7 +73,8 @@ function Perguntar({ ctx, lojaId, disponivel, registros, onToast, telaAtual }) {
   useEffect(() => {
     fimRef.current?.scrollIntoView({ block: "nearest" });
   }, [conversa]);
-  const guardadas = registros.filter((r) => r.tipo === "pergunta").slice(0, 8);
+  const guardadas = registros.filter((r) => r.tipo === "pergunta" && !r.dados?.ensinada).slice(0, 8);
+  const atalhos = [...new Set([...perguntasAprendidas(registros), ...EXEMPLOS_PERGUNTA])].slice(0, 9);
   async function guardar(pergunta, numeros) {
     if (!disponivel) return onToast?.("Rode o SQL v65 pra guardar a pergunta");
     const chave = chaveNova();
@@ -69,7 +84,15 @@ function Perguntar({ ctx, lojaId, disponivel, registros, onToast, telaAtual }) {
   async function enviar(t = texto) {
     const p = t.trim();
     if (!p) return;
-    const r = responderPergunta(p, ctx);
+    let r = responderPergunta(p, ctx);
+    // não sabe pelos números → procura no que já aprendeu (respostas do Claude e as que você ensinou)
+    if (!r.entendeu) {
+      const a = respostaAprendida(p, registros);
+      if (a) {
+        r = { entendeu: true, aprendida: a, texto: `${a.ensinada ? "Você me ensinou" : "Aprendi com o Claude"} em ${dm(a.data)}${a.score < 1 ? ` (pergunta parecida: “${a.texto}”)` : ""}:\n${a.resposta}`, numeros: null };
+        if (disponivel) gravarRegistro(a.registro.loja_id, "pergunta", a.registro.chave, { ...a.registro.dados, usos: (Number(a.registro.dados?.usos) || 0) + 1 }, a.registro.status);
+      }
+    }
     setConversa((c) => [...c, { p, r }].slice(-6));
     setTexto("");
     if (!r.entendeu) await guardar(p, { kpis: ctx.kpis || null });
@@ -85,7 +108,7 @@ function Perguntar({ ctx, lojaId, disponivel, registros, onToast, telaAtual }) {
               {c.r.texto}
               {c.r.entendeu && (
                 <button type="button" className="link-btn" onClick={() => guardar(c.p, c.r.numeros).then(() => onToast?.("Guardado pra levar pro Claude"))}>
-                  levar pro Claude também
+                  {c.r.aprendida ? "não era isso — levar pro Claude" : "levar pro Claude também"}
                 </button>
               )}
             </div>
@@ -106,7 +129,7 @@ function Perguntar({ ctx, lojaId, disponivel, registros, onToast, telaAtual }) {
         </button>
       </form>
       <div className="consultor-exemplos">
-        {EXEMPLOS_PERGUNTA.map((e) => (
+        {atalhos.map((e) => (
           <button key={e} type="button" className="consultor-ex" onClick={() => enviar(e)}>
             {e}
           </button>
@@ -167,14 +190,23 @@ function ColarResposta({ onSalvar, onCancelar }) {
   );
 }
 
-function Propostas({ lojaId, disponivel, consultorias: todasC, propostas: todasP, aprovadas, nomes, abrir, onToast }) {
+function Propostas({ lojaId, disponivel, registros, hoje, consultorias: todasC, propostas: todasP, aprovadas, nomes, abrir, onToast }) {
+  const perfil = useMemo(() => perfilDecisoes(registros), [registros]);
+  const registroDe = (chave) => registros.find((r) => r.tipo === "consultoria" && r.chave === chave);
+  // o que o consultor aprendeu sobre o assunto (aprovações, adiamentos e se resolveu)
+  const Aprendeu = ({ chave }) => {
+    const a = assuntoDe(chave);
+    const t = [notaDoPerfil(perfil[a]), ultimoResultado(registros, a)].filter(Boolean);
+    return t.length ? <div className="consultor-aprendeu">📚 {t.join(" · ")}</div> : null;
+  };
   const [verTudo, setVerTudo] = useState(false);
   const consultorias = verTudo ? todasC : todasC.slice(0, 3);
   const propostas = verTudo ? todasP : todasP.slice(0, 4);
   const escondidas = todasC.length + todasP.length - consultorias.length - propostas.length;
   async function decidir(item, status) {
     if (!disponivel) return onToast?.("Rode o SQL v65 pra guardar a decisão");
-    const dados = { titulo: item.titulo, viu: item.viu || item.proposta, porque: item.porque || null, responderia: item.responderia || null, proposta: item.proposta || null, de: item.de || null, para: item.para || null };
+    const antes = registroDe(item.chave)?.dados;
+    const dados = dadosComDecisao({ ...(antes || {}), titulo: item.titulo, viu: item.viu || item.proposta, porque: item.porque || null, responderia: item.responderia || null, proposta: item.proposta || null, de: item.de || null, para: item.para || null }, status, hoje);
     const { error } = await gravarRegistro(lojaId, "consultoria", item.chave, dados, status);
     if (error) return onToast?.(`Não consegui guardar: ${error.message}`);
     onToast?.(status === "quero" ? "Vai no pacote “Levar pro Claude”" : status === "aprovada" ? "Aprovado" : "Ok");
@@ -197,6 +229,7 @@ function Propostas({ lojaId, disponivel, consultorias: todasC, propostas: todasP
             <dt>Pode ganhar</dt>
             <dd>{c.ganho}</dd>
           </dl>
+          <Aprendeu chave={c.chave} />
           <span className="consultor-acoes">
             <button type="button" className="btn primary btn-sm" onClick={() => decidir(c, "quero")}>
               Quero a consultoria
@@ -226,6 +259,7 @@ function Propostas({ lojaId, disponivel, consultorias: todasC, propostas: todasP
           <div>
             <b>Proposta:</b> {p.proposta}
           </div>
+          <Aprendeu chave={p.chave} />
           <span className="consultor-acoes">
             <button
               type="button"
@@ -273,7 +307,8 @@ function Propostas({ lojaId, disponivel, consultorias: todasC, propostas: todasP
 function Levar({ nomeLoja, hoje, registros, perguntas, aprovadas, kpis, onToast }) {
   const erros = registros.filter((r) => r.tipo === "erro" && String(r.chave).slice(0, 10) >= somarDias(hoje, -13));
   const uso = resumoUso(registros, somarDias(hoje, -29));
-  const texto = useMemo(() => montarPacote({ nomeLoja, hoje, perguntas, consultorias: aprovadas, erros, uso, kpis }), [nomeLoja, hoje, perguntas, aprovadas, erros, uso, kpis]);
+  const aprendizado = useMemo(() => linhasAprendizado(registros), [registros]);
+  const texto = useMemo(() => montarPacote({ nomeLoja, hoje, perguntas, consultorias: aprovadas, erros, uso, kpis, aprendizado }), [nomeLoja, hoje, perguntas, aprovadas, erros, uso, kpis, aprendizado]);
   async function copiar() {
     try {
       await navigator.clipboard.writeText(texto);
@@ -301,6 +336,84 @@ function Levar({ nomeLoja, hoje, registros, perguntas, aprovadas, kpis, onToast 
         </button>
       </span>
       <div className="hint">Cole na conversa com o Claude. Depois, guarde a resposta na pergunta (aba Perguntar).</div>
+    </div>
+  );
+}
+
+function Aprendi({ lojaId, disponivel, registros, onToast }) {
+  const r = useMemo(() => resumoAprendizado(registros), [registros]);
+  const respostas = registros.filter((x) => x.tipo === "pergunta" && x.dados?.resposta);
+  const [p, setP] = useState("");
+  const [resp, setResp] = useState("");
+  async function ensinar(e) {
+    e.preventDefault();
+    if (!disponivel) return onToast?.("Rode o SQL v65 pra eu aprender");
+    const { error } = await gravarRegistro(lojaId, "pergunta", chaveNova(), { texto: p.trim(), resposta: resp.trim(), ensinada: true, usos: 0 }, "respondida");
+    if (error) return onToast?.(`Não consegui guardar: ${error.message}`);
+    setP("");
+    setResp("");
+    onToast?.("Aprendi! Da próxima vez respondo sozinho");
+  }
+  return (
+    <div className="consultor-aprendi">
+      <div className="sede-ok">
+        Eu aprendo com o que vocês fazem: guardo as respostas do Claude, o que você costuma aprovar ou deixar pra depois, e confiro se o que foi aprovado resolveu.
+      </div>
+      <div className="consultor-sub">Respostas que eu já sei ({r.respostas})</div>
+      {respostas.length ? (
+        <ul className="consultor-lista">
+          {respostas.slice(0, 10).map((x) => (
+            <li key={x.id}>
+              <span className="sede-quem">
+                {x.dados.ensinada ? "você me ensinou" : "do Claude"} · {dm(x.atualizado_em || x.criado_em)} · usada {Number(x.dados.usos) || 0}×
+              </span>
+              <b>{x.dados.texto}</b>
+              <div className="consultor-resposta">{x.dados.resposta}</div>
+              <button type="button" className="link-btn" onClick={() => excluirRegistro(x.id)}>
+                esquecer
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="hint">Ainda nenhuma. Quando você guardar uma resposta do Claude (aba Perguntar) ou me ensinar aqui embaixo, eu passo a responder sozinho perguntas parecidas.</div>
+      )}
+      <form className="consultor-ensinar" onSubmit={ensinar}>
+        <div className="consultor-sub">Ensinar uma resposta</div>
+        <input value={p} onChange={(e) => setP(e.target.value)} placeholder="Pergunta — ex.: qual o prazo de envio da Shopee?" maxLength={300} />
+        <textarea rows={3} value={resp} onChange={(e) => setResp(e.target.value)} placeholder="Resposta que eu devo dar" />
+        <button type="submit" className="btn primary btn-sm" disabled={!p.trim() || !resp.trim()}>
+          Ensinar
+        </button>
+      </form>
+      <div className="consultor-sub">O que aprendi com as suas decisões</div>
+      {r.assuntos.length ? (
+        <ul className="consultor-lista">
+          {r.assuntos.map((a) => (
+            <li key={a.assunto}>
+              <b>{a.rotulo}</b>
+              <span className="sede-aviso-txt">
+                aprovou {a.sim} · deixou pra depois {a.depois}
+                {a.nunca ? ` · não quer mais ${a.nunca}` : ""}
+                {a.resolveu + a.continuou ? ` · resolveu ${a.resolveu} de ${a.resolveu + a.continuou}` : ""}
+                {a.espera > 14 ? ` · volto só depois de ${a.espera} dias` : ""}
+              </span>
+              {a.nota && <span className="consultor-aprendeu">📚 {a.nota}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="hint">Ainda pouco. Cada “Quero”, “Aprovar”, “Agora não” e “não sugerir mais” me ensina o que vale trazer.</div>
+      )}
+      <div className="consultor-sub">O que aprendi com as mudanças do app</div>
+      <ul className="consultor-lista">
+        {[...NOVIDADES_CONSULTOR].reverse().map((n, i) => (
+          <li key={i}>
+            <span className="sede-quem">{dm(n.data)}</span>
+            {n.texto}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
