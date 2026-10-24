@@ -9,6 +9,7 @@ import { quebraLucro } from "../src/lib/precoAgora.js";
 import { degrauAnterior, passoDaEscada, tetoPorFaixas } from "../src/lib/ads.js";
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
 import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
+import { ateDoEnvioPedidos } from "../src/lib/pedidos.js";
 
 const semCusto = { custoProduto: 0, frete: 0, embalagem: 0 };
 const perto = (v, alvo) => expect(Math.round(v * 100) / 100).toBe(alvo);
@@ -185,5 +186,16 @@ describe("Vale revisar o preço? (Orgânico)", () => {
     const itemNoCanal = (it) => ({ ...it, custoTotal: 6.7 });
     const r = revisoesPrecoDireto({ itens: [item], canais: [canal], precos, hoje: "2026-10-24", itemNoCanal });
     expect(r[0].motivos[0].texto).toBe("custo subiu 12% desde que salvou");
+  });
+});
+
+describe("Pedidos da Olist: até onde o envio cobre", () => {
+  // Caso real 24/10/2026: arquivo enviado hoje, último pedido de 22/10 —
+  // o dia 23 não teve venda, mas está coberto.
+  it("cobre até a véspera do envio", () => {
+    expect(ateDoEnvioPedidos({ periodo_ate: "2026-10-22", criado_em: "2026-10-24T12:00:00Z" })).toBe("2026-10-23");
+  });
+  it("arquivo de período antigo não cobre a semana de hoje", () => {
+    expect(ateDoEnvioPedidos({ periodo_ate: "2026-09-30", criado_em: "2026-10-24T12:00:00Z" })).toBe("2026-09-30");
   });
 });

@@ -6,6 +6,7 @@
 // deles); o que pede ação já está no Pra fazer.
 import { adsNoPeriodo } from "./resumoLoja.js";
 import { periodoLigado } from "./ads.js";
+import { ateDoEnvioPedidos } from "./pedidos.js";
 
 const num = (v) => Number(v) || 0;
 const somarDias = (iso, n) => {
@@ -13,10 +14,10 @@ const somarDias = (iso, n) => {
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 };
-const ultimoAte = (lista, teste) =>
+const ultimoAte = (lista, teste, ateDe = (i) => i.periodo_ate) =>
   (lista || [])
     .filter((i) => i.ok && teste(String(i.relatorio || "")))
-    .map((i) => i.periodo_ate)
+    .map(ateDe)
     .filter(Boolean)
     .sort()
     .pop() || null;
@@ -29,7 +30,8 @@ export function bomDia({ importacoes = [], pedidos = [], linhasAds = null, perio
   const ontem = somarDias(hoje, -1);
   const faltando = [];
   // pedidos (Olist) cobrindo ontem
-  const ateP = ultimoAte(importacoes, (r) => r.startsWith("pedidos:"));
+  // pedidos: o envio cobre até a véspera do dia em que subiu (dia sem venda não falta)
+  const ateP = ultimoAte(importacoes, (r) => r.startsWith("pedidos:"), ateDoEnvioPedidos);
   const pedidosOk = !!ateP && ateP >= ontem;
   if (!pedidosOk) faltando.push({ chave: "pedidos", texto: ateP ? `pedidos da Olist (último até ${ateP.slice(8, 10)}/${ateP.slice(5, 7)})` : "pedidos da Olist" });
   // CSV do Ads de ontem (só com Ads ligado)

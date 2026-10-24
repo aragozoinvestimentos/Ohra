@@ -248,6 +248,7 @@ export const NOVIDADES_CONSULTOR = [
   { data: "2026-10-24", texto: "Proponho consultorias (queda de vendas, dependência de um produto, Ads pesado, muitos avisos) e expansão da produção/expedição quando lota." },
   { data: "2026-10-24", texto: "A equipe conversa entre os setores e propõe soluções pra você aprovar." },
   { data: "2026-10-24", texto: "“Vale revisar o preço?” do Orgânico compara com o custo DO canal (embalagem do Orgânico) e tem o “✓ revisado, manter o preço”." },
+  { data: "2026-10-24", texto: "Pedidos da Olist cobrem até a véspera do dia em que você subiu o arquivo — dia sem venda não aparece como “falta subir”." },
   { data: "2026-10-24", texto: "Entrego o backup de todas as lojas a cada 15 dias: aviso quando vence e você só clica em “Gerar e baixar”." },
   { data: "2026-10-24", texto: "Sua resposta é opinião, não regra: levo pro Claude validar e, até lá, mostro como contexto junto dos números." },
   { data: "2026-10-24", texto: "A equipe dá ideias (com o crédito de quem teve): kit do que é comprado junto, opção mais vendida como capa, dia forte de vendas e Ads no que vende sozinho." },

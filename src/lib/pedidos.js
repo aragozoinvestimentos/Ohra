@@ -7,6 +7,7 @@
 // Nunca guarda nome, CPF, endereço nem telefone do cliente.
 import { canalComEmbalagem } from "./embalagemCanal.js";
 import { lucroNoPreco } from "./escada.js";
+import { dataSP } from "./datas.js";
 
 const num = (v) => {
   if (typeof v === "number") return isFinite(v) ? v : 0;
@@ -571,13 +572,27 @@ export { diasEntre, somarDias, normSku };
 // Dias cobertos por plataforma = união dos períodos dos envios de "Pedidos
 // (Olist)" que deram certo. Nesses dias as vendas REAIS valem (Vendas do mês,
 // teto do Ads, Registrar semana) e a estimativa das semanas registradas sai.
+// Até onde um envio de pedidos cobre (24/10/2026, Gustavo: "subi hoje, o
+// último pedido foi dia 22 — não tem venda todo dia"): o arquivo exportado
+// no dia X já tem todos os pedidos até X − 1, mesmo que o último pedido seja
+// mais antigo. Vale o maior entre o último pedido e a véspera do envio, desde
+// que a diferença seja de até COBRE_ATE_ENVIO dias (um arquivo filtrado por
+// um período antigo não pode "cobrir" a semana de hoje).
+export const COBRE_ATE_ENVIO = 7;
+export function ateDoEnvioPedidos(imp) {
+  const ate = imp?.periodo_ate ? String(imp.periodo_ate).slice(0, 10) : null;
+  if (!ate || !imp?.criado_em) return ate;
+  const vespera = somarDias(dataSP(imp.criado_em), -1);
+  return vespera > ate && diasEntre(ate, vespera) <= COBRE_ATE_ENVIO ? vespera : ate;
+}
+
 export function coberturaPedidos(importacoes) {
   const porPlat = new Map();
   for (const i of importacoes || []) {
     if (!i.ok || !String(i.relatorio || "").startsWith("pedidos:") || !i.periodo_de || !i.periodo_ate) continue;
     const plat = i.relatorio.slice(8);
     if (!porPlat.has(plat)) porPlat.set(plat, []);
-    porPlat.get(plat).push([String(i.periodo_de).slice(0, 10), String(i.periodo_ate).slice(0, 10)]);
+    porPlat.get(plat).push([String(i.periodo_de).slice(0, 10), ateDoEnvioPedidos(i)]);
   }
   const platDoCanal = (canal) => (canal ? PLATAFORMAS.find((p) => p.tipo === canal.tipo)?.id || null : null);
   const dia = (plat, d) => (porPlat.get(plat) || []).some(([a, b]) => d >= a && d <= b);
