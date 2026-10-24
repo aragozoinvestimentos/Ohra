@@ -1,5 +1,7 @@
 # Decisões pendentes (guardadas pra decidir junto com o Gustavo)
 
+> **24/10/2026: itens 1, 2 e 3 FEITOS** (semana curta + Ads e teste; Início novo; Desempenho com carrinho; diagnóstico por anúncio; Análise → Diagnóstico; histórico de ações v64). Falta só: perguntar ao Gustavo como fazer a "Minha empresa".
+
 Nada daqui foi implementado. Quando o Gustavo pedir, reler e decidir junto.
 
 ## 1. Rampa do kit Leão de Judá (23/10/2026)
