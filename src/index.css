@@ -2538,3 +2538,14 @@ td.vendas-opcao { padding-left: 26px; }
 .funil4-rodape { grid-column: 1 / -1; font-size: 12px; }
 @media (max-width: 760px) { .funil4 { grid-template-columns: 1fr 1fr; } .diag-campos { grid-template-columns: 1fr; } }
 .campo-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-soft); }
+
+/* Histórico de ações comerciais (v64) */
+.acao-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px; border: 1px dashed var(--border-strong); border-radius: 10px; margin-bottom: 8px; }
+.acao-form input[type="text"] { flex: 1; min-width: 140px; }
+.acao-item { border-top: 1px solid var(--border); padding: 9px 0; display: flex; flex-direction: column; gap: 4px; }
+.acao-item:first-of-type { border-top: none; }
+.acao-cab { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.acao-cab .del { margin-left: auto; }
+.acao-tabela { width: 100%; max-width: 760px; font-size: 12.5px; }
+.acao-tabela th, .acao-tabela td { padding: 3px 8px; }
+.acao-concluir { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; }

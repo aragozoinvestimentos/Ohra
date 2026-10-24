@@ -24,6 +24,7 @@ import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { CartoesAlvoAgora, DiferencaAlvoAgora } from "./AlvoAgora.jsx";
 import { CartaoDiagnostico, FunilQuatro } from "./Diagnostico.jsx";
+import HistoricoAcoes from "./HistoricoAcoes.jsx";
 
 // Painel do anúncio (remap 21/10/2026, aprovado pela prévia): TUDO de um
 // produto (ou kit / anúncio com vários itens) NUM canal — resumo, vendas,
@@ -38,8 +39,9 @@ const ABAS = [
   { k: "ads", rot: "Ads" },
   { k: "anuncio", rot: "Anúncio" },
   { k: "custo", rot: "Custo" },
+  { k: "acoes", rot: "Ações" },
 ];
-const ABAS_GRUPO = ["resumo", "vendas", "rampa", "ads", "anuncio"];
+const ABAS_GRUPO = ["resumo", "vendas", "rampa", "ads", "anuncio", "acoes"];
 const PERIODOS = [
   { d: 7, rot: "7 dias" },
   { d: 30, rot: "30 dias" },
@@ -76,7 +78,7 @@ function pedidosDoAnuncio(pedidos, l) {
   });
 }
 
-export default function PainelAnuncio() {
+export default function PainelAnuncio({ onToast }) {
   const esc = useEscada();
   const cres = useCrescimento();
   const hoje = hojeSP();
@@ -253,6 +255,7 @@ export default function PainelAnuncio() {
       {abaV === "ads" && <AbaAds l={l} hoje={hoje} ped={ped} />}
       {abaV === "anuncio" && <AbaAnuncio l={l} esc={esc} cres={cres} />}
       {abaV === "custo" && <AbaCusto l={l} />}
+      {abaV === "acoes" && <HistoricoAcoes l={l} hoje={hoje} pedidos={cres.pedidosValidos} cres={cres} onToast={onToast} />}
     </div>
   );
 }
