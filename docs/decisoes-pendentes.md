@@ -58,3 +58,11 @@ Ordem proposta: (1) semana curta da rampa; (2) ler as colunas novas do Desempenh
 - Custo que não dá pra atribuir com segurança (ex.: GMV Max da Loja por produto, custo por pedido em pedido com vários itens) = mostrar "não atribuído"/limitação, nunca ratear em silêncio.
 - Tráfego do produto: conferido coluna a coluna — tudo já existe no Desempenho. Só vale se a tela da Shopee permitir exportar OUTRAS origens de tráfego (o arquivo enviado é só "Product_Card") — Gustavo vai conferir.
 - **Depois de concluir o Diagnóstico: perguntar ao Gustavo como fazer a "Minha empresa" (escritório virtual com funcionários por setor, dados reais, só mostra — aprovado em 24/10/2026).**
+
+## 4. "Sede da <loja>" — escritório virtual (decidido em 24/10/2026, prévia ainda não feita)
+- Nome: **"Sede da <nome da loja>"**; botão "🏢 Entrar na Sede" no topo do Início (volta com "Sair da Sede").
+- Visual 2.5D isométrico, estilo simples e fofo; bonecos SEMPRE se mexendo (andam, digitam, levam caixas); com aviso ganham balão; respeita "reduzir movimento".
+- Simula a vida real com dados do app: uma impressora por impressora da Minha farm (manutenção/desgaste visíveis), estoque, recepção com os arquivos, setores (Preços, Anúncios/Rampa, Ads, Financeiro, Análise) com uniforme por setor.
+- **Duas salas de diretoria**: Gustavo (CEO, camisa social + blazer) e a esposa (sócia/CEO) — ela anda pela empresa, cuida da Live e da revenda (beleza/maquiagem). **Cantinho de Live** (estúdio) ligado à aba Live (próxima live, "● ao vivo").
+- Nome no boneco: NÃO foto — plaquinha com o nome na porta/mesa + boneco com traços parecidos (cabelo, pele, barba/óculos). Falta: nome da esposa e as características dos dois.
+- Lojas separadas: cada loja tem a sua Sede; a loja de revenda (quando existir) terá a sala de estoque/beleza.
