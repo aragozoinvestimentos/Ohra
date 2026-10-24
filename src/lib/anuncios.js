@@ -6,6 +6,8 @@
 import { estadoDoAlerta, estadoSugestaoRampa, piorEstado } from "./estados.js";
 import { irParaAba } from "./navegar.js";
 import { numerosDoPeriodo } from "./ads.js";
+import { diagnosticoDoAnuncio, referenciaDaLoja, taxasDoFunil } from "./diagnostico.js";
+import { infoSazonal, quandoVendeDe } from "./calendario.js";
 
 const num = (v) => Number(v) || 0;
 const somarDias = (iso, n) => {
@@ -124,6 +126,24 @@ export function montarAnuncios({ esc, cres, pedidos, hoje }) {
         vendas: v,
         estado: pior || op,
       });
+    }
+  }
+  // Diagnóstico comercial (24/10/2026): Desempenho mais recente de cada anúncio,
+  // referência da loja (mediana) e um diagnóstico por anúncio (lib/diagnostico.js).
+  if (cres.desempenhoDoAnuncio) {
+    for (const l of out) l.desempenho = l.canal?.tipo === "shopee" ? cres.desempenhoDoAnuncio({ sku: l.tipo === "grupo" ? null : l.sku, grupoId: l.tipo === "grupo" ? l.grupo.id : null, canalId: l.canal.id }) : null;
+    const ref = referenciaDaLoja(out.map((l) => (l.desempenho ? taxasDoFunil(l.desempenho.item) : null)));
+    for (const l of out) {
+      const prodId = l.tipo === "produto" ? l.itemId.slice(2) : null;
+      const produto = prodId ? (esc.produtos || []).find((p) => p.id === prodId) : null;
+      const sazonal = produto && cres.calendario ? infoSazonal(quandoVendeDe(produto), cres.calendario, hoje) : null;
+      const filtro = l.tipo === "grupo" ? { canalId: l.canal.id, grupoId: l.grupo.id } : { itemId: l.itemId, canalId: l.canal.id, produtoId: prodId };
+      const v7 = vendasDoAnuncio(pedidos, filtro, hoje, 7).unidades;
+      const v7antes = vendasDoAnuncio(pedidos, filtro, hoje, 7, somarDias(hoje, -7)).unidades;
+      const cfg = esc.cfgDoProduto ? esc.cfgDoProduto(prodId || l.item?.produtoId || null) : null;
+      l.funil = l.desempenho ? taxasDoFunil(l.desempenho.item) : null;
+      l.refFunil = ref;
+      l.diagnosticos = diagnosticoDoAnuncio({ l, d: l.desempenho, ref, cfg, sazonal, v7, v7antes });
     }
   }
   return out;

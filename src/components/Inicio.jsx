@@ -26,7 +26,8 @@ import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { sugestoesAfiliado } from "../lib/afiliados.js";
 import { agruparPorProduto, ehAvisoDeDados, montarPendencias, situacaoDados } from "../lib/inicio.js";
 import { comoEstaALoja, produtosDaSemana, variacao } from "../lib/resumoLoja.js";
-import { abrirProduto } from "../lib/anuncios.js";
+import { abrirProduto, montarAnuncios } from "../lib/anuncios.js";
+import { useEscada } from "../hooks/useEscada.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
 import { contarMarcas, publicarMarcas } from "../lib/marcas.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -285,9 +286,24 @@ export default function Inicio({ onIrPara, onToast }) {
   const adsP = useAdsPeriodos();
   const [baseAds] = usePreferencia("caixa:saldo-ads-base", null);
   const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos: gestao.lancamentos, periodos: adsP.periodos, hoje, base: baseAds }) : null), [adsP.disponivel, adsP.periodos, gestao.lancamentos, hoje, baseAds]);
+  // Diagnóstico comercial por anúncio (lib/diagnostico.js, via montarAnuncios):
+  // entram atenção e oportunidade; vitrine/página de quem está em rampa com
+  // "Revisar anúncio" já aparece pelo aviso da Rampa (não repete).
+  const esc = useEscada();
+  const cresTodo = useCrescimento();
+  const diagnosticos = useMemo(() => {
+    const out = [];
+    for (const l of montarAnuncios({ esc, cres: cresTodo, pedidos: pedidosValidos, hoje }))
+      for (const d of l.diagnosticos || []) {
+        if (d.estado !== "atencao" && d.estado !== "oportunidade") continue;
+        if ((d.chave === "vitrine" || d.chave === "pagina") && l.rampa?.est?.anuncio) continue;
+        out.push({ l, d });
+      }
+    return out;
+  }, [esc, cresTodo, pedidosValidos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, hoje }),
-    [cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, hoje]
+    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, hoje }),
+    [cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.

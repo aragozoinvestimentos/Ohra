@@ -198,6 +198,21 @@ function useCalculoCrescimento() {
       return r ? { de: d.de, ate: d.ate, impressoes: r.impressoes, cliques: r.cliques, pedidos: r.pedidos } : null;
     }).filter(Boolean);
   };
+  // Desempenho mais recente de um anúncio (diagnóstico comercial, 24/10/2026):
+  // a linha do relatório com TODAS as colunas (carrinho, visitantes, compradores…).
+  const desempenhoDoAnuncio = ({ sku, grupoId, canalId }) => {
+    const ord = [...desempenhos].sort((a, b) => b.ate.localeCompare(a.ate) || b.de.localeCompare(a.de));
+    for (const d of ord) {
+      let it = null;
+      if (grupoId) {
+        const ops = skuGrupo.opcoesSku.get(`${grupoId}|${canalId}`);
+        const id = ops ? cruzarGrupos([d.r], [{ id: grupoId, nome: "", opcoes: ops }]).porGrupo[grupoId]?.itemId : null;
+        it = id ? (d.r.itens || []).find((x) => x.itemId === id) : null;
+      } else if (sku) it = (d.r.itens || []).find((x) => x.sku === normSku(sku));
+      if (it) return { de: d.de, ate: d.ate, item: it };
+    }
+    return null;
+  };
   // Preço da semana: o do marco (início/subida/descida) em vigor; depois do último, o degrau de hoje.
   const precoDaRampa = (r, gravados) => {
     const marcos = gravados.filter((g) => ["inicio", "subida", "descida"].includes(g.tipo)).sort((a, b) => String(a.data).localeCompare(String(b.data)));
@@ -643,7 +658,7 @@ function useCalculoCrescimento() {
 
   const pedidosValidos = reais.linhas;
   return useMemo(
-    () => ({ dados, rampasH: rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, anuncioDoPedido, pedidosValidos, desempenhos }),
+    () => ({ dados, rampasH: rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, anuncioDoPedido, pedidosValidos, desempenhos, desempenhoDoAnuncio }),
     // anuncioDoPedido muda junto com skuGrupo (mesma render)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dados, rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, skuGrupo, pedidosValidos, desempenhos]

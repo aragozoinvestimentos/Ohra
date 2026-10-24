@@ -2519,3 +2519,21 @@ td.vendas-opcao { padding-left: 26px; }
 /* Próximo envio do CSV de Ads (23/10/2026) */
 .ana-prox-envio { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--ink-soft); }
 .ana-prox-envio.pendente { color: var(--st-atencao); }
+
+/* Diagnóstico comercial (24/10/2026) */
+.diag-cartao { border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 10px; padding: 9px 12px; margin-top: 8px; background: var(--surface); display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+.diag-cab { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; }
+.diag-cab b { font-size: 13.5px; }
+.diag-cab .link-btn { margin-left: auto; }
+.diag-evid { font-size: 12.5px; color: var(--ink-soft); }
+.diag-campos { display: grid; grid-template-columns: 120px 1fr; gap: 4px 10px; margin: 2px 0; font-size: 12.5px; width: 100%; }
+.diag-campos dt { color: var(--ink-faint); font-weight: 650; }
+.diag-campos dd { margin: 0; }
+.diag-campos ul { margin: 0; padding-left: 16px; }
+.funil4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.funil4-etapa { border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; display: flex; flex-direction: column; gap: 1px; background: var(--surface-2, var(--surface)); }
+.funil4-etapa small { font-size: 11px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 650; }
+.funil4-etapa b { font-size: 17px; }
+.funil4-etapa.baixo { border-color: var(--st-atencao); background: var(--st-atencao-soft); }
+.funil4-rodape { grid-column: 1 / -1; font-size: 12px; }
+@media (max-width: 760px) { .funil4 { grid-template-columns: 1fr 1fr; } .diag-campos { grid-template-columns: 1fr; } }

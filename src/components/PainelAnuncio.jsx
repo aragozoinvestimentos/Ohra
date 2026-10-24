@@ -23,6 +23,7 @@ import Estado from "./Estado.jsx";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { CartoesAlvoAgora, DiferencaAlvoAgora } from "./AlvoAgora.jsx";
+import { CartaoDiagnostico, FunilQuatro } from "./Diagnostico.jsx";
 
 // Painel do anúncio (remap 21/10/2026, aprovado pela prévia): TUDO de um
 // produto (ou kit / anúncio com vários itens) NUM canal — resumo, vendas,
@@ -294,8 +295,14 @@ function acoesDoAnuncio(l) {
     const av = l.ads.av;
     out.push({ area: "Ads", tipo: av.estado === "ok" ? "info" : av.estado, titulo: av.titulo, porque: av.texto, botao: "Abrir no Ads", ir: { fora: () => irParaAba("crescimento", { sub: "ads", adsChave: l.ads.chave }) } });
   }
+  // Diagnóstico comercial (lib/diagnostico.js): o principal que pede ação.
+  const dg = (l.diagnosticos || []).find((d) => d.estado !== "info");
+  if (dg) out.push({ area: "Diagnóstico", tipo: dg.estado, titulo: dg.titulo, porque: `${dg.evidencia.filter(Boolean).slice(0, 2).join(" · ")}. ${dg.acao}`, botao: dg.rotulo, ir: dg.ir.aba === "anuncio" ? { aba: dg.ir.pedido.aba } : { fora: () => irParaAba(dg.ir.aba, dg.ir.pedido) } });
   return out.sort((a, b) => (PESO[a.tipo] ?? 9) - (PESO[b.tipo] ?? 9));
 }
+
+// Botão de um diagnóstico: dentro do Painel troca de aba; fora, abre a tela.
+const irDiag = (ir, irAba) => (ir.aba === "anuncio" ? irAba(ir.pedido?.aba || "resumo") : irParaAba(ir.aba, ir.pedido));
 
 function irPara(ir, irAba) {
   if (ir.fora) ir.fora();
@@ -407,6 +414,20 @@ function AbaResumo({ l, v, vAnt, adsJ, pedP, de, hoje, dias, irAba }) {
             </div>
           </div>
           <GraficoDiario pedidos={pedP} de={de} ate={hoje} altura={110} />
+        </div>
+      </div>
+      <div className="panel">
+        <h3>
+          Diagnóstico comercial{" "}
+          <Ajuda texto="Junta o funil do Desempenho da Shopee (impressão → clique → carrinho → pagou), o lucro de agora, o Ads e as vendas reais deste anúncio. Problema = os números mostram; hipótese = vale investigar; dados insuficientes = ainda não dá pra concluir. As referências são a metade da média da loja (com 5+ anúncios) ou valores gerais. Nada muda sozinho." />
+        </h3>
+        <div className="pa-corpo">
+          {l.funil && <FunilQuatro funil={l.funil} d={l.desempenho} referencia={l.refFunil} />}
+          {(l.diagnosticos || []).length ? (
+            (l.diagnosticos || []).map((d, i) => <CartaoDiagnostico key={d.chave} d={d} aberto={i === 0 && d.estado !== "info"} onIr={(ir) => irDiag(ir, irAba)} />)
+          ) : (
+            <span className="muted-cel">{l.canal?.tipo === "shopee" ? "✓ Nada fora do esperado no funil, no lucro e no Ads." : `Funil não disponível em ${l.canal?.nome} (só os pedidos) — o diagnóstico usa lucro e Ads.`}</span>
+          )}
         </div>
       </div>
     </>
@@ -1016,7 +1037,9 @@ function AbaAnuncio({ l, esc, cres }) {
         <div className="panel">
           <h3>Funil (Desempenho)</h3>
           <div className="pa-corpo">
-            {est?.funil && est.funil.status !== "sem-dados" ? (
+            {l.funil ? (
+              <FunilQuatro funil={l.funil} d={l.desempenho} referencia={l.refFunil} />
+            ) : est?.funil && est.funil.status !== "sem-dados" ? (
               <div className="kv-lista">
                 <span>Impressões</span>
                 <b>{est.funil.visualizacoes ?? "—"}</b>
@@ -1031,7 +1054,7 @@ function AbaAnuncio({ l, esc, cres }) {
                 <b>{funilTexto(est.funil)}</b>
               </div>
             ) : (
-              <span className="muted-cel">{est ? "coletando dados do Desempenho" : "O funil aparece pros anúncios em rampa (Desempenho da Shopee em Atualizar dados)."}</span>
+              <span className="muted-cel">{l.canal?.tipo === "shopee" ? "Envie o Desempenho do produto em Atualizar dados." : "Funil só existe na Shopee (Desempenho do produto)."}</span>
             )}
           </div>
         </div>

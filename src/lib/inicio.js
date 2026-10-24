@@ -65,10 +65,24 @@ export function montarPendencias({
   importacoes = null, // { disponivel, lista, plataformas: [{ id, nome }] } — central da aba Análise (v55)
   saldoDeAds = null, // saldoAds (lib/saldoAds.js): recargas − gasto dos CSVs
   cupomRuins = [], // [{ item, canal, lucro, estado }] cupom ativo da loja deixando anúncio no prejuízo/abaixo (cupomLoja.js)
+  diagnosticos = [], // [{ l (montarAnuncios), d (lib/diagnostico.js) }] — só atenção/oportunidade
   hoje = "",
 }) {
   const out = [];
   const add = (p) => out.push(p);
+
+  // ---- Diagnóstico comercial (24/10/2026): um aviso por diagnóstico que pede ação ----
+  for (const { l, d } of diagnosticos)
+    add({
+      id: `diag|${d.chave}|${l.chave}`,
+      grupo: d.estado === "oportunidade" ? "oportunidade" : "rotina",
+      ordem: 3,
+      tom: d.estado === "oportunidade" ? "good" : "warn",
+      titulo: `${l.nome}: ${d.titulo.charAt(0).toLowerCase()}${d.titulo.slice(1)}`,
+      texto: `${l.canal.nome} · ${d.evidencia.filter(Boolean)[0] || ""} — ${d.acao}`,
+      ir: { aba: "anuncio", pedido: { itemId: l.itemId, canalId: l.canal.id, aba: "resumo" } },
+      rotulo: "Ver diagnóstico",
+    });
 
   // ---- Minha farm: UM item pro custo que subiu (vermelho se algo ficou abaixo do mínimo) ----
   const altFarm = (farm?.alteracoes || []).filter((a) => !a.revisado);
