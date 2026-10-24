@@ -2696,3 +2696,15 @@ td.vendas-opcao { padding-left: 26px; }
 .bom-dia.compacto { font-size: 12.5px; }
 .sede-placa.fechada { background: #3a3d45; color: #c9ccd3; border-color: #555a66; padding-left: 8px; }
 .sede-placa.fechada b { color: #f2c230; font-weight: 700; }
+/* Início: as 3 coisas que mais valem dinheiro hoje (prévia aprovada 24/10/2026) */
+.inicio-top3-grade { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 900px) { .inicio-top3-grade { grid-template-columns: minmax(0, 1fr); } }
+.inicio-top3-cartao { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: grid; gap: 5px; align-content: start; justify-items: start; background: var(--surface); }
+.inicio-top3-cartao.st-resolver { background: var(--st-resolver-soft); border-color: transparent; }
+.inicio-top3-cartao.st-atencao { background: var(--st-atencao-soft); border-color: transparent; }
+.inicio-top3-cartao.st-oportunidade { background: var(--st-oportunidade-soft); border-color: transparent; }
+.inicio-top3-rot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.inicio-top3-tit { font-size: 14px; }
+.inicio-top3-txt { font-size: 12.5px; color: var(--ink-soft); }
+.inicio-fora { border: 1px dashed var(--border); border-radius: 12px; padding: 8px 12px; display: grid; gap: 3px; font-size: 12.5px; color: var(--ink-soft); margin-top: 8px; }
+.inicio-fora > b { color: var(--ink); }

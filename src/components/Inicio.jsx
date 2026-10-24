@@ -27,9 +27,10 @@ import { avisosManutencao } from "../lib/manutencao.js";
 import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { sugestoesAfiliado } from "../lib/afiliados.js";
-import { agruparPorProduto, ehAvisoDeDados, montarPendencias, situacaoDados } from "../lib/inicio.js";
+import { agruparPorProduto, ehAvisoDeDados, montarPendencias, notaDoAviso, produtoDoAviso, situacaoDados } from "../lib/inicio.js";
+import { produtosParados } from "../lib/relatorios.js";
 import { comoEstaALoja, produtosDaSemana, variacao } from "../lib/resumoLoja.js";
-import { abrirProduto, montarAnuncios } from "../lib/anuncios.js";
+import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
 import { contarMarcas, publicarMarcas } from "../lib/marcas.js";
@@ -307,9 +308,22 @@ export default function Inicio({ onIrPara, onToast }) {
       }
     return out;
   }, [esc, cresTodo, pedidosValidos, hoje]);
+  // unidades por semana de cada item × canal (pedidos das últimas 4 semanas) — valor em R$ dos avisos
+  const vendasSemana = useMemo(() => {
+    const de = new Date(`${hoje}T12:00:00`);
+    de.setDate(de.getDate() - 27);
+    const ini = de.toISOString().slice(0, 10);
+    const m = new Map();
+    for (const p of pedidosValidos || []) {
+      if (String(p.data).slice(0, 10) < ini || !p.canal?.id) continue;
+      const k = `${p.id_item}|${p.canal.id}`;
+      m.set(k, (m.get(k) || 0) + (Number(p.q) || 0));
+    }
+    return (itemId, canalId) => (m.get(`${itemId}|${canalId}`) || 0) / 4;
+  }, [pedidosValidos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, hoje }),
-    [cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, hoje]
+    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, hoje }),
+    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.
@@ -361,10 +375,17 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- 3 · Pra fazer: por produto, Loja e Minhas tarefas ---
   const nomesCanais = (dados.canais || []).map((c) => c.nome);
-  const avisos = pendencias.filter((p) => !p.tarefa && !ehAvisoDeDados(p));
+  const avisosTodos = pendencias.filter((p) => !p.tarefa && !ehAvisoDeDados(p));
+  // As 3 coisas que mais valem dinheiro hoje (prévia aprovada em 24/10/2026):
+  // pelo valor em R$ do aviso (ou o peso do grupo); saem das listas de baixo.
+  const top3 = [...avisosTodos].sort((a, b) => notaDoAviso(b) - notaDoAviso(a)).slice(0, 3);
+  const idsTop = new Set(top3.map((p) => p.id));
+  const avisos = avisosTodos.filter((p) => !idsTop.has(p.id));
   // Só vira cartão de produto o que tem nome de produto, kit ou anúncio com vários
   // itens (impressora, parceiro de afiliado… ficam em Loja).
   const nomesItens = new Set([...(produtos || []), ...(kits || []), ...(gruposAnuncio || [])].map((x) => String(x.nome || "").toLowerCase()));
+  // produtos parados SEM gastar Ads saem do Início (vão pro relatório); com Ads continuam como aviso
+  const parados = useMemo(() => produtosParados({ pedidos: pedidosValidos, produtos, kits, precos, linhasAds, hoje }).filter((x) => !(x.adsGasto > 0)), [pedidosValidos, produtos, kits, precos, linhasAds, hoje]);
   const { produtos: cartoes, loja: avisosLoja } = agruparPorProduto(avisos, nomesCanais, (nome) => nomesItens.has(nome.toLowerCase()));
   const tf = repartirTarefas(
     pendencias.filter((p) => p.tarefa),
@@ -381,10 +402,10 @@ export default function Inicio({ onIrPara, onToast }) {
   const cartoesVis = verProdutos ? [...cartoesUrg, ...(verTodos || filtroAtivo === "produtos" ? cartoesResto : cartoesResto.slice(0, Math.max(0, VISIVEIS - cartoesUrg.length)))] : cartoesUrg;
   const escondidos = verProdutos ? cartoes.length - cartoesVis.length : 0;
   const lojaVis = verLoja ? avisosLoja : avisosLoja.filter((p) => p.grupo === "resolver");
-  const contagem = (g) => cartoes.reduce((t, c) => t + c.itens.filter((p) => p.grupo === g).length, 0) + avisosLoja.filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : 0);
+  const contagem = (g) => avisosTodos.filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : 0);
   const nFiltro = { todos: pendencias.length - avisosDados.length, produtos: cartoes.length, loja: avisosLoja.length, tarefas: tf.total };
 
-  const urgentes = [...avisos.filter((p) => p.grupo === "resolver"), ...pendencias.filter((p) => p.tarefa && p.grupo === "resolver")];
+  const urgentes = [...avisosTodos.filter((p) => p.grupo === "resolver"), ...pendencias.filter((p) => p.tarefa && p.grupo === "resolver")];
   const nUrgentes = urgentes.length;
   useEffect(() => {
     if (!carregando) publicarUrgentes(nUrgentes);
@@ -429,7 +450,25 @@ export default function Inicio({ onIrPara, onToast }) {
     const p = (produtos || []).find((x) => String(x.nome).toLowerCase() === n);
     if (p) return `p:${p.id}`;
     const k = (kits || []).find((x) => String(x.nome).toLowerCase() === n);
-    return k ? `k:${k.id}` : null;
+    if (k) return `k:${k.id}`;
+    const g = (gruposAnuncio || []).find((x) => String(x.nome).toLowerCase() === n);
+    return g ? `g:${g.id}` : null;
+  };
+  // aba do Painel do anúncio que o aviso pede (pelo tipo do aviso)
+  const abaDoAviso = (p) => {
+    const t = String(p.id).split("|")[0];
+    if (t === "ads") return "ads";
+    if (["subir", "anuncio", "alvo", "acima", "acima-ok", "acima-volta", "nota", "teste-rec", "lucro-menos", "teste-acabando", "teste-acabou"].includes(t) || t.startsWith("rampa-")) return "rampa";
+    if (["prejuizo", "minimo", "atracao", "revisar"].includes(t)) return "preco";
+    if (["anunciar", "promo-limite"].includes(t)) return "anuncio";
+    return "resumo";
+  };
+  // aviso de um anúncio (item × canal) → abre o Painel do anúncio; senão o destino dele
+  const anuncioDoAviso = (p) => {
+    const k = produtoDoAviso(p, nomesCanais);
+    const itemId = k ? itemDoNome(k.nome) : null;
+    const canal = k?.canal ? canalDoNome(k.canal) : null;
+    return itemId && canal ? { itemId, canalId: canal.id } : null;
   };
   const canalDoNome = (nome) => (dados.canais || []).find((c) => c.nome === nome) || null;
 
@@ -464,6 +503,7 @@ export default function Inicio({ onIrPara, onToast }) {
     const est = estadoPendencia(g.itens[0]);
     const [tipoG, rotG] = ROTULO_GRUPO[g.grupo] || ["info", ""];
     const itemId = itemDoNome(g.nome);
+    const canalCartao = g.canal ? canalDoNome(g.canal) : null;
     return (
       <div key={g.id} className={`inicio-cartao${est ? ` st-${est}` : ""}`}>
         <div className="inicio-cartao-cab">
@@ -472,11 +512,15 @@ export default function Inicio({ onIrPara, onToast }) {
           {g.canais.map((c) => (canalDoNome(c) ? <CanalTag key={c} canal={canalDoNome(c)} /> : null))}
           <Estado tipo={tipoG}>{rotG}</Estado>
           {g.itens.length > 1 && <span className="muted-cel">{g.itens.length} avisos</span>}
-          {itemId && (
+          {itemId && canalCartao ? (
+            <button type="button" className="btn btn-mini inicio-cartao-abrir" onClick={() => abrirAnuncio(itemId, canalCartao.id, abaDoAviso(g.itens[0]))}>
+              Abrir no Painel do anúncio →
+            </button>
+          ) : itemId ? (
             <button type="button" className="btn btn-mini inicio-cartao-abrir" onClick={() => abrirProduto(itemId)}>
               Abrir produto →
             </button>
-          )}
+          ) : null}
         </div>
         {g.itens.map((p) => linhaAviso(p, true))}
       </div>
@@ -603,6 +647,43 @@ export default function Inicio({ onIrPara, onToast }) {
         </div>
       )}
 
+      {/* As 3 coisas que mais valem dinheiro hoje */}
+      {!carregando && top3.length > 0 && (
+        <div className="panel inicio-top3">
+          <h3 className="section-title">
+            <span>
+              As {top3.length === 1 ? "coisa" : `${top3.length} coisas`} que mais valem dinheiro hoje <span className="h3-contagem">pelo quanto valem em R$ — o resto está embaixo</span>
+            </span>
+          </h3>
+          <div className="inicio-top3-grade">
+            {top3.map((p) => {
+              const est = estadoPendencia(p);
+              const [tipoG, rotG] = ROTULO_GRUPO[p.grupo] || ["info", ""];
+              const an = anuncioDoAviso(p);
+              const emJogo = p.valor > 0 ? (String(p.id).startsWith("caixa|") ? `${BRL(p.valor)} em jogo` : `vale ~${BRL(p.valor)}/semana`) : null;
+              return (
+                <div key={p.id} className={`inicio-top3-cartao${est ? ` st-${est}` : ""}`}>
+                  <span className="inicio-top3-rot">
+                    <Estado tipo={tipoG}>{rotG}</Estado>
+                    {emJogo && <b>{emJogo}</b>}
+                  </span>
+                  <b className="inicio-top3-tit">{p.titulo}</b>
+                  <span className="inicio-top3-txt">{p.texto}</span>
+                  {an ? (
+                    <button type="button" className={`btn btn-sm${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => abrirAnuncio(an.itemId, an.canalId, abaDoAviso(p))}>
+                      Abrir anúncio →
+                    </button>
+                  ) : (
+                    <button type="button" className={`btn btn-sm${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => ir(p.ir)}>
+                      {p.rotulo || "Abrir"} →
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {/* 3 · Pra fazer */}
       <div className="panel inicio-fazer">
         <h3 className="section-title">
@@ -663,6 +744,15 @@ export default function Inicio({ onIrPara, onToast }) {
                 <div className="inicio-sec">Loja</div>
                 {lojaVis.map(cartaoLoja)}
               </>
+            )}
+            {parados.length > 0 && verLoja && (
+              <div className="inicio-fora">
+                <b>Fora do Início (só informação)</b>
+                <span>
+                  {parados.slice(0, 3).map((x) => x.nome).join(", ")}
+                  {parados.length > 3 ? ` e mais ${parados.length - 3}` : ""}: sem venda há 30+ dias, sem gastar Ads. Ficam no relatório <b>Produtos parados</b> e na Reunião da semana (consultor da Sede).
+                </span>
+              </div>
             )}
             {(verTarefas ? tarefasLista : tf.resolver).length > 0 && (
               <>

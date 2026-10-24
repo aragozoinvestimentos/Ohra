@@ -5,7 +5,7 @@
 
 import { pendenciasDeTarefas } from "./tarefas.js";
 import { estadoSugestaoAfiliado } from "./estados.js";
-import { andamentoAtrasado } from "./ads.js";
+import { andamentoAtrasado, periodoLigado } from "./ads.js";
 import { precisaRecarregar } from "./saldoAds.js";
 
 const brl = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -47,6 +47,32 @@ export function areaPendencia(p) {
   return "outros";
 }
 
+// ---- Quanto vale cada aviso em R$ (prévia aprovada em 24/10/2026: o topo do
+// Início mostra "as 3 coisas que mais valem dinheiro hoje"). Estimativa simples,
+// por semana; aviso sem valor conhecido usa um peso pelo grupo (VALOR_GRUPO).
+export const VALOR_GRUPO = { resolver: 30, oportunidade: 8, rotina: 5 };
+function valorAds(l, hoje) {
+  const orc = (l.periodos || []).filter((p) => periodoLigado(p, hoje)).reduce((t, p) => t + Number(p.orcamento_diario || 0), 0);
+  const semana = orc * 7;
+  const av = l.av || {};
+  const ret = av.numeros?.retorno != null ? Number(av.numeros.retorno) : null;
+  // aumentar: o lucro a mais com +20% no orçamento
+  if (av.chave === "aumentar") return ret > 1 ? semana * 0.2 * (ret - 1) : null;
+  if (!(semana > 0)) return null;
+  // sem venda nenhuma = o gasto inteiro está indo embora; com retorno conhecido = o que se perde
+  if (ret != null && isFinite(ret)) return semana * Math.max(0, 1 - ret) || null;
+  return semana;
+}
+function valorSubir(est) {
+  if (!est?.lucroEm || !(est.lucroSemana > 0)) return null;
+  const novo = est.sugestao?.saltos === 2 ? est.degraus?.[est.i + 2] : est.proximo;
+  const a = est.lucroEm(est.preco);
+  const b = novo ? est.lucroEm(novo) : null;
+  return a > 0 && b > a ? est.lucroSemana * (b / a - 1) : null;
+}
+/** Nota de um aviso pra ordenar "o que mais vale": o valor em R$ ou o peso do grupo. */
+export const notaDoAviso = (p) => (p.grupo === "resolver" ? Math.max(p.valor || 0, VALOR_GRUPO.resolver) : p.valor > 0 ? p.valor : VALOR_GRUPO[p.grupo] ?? 3);
+
 export function montarPendencias({
   precosAlerta = [], // [{ item, canal, al }] anunciados com al.tipo prejuizo | abaixo-minimo (alertaDe)
   caixa = null, // resumoCaixa (fluxoCaixa.js)
@@ -66,6 +92,7 @@ export function montarPendencias({
   saldoDeAds = null, // saldoAds (lib/saldoAds.js): recargas − gasto dos CSVs
   cupomRuins = [], // [{ item, canal, lucro, estado }] cupom ativo da loja deixando anúncio no prejuízo/abaixo (cupomLoja.js)
   diagnosticos = [], // [{ l (montarAnuncios), d (lib/diagnostico.js) }] — só atenção/oportunidade
+  vendasSemana = () => 0, // (itemId, canalId) → unidades por semana (pedidos de 4 semanas) — pro valor em R$ do aviso
   hoje = "",
 }) {
   const out = [];
@@ -133,6 +160,7 @@ export function montarPendencias({
   // ---- Resolver ----
   for (const { item, canal, al } of precosAlerta.filter((a) => a.al?.tipo === "prejuizo"))
     add({
+      valor: Math.abs(Number(al.agora?.lucro ?? al.linha?.lucro) || 0) * vendasSemana(item.id, canal.id) || null,
       id: `prejuizo|${item.id}|${canal.id}`,
       grupo: "resolver",
       ordem: 1,
@@ -142,8 +170,9 @@ export function montarPendencias({
       ir: { aba: "historico", pedido: { busca: item.nome } },
       rotulo: "Ver em Produtos precificados",
     });
-  for (const { item, canal } of precosAlerta.filter((a) => a.al?.tipo === "abaixo-minimo"))
+  for (const { item, canal, al } of precosAlerta.filter((a) => a.al?.tipo === "abaixo-minimo"))
     add({
+      valor: al.minimo != null && al.linha?.preco != null ? Math.max(0, Number(al.minimo) - Number(al.linha.preco)) * vendasSemana(item.id, canal.id) || null : null,
       id: `minimo|${item.id}|${canal.id}`,
       grupo: "rotina",
       ordem: 0,
@@ -157,6 +186,7 @@ export function montarPendencias({
     const pagar = caixa.atrasados.filter((l) => l.tipo === "saida").reduce((s, l) => s + Number(l.valor || 0), 0);
     const receber = caixa.atrasados.filter((l) => l.tipo === "entrada").reduce((s, l) => s + Number(l.valor || 0), 0);
     add({
+      valor: pagar + receber,
       id: "caixa|atrasados",
       grupo: pagar > 0 ? "resolver" : "rotina",
       ordem: 3,
@@ -188,6 +218,9 @@ export function montarPendencias({
   for (const l of rampas) {
     const sg = l.est.sugestao;
     if (!sg || !["voltar", "descer", "atrasado", "sem-venda"].includes(sg.chave)) continue;
+    // produto parado SEM gastar nada não é aviso (prévia aprovada em 24/10/2026): vai pro
+    // relatório Produtos parados; com Ads ligado é dinheiro saindo → continua aqui
+    if (sg.chave === "sem-venda" && !l.ctx?.adsAtivo) continue;
     const textos = {
       voltar: [`${l.produto.nome}: voltar degrau`, `${l.canal.nome} · o preço novo derrubou o lucro por 2 semanas`],
       "sem-venda": [`${l.produto.nome}: ${l.est.semVenda?.dias || 7} dias sem venda`, `${l.canal.nome} · confira se o anúncio aparece na busca, o preço e a foto de capa`],
@@ -273,54 +306,54 @@ export function montarPendencias({
     const irL = { aba: "crescimento", pedido: { sub: "ads", adsChave: l.chave } };
     // Método do Luan (16/10/2026): dia 3 sem venda, pausado, conferir, virar meta, campanha da loja.
     if (av.chave === "sem-venda-dia3") {
-      add({ id: `ads|${l.chave}|dia3`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: ${av.semVenda?.dias || 3} dias pagando Ads sem venda`, texto: `${l.canal.nome} · pause e arrume o anúncio antes de gastar mais`, ir: irL, rotulo: "Ver o que fazer" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|dia3`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: ${av.semVenda?.dias || 3} dias pagando Ads sem venda`, texto: `${l.canal.nome} · pause e arrume o anúncio antes de gastar mais`, ir: irL, rotulo: "Ver o que fazer" });
       continue;
     }
     if (av.chave === "ads-prejuizo") {
-      add({ id: `ads|${l.chave}|prejuizo`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads no prejuízo`, texto: `${l.canal.nome} · ${av.titulo.replace(/^Ads no prejuízo — /, "")} · pause e arrume o anúncio`, ir: irL, rotulo: "Ver o que fazer" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|prejuizo`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads no prejuízo`, texto: `${l.canal.nome} · ${av.titulo.replace(/^Ads no prejuízo — /, "")} · pause e arrume o anúncio`, ir: irL, rotulo: "Ver o que fazer" });
       continue;
     }
     // Queda com o Ads ligado (17/10/2026).
     if (av.chave === "parou-ads" || av.chave === "queda-ads") {
-      add({ id: `ads|${l.chave}|${av.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "parou-ads" ? "confira anúncio, estoque e preço — pause até descobrir" : "reduza o orçamento ou suba a meta"}`, ir: irL, rotulo: "Ver o que fazer" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|${av.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "parou-ads" ? "confira anúncio, estoque e preço — pause até descobrir" : "reduza o orçamento ou suba a meta"}`, ir: irL, rotulo: "Ver o que fazer" });
       continue;
     }
     if (av.chave === "queda-ads-sinal") {
-      add({ id: `ads|${l.chave}|queda-sinal`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.split(" — ")[0]}`, texto: `${l.canal.nome} · avalie a causa, sem mexer ainda — o app pede pra agir se seguir assim até ${av.decideEm ? `${av.decideEm.slice(8, 10)}/${av.decideEm.slice(5, 7)}` : "o 7º dia"}`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|queda-sinal`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.split(" — ")[0]}`, texto: `${l.canal.nome} · avalie a causa, sem mexer ainda — o app pede pra agir se seguir assim até ${av.decideEm ? `${av.decideEm.slice(8, 10)}/${av.decideEm.slice(5, 7)}` : "o 7º dia"}`, ir: irL, rotulo: "Abrir Ads" });
       continue;
     }
     if (av.chave === "despausar") {
-      add({ id: `ads|${l.chave}|despausar`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: já revisou? Despause o Ads`, texto: `${l.canal.nome} · pausado desde ${av.pausado?.desde ? `${av.pausado.desde.slice(8, 10)}/${av.pausado.desde.slice(5, 7)}` : "—"}`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|despausar`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: já revisou? Despause o Ads`, texto: `${l.canal.nome} · pausado desde ${av.pausado?.desde ? `${av.pausado.desde.slice(8, 10)}/${av.pausado.desde.slice(5, 7)}` : "—"}`, ir: irL, rotulo: "Abrir Ads" });
       continue;
     }
     if (av.chave === "pausa-longa") {
-      add({ id: `ads|${l.chave}|pausa-longa`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: Ads pausado há ${av.pausado?.desde ? Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${av.pausado.desde}T12:00:00`)) / 86400000) : 21} dias`, texto: `${l.canal.nome} · a Shopee começa a perder o aprendizado — despause ou encerre o período`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|pausa-longa`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: Ads pausado há ${av.pausado?.desde ? Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${av.pausado.desde}T12:00:00`)) / 86400000) : 21} dias`, texto: `${l.canal.nome} · a Shopee começa a perder o aprendizado — despause ou encerre o período`, ir: irL, rotulo: "Abrir Ads" });
       continue;
     }
     if (av.chave === "conferir-dia3") {
-      add({ id: `ads|${l.chave}|conferir`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()} do Ads`, texto: `${l.canal.nome} · pra saber se já vendeu (sem venda em 3 dias = parar e arrumar o anúncio)`, ir: { aba: "importar" }, rotulo: "Abrir importação" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|conferir`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()} do Ads`, texto: `${l.canal.nome} · pra saber se já vendeu (sem venda em 3 dias = parar e arrumar o anúncio)`, ir: { aba: "importar" }, rotulo: "Abrir importação" });
       continue;
     }
     if (av.chave === "virar-meta") {
-      add({ id: `ads|${l.chave}|virar-meta`, grupo: av.estado === "oportunidade" ? "oportunidade" : "rotina", ordem: 1, tom: av.estado === "oportunidade" ? "good" : "warn", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · fim dos 7 dias no lance automático`, ir: irL, rotulo: "Ver" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|virar-meta`, grupo: av.estado === "oportunidade" ? "oportunidade" : "rotina", ordem: 1, tom: av.estado === "oportunidade" ? "good" : "warn", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · fim dos 7 dias no lance automático`, ir: irL, rotulo: "Ver" });
       continue;
     }
     if (["loja-abaixo", "loja-nao-gasta"].includes(av.chave) || (av.loja && av.chave === "aguardando")) {
-      add({ id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `Campanha da loja: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · GMV Max da Loja`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `Campanha da loja: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · GMV Max da Loja`, ir: irL, rotulo: "Abrir Ads" });
       continue;
     }
     if (av.chave === "pausar-revisar")
-      add({ id: `ads|${l.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads com cliques sem venda`, texto: `${l.canal.nome} · ${av.titulo}`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads com cliques sem venda`, texto: `${l.canal.nome} · ${av.titulo}`, ir: irL, rotulo: "Abrir Ads" });
     else if (["pausar", "reduzir", "inviavel-ativo", "subir-meta", "arrumar-anuncio"].includes(av.chave))
-      add({ id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo ${av.sazonal && av.minimo !== av.empate ? "do mínimo da temporada" : "do ROAS de equilíbrio"} (${(av.minimo ?? av.empate) ? (av.minimo ?? av.empate).toFixed(1).replace(".", ",") : "—"})`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo ${av.sazonal && av.minimo !== av.empate ? "do mínimo da temporada" : "do ROAS de equilíbrio"} (${(av.minimo ?? av.empate) ? (av.minimo ?? av.empate).toFixed(1).replace(".", ",") : "—"})`, ir: irL, rotulo: "Abrir Ads" });
     else if (av.chave === "segurar-producao")
-      add({ id: `ads|${l.chave}|producao`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: segurar o Ads`, texto: `${l.canal.nome} · as vendas subiram e a produção não acompanha`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|producao`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: segurar o Ads`, texto: `${l.canal.nome} · as vendas subiram e a produção não acompanha`, ir: irL, rotulo: "Abrir Ads" });
     else if (["pausar-corte", "atualizar-andamento"].includes(av.chave))
-      add({ id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · ${av.chave === "pausar-corte" ? "último dia de entrega passou" : "fase Alavancar decide a cada 3–4 dias"}`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · ${av.chave === "pausar-corte" ? "último dia de entrega passou" : "fase Alavancar decide a cada 3–4 dias"}`, ir: irL, rotulo: "Abrir Ads" });
     else if (["aumentar", "meta-alta"].includes(av.chave))
-      add({ id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? `retorno ${av.numeros?.retorno != null ? av.numeros.retorno.toFixed(1).replace(".", ",") : "—"}× o equilíbrio` : "a Shopee gastou pouco do orçamento"} · mude entre 22h e meia-noite`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? `retorno ${av.numeros?.retorno != null ? av.numeros.retorno.toFixed(1).replace(".", ",") : "—"}× o equilíbrio` : "a Shopee gastou pouco do orçamento"} · mude entre 22h e meia-noite`, ir: irL, rotulo: "Abrir Ads" });
     if (av.avisoMeta)
-      add({ id: `ads|${l.chave}|meta-alta-inicio`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: meta de ROAS alta pra começar`, texto: `${l.canal.nome} · meta ${av.avisoMeta.meta.toFixed(1).replace(".", ",")} — comece com ${av.avisoMeta.sugerida.toFixed(1).replace(".", ",")}`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|meta-alta-inicio`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: meta de ROAS alta pra começar`, texto: `${l.canal.nome} · meta ${av.avisoMeta.meta.toFixed(1).replace(".", ",")} — comece com ${av.avisoMeta.sugerida.toFixed(1).replace(".", ",")}`, ir: irL, rotulo: "Abrir Ads" });
   }
   // Saldo de Ads na Shopee acabando (17/10/2026): menos de 5 dias no ritmo atual.
   if (precisaRecarregar(saldoDeAds))
@@ -531,6 +564,7 @@ export function montarPendencias({
   // ---- Oportunidades ----
   for (const l of rampas.filter((x) => x.est.sugestao?.chave === "subir"))
     add({
+      valor: valorSubir(l.est),
       id: `subir|${l.r.id}`,
       grupo: "oportunidade",
       ordem: 1,
@@ -683,9 +717,10 @@ export function agruparPorProduto(avisos, nomesCanais, ehProduto = () => true) {
       loja.push(p);
       continue;
     }
-    const chave = k.nome.toLowerCase();
+    // um cartão por ANÚNCIO = item × canal (prévia aprovada em 24/10/2026)
+    const chave = `${k.nome.toLowerCase()}|${k.canal || ""}`;
     let g = porNome.get(chave);
-    if (!g) porNome.set(chave, (g = { produto: true, id: `produto|${chave}`, nome: k.nome, anuncio: k.anuncio, itens: [], canais: [] }));
+    if (!g) porNome.set(chave, (g = { produto: true, id: `produto|${chave}`, nome: k.nome, anuncio: k.anuncio, canal: k.canal || null, itens: [], canais: [] }));
     g.itens.push({ ...p, _canal: k.canal });
     if (k.canal && !g.canais.includes(k.canal)) g.canais.push(k.canal);
   }

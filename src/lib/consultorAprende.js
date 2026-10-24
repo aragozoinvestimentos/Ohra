@@ -253,5 +253,6 @@ export const NOVIDADES_CONSULTOR = [
   { data: "2026-10-24", texto: "Todo dia dou o “Bom dia” com o dia de ontem — mas só depois de conferir se os arquivos de ontem foram enviados." },
   { data: "2026-10-24", texto: "As salas da Sede abrem sozinhas pelo que a loja tem (Produção, Estúdio de Live, Revenda) — e dá pra renomear as salas." },
   { data: "2026-10-24", texto: "Entrego relatórios prontos (Fechamento do mês, Ads do mês, Reunião da semana, Produtos parados) em PDF ou CSV — só no seu clique." },
+  { data: "2026-10-24", texto: "O Início agora mostra no topo as 3 coisas que mais valem dinheiro hoje, um cartão por anúncio, e produto parado sem gastar nada saiu dos avisos." },
   { data: "2026-10-24", texto: "Aprendo sozinho: guardo as respostas do Claude (e as que você me ensina), o que você costuma aprovar ou adiar, e se o que foi aprovado resolveu." },
 ];
