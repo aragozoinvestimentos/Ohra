@@ -223,8 +223,9 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   // ---------- clique ----------
   function clicar(e) {
     const b = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - b.left) / b.width) * TAMANHO_SEDE.largura;
-    const y = ((e.clientY - b.top) / b.height) * TAMANHO_SEDE.altura;
+    // girada 90° (horário): o eixo x da cena desce na tela e o y vai pra esquerda
+    const x = girado ? ((e.clientY - b.top) / b.height) * TAMANHO_SEDE.largura : ((e.clientX - b.left) / b.width) * TAMANHO_SEDE.largura;
+    const y = girado ? ((b.right - e.clientX) / b.width) * TAMANHO_SEDE.altura : ((e.clientY - b.top) / b.height) * TAMANHO_SEDE.altura;
     const q = motor.current?.quemEsta(x, y);
     if (!q) return;
     if (q.consultor) setSel({ consultor: true });
@@ -244,25 +245,50 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   // Só sai da tela cheia do navegador se foi a Sede que entrou nela (se o
   // navegador já estava em tela cheia antes, continua).
   const pediuTela = useRef(false);
+  // Celular = "modo jogo": tela cheia do navegador (com o prefixo webkit) e
+  // tenta deitar a tela (Android). Onde o navegador não deixa (iPhone), a Sede
+  // cobre a página e, com o celular em pé, gira a cena pra ocupar a tela toda.
   const pedirTelaNavegador = () => {
-    if (document.fullscreenElement || !document.documentElement.requestFullscreen) return;
-    document.documentElement
-      .requestFullscreen()
-      .then(() => {
-        pediuTela.current = true;
-      })
-      .catch(() => {});
+    const el = document.documentElement;
+    const pedir = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (document.fullscreenElement || document.webkitFullscreenElement || !pedir) return;
+    try {
+      Promise.resolve(pedir.call(el, { navigationUI: "hide" }))
+        .then(() => {
+          pediuTela.current = true;
+          if (window.matchMedia("(pointer: coarse)").matches) screen.orientation?.lock?.("landscape").catch(() => {});
+        })
+        .catch(() => {});
+    } catch {
+      /* navegador sem tela cheia */
+    }
   };
   const entrarTela = () => {
     pedirTelaNavegador();
     pedirTelaSede("manual");
   };
   const sairTela = () => {
-    if (pediuTela.current && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    if (pediuTela.current && (document.fullscreenElement || document.webkitFullscreenElement)) {
+      try {
+        screen.orientation?.unlock?.();
+      } catch {
+        /* sem trava */
+      }
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document)?.catch?.(() => {});
+    }
     pediuTela.current = false;
     setPainelTela(false);
     onSairTela?.();
   };
+  // celular em pé com a Sede em tela cheia → gira a cena 90° (como um jogo deitado)
+  const [emPe, setEmPe] = useState(() => typeof window !== "undefined" && window.matchMedia("(orientation: portrait) and (max-width: 900px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait) and (max-width: 900px)");
+    const f = () => setEmPe(mq.matches);
+    mq.addEventListener?.("change", f);
+    return () => mq.removeEventListener?.("change", f);
+  }, []);
+  const girado = !!tela && emPe;
   const sairTelaRef = useRef(sairTela);
   useEffect(() => {
     sairTelaRef.current = sairTela;
@@ -277,7 +303,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
       if (e.key === "Escape") sair();
     };
     const fs = () => {
-      if (!document.fullscreenElement && tela === "manual") sair();
+      if (!document.fullscreenElement && !document.webkitFullscreenElement && tela === "manual" && pediuTela.current) sair();
     };
     let tirar = () => {};
     // descanso: espera 1 s antes de ouvir (o mesmo movimento que abriu não fecha)
@@ -291,7 +317,9 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
         : null;
     window.addEventListener("keydown", tecla);
     document.addEventListener("fullscreenchange", fs);
+    document.addEventListener("webkitfullscreenchange", fs);
     return () => {
+      document.removeEventListener("webkitfullscreenchange", fs);
       clearTimeout(t);
       tirar();
       window.removeEventListener("keydown", tecla);
@@ -311,10 +339,10 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   };
 
   return (
-    <div className={`sede${tela ? " sede-tela-cheia" : ""}`}>
+    <div className={`sede${tela ? " sede-tela-cheia" : ""}${girado ? " sede-girada" : ""}`}>
       <div className="sede-topo">
         {tela === "descanso" ? (
-          <span className="sede-dica-tela">mexa o mouse pra voltar</span>
+          <span className="sede-dica-tela">mexa o mouse ou toque pra voltar</span>
         ) : tela ? (
           <button type="button" className="btn btn-sm" onClick={sairTela}>
             ✕ Sair da tela cheia <small>(Esc)</small>

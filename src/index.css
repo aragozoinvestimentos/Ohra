@@ -2655,3 +2655,24 @@ td.vendas-opcao { padding-left: 26px; }
 .consultor-ex { border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft); border-radius: 999px; padding: 2px 9px; font: 600 11.5px Manrope, sans-serif; cursor: pointer; }
 .consultor-ex:hover { border-color: var(--accent); color: var(--ink); }
 .sede-tela-cheia .sede-painel { width: 430px; }
+/* Sede em tela cheia no celular = "modo jogo" (24/10/2026): cena ocupando a tela
+   toda, botões flutuando por cima; com o celular em pé a Sede gira 90° (deitada). */
+.sede-tela-cheia { --alt-tela: 100vh; height: 100vh; height: 100dvh; }
+@supports (height: 100dvh) { .sede-tela-cheia { --alt-tela: 100dvh; } }
+.sede-tela-cheia.sede-girada { --alt-tela: 100vw; inset: auto; top: 0; left: 0; width: 100vh; width: 100dvh; height: 100vw; transform-origin: top left; transform: rotate(90deg) translateY(-100%); }
+@media (max-width: 900px), (max-height: 560px) {
+  .sede-tela-cheia { padding: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: #0d1016; }
+  .sede-tela-cheia .sede-topo { position: absolute; top: 6px; left: 8px; right: 8px; z-index: 3; margin: 0; gap: 6px; pointer-events: none; flex-wrap: nowrap; }
+  .sede-tela-cheia .sede-topo > *, .sede-tela-cheia .sede-kpis > * { pointer-events: auto; }
+  .sede-tela-cheia .sede-titulo, .sede-tela-cheia .sede-kpis > span, .sede-tela-cheia .sede-topo small { display: none; }
+  .sede-tela-cheia .sede-kpis { margin-left: auto; }
+  .sede-tela-cheia .sede-topo .btn { background: rgba(20,24,32,.78); color: #f4efe7; border-color: rgba(255,255,255,.18); padding: 3px 9px; font-size: 12px; }
+  .sede-tela-cheia .sede-dica-tela { background: rgba(20,24,32,.7); padding: 2px 8px; border-radius: 999px; }
+  .sede-tela-cheia .sede-grade > div:first-child { align-items: center; }
+  .sede-tela-cheia .sede-cena { width: min(100%, calc(var(--alt-tela) * 640 / 416)); border: none; border-radius: 0; }
+  .sede-tela-cheia .sede-fala { font-size: 11.5px; max-width: 170px; padding: 3px 7px; }
+  .sede-tela-cheia .sede-placa { font-size: 9px; padding: 2px 6px 2px 15px; }
+  .sede-tela-cheia .sede-agora-flutua { left: 8px; bottom: 8px; max-width: 55%; padding: 5px 9px; font-size: 11px; opacity: .9; }
+  .sede-tela-cheia .sede-agora-flutua li:nth-child(n+2) { display: none; }
+  .sede-tela-cheia .sede-painel { right: 8px; top: 40px; width: min(380px, calc(100% - 16px)); max-height: calc(100% - 48px); }
+}
