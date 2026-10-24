@@ -2609,3 +2609,49 @@ td.vendas-opcao { padding-left: 26px; }
 .sede-agora-flutua li span { color: #6b6a70; }
 .sede-tela-cheia .sede-painel { position: absolute; right: 12px; top: 12px; width: 320px; max-height: calc(100% - 24px); overflow: auto; z-index: 2; }
 .sede-painel-fechar { float: right; }
+/* Consultor da Sede (24/10/2026) */
+.consultor h3 { display: flex; align-items: baseline; gap: 6px; }
+.consultor-abas { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0 10px; }
+.consultor-abas button { border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft); border-radius: 999px; padding: 3px 10px; font: 700 12px Manrope, sans-serif; cursor: pointer; }
+.consultor-abas button.ativo { background: var(--accent); border-color: var(--accent); color: #fff; }
+.consultor-n { margin-left: 5px; background: var(--st-resolver); color: #fff; border-radius: 999px; padding: 0 6px; font-size: 11px; }
+.consultor-abas button.ativo .consultor-n { background: #fff; color: var(--accent); }
+.consultor-conversa { display: grid; gap: 6px; max-height: 300px; overflow: auto; margin-bottom: 8px; }
+.consultor-msg { border-radius: 10px; padding: 6px 10px; font-size: 13px; white-space: pre-line; max-width: 92%; }
+.consultor-msg.eu { justify-self: end; margin-left: auto; background: var(--accent); color: #fff; }
+.consultor-msg.ele { background: var(--bg, #f4f4f2); border: 1px solid var(--border); }
+.consultor-msg.naosei { border-color: var(--st-atencao); }
+.consultor-msg .link-btn { display: block; margin-top: 4px; font-size: 11.5px; }
+.consultor-campo { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.consultor-campo input { flex: 1; min-width: 160px; }
+.consultor-exemplos { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.consultor-exemplos .chip-cel { cursor: pointer; }
+.consultor-sub { font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-faint); margin: 12px 0 4px; font-weight: 800; }
+.consultor-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.consultor-lista li { border-top: 1px dashed var(--border); padding-top: 6px; font-size: 13px; display: grid; gap: 3px; justify-items: start; }
+.consultor-lista code { font-size: 11.5px; white-space: pre-wrap; word-break: break-word; }
+.consultor-resposta { font-size: 12.5px; color: var(--ink-soft); white-space: pre-line; border-left: 3px solid var(--accent); padding-left: 8px; }
+.consultor-acoes { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.consultor-colar textarea, .consultor-levar textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; border: 1px solid var(--border); border-radius: 8px; padding: 6px; background: var(--surface); color: var(--ink); }
+.consultor-levar { display: grid; gap: 8px; }
+.consultor-cartao { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; display: grid; gap: 4px; justify-items: start; font-size: 13px; }
+.consultor-cartao dl { margin: 2px 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 12.5px; }
+.consultor-cartao dt { color: var(--ink-faint); font-weight: 700; }
+.consultor-cartao dd { margin: 0; color: var(--ink-soft); }
+.consultor-dialogo { display: grid; gap: 2px; font-size: 12.5px; color: var(--ink-soft); }
+.consultor-erro { color: var(--st-resolver); font-size: 12px; }
+.sede-placa.cheia { border-color: #ffb36b; }
+.sede-placa b { color: #ffb36b; font-weight: 800; }
+.sede-nome-linha { display: flex; gap: 6px; align-items: center; }
+.sede-nome-linha input[type="text"], .sede-nome-linha > input { flex: 1; min-width: 0; }
+.sede-nome-liga { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--ink-soft); white-space: nowrap; cursor: pointer; }
+.sede-nome.desligado > span, .sede-nome.desligado input:not([type="checkbox"]) { opacity: .5; }
+.sede-tela-cheia .sede-painel { width: 380px; }
+@media (max-width: 700px) { .consultor-cartao dl { grid-template-columns: 1fr; } }
+.sede-grade.com-consultor { grid-template-columns: minmax(0, 1fr) 430px; }
+@media (max-width: 1050px) { .sede-grade.com-consultor { grid-template-columns: minmax(0, 1fr); } }
+.consultor-cartao dl { grid-template-columns: 1fr; gap: 0; }
+.consultor-cartao dt { margin-top: 4px; font-size: 11.5px; }
+.consultor-ex { border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft); border-radius: 999px; padding: 2px 9px; font: 600 11.5px Manrope, sans-serif; cursor: pointer; }
+.consultor-ex:hover { border-color: var(--accent); color: var(--ink); }
+.sede-tela-cheia .sede-painel { width: 430px; }

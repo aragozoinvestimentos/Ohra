@@ -7,6 +7,7 @@ import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } fro
 import { assinarUrgentes, lerUrgentes } from "./lib/urgentes.js";
 import MarcaApp from "./components/MarcaApp.jsx";
 import TelaDescanso from "./components/TelaDescanso.jsx";
+import { iniciarCaptura, telaAberta } from "./lib/consultorCaptura.js";
 import LojaSwitcher from "./components/LojaSwitcher.jsx";
 import LojaGate from "./components/LojaGate.jsx";
 import Icone from "./components/Icone.jsx";
@@ -330,6 +331,14 @@ export default function App() {
     }
   }, [canalSub]);
 
+  // Consultor da Sede: anota erros do app e quais telas são abertas (por loja).
+  useEffect(() => {
+    iniciarCaptura();
+  }, []);
+  useEffect(() => {
+    telaAberta(tab);
+  }, [tab]);
+
   useEffect(() => {
     try {
       localStorage.setItem(TAB_KEY, tab);
@@ -564,7 +573,7 @@ export default function App() {
         <section className={`view ${tab === "sede" ? "active" : ""}`}>
           {visitadas.has("sede") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
-              <Sede key={lojaId || "sem-loja"} onIrPara={(k) => { sairTelaSede(); irPara(k); }} ativo={tab === "sede"} tela={tab === "sede" ? telaSede : null} onSairTela={sairTelaSede} />
+              <Sede key={lojaId || "sem-loja"} onIrPara={(k) => { sairTelaSede(); irPara(k); }} onToast={showToast} ativo={tab === "sede"} tela={tab === "sede" ? telaSede : null} onSairTela={sairTelaSede} />
             </Suspense>
           )}
         </section>

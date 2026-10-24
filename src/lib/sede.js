@@ -26,6 +26,7 @@ export const ELENCO = [
   { id: "teo", funcao: "Produção", nome: "Téo" },
   { id: "duda", funcao: "Estoque", nome: "Duda" },
   { id: "ze", funcao: "Recepção / carteiro", nome: "Zé" },
+  { id: "consultor", funcao: "Consultor (de óculos)", nome: "Consultor" },
   { id: "miau", funcao: "gato do escritório", tipo: "bicho" },
   { id: "bento", funcao: "pug preto", tipo: "bicho" },
   { id: "nick", funcao: "pug bege", tipo: "bicho" },
@@ -37,7 +38,12 @@ export function nomesPadrao(nomeLoja) {
   const base = Object.fromEntries(ELENCO.filter((e) => e.nome).map((e) => [e.id, e.nome]));
   return ehOhra(nomeLoja)
     ? { ...base, ceo1: "Gustavo", ceo2: "Juliana", miau: "Miau", bento: "Bento", nick: "Nick" }
-    : { ...base, ceo1: "Hevair", ceo2: "Natalia", miau: "", bento: "", nick: "" };
+    : { ...base, ceo1: "Hevair", ceo2: "Natalia", miau: "Miau", bento: "Bento", nick: "Nick" };
+}
+/** Quem NÃO aparece na Sede (botão ao lado do nome; gravado em `sede:personagens._ocultos`). Padrão: sem o gato na Ohra; sem bichos nas outras. */
+export function ocultosDaLoja(nomeLoja, salvos) {
+  if (Array.isArray(salvos?._ocultos)) return new Set(salvos._ocultos);
+  return new Set(ehOhra(nomeLoja) ? ["miau"] : ["miau", "bento", "nick"]);
 }
 /** Nomes gravados (preferencias_loja `sede:personagens`) por cima do padrão; bicho com nome vazio não aparece. */
 export function nomesDaLoja(nomeLoja, salvos) {

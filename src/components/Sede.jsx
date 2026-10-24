@@ -7,7 +7,11 @@ import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 import { assinarSede, lerSede } from "../lib/sedeDados.js";
-import { ELENCO, SALAS_SEDE, avisosDaSede, ehOhra, nomesDaLoja, nomesPadrao, pessoaDoAviso } from "../lib/sede.js";
+import { ELENCO, SALAS_SEDE, avisosDaSede, ehOhra, nomesDaLoja, nomesPadrao, ocultosDaLoja, pessoaDoAviso } from "../lib/sede.js";
+import { useCrescimento } from "../hooks/useCrescimento.js";
+import { useConsultor } from "../hooks/useConsultor.js";
+import { consultoriaVisivel, propostasDaEquipe, sugerirConsultorias } from "../lib/consultor.js";
+import ConsultorPainel from "./ConsultorPainel.jsx";
 import { criarSede, TAMANHO_SEDE } from "../lib/sedeMotor.js";
 import { periodoLigado } from "../lib/ads.js";
 import { hojeSP } from "../lib/datas.js";
@@ -43,11 +47,12 @@ const gravarVisita = (lojaId, v) => {
   }
 };
 
-export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }) {
+export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onSairTela }) {
   const { lojaId, lojas } = useLoja();
   const nomeLoja = (lojas || []).find((l) => l.id === lojaId)?.nome || "loja";
   const [salvos, setSalvos] = usePreferencia("sede:personagens", {});
   const nomes = useMemo(() => nomesDaLoja(nomeLoja, salvos), [nomeLoja, salvos]);
+  const ocultos = useMemo(() => ocultosDaLoja(nomeLoja, salvos), [nomeLoja, salvos]);
   const sede = useSyncExternalStore(assinarSede, lerSede, lerSede);
   const cat = useCatalogo();
   const ped = usePedidos();
@@ -61,20 +66,36 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
   const live = (lives || []).some((l) => l.status === "aovivo");
   const adsLigados = useMemo(() => (periodos || []).filter((p) => periodoLigado(p, hoje)), [periodos, hoje]);
 
+  // ---------- consultor: perguntas, consultorias (com o porquê) e propostas da equipe ----------
+  const cres = useCrescimento();
+  const cons = useConsultor();
+  const ctxConsultor = useMemo(
+    () => ({ pedidos: cres?.pedidosValidos || [], linhasAds: cres?.linhasAds, hoje, kpis: sede.kpis, pendencias: sede.pendencias, produtos: cat.produtos || [], kits: cat.kits || [], impressoras: cat.impressoras || [], farmConfig: cat.farmConfig }),
+    [cres?.pedidosValidos, cres?.linhasAds, hoje, sede.kpis, sede.pendencias, cat.produtos, cat.kits, cat.impressoras, cat.farmConfig]
+  );
+  const decisao = useMemo(() => new Map(cons.registros.filter((r) => r.tipo === "consultoria").map((r) => [r.chave, r])), [cons.registros]);
+  const consultoriasTodas = useMemo(() => sugerirConsultorias(ctxConsultor), [ctxConsultor]);
+  const consultorias = consultoriasTodas.filter((c) => consultoriaVisivel(c, decisao.get(c.chave), hoje));
+  const propostas = useMemo(() => propostasDaEquipe(ctxConsultor), [ctxConsultor]).filter((c) => consultoriaVisivel(c, decisao.get(c.chave), hoje));
+  const cheiasNovas = useMemo(() => Object.fromEntries(consultoriasTodas.filter((c) => c.cheia).map((c) => [c.sala, true])), [consultoriasTodas]);
+  const nConsultor = consultorias.length + propostas.length;
+
   // ---------- motor (canvas) ----------
   const canvasRef = useRef(null);
   const camadaRef = useRef(null);
   const motor = useRef(null);
   const [sel, setSel] = useState({ sala: "diretoria" });
   const [painelTela, setPainelTela] = useState(false);
-  const chaveMotor = `${ehOhra(nomeLoja) ? "ohra" : "outra"}|${impressoras}|${ELENCO.map((e) => nomes[e.id]).join(",")}`;
+  const chaveMotor = `${ehOhra(nomeLoja) ? "ohra" : "outra"}|${impressoras}|${ELENCO.map((e) => nomes[e.id]).join(",")}|${[...ocultos].sort().join(",")}`;
+  const aoConversar = useRef(null);
   useEffect(() => {
     if (!canvasRef.current || !camadaRef.current) return undefined;
     const reduzir = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const m = criarSede({
       canvas: canvasRef.current,
       camada: camadaRef.current,
-      personagens: { estilo: chaveMotor.split("|")[0], nomes },
+      personagens: { estilo: chaveMotor.split("|")[0], nomes, ocultos },
+      onConversa: (c) => aoConversar.current?.(c),
       impressoras,
       reduzir,
       onSala: (k) => {
@@ -93,12 +114,16 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
   useEffect(() => motor.current?.ativo(ativo), [ativo, chaveMotor]);
   const producao = av.luz.producao === "r" || av.luz.producao === "a" ? av.luz.producao : null;
   useEffect(() => {
-    motor.current?.dados({ luz: av.luz, porPessoa: av.porPessoa, metaPct: sede.kpis?.metaPct || 0, live, ads: adsLigados.length > 0, producao });
-  }, [av, sede.kpis, live, adsLigados.length, producao, chaveMotor]);
+    motor.current?.dados({ luz: av.luz, porPessoa: av.porPessoa, metaPct: sede.kpis?.metaPct || 0, live, ads: adsLigados.length > 0, producao, pendentes: nConsultor, cheiasNovas, conversasNovas: propostas });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [av, sede.kpis, live, adsLigados.length, producao, chaveMotor, nConsultor, cheiasNovas, JSON.stringify(propostas.map((p) => p.chave))]);
 
   // ---------- "Acontecendo agora" e reações ao vivo ----------
   const [feed, setFeed] = useState(() => [{ hora: agoraHora(), txt: `👋 ${nomes.ceo1} e ${nomes.ceo2} chegaram na Sede` }]);
   const noFeed = (txt) => setFeed((f) => [{ hora: agoraHora(), txt }, ...f].slice(0, 8));
+  useEffect(() => {
+    aoConversar.current = (c) => noFeed(`💬 ${nomes[c.de] || c.de} → ${nomes[c.para] || c.para}: “${c.fala}” — “${c.resposta}”`);
+  });
   const visto = useRef({});
   const reagir = (tipo, info, txt) => {
     motor.current?.evento(tipo, info);
@@ -202,7 +227,8 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
     const y = ((e.clientY - b.top) / b.height) * TAMANHO_SEDE.altura;
     const q = motor.current?.quemEsta(x, y);
     if (!q) return;
-    if (q.nome) setSel({ pessoa: q });
+    if (q.consultor) setSel({ consultor: true });
+    else if (q.nome) setSel({ pessoa: q });
     else if (q.sala) setSel({ sala: q.sala });
     setPainelTela(true);
   }
@@ -312,9 +338,20 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
           <span>
             Pra decidir <b className={nDecidir ? "sede-ruim" : ""}>{nDecidir}</b>
           </span>
+          <button
+            type="button"
+            className={`btn btn-sm${nConsultor ? " primary" : ""}`}
+            onClick={() => {
+              setSel({ consultor: true });
+              setPainelTela(true);
+            }}
+          >
+            🤓 {nomes.consultor || "Consultor"}
+            {nConsultor > 0 ? ` (${nConsultor})` : ""}
+          </button>
           {!tela && (
             <>
-              <button type="button" className="btn btn-sm" onClick={() => setEditando(editando ? null : { ...nomes })}>
+              <button type="button" className="btn btn-sm" onClick={() => setEditando(editando ? null : { ...nomes, _ocultos: [...ocultos] })}>
                 ✎ Nomes
               </button>
               <button type="button" className="btn btn-sm" onClick={entrarTela} title="Abrir a Sede na tela inteira">
@@ -327,29 +364,50 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
 
       {editando && !tela && (
         <div className="panel sede-nomes">
-          <h3>Nomes dos personagens — só aqui na Sede</h3>
+          <h3>Quem trabalha na Sede — só aqui na Sede</h3>
           <div className="sede-nomes-grade">
-            {ELENCO.map((e) => (
-              <label key={e.id} className="field">
-                <span>{e.tipo === "bicho" ? `Bicho · ${e.funcao}` : e.funcao}</span>
-                <input
-                  value={editando[e.id] ?? ""}
-                  maxLength={18}
-                  placeholder={e.tipo === "bicho" ? "vazio = não aparece" : padrao[e.id]}
-                  onChange={(ev) => setEditando((x) => ({ ...x, [e.id]: ev.target.value }))}
-                />
-              </label>
-            ))}
+            {ELENCO.map((e) => {
+              const aparece = !(editando._ocultos || []).includes(e.id);
+              return (
+                <div key={e.id} className={`field sede-nome${aparece ? "" : " desligado"}`}>
+                  <span>{e.tipo === "bicho" ? `Bicho · ${e.funcao}` : e.funcao}</span>
+                  <div className="sede-nome-linha">
+                    <input
+                      value={editando[e.id] ?? ""}
+                      maxLength={18}
+                      placeholder={padrao[e.id]}
+                      aria-label={`Nome: ${e.funcao}`}
+                      onChange={(ev) => setEditando((x) => ({ ...x, [e.id]: ev.target.value }))}
+                    />
+                    <label className="sede-nome-liga" title={aparece ? "Aparece na Sede" : "Não aparece na Sede"}>
+                      <input
+                        type="checkbox"
+                        checked={aparece}
+                        onChange={(ev) =>
+                          setEditando((x) => {
+                            const ocs = new Set(x._ocultos || []);
+                            if (ev.target.checked) ocs.delete(e.id);
+                            else ocs.add(e.id);
+                            return { ...x, _ocultos: [...ocs] };
+                          })
+                        }
+                      />
+                      {aparece ? "aparece" : "desligado"}
+                    </label>
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <div className="sede-nomes-acoes">
             <button
               type="button"
               className="btn primary btn-sm"
               onClick={() => {
-                const out = {};
+                const out = { _ocultos: editando._ocultos || [] };
                 for (const e of ELENCO) {
                   const v = String(editando[e.id] ?? "").trim();
-                  if (v !== (padrao[e.id] || "")) out[e.id] = v;
+                  if (v && v !== (padrao[e.id] || "")) out[e.id] = v;
                 }
                 setSalvos(out);
                 setEditando(null);
@@ -357,7 +415,7 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
             >
               Salvar nomes
             </button>
-            <button type="button" className="btn btn-sm" onClick={() => setEditando({ ...padrao })}>
+            <button type="button" className="btn btn-sm" onClick={() => setEditando({ ...padrao, _ocultos: [...ocultosDaLoja(nomeLoja, null)] })}>
               Voltar ao padrão
             </button>
             <button type="button" className="btn btn-sm" onClick={() => setEditando(null)}>
@@ -368,7 +426,7 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
         </div>
       )}
 
-      <div className="sede-grade">
+      <div className={`sede-grade${sel.consultor ? " com-consultor" : ""}`}>
         <div>
           <div className="sede-cena">
             <canvas ref={canvasRef} width={TAMANHO_SEDE.largura} height={TAMANHO_SEDE.altura} onClick={clicar} aria-label={`Sede da ${nomeLoja}: escritório animado`} />
@@ -399,7 +457,22 @@ export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }
               ✕
             </button>
           )}
-          {sel.pessoa ? (
+          {sel.consultor ? (
+            <ConsultorPainel
+              nome={nomes.consultor || "Consultor"}
+              lojaId={lojaId}
+              nomeLoja={nomeLoja}
+              ctx={ctxConsultor}
+              registros={cons.registros}
+              disponivel={cons.disponivel}
+              consultorias={consultorias}
+              propostas={propostas}
+              nomes={nomes}
+              abrir={abrir}
+              onToast={onToast}
+              telaAtual="sede"
+            />
+          ) : sel.pessoa ? (
             <PainelPessoa q={sel.pessoa} nomes={nomes} av={av} pendencias={sede.pendencias} abrir={abrir} />
           ) : (
             <PainelSala k={sel.sala} quem={quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} />

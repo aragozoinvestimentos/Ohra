@@ -8,7 +8,7 @@ import { SALAS_SEDE } from "./sede.js";
 const T = 16, MW = 40, MH = 26, LARG = MW * T, ALT = MH * T;
 export const TAMANHO_SEDE = { largura: LARG, altura: ALT };
 
-export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzir = false, onSala }) {
+export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzir = false, onSala, onConversa }) {
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   const r = (x, y, w, h, c) => {
@@ -116,28 +116,38 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
     teo: { pele: "#d9a37f", cab: "#c9a24a", estilo: "bone", corBone: "#e0874f", roupa: "#5e6b78", calca: "#5e6b78" },
     duda: { pele: "#a86b48", cab: "#4a2e1c", estilo: "rabo", roupa: "#e8e1d4", colete: "#c58a3a", calca: "#2e3440" },
     ze: { pele: "#e8b896", cab: "#3a2a1c", estilo: "bone", corBone: "#d2622b", roupa: "#d2622b", calca: "#2e3440" },
+    consultor: { pele: "#e6bf9c", cab: "#8a8580", estilo: "curto", oculos: true, roupa: "#ffffff", blazer: "#2f5d8a", calca: "#2b2f38" },
   };
-  const CASA = { ceo1: [4, 4], ceo2: [8, 4], bia: [25, 4], rafa: [4, 17], nina: [10, 17], leo: [4, 21], celia: [10, 21], teo: [19, 19], duda: [30, 18], ze: [34, 20] };
-  const SALA = { bia: "financeiro", rafa: "comercial", nina: "comercial", leo: "comercial", celia: "comercial", teo: "producao", duda: "estoque", ze: "estoque", ceo1: "diretoria", ceo2: "diretoria" };
-  const FUNCAO = { ceo1: "CEO", ceo2: "CEO", bia: "Financeiro", rafa: "Preços", nina: "Anúncios e Rampa", leo: "Ads", celia: "Análise", teo: "Produção", duda: "Estoque", ze: "Recepção / carteiro" };
+  const CASA = { ceo1: [4, 4], ceo2: [8, 4], bia: [25, 4], rafa: [4, 17], nina: [10, 17], leo: [4, 21], celia: [10, 21], teo: [19, 19], duda: [30, 18], ze: [34, 20], consultor: [11, 12] };
+  const SALA = { bia: "financeiro", rafa: "comercial", nina: "comercial", leo: "comercial", celia: "comercial", teo: "producao", duda: "estoque", ze: "estoque", ceo1: "diretoria", ceo2: "diretoria", consultor: null };
+  const FUNCAO = { ceo1: "CEO", ceo2: "CEO", bia: "Financeiro", rafa: "Preços", nina: "Anúncios e Rampa", leo: "Ads", celia: "Análise", teo: "Produção", duda: "Estoque", ze: "Recepção / carteiro", consultor: "Consultor" };
   const PESSOAS = [];
   function pessoa(id) {
     const casa = CASA[id];
-    const p = { id, nome: personagens.nomes[id] || id, funcao: FUNCAO[id], sala: SALA[id], casa, look: LOOKS[id], x: casa[0], y: casa[1], px: casa[0] * T, py: casa[1] * T, cam: [], est: "sentado", t: 2 + Math.random() * 6, quadro: 0, dir: "f", carrega: null, fala: null, falaT: 0, aviso: null, dono: id === "ceo1" || id === "ceo2", empe: ["teo", "duda", "ze"].includes(id) };
+    const p = { id, nome: personagens.nomes[id] || id, funcao: FUNCAO[id], sala: SALA[id], casa, look: LOOKS[id], x: casa[0], y: casa[1], px: casa[0] * T, py: casa[1] * T, cam: [], est: "sentado", t: 2 + Math.random() * 6, quadro: 0, dir: "f", carrega: null, fala: null, falaT: 0, aviso: null, dono: id === "ceo1" || id === "ceo2", empe: ["teo", "duda", "ze", "consultor"].includes(id) };
+    // desligado no "✎ Nomes" (botão ao lado do nome): não aparece nem anda
+    if (personagens.ocultos?.has(id)) {
+      p.oculto = true;
+      p.est = "fora";
+    }
     PESSOAS.push(p);
     return p;
   }
   const CEO1 = pessoa("ceo1"), CEO2 = pessoa("ceo2");
   ["bia", "rafa", "nina", "leo", "celia"].forEach(pessoa);
   const TEO = pessoa("teo"), DUDA = pessoa("duda"), ZE = pessoa("ze");
-  const DONOS = [CEO1, CEO2];
+  const CONS = pessoa("consultor");
+  const DONOS = [CEO1, CEO2].filter((d) => !d.oculto);
+  const porId = (id) => PESSOAS.find((p) => p.id === id);
+  // o que o Início/consultor mandam (dados): propostas pendentes, luz e setores cheios, conversas da equipe
+  let pendentesConsultor = 0, luzAtual = {}, cheias = {}, conversas = [], tempoConversa = 20;
   const LEO = PESSOAS.find((p) => p.id === "leo"), BIA = PESSOAS.find((p) => p.id === "bia");
 
   // bichos (só os que têm nome)
   const BICHOS = [];
   function bicho(id, tipo, pos, cores) {
     const nome = personagens.nomes[id];
-    if (!nome) return;
+    if (!nome || personagens.ocultos?.has(id)) return;
     BICHOS.push({ id, nome, funcao: { miau: "gato do escritório", bento: "pug preto", nick: "pug bege" }[id], tipo, cores, x: pos[0], y: pos[1], px: pos[0] * T, py: pos[1] * T, cam: [], t: 2 + Math.random() * 4, quadro: 0, dir: "d", fala: null, falaT: 0, bicho: true });
   }
   bicho("miau", "gato", [20, 12], { corpo: "#f0a050", sombra: "#d08840" });
@@ -166,10 +176,10 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
   const sorteio = (l) => l[Math.floor(Math.random() * l.length)];
   const pontoLivre = (sala) => { const s = SALAS.find((x) => x.k === sala); for (let i = 0; i < 60; i++) { const x = s.x0 + Math.floor(Math.random() * (s.x1 - s.x0 + 1)), y = s.y0 + 1 + Math.floor(Math.random() * (s.y1 - s.y0)); if (andavel[y][x]) return [x, y]; } return s.porta; };
   const corredorLivre = () => { for (let i = 0; i < 60; i++) { const x = 2 + Math.floor(Math.random() * 36), y = 11 + Math.floor(Math.random() * 3); if (andavel[y][x]) return [x, y]; } return [20, 12]; };
-  function ir(p, alvo, depois) { p.cam = caminho(tile(p), alvo); p.est = "andando"; p.depois = depois; }
+  function ir(p, alvo, depois) { if (p.oculto) return; p.cam = caminho(tile(p), alvo); p.est = "andando"; p.depois = depois; }
   // Fala: no máximo 3 balões ao mesmo tempo (as dos eventos passam na frente).
   const falando = () => [...PESSOAS, ...BICHOS].filter((q) => q.fala).length;
-  function falar(p, txt, s = 3, forcar = false) { if (!p || (!forcar && !p.fala && falando() >= 3)) return; p.fala = txt; p.falaT = s; }
+  function falar(p, txt, s = 3, forcar = false) { if (!p || p.oculto || (!forcar && !p.fala && falando() >= 3)) return; p.fala = txt; p.falaT = s; }
 
   // ---------- rotinas (só visual) ----------
   const sentar = (p) => () => { p.est = p.empe ? "trabalhando" : "sentado"; p.t = 8 + Math.random() * 14; };
@@ -182,6 +192,15 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
       if (dado < 0.35) { const s = sorteio(["comercial", "producao", "estoque", "financeiro", "live", "beleza"]); ir(p, pontoLivre(s), () => { p.est = "parado"; p.t = 4; falar(p, sorteio(["Como estão as coisas?", "Bora!", "Ficou ótimo", "Me mostra isso?"]), 3); p.depois2 = volta; }); return; }
       if (dado < 0.5) { ir(p, [31, 12], () => { p.est = "parado"; p.t = 4; falar(p, "☕", 3); p.depois2 = volta; }); return; }
       sentar(p)();
+      return;
+    }
+    if (p === CONS) {
+      // o consultor anda pelos setores com a prancheta; com proposta pendente, vai à Diretoria
+      p.carrega = "papel";
+      if (pendentesConsultor > 0 && dado < 0.4) { ir(p, [6, 7], () => { p.est = "parado"; p.t = 5; falar(p, pendentesConsultor === 1 ? "Tenho uma proposta 📋" : `Tenho ${pendentesConsultor} propostas 📋`, 3.5, true); }); return; }
+      const alvos = SALAS.filter((s) => cheias[s.k] || luzAtual[s.k] === "r" || luzAtual[s.k] === "a").map((s) => s.k);
+      const sala = sorteio(alvos.length && dado < 0.8 ? alvos : ["comercial", "producao", "estoque", "financeiro", "live", "diretoria"]);
+      ir(p, pontoLivre(sala), () => { p.est = "parado"; p.t = 4 + Math.random() * 4; if (Math.random() < 0.35) falar(p, cheias[sala] ? "Esse setor tá lotado… 📝" : "Hmm, anotando 📝", 2.5); });
       return;
     }
     if (p === TEO) { ir(p, sorteio([[19, 19], [22, 16], [20, 20], [19, 16]]), () => { p.est = "trabalhando"; p.t = 5 + Math.random() * 6; if (p.aviso && Math.random() < 0.4) falar(p, "🔧 manutenção!", 2.5); }); return; }
@@ -223,7 +242,28 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
     p.quadro += dt * 8;
     return true;
   }
+  // Conversa entre setores: quem cuida do assunto vai até quem precisa saber.
+  function iniciarConversa() {
+    const ok = conversas.filter((c) => { const a = porId(c.de), b = porId(c.para); return a && b && a !== b && !a.oculto && !b.oculto && a.est !== "andando" && a.est !== "live" && b.est !== "live"; });
+    if (!ok.length) return;
+    const c = sorteio(ok);
+    const A = porId(c.de), B = porId(c.para);
+    const [bx, by] = tile(B);
+    const alvo = [[bx, by + 1], [bx + 1, by], [bx - 1, by], [bx, by - 1], [bx + 1, by + 1], [bx - 1, by + 1]].find(([x, y]) => andavel[y]?.[x]);
+    if (!alvo) return;
+    A.depois2 = null;
+    A.carrega = "papel";
+    ir(A, alvo, () => {
+      A.est = "parado";
+      A.t = 7;
+      falar(A, c.fala, 3.5, true);
+      setTimeout(() => falar(B, c.resposta, 3.5, true), 1900);
+      onConversa?.(c);
+      A.depois2 = () => { A.carrega = null; ir(A, A.casa, sentar(A)); };
+    });
+  }
   function atualizar(p, dt) {
+    if (p.oculto) return;
     if (p.falaT > 0) { p.falaT -= dt; if (p.falaT <= 0) p.fala = null; }
     if (p.est === "andando") { if (!mover(p, dt)) { p.est = "parado"; const f = p.depois; p.depois = null; if (f) f(); } return; }
     p.t -= dt;
@@ -414,6 +454,8 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
     relogio -= dt;
     if (relogio <= 0) { conferirHora(); relogio = 30; }
     for (const p of PESSOAS) atualizar(p, dt);
+    tempoConversa -= dt;
+    if (tempoConversa <= 0) { tempoConversa = 35 + Math.random() * 30; iniciarConversa(); }
     for (const g of BICHOS) atualizarBicho(g, dt);
     if (carimbo > 0) carimbo -= dt;
     if (sino > 0) sino -= dt;
@@ -457,9 +499,16 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
   iniciar();
   return {
     ativo(sim) { if (sim) iniciar(); else parar(); },
-    dados({ luz = {}, porPessoa = {}, metaPct = 0, live = false, ads = false, producao = null }) {
-      for (const [k, el] of placas) el.className = `sede-placa ${luz[k] || "n"}`;
-      for (const p of PESSOAS) p.aviso = p.dono ? null : porPessoa[p.id] || null;
+    dados({ luz = {}, porPessoa = {}, metaPct = 0, live = false, ads = false, producao = null, pendentes = 0, cheiasNovas = {}, conversasNovas = [] }) {
+      luzAtual = luz;
+      cheias = cheiasNovas;
+      conversas = conversasNovas;
+      pendentesConsultor = pendentes;
+      for (const [k, el] of placas) {
+        el.className = `sede-placa ${luz[k] || "n"}${cheias[k] ? " cheia" : ""}`;
+        el.innerHTML = `<i></i>${SALAS.find((s) => s.k === k).nome}${cheias[k] ? " <b>· lotado</b>" : ""}`;
+      }
+      for (const p of PESSOAS) p.aviso = p.dono || p === CONS ? null : porPessoa[p.id] || null;
       meta.pct = metaPct || 0;
       if (live !== liveLigada) (live ? EVENTOS.live : EVENTOS.liveFim)();
       adsOn = !!ads;
@@ -471,7 +520,7 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
       const g = BICHOS.find((q) => x > q.px && x < q.px + 16 && y > q.py && y < q.py + 16);
       if (g) return { id: g.id, nome: g.nome, funcao: g.funcao, bicho: true };
       const p = PESSOAS.find((q) => q.est !== "fora" && x > q.px && x < q.px + 16 && y > q.py - 12 && y < q.py + 16);
-      if (p) return { id: p.id, nome: p.nome, funcao: p.funcao, sala: p.sala, est: p.est, aviso: p.aviso, dono: p.dono };
+      if (p) return { id: p.id, nome: p.nome, funcao: p.funcao, sala: p.sala, est: p.est, aviso: p.aviso, dono: p.dono, consultor: p === CONS };
       const sd = salaDe[Math.floor(y / T)]?.[Math.floor(x / T)];
       return sd && SALAS.some((s) => s.k === sd) ? { sala: sd } : null;
     },

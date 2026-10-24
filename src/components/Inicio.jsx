@@ -400,6 +400,13 @@ export default function Inicio({ onIrPara, onToast }) {
     caixa: caixa ? caixa.saldoHoje : null,
     metaPct: metaFat > 0 && temPedidos ? loja.atual.vendas / metaFat : null,
     meta: metaFat,
+    ritmo: loja.ritmo,
+    // contas a pagar (atrasadas + próximos 7 dias) pro consultor da Sede
+    aPagar: caixa
+      ? [...(caixa.atrasados || []), ...(caixa.proximos || [])]
+          .filter((l) => l.tipo === "saida")
+          .map((l) => ({ descricao: l.descricao || l.categoria || "conta", valor: Number(l.valor) || 0, data: l.data_prevista }))
+      : null,
   };
   useEffect(() => {
     if (!carregando) publicarSede({ pendencias, kpis: kpisSede });
