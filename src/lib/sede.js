@@ -105,7 +105,7 @@ export function avisosDaSede(pendencias) {
   const luz = {};
   for (const s of SALAS_SEDE) {
     const w = pior(porSala[s.k]);
-    luz[s.k] = w ? LUZ[w.grupo] || "a" : s.k === "revenda" ? "n" : "o";
+    luz[s.k] = w ? LUZ[w.grupo] || "a" : "o";
   }
   const porPessoa = {};
   for (const [id, l] of Object.entries(porPessoaL)) porPessoa[id] = LUZ[pior(l).grupo] || "a";
@@ -115,13 +115,13 @@ export function avisosDaSede(pendencias) {
 // Salas abertas pelo que a loja TEM (24/10/2026, decisão do Gustavo: 100%
 // automático, sem botão — sala aberta = tem trabalho lá; o que a loja não usa
 // fica fechada com o motivo escrito). Só o NOME da sala é editável (✎ Nomes).
-export function salasDaLoja({ impressoras = [], produtos = [], canais = [], lives = [], temRevenda = (produtos || []).some((p) => p.origem === "revenda") }) {
+export function salasDaLoja({ impressoras = [], produtos = [], canais = [], lives = [], fornecedores = [], compras = [], temRevenda = (produtos || []).some((p) => p.origem === "revenda") || (fornecedores || []).length > 0 || (compras || []).length > 0 }) {
   const fechadas = {};
   const temImpressao = (impressoras || []).some((i) => i.ativa !== false) || (produtos || []).some((p) => p.producao_detalhe && !p.producao_detalhe.sem3d);
   if (!temImpressao) fechadas.producao = "abre quando você cadastrar a primeira impressora (Produção → Minha farm) ou um produto com custo de impressão";
   const temCanalLive = (canais || []).some((c) => c.tipo === "tiktok" || c.tipo === "shopee");
   if (!temCanalLive || !(lives || []).length) fechadas.live = temCanalLive ? "abre quando você criar a primeira live (menu Live)" : "abre quando a loja tiver TikTok ou Shopee e criar a primeira live";
-  if (!temRevenda) fechadas.revenda = "abre quando você cadastrar o primeiro produto de revenda (comprado pronto pra vender)";
+  if (!temRevenda) fechadas.revenda = "abre com a 1ª nota de compra (XML) importada em Estoque e compras, ou o 1º produto de revenda cadastrado";
   return fechadas;
 }
 /** Nomes das salas: o gravado em `sede:personagens._salas` por cima do padrão. */

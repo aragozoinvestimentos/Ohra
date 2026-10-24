@@ -9,6 +9,7 @@ import { usePreferencia } from "../hooks/usePreferencia.js";
 import { assinarSede, lerSede } from "../lib/sedeDados.js";
 import { ELENCO, SALAS_SEDE, avisosDaSede, ehOhra, nomesDaLoja, nomesDasSalas, nomesPadrao, ocultosDaLoja, pessoaDoAviso, salasDaLoja } from "../lib/sede.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
+import { useEstoque } from "../hooks/useEstoque.js";
 import { useConsultor } from "../hooks/useConsultor.js";
 import { consultoriaVisivel, propostasDaEquipe, sugerirConsultorias } from "../lib/consultor.js";
 import { assuntoDe, esperaAgoraNao, ordenarPeloPerfil, perfilDecisoes, resultadosParaGravar } from "../lib/consultorAprende.js";
@@ -124,7 +125,8 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const [sel, setSel] = useState({ sala: "diretoria" });
   const [painelTela, setPainelTela] = useState(false);
   // salas abertas pelo que a loja tem (automático) + nomes das salas (✎ Nomes)
-  const fechadas = useMemo(() => salasDaLoja({ impressoras: cat.impressoras, produtos: cat.produtos, canais: cat.canais, lives }), [cat.impressoras, cat.produtos, cat.canais, lives]);
+  const estoque = useEstoque();
+  const fechadas = useMemo(() => salasDaLoja({ impressoras: cat.impressoras, produtos: cat.produtos, canais: cat.canais, lives, fornecedores: estoque.fornecedores, compras: estoque.compras }), [cat.impressoras, cat.produtos, cat.canais, lives, estoque.fornecedores, estoque.compras]);
   const nomesSalas = nomesDasSalas(salvos);
   const chaveMotor = `${ehOhra(nomeLoja) ? "ohra" : "outra"}|${impressoras}|${ELENCO.map((e) => nomes[e.id]).join(",")}|${[...ocultos].sort().join(",")}|${Object.keys(fechadas).sort().join(",")}|${Object.values(nomesSalas).join(",")}`;
   const aoConversar = useRef(null);
@@ -582,7 +584,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
           ) : sel.pessoa ? (
             <PainelPessoa q={sel.pessoa} nomes={nomes} av={av} pendencias={sede.pendencias} abrir={abrir} />
           ) : (
-            <PainelSala k={sel.sala} nome={nomesSalas[sel.sala]} fechada={fechadas[sel.sala]} quem={fechadas[sel.sala] ? null : quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} />
+            <PainelSala k={sel.sala} nome={nomesSalas[sel.sala]} fechada={fechadas[sel.sala]} quem={fechadas[sel.sala] ? null : quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} estoque={estoque.linhas} />
           )}
           <div className="hint" style={{ marginTop: 10 }}>
             Clique nas placas, nas salas e nas pessoas. A Sede só mostra — pra mudar algo, use o botão que leva pra tela certa.
@@ -615,7 +617,7 @@ function ListaAvisos({ avisos, abrir }) {
   );
 }
 
-function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara }) {
+function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque }) {
   const s = SALAS_SEDE.find((x) => x.k === k);
   if (!s) return null;
   if (fechada)
@@ -624,17 +626,19 @@ function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara }) {
         <h3>🔒 {nome || s.nome}</h3>
         <div className="sede-quem">sala fechada · em breve</div>
         <div className="sede-ok">Ainda não tem trabalho aqui: {fechada}. A sala abre sozinha (com festa) quando isso existir na loja.</div>
+        {k === "revenda" && s.aba && (
+          <button type="button" className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => onIrPara?.(s.aba)}>
+            Importar a 1ª nota (Estoque e compras) →
+          </button>
+        )}
       </>
     );
   return (
     <>
       <h3>{nome || s.nome}</h3>
       {quem && <div className="sede-quem">{quem}</div>}
-      {k === "revenda" ? (
-        <div className="sede-ok">Espaço da revenda — produto comprado pronto pra vender na sua loja. Vai enchendo quando a revenda entrar no app.</div>
-      ) : (
-        <ListaAvisos avisos={avisos} abrir={abrir} />
-      )}
+      {k === "revenda" && <ResumoEstoque linhas={estoque || []} />}
+      <ListaAvisos avisos={avisos} abrir={abrir} />
       {k === "diretoria" && <div className="hint">Na Diretoria ficam os avisos urgentes de todas as salas — só vocês decidem.</div>}
       {s.aba && (
         <button type="button" className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => onIrPara?.(s.aba)}>
@@ -642,6 +646,23 @@ function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara }) {
         </button>
       )}
     </>
+  );
+}
+
+// Sala da Revenda: o estoque de hoje (mesma conta de Estoque e compras — useEstoque).
+function ResumoEstoque({ linhas }) {
+  const comControle = linhas.filter((l) => !l.est.semControle);
+  const valor = comControle.reduce((s, l) => s + l.valor, 0);
+  const repor = linhas.filter((l) => ["repor", "zerado", "negativo"].includes(l.sit.tipo)).length;
+  const parados = linhas.filter((l) => l.sit.tipo === "parado").length;
+  if (!linhas.length) return <div className="sede-ok">Fornecedor ou nota já cadastrados — os produtos de revenda aparecem aqui com o estoque.</div>;
+  return (
+    <div className="sede-ok">
+      {linhas.length} {linhas.length === 1 ? "produto" : "produtos"} de revenda · {BRL(valor)} em estoque
+      {repor ? ` · ${repor} pra repor` : ""}
+      {parados ? ` · ${parados} parado${parados > 1 ? "s" : ""}` : ""}
+      {!comControle.length ? " · o estoque começa na 1ª nota importada" : ""}
+    </div>
   );
 }
 
