@@ -69,6 +69,7 @@ const PaginaProduto = lazyAba(() => import("./components/PaginaProduto.jsx"));
 const ResumoMes = lazyAba(() => import("./components/ResumoMes.jsx"));
 const CompararPeriodos = lazyAba(() => import("./components/CompararPeriodos.jsx"));
 const CarrinhosAbandonados = lazyAba(() => import("./components/CarrinhosAbandonados.jsx"));
+const AnaliseDiagnostico = lazyAba(() => import("./components/AnaliseDiagnostico.jsx"));
 const Insumos = lazyAba(() => import("./components/Insumos.jsx"));
 
 const THEME_KEY = "ohra:theme";
@@ -181,8 +182,9 @@ const MENU = [
         key: "m-analise",
         label: "Análise",
         icone: "analise",
-        sub: "Pedidos reais: curva ABC, XYZ, evolução, comparar períodos e carrinhos abandonados",
+        sub: "Pedidos reais: diagnóstico, curva ABC, XYZ, evolução, comparar períodos e carrinhos abandonados",
         abas: [
+          { tab: "diagnostico", label: "Diagnóstico" },
           { tab: "analise", s: "abc", label: "Curva ABC" },
           { tab: "analise", s: "xyz", label: "Curva XYZ" },
           { tab: "analise", s: "evolucao", label: "Evolução e métricas" },
@@ -716,6 +718,14 @@ export default function App() {
           {visitadas.has("compararPeriodos") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
               <CompararPeriodos key={lojaId || "sem-loja"} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "diagnostico" ? "active" : ""}`}>
+          {visitadas.has("diagnostico") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <AnaliseDiagnostico key={lojaId || "sem-loja"} />
             </Suspense>
           )}
         </section>
