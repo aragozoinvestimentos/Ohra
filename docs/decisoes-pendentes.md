@@ -49,3 +49,10 @@ Avaliação com os arquivos REAIS da Shopee (16–22/10 e 17–23/10):
 - **GMV Max da Loja CSV**: já lido.
 
 Ordem proposta: (1) semana curta da rampa; (2) ler as colunas novas do Desempenho (sem SQL — vai no `importacoes.dados`); (3) diagnóstico único por anúncio pra TODOS os anúncios (não só rampa), funil de 4 etapas impressão → clique → carrinho → pago, cenários 2, 4, 6, 7, 10 novos, estrutura diagnóstico/evidência/ação/como/prioridade/reavaliar/sucesso, no "O que fazer agora" do Painel + Início; (4) Análise → Diagnóstico (lista + compra mínima pelos pedidos + lucro líquido); (5) histórico de ações + antes × depois (SQL, tabela nova; ações do app entram sozinhas, manuais com 1 clique; "associação, não causa"). Fora: ACOS separado, motor de 9 pesos (usar os 3 grupos + impacto R$/semana), custo compartilhado em pedido, importar o Tráfego.
+
+### Ajustes aprovados (24/10/2026, retorno do ChatGPT revisado)
+- Antes × depois: 1ª avaliação em 7 dias; amostra pequena → estende pra 14+ ("aguardando dados"); variação dentro do ruído = "inconclusivo", nunca "funcionou" automático (a conclusão é sempre do Gustavo).
+- Registro manual de decisões tomadas direto no marketplace (Ads, imagem, título, preço, cupom, promoção) — o ajuste de Ads manual reaproveita o "Registrar ajuste" que já existe (sem registro em dobro).
+- Custo que não dá pra atribuir com segurança (ex.: GMV Max da Loja por produto, custo por pedido em pedido com vários itens) = mostrar "não atribuído"/limitação, nunca ratear em silêncio.
+- Tráfego do produto: conferido coluna a coluna — tudo já existe no Desempenho. Só vale se a tela da Shopee permitir exportar OUTRAS origens de tráfego (o arquivo enviado é só "Product_Card") — Gustavo vai conferir.
+- **Depois de concluir o Diagnóstico: perguntar ao Gustavo como fazer a "Minha empresa" (escritório virtual com funcionários por setor, dados reais, só mostra — aprovado em 24/10/2026).**
