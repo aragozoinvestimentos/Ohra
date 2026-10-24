@@ -12,6 +12,7 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { vendeuSemAvaliacao } from "../lib/semanasAuto.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
+import { useBackup } from "../hooks/useBackup.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { hojeISO, loadEstimativas, resumoCaixa } from "../lib/fluxoCaixa.js";
 import { linhasAnunciar } from "../lib/anunciar.js";
@@ -287,6 +288,7 @@ export default function Inicio({ onIrPara, onToast }) {
   const revisoes = useMemo(() => revisoesPrecoDireto({ itens, canais, precos, hoje }), [itens, canais, precos, hoje]);
   const adsP = useAdsPeriodos();
   const [baseAds] = usePreferencia("caixa:saldo-ads-base", null);
+  const backup = useBackup(onToast);
   const saldoDeAds = useMemo(() => (adsP.disponivel ? saldoAds({ lancamentos: gestao.lancamentos, periodos: adsP.periodos, hoje, base: baseAds }) : null), [adsP.disponivel, adsP.periodos, gestao.lancamentos, hoje, baseAds]);
   // Diagnóstico comercial por anúncio (lib/diagnostico.js, via montarAnuncios):
   // entram atenção e oportunidade; vitrine/página de quem está em rampa com
@@ -572,6 +574,14 @@ export default function Inicio({ onIrPara, onToast }) {
                 <Bolinha tipo={d.estado === "ok" ? "oportunidade" : "atencao"} /> <b>{d.rotulo}</b> {d.texto}
               </span>
             ))}
+            <span className={`inicio-dado st-${backup.estado.vencido ? "atencao" : "oportunidade"}`}>
+              <Bolinha tipo={backup.estado.vencido ? "atencao" : "oportunidade"} /> <b>Backup</b> {backup.estado.texto}
+              {backup.estado.vencido && (
+                <button type="button" className="btn btn-sm primary inicio-dado-btn" onClick={backup.gerar} disabled={backup.gerando}>
+                  {backup.gerando ? "Gerando…" : "Gerar e baixar"}
+                </button>
+              )}
+            </span>
           </div>
           {avisosDados.length > 0 && (
             <ul className="inicio-dados-avisos">

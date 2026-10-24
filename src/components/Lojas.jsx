@@ -1,4 +1,4 @@
-import { hojeSP } from "../lib/datas.js";
+import { useBackup } from "../hooks/useBackup.js";
 import { useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -116,59 +116,6 @@ function FormLoja({ valor, onChange, onSalvar, onCancelar, salvando, tituloBotao
 
 const NOVO_VAZIO = { nome: "", pin: "", iconeFile: null, iconePreview: null, removerIcone: false };
 
-// Todas as tabelas que guardam dados de verdade do app (fora o Storage de
-// ícones) — o backup lê elas sem filtro de loja de propósito, pra sair um
-// snapshot com TODAS as lojas de uma vez, não só a que está selecionada.
-const BACKUP_TABELAS = [
-  "lojas",
-  "materiais",
-  "embalagens",
-  "produtos_cadastro",
-  "produto_embalagens",
-  "kits",
-  "kit_produtos",
-  "kit_embalagens",
-  "canais",
-  "precos_canal",
-  "orcamentos_avulsos",
-  "promocoes_salvas",
-  "metas_mensais",
-  "registros_impressao",
-  "lancamentos_caixa",
-  "produto_variacoes",
-  "produtos",
-];
-
-async function exportarBackup(onToast) {
-  const dados = {};
-  const falhas = [];
-  for (const tabela of BACKUP_TABELAS) {
-    const { data, error } = await supabase.from(tabela).select("*");
-    if (error) {
-      // Uma tabela com problema (ex.: schema novo ainda não rodado no
-      // Supabase) não impede o backup do resto — fica registrada no arquivo.
-      falhas.push({ tabela, erro: error.message });
-      continue;
-    }
-    dados[tabela] = data || [];
-  }
-  if (Object.keys(dados).length === 0) {
-    onToast(`Backup falhou: ${falhas[0]?.erro || "nenhuma tabela lida"}`);
-    return false;
-  }
-  const payload = { geradoEm: new Date().toISOString(), app: "Margem Real", tabelas: dados, ...(falhas.length ? { tabelasComErro: falhas } : {}) };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `backup-ohra-${hojeSP()}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  return { falhas };
-}
-
 export default function Lojas({ onToast }) {
   const { lojas, lojaId, criar, atualizar, remover, conferirPin } = useLoja();
   const lojaAtual = lojas.find((l) => l.id === lojaId) || null;
@@ -180,19 +127,7 @@ export default function Lojas({ onToast }) {
   const [confirmacao, setConfirmacao] = useState(null); // "nova" | "editar"
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const [pinParaEditar, setPinParaEditar] = useState(null); // loja aguardando PIN pra abrir a edição
-  const [backupBaixando, setBackupBaixando] = useState(false);
-
-  async function baixarBackup() {
-    setBackupBaixando(true);
-    const ok = await exportarBackup(onToast);
-    setBackupBaixando(false);
-    if (ok)
-      onToast(
-        ok.falhas.length
-          ? `Backup baixado, mas sem: ${ok.falhas.map((f) => f.tabela).join(", ")}`
-          : "Backup baixado — arquivo .json com todas as lojas"
-      );
-  }
+  const backup = useBackup(onToast);
 
   function abrirEdicao(loja) {
     setCriando(false);
@@ -328,8 +263,8 @@ export default function Lojas({ onToast }) {
   return (
     <div>
       <TopbarAcoes aba="config">
-        <button className="btn" onClick={baixarBackup} disabled={backupBaixando} title="Baixa um .json com tudo cadastrado de TODAS as lojas — guarde como cópia de segurança">
-          {backupBaixando ? "Gerando backup…" : "Backup"}
+        <button className="btn" onClick={backup.gerar} disabled={backup.gerando} title={`Baixa um .json com TODOS os dados de TODAS as lojas — guarde como cópia de segurança (último: ${backup.estado.texto})`}>
+          {backup.gerando ? "Gerando backup…" : "Backup"}
         </button>
         <button className="btn primary" onClick={abrirNovaLoja}>
           + Nova loja

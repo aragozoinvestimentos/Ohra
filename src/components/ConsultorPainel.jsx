@@ -34,12 +34,12 @@ const ABAS = [
   { k: "app", r: "🔒 App" },
 ];
 
-export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros, disponivel, consultorias, propostas, nomes, abrir, onToast, telaAtual }) {
+export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros, disponivel, consultorias, propostas, backup, nomes, abrir, onToast, telaAtual }) {
   const [aba, setAba] = useState("perguntar");
   const hoje = hojeSP();
   const perguntasAbertas = registros.filter((r) => r.tipo === "pergunta" && r.status === "aberta");
   const aprovadas = registros.filter((r) => r.tipo === "consultoria" && r.status === "quero");
-  const nPropostas = consultorias.length + propostas.length;
+  const nPropostas = consultorias.length + propostas.length + (backup?.estado.vencido ? 1 : 0);
   const nLevar = perguntasAbertas.length + aprovadas.length;
   return (
     <div className="consultor">
@@ -57,7 +57,7 @@ export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros
         ))}
       </div>
       {aba === "perguntar" && <Perguntar ctx={ctx} lojaId={lojaId} disponivel={disponivel} registros={registros} onToast={onToast} telaAtual={telaAtual} />}
-      {aba === "propostas" && <Propostas lojaId={lojaId} disponivel={disponivel} registros={registros} hoje={hoje} consultorias={consultorias} propostas={propostas} aprovadas={aprovadas} nomes={nomes} abrir={abrir} onToast={onToast} />}
+      {aba === "propostas" && <Propostas backup={backup} lojaId={lojaId} disponivel={disponivel} registros={registros} hoje={hoje} consultorias={consultorias} propostas={propostas} aprovadas={aprovadas} nomes={nomes} abrir={abrir} onToast={onToast} />}
       {aba === "levar" && <Levar nomeLoja={nomeLoja} hoje={hoje} registros={registros} perguntas={perguntasAbertas} aprovadas={aprovadas} kpis={ctx.kpis} onToast={onToast} />}
       {aba === "aprendi" && <Aprendi lojaId={lojaId} disponivel={disponivel} registros={registros} onToast={onToast} />}
       {aba === "app" && <NivelApp />}
@@ -190,7 +190,7 @@ function ColarResposta({ onSalvar, onCancelar }) {
   );
 }
 
-function Propostas({ lojaId, disponivel, registros, hoje, consultorias: todasC, propostas: todasP, aprovadas, nomes, abrir, onToast }) {
+function Propostas({ backup, lojaId, disponivel, registros, hoje, consultorias: todasC, propostas: todasP, aprovadas, nomes, abrir, onToast }) {
   const perfil = useMemo(() => perfilDecisoes(registros), [registros]);
   const registroDe = (chave) => registros.find((r) => r.tipo === "consultoria" && r.chave === chave);
   // o que o consultor aprendeu sobre o assunto (aprovações, adiamentos e se resolveu)
@@ -212,9 +212,22 @@ function Propostas({ lojaId, disponivel, registros, hoje, consultorias: todasC, 
     onToast?.(status === "quero" ? "Vai no pacote “Levar pro Claude”" : status === "aprovada" ? "Aprovado" : "Ok");
   }
   const n = (id) => nomes[id] || id;
-  if (!todasC.length && !todasP.length && !aprovadas.length) return <div className="sede-ok">Nenhuma proposta agora. A equipe está em dia ✓</div>;
+  const cartaoBackup = backup?.estado.vencido ? (
+    <div className="consultor-cartao">
+      <Estado tipo="atencao">arquivo pronto pra gerar</Estado>
+      <b>📄 Backup de 15 dias</b>
+      <div className="sede-aviso-txt">
+        Último backup: {backup.estado.texto}. Todos os dados de todas as lojas num arquivo — guarde numa pasta segura (ou no Drive).
+      </div>
+      <button type="button" className="btn primary btn-sm" onClick={backup.gerar} disabled={backup.gerando}>
+        {backup.gerando ? "Gerando…" : "Gerar e baixar"}
+      </button>
+    </div>
+  ) : null;
+  if (!todasC.length && !todasP.length && !aprovadas.length) return cartaoBackup || <div className="sede-ok">Nenhuma proposta agora. A equipe está em dia ✓</div>;
   return (
     <div className="consultor-propostas">
+      {cartaoBackup}
       {consultorias.map((c) => (
         <div key={c.chave} className="consultor-cartao">
           <Estado tipo={c.tipo === "expansao" ? "atencao" : "decisao"}>{c.tipo === "expansao" ? "expansão" : "consultoria"}</Estado>

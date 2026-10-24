@@ -13,6 +13,7 @@ import { useConsultor } from "../hooks/useConsultor.js";
 import { consultoriaVisivel, propostasDaEquipe, sugerirConsultorias } from "../lib/consultor.js";
 import { assuntoDe, esperaAgoraNao, ordenarPeloPerfil, perfilDecisoes, resultadosParaGravar } from "../lib/consultorAprende.js";
 import { gravarRegistro } from "../lib/consultorAcoes.js";
+import { useBackup } from "../hooks/useBackup.js";
 import ConsultorPainel from "./ConsultorPainel.jsx";
 import { criarSede, TAMANHO_SEDE } from "../lib/sedeMotor.js";
 import { periodoLigado } from "../lib/ads.js";
@@ -101,7 +102,9 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     }
   }, [maduro, cons.registros, cons.disponivel, cons.carregando, consultoriasTodas, propostasTodas, hoje, sede.pronto]);
   const cheiasNovas = useMemo(() => Object.fromEntries(consultoriasTodas.filter((c) => c.cheia).map((c) => [c.sala, true])), [consultoriasTodas]);
-  const nConsultor = consultorias.length + propostas.length;
+  // arquivos que o consultor entrega (backup de 15 em 15 dias) — gera só no clique
+  const backup = useBackup(onToast);
+  const nConsultor = consultorias.length + propostas.length + (backup.estado.vencido ? 1 : 0);
 
   // ---------- motor (canvas) ----------
   const canvasRef = useRef(null);
@@ -518,6 +521,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
               disponivel={cons.disponivel}
               consultorias={consultorias}
               propostas={propostas}
+              backup={backup}
               nomes={nomes}
               abrir={abrir}
               onToast={onToast}

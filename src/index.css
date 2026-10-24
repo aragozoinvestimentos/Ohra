@@ -2681,3 +2681,4 @@ td.vendas-opcao { padding-left: 26px; }
 .consultor-ensinar input, .consultor-ensinar textarea { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
 .consultor-ensinar button { justify-self: start; }
 .consultor-aprendi { display: grid; gap: 6px; }
+.inicio-dado-btn { margin-left: 4px; padding: 1px 9px; font-size: 11.5px; }

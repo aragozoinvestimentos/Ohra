@@ -198,5 +198,6 @@ export const NOVIDADES_CONSULTOR = [
   { data: "2026-10-24", texto: "Nasci na Sede: respondo vendas, lucro, Ads, meta, caixa, contas a pagar, produto pelo nome e o que fazer primeiro." },
   { data: "2026-10-24", texto: "Proponho consultorias (queda de vendas, dependência de um produto, Ads pesado, muitos avisos) e expansão da produção/expedição quando lota." },
   { data: "2026-10-24", texto: "A equipe conversa entre os setores e propõe soluções pra você aprovar." },
+  { data: "2026-10-24", texto: "Entrego o backup de todas as lojas a cada 15 dias: aviso quando vence e você só clica em “Gerar e baixar”." },
   { data: "2026-10-24", texto: "Aprendo sozinho: guardo as respostas do Claude (e as que você me ensina), o que você costuma aprovar ou adiar, e se o que foi aprovado resolveu." },
 ];
