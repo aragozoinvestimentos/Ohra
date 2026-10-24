@@ -1,10 +1,7 @@
-import { vendasDoMes, saldoReserva } from "../lib/vendasMes.js";
 import { comCupomAtivo, cuponsAtivos } from "../lib/cupomLoja.js";
 import { vendasPeloComeco } from "../lib/vinculoSku.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
 import { PLATAFORMAS } from "../lib/pedidos.js";
-import { useVendasOrganicas } from "../hooks/useVendasOrganicas.js";
-import { useReservaProducao } from "../hooks/useReservaProducao.js";
 import { revisoesPrecoDireto } from "../lib/revisarPreco.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLembretes } from "../hooks/useLembretes.js";
@@ -16,7 +13,7 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { vendeuSemAvaliacao } from "../lib/semanasAuto.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
-import { hojeISO, loadEstimativas, mesDe, resumoCaixa, rotuloMes } from "../lib/fluxoCaixa.js";
+import { hojeISO, loadEstimativas, resumoCaixa } from "../lib/fluxoCaixa.js";
 import { linhasAnunciar } from "../lib/anunciar.js";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { gruposPorItem } from "../lib/anunciosGrupo.js";
@@ -26,16 +23,16 @@ import { avisosDesgaste } from "../lib/farm.js";
 import { avisosManutencao } from "../lib/manutencao.js";
 import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
-import { periodosDeAdsDaLoja, sugestoesAfiliado, vendasPorOrigemReais } from "../lib/afiliados.js";
-import { calcTaxaFalhaAtual, TAXA_FALHA_PRIOR_PCT } from "../lib/registroImpressao.js";
-import { AREAS_PENDENCIA, GRUPOS_PENDENCIA, agruparPorAnuncio, areaPendencia, montarPendencias, statusInicio } from "../lib/inicio.js";
+import { sugestoesAfiliado } from "../lib/afiliados.js";
+import { agruparPorProduto, ehAvisoDeDados, montarPendencias, situacaoDados } from "../lib/inicio.js";
+import { comoEstaALoja, produtosDaSemana, variacao } from "../lib/resumoLoja.js";
+import { abrirProduto } from "../lib/anuncios.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
 import { contarMarcas, publicarMarcas } from "../lib/marcas.js";
 import { irParaAba } from "../lib/navegar.js";
-import { BRL, PCT } from "../lib/format.js";
+import { BRL } from "../lib/format.js";
 import Kpis from "./Kpis.jsx";
 import CanalTag from "./CanalTag.jsx";
-import GraficoOrigem from "./GraficoOrigem.jsx";
 import Estado from "./Estado.jsx";
 import { estadoDoTom } from "../lib/estados.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -43,16 +40,16 @@ import { LinhaTarefa, TarefaDialog } from "./Tarefas.jsx";
 import { useTarefas } from "../hooks/useTarefas.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { saldoAds } from "../lib/saldoAds.js";
-import { LIMITE_TAREFAS, concluidasRecentes, repartirTarefas } from "../lib/tarefas.js";
+import { concluidasRecentes, repartirTarefas } from "../lib/tarefas.js";
 import { abrirTarefa, concluirTarefa, desfazerConclusao, excluirTarefa, rotuloLink } from "../lib/tarefasAcoes.js";
 
-const VISIVEIS = 5;
+const VISIVEIS = 6; // cartões de produto (urgentes sempre aparecem)
 const diaMes = (iso) => String(iso || "").slice(0, 10).split("-").reverse().slice(0, 2).join("/");
 
-// Lançamentos do caixa, meta do mês e registros de impressão — só leitura.
+// Lançamentos do caixa e meta do mês — só leitura.
 function useDadosGestao() {
   const { lojaId } = useLoja();
-  const [d, setD] = useState({ lancamentos: [], meta: null, impressoes: [], carregando: !!supabase });
+  const [d, setD] = useState({ lancamentos: [], meta: null, carregando: !!supabase });
   useEffect(() => {
     if (!supabase) return;
     let ativo = true;
@@ -60,9 +57,9 @@ function useDadosGestao() {
     async function carregar() {
       try {
         const q = (t) => (lojaId ? supabase.from(t).select("*").eq("loja_id", lojaId) : supabase.from(t).select("*"));
-        const [rl, rm, ri] = await Promise.all([q("lancamentos_caixa"), q("metas_mensais").eq("mes", hojeISO().slice(0, 7)), q("registros_impressao")]);
+        const [rl, rm] = await Promise.all([q("lancamentos_caixa"), q("metas_mensais").eq("mes", hojeISO().slice(0, 7))]);
         if (!ativo) return;
-        setD({ lancamentos: rl.error ? [] : rl.data || [], meta: rm.error ? null : (rm.data || [])[0] || null, impressoes: ri.error ? [] : ri.data || [], carregando: false });
+        setD({ lancamentos: rl.error ? [] : rl.data || [], meta: rm.error ? null : (rm.data || [])[0] || null, carregando: false });
       } catch {
         if (ativo) setD((p) => ({ ...p, carregando: false }));
       }
@@ -76,7 +73,6 @@ function useDadosGestao() {
       .channel(`inicio-gestao-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "lancamentos_caixa" }, agendar)
       .on("postgres_changes", { event: "*", schema: "public", table: "metas_mensais" }, agendar)
-      .on("postgres_changes", { event: "*", schema: "public", table: "registros_impressao" }, agendar)
       .subscribe();
     const aoVoltar = () => document.visibilityState === "visible" && agendar();
     document.addEventListener("visibilitychange", aoVoltar);
@@ -92,42 +88,39 @@ function useDadosGestao() {
   return d;
 }
 
-// Regra única de cores (lib/estados.js): good = OK = sem bolinha; a
-// pendência do grupo Oportunidades é verde (dá pra agir e ganhar).
+// Regra única de cores (lib/estados.js): a pendência do grupo Oportunidades é
+// verde (dá pra agir e ganhar).
 const Bolinha = ({ tipo }) => (tipo ? <i className={`bolinha-status st-${tipo}`} aria-hidden="true" /> : null);
-const estadoStatus = (tom) => estadoDoTom(tom);
 const estadoPendencia = (p) => (p.semCor ? null : p.grupo === "oportunidade" ? (p.tom === "neu" ? "info" : "oportunidade") : estadoDoTom(p.tom) || "info");
-const ESTADO_GRUPO = { resolver: ["resolver", "!"], rotina: ["atencao", "↻"], oportunidade: ["oportunidade", "↑"] };
+const ROTULO_GRUPO = { resolver: ["resolver", "resolver"], rotina: ["atencao", "atenção"], oportunidade: ["oportunidade", "oportunidade"] };
+const FILTROS = [
+  { chave: "todos", rotulo: "Todos" },
+  { chave: "produtos", rotulo: "Produtos" },
+  { chave: "loja", rotulo: "Loja" },
+  { chave: "tarefas", rotulo: "Minhas tarefas" },
+];
+const pct = (v) => `${v >= 0 ? "↑" : "↓"} ${Math.abs(Math.round(v * 100))}%`;
+const Variacao = ({ v, inverso = false }) => (v == null ? null : <span className={(v >= 0) !== inverso ? "pos-forte" : "neg-forte"}>{pct(v)}</span>);
+const semPrefixo = (p) => {
+  const t = String(p.titulo || "").replace(/^(?:Anúncio:\s)?.+?:\s/, "");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+const textoSemCanal = (p) => {
+  const t = String(p.texto || "");
+  return p._canal && t.startsWith(`${p._canal} · `) ? t.slice(p._canal.length + 3) : t;
+};
 
-// Área numerada recolhível, com o resumo na linha do título.
-function Area({ k, n, titulo, resumo, tom, aberta, onAlternar, children }) {
-  return (
-    <div className={`panel inicio-area${aberta ? "" : " panel-recolhido"}`} id={`inicio-area-${k}`}>
-      <h3 className="section-title">
-        <button type="button" className={`variacoes-toggle${aberta ? " aberto" : ""}`} onClick={onAlternar} aria-expanded={aberta}>
-          <span className="seta">▸</span> <span className="inicio-num">{n}</span> {titulo}
-        </button>
-        <span className="h3-contagem inicio-resumo">
-          <Bolinha tipo={estadoStatus(tom)} /> {resumo}
-        </span>
-      </h3>
-      {aberta && <div className="inicio-area-corpo">{children}</div>}
-    </div>
-  );
-}
-
-// Início — SÓ LÊ: status no topo → "Pra fazer" por prioridade → áreas
-// numeradas. Cada pendência vem da aba que decide e o botão leva pra lá.
+// Início — SÓ LÊ (redesenho 24/10/2026, prévia inicio-novo-v1): 1 Como a loja
+// está → 2 Seus dados → 3 Pra fazer POR PRODUTO (+ Loja e Minhas tarefas) →
+// 4 Seus produtos. Cada pendência vem da aba que decide e o botão leva pra lá.
 // Única coisa gravada aqui: as tarefas manuais (schema v42, tabela tarefas).
 export default function Inicio({ onIrPara, onToast }) {
   const { lojaId } = useLoja();
-  const { dados, rampasH, af, regras, hoje, linhas: linhasTodas, linhasGrupo, linhasAf, semanaAf, linhasAds, calendario, avalH, pedidosValidos, anuncioDoPedido } = useCrescimento();
+  const { dados, rampasH, af, regras, hoje, linhas: linhasTodas, linhasGrupo, linhasAf, linhasAds, calendario, avalH, pedidosValidos, anuncioDoPedido } = useCrescimento();
   // Rampas de produtos que só existem dentro de um anúncio com vários itens
   // saem dos avisos (decide a rampa do anúncio inteiro, que entra no lugar).
   const linhas = useMemo(() => [...linhasTodas.filter((l) => !l.soNoGrupo), ...(linhasGrupo || [])], [linhasTodas, linhasGrupo]);
   const campanhaProx = useMemo(() => proximaCampanha(calendario, hoje), [calendario, hoje]);
-  const organicasH = useVendasOrganicas();
-  const reservaH = useReservaProducao();
   const cfgDoProduto = dados.cfgDoProduto;
   const reais = useVendasReais({ itens: dados.itens, canais: dados.canais, cfgDoProduto });
   // Central da aba Análise: plataformas com canal cadastrado (aviso de pedidos atrasados).
@@ -199,7 +192,6 @@ export default function Inicio({ onIrPara, onToast }) {
   }
   const gestao = useDadosGestao();
   const [verTodos, setVerTodos] = useState(false);
-  const [anunciosAbertos, setAnunciosAbertos] = useState(() => new Set()); // cards de anúncio abertos
   // Filtro do "Pra fazer" por área (lembrado neste aparelho). Urgentes aparecem sempre.
   const [filtro, setFiltroEstado] = useState(() => {
     try {
@@ -216,7 +208,6 @@ export default function Inicio({ onIrPara, onToast }) {
       // sem localStorage — só não lembra
     }
   };
-  const [abertas, setAbertas] = useState({}); // área → aberta (sobrepõe o padrão)
   const tarefasH = useTarefas();
   const [dialogTarefa, setDialogTarefa] = useState(null); // { tarefa? }
   const [excluir, setExcluir] = useState(null);
@@ -288,26 +279,6 @@ export default function Inicio({ onIrPara, onToast }) {
     [afAtivo, linhasAf, af.parceiros, af.registros, regras, itens, hoje]
   );
 
-  // --- Vendas ---
-  const origem = useMemo(
-    () => vendasPorOrigemReais({ pedidos: pedidosValidos, periodos: periodosDeAdsDaLoja(linhasAds), afRegistros: af.registros, hoje, n: 6 }),
-    [af.registros, pedidosValidos, linhasAds, hoje]
-  );
-  const semanasComVenda = origem.filter((w) => w.total > 0).length;
-  const temSemana = linhas.some((l) => l.est.lucroSemana != null);
-  const lucroSemana = temSemana ? linhas.reduce((s, l) => s + (l.est.lucroSemana || 0), 0) - (semanaAf.comissaoRampa || 0) : null;
-
-  // --- Produção ---
-  const taxa = useMemo(() => (gestao.impressoes.length ? calcTaxaFalhaAtual(gestao.impressoes) : null), [gestao.impressoes]);
-  // Repor a produção do mês = a MESMA conta da Reserva de produção do Fluxo de
-  // Caixa (Vendas do mês, lib/vendasMes.js) + o saldo da reserva (v51).
-  const reservaMes = useMemo(() => {
-    const v = vendasDoMes({ mes: mesDe(hoje), rampas: rampasH.rampas, rampasGrupo: rampasH.rampasGrupo, rampaRegistros: rampasH.registros, afRegistros: af.registros, organicas: organicasH.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura, itemNoCanal: dados.itemNoCanal });
-    if (!v.total.unidades) return null;
-    const res = saldoReserva(reservaH.registros);
-    return { repor: v.total.repor, unidades: v.total.unidades, saldo: res.saldo, separado: res.porMes.get(mesDe(hoje)) || 0, temReserva: reservaH.disponivel };
-  }, [hoje, rampasH.rampas, rampasH.rampasGrupo, rampasH.registros, af.registros, organicasH.registros, itens, canais, cfgDoProduto, reservaH.registros, reservaH.disponivel, reais.linhas, reais.cobertura, dados.itemNoCanal]);
-
   // --- Pra fazer + status ---
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
   const revisoes = useMemo(() => revisoesPrecoDireto({ itens, canais, precos, hoje }), [itens, canais, precos, hoje]);
@@ -349,58 +320,49 @@ export default function Inicio({ onIrPara, onToast }) {
     if (error) return onToast?.(`Não foi possível desfazer: ${error.message}`);
     window.dispatchEvent(new Event("ohra:lembretes"));
   }
-  const status = statusInicio({
-    caixa,
-    rampas: linhas,
-    afAtivo,
-    precosAlerta,
-    anunciosAtualizar,
-    anunciados: anunciados.length,
-    taxa,
-    taxaRef: TAXA_FALHA_PRIOR_PCT / 100,
-    lucroSemana,
-  });
-
   const ir = (p) => {
     if (p.pedido) irParaAba(p.aba, p.pedido);
     else onIrPara?.(p.aba);
   };
-  const aberta = (k) => (abertas[k] != null ? abertas[k] : status[k].tom === "bad" || status[k].tom === "warn");
-  const alternar = (k) => setAbertas((a) => ({ ...a, [k]: !aberta(k) }));
-  const rolar = (k) => {
-    setAbertas((a) => ({ ...a, [k]: true }));
-    setTimeout(() => document.getElementById(`inicio-area-${k}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
-  };
-
   const concluidas = concluidasRecentes(tarefasH.tarefas, hoje);
-
   const carregando = gestao.carregando || rampasH.carregando || dados.carregando;
-  // Avisos automáticos: limite de 5 + "ver todos". Tarefas manuais fora do
-  // limite (repartirTarefas): Resolver / topo de Atenção e rotina / Minhas tarefas.
-  // Urgentes (Resolver) ficam fora do limite e de qualquer filtro.
-  const avisos = pendencias.filter((p) => !p.tarefa);
-  // Agrupado por anúncio (produto + variações × canal): avisos do mesmo
-  // anúncio viram um card; o limite de 5 conta cards.
+
+  // --- 1 · Como a loja está (pedidos importados + Ads, mesma conta do Resumo do mês) ---
+  const loja = useMemo(() => comoEstaALoja({ pedidos: pedidosValidos, linhasAds, hoje }), [pedidosValidos, linhasAds, hoje]);
+  const temPedidos = loja.atual.pedidos > 0 || loja.antes.pedidos > 0;
+  const aPagar7 = caixa ? caixa.proximos.filter((l) => l.tipo === "saida").reduce((t, l) => t + Number(l.valor || 0), 0) : 0;
+
+  // --- 2 · Seus dados ---
+  const temAdsLigado = [...(linhasAds?.linhas || []), ...(linhasAds?.lojaLinha ? [linhasAds.lojaLinha] : [])].some((l) => l.av?.ativo);
+  const situacao = useMemo(() => situacaoDados({ importacoes: impCentral, avaliacoesPend, temAdsLigado, hoje }), [impCentral, avaliacoesPend, temAdsLigado, hoje]);
+  const avisosDados = pendencias.filter(ehAvisoDeDados);
+
+  // --- 3 · Pra fazer: por produto, Loja e Minhas tarefas ---
   const nomesCanais = (dados.canais || []).map((c) => c.nome);
-  const urgAvisos = avisos.filter((p) => p.grupo === "resolver");
-  const contagemArea = AREAS_PENDENCIA.map((a) => ({ ...a, n: pendencias.filter((p) => areaPendencia(p) === a.chave).length })).filter((a) => a.n > 0);
-  const filtroAtivo = filtro !== "todos" && contagemArea.some((a) => a.chave === filtro) ? filtro : "todos";
-  const resto = avisos.filter((p) => p.grupo !== "resolver" && (filtroAtivo === "todos" || areaPendencia(p) === filtroAtivo));
-  const entradas = agruparPorAnuncio([...urgAvisos, ...resto], nomesCanais);
-  const urgEnt = entradas.filter((e) => e.grupo === "resolver");
-  const restoEnt = entradas.filter((e) => e.grupo !== "resolver");
-  const restoVis = filtroAtivo !== "todos" || verTodos ? restoEnt : restoEnt.slice(0, VISIVEIS);
-  const avisosVis = [...urgEnt, ...restoVis];
+  const avisos = pendencias.filter((p) => !p.tarefa && !ehAvisoDeDados(p));
+  // Só vira cartão de produto o que tem nome de produto, kit ou anúncio com vários
+  // itens (impressora, parceiro de afiliado… ficam em Loja).
+  const nomesItens = new Set([...(produtos || []), ...(kits || []), ...(gruposAnuncio || [])].map((x) => String(x.nome || "").toLowerCase()));
+  const { produtos: cartoes, loja: avisosLoja } = agruparPorProduto(avisos, nomesCanais, (nome) => nomesItens.has(nome.toLowerCase()));
   const tf = repartirTarefas(
     pendencias.filter((p) => p.tarefa),
     { todas: verTodasTarefas }
   );
-  const mostraTarefas = filtroAtivo === "todos" || filtroAtivo === "tarefas";
-  const urgentes = [...urgAvisos, ...pendencias.filter((p) => p.tarefa && p.grupo === "resolver")];
-  const doGrupoVis = (g) => {
-    const av = avisosVis.filter((p) => p.grupo === g);
-    return g === "resolver" ? [...av, ...tf.resolver] : g === "rotina" ? [...(mostraTarefas ? tf.topo : []), ...av] : av;
-  };
+  const tarefasLista = [...tf.resolver, ...tf.topo, ...tf.minhas];
+  const filtroAtivo = FILTROS.some((f) => f.chave === filtro) ? filtro : "todos";
+  const verProdutos = filtroAtivo === "todos" || filtroAtivo === "produtos";
+  const verLoja = filtroAtivo === "todos" || filtroAtivo === "loja";
+  const verTarefas = filtroAtivo === "todos" || filtroAtivo === "tarefas";
+  // Urgentes (Resolver) aparecem sempre; o resto dos cartões até VISIVEIS + "ver todos".
+  const cartoesUrg = cartoes.filter((g) => g.grupo === "resolver");
+  const cartoesResto = cartoes.filter((g) => g.grupo !== "resolver");
+  const cartoesVis = verProdutos ? [...cartoesUrg, ...(verTodos || filtroAtivo === "produtos" ? cartoesResto : cartoesResto.slice(0, Math.max(0, VISIVEIS - cartoesUrg.length)))] : cartoesUrg;
+  const escondidos = verProdutos ? cartoes.length - cartoesVis.length : 0;
+  const lojaVis = verLoja ? avisosLoja : avisosLoja.filter((p) => p.grupo === "resolver");
+  const contagem = (g) => cartoes.reduce((t, c) => t + c.itens.filter((p) => p.grupo === g).length, 0) + avisosLoja.filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : 0);
+  const nFiltro = { todos: pendencias.length - avisosDados.length, produtos: cartoes.length, loja: avisosLoja.length, tarefas: tf.total };
+
+  const urgentes = [...avisos.filter((p) => p.grupo === "resolver"), ...pendencias.filter((p) => p.tarefa && p.grupo === "resolver")];
   const nUrgentes = urgentes.length;
   useEffect(() => {
     if (!carregando) publicarUrgentes(nUrgentes);
@@ -410,116 +372,184 @@ export default function Inicio({ onIrPara, onToast }) {
   useEffect(() => {
     if (!carregando) publicarMarcas(marcas);
   }, [marcas, carregando]);
-  const totalGrupo = (g) => entradas.filter((p) => p.grupo === g).length + (g === "resolver" ? tf.n.resolver : g === "rotina" && mostraTarefas ? tf.n.topo : 0);
 
-  const CARDS = [
-    { k: "dinheiro", n: 1, titulo: "Dinheiro" },
-    { k: "vendas", n: 2, titulo: "Vendas" },
-    { k: "catalogo", n: 3, titulo: "Catálogo" },
-    { k: "producao", n: 4, titulo: "Produção" },
-  ];
+  // --- 4 · Seus produtos (últimos 7 dias) ---
+  const semana = useMemo(() => produtosDaSemana(pedidosValidos, hoje, 6), [pedidosValidos, hoje]);
+  const cartaoDoNome = new Map(cartoes.map((g) => [g.nome.toLowerCase(), g]));
+  const itemDoNome = (nome) => {
+    const n = String(nome || "").toLowerCase();
+    const p = (produtos || []).find((x) => String(x.nome).toLowerCase() === n);
+    if (p) return `p:${p.id}`;
+    const k = (kits || []).find((x) => String(x.nome).toLowerCase() === n);
+    return k ? `k:${k.id}` : null;
+  };
+  const canalDoNome = (nome) => (dados.canais || []).find((c) => c.nome === nome) || null;
 
-
-  // Card do anúncio: avisos do mesmo produto × canal juntos (clicar abre todos).
-  const linhaAnuncio = (g) => {
-    const aberto = anunciosAbertos.has(g.id);
-    const areasCom = new Set(g.itens.map(areaPendencia));
-    const semAviso = ["preco", "crescimento", "ads", "afiliados"].filter((a) => !areasCom.has(a)).map((a) => AREAS_PENDENCIA.find((x) => x.chave === a)?.rotulo);
-    return (
-      <li key={g.id} className={`inicio-item inicio-anuncio st-${estadoPendencia(g.itens[0]) || "info"}`}>
-        <Bolinha tipo={estadoPendencia(g.itens[0])} />
-        <div className="inicio-item-txt">
-          <button type="button" className="inicio-anuncio-cab" onClick={() => setAnunciosAbertos((s) => { const n = new Set(s); if (n.has(g.id)) n.delete(g.id); else n.add(g.id); return n; })} aria-expanded={aberto}>
-            <span className="seta">{aberto ? "▾" : "▸"}</span> <b>{g.nome}</b> <span className="muted-cel">· {g.canal} — {g.itens.length} avisos</span>
+  // Um aviso dentro do cartão do produto (ou da Loja).
+  const linhaAviso = (p, noCartao) => (
+    <div key={p.id} className="inicio-aviso">
+      <div className="inicio-aviso-txt">
+        <b>{noCartao ? semPrefixo(p) : p.titulo}</b>
+        <span>
+          {noCartao && p._canal && canalDoNome(p._canal) && <CanalTag canal={canalDoNome(p._canal)} />} {noCartao ? textoSemCanal(p) : p.texto}
+        </span>
+      </div>
+      <div className="inicio-aviso-acoes">
+        {podeAdiar(p) && (
+          <button type="button" className="link-btn" onClick={() => adiar30(p)} title="Some do Pra fazer por 30 dias e volta sozinho se ainda valer. Nada mais muda.">
+            lembrar em 30 dias
           </button>
-          {!aberto && <span>{g.itens.map((p) => p.titulo.replace(/^(?:Anúncio:\s)?.+?:\s/, "")).join(" · ")}</span>}
-          {aberto && (
-            <>
-              <ul className="inicio-lista inicio-anuncio-lista">{g.itens.map(linhaPendencia)}</ul>
-              {semAviso.length > 0 && <span className="muted-cel">✓ sem aviso: {semAviso.join(" · ")}</span>}
-            </>
+        )}
+        {p.ciente && (
+          <button type="button" className="link-btn" onClick={() => ciente(p.ciente)} title="Esse aviso não volta mais pra esta impressora.">
+            ok, ciente
+          </button>
+        )}
+        <button type="button" className={`btn btn-mini${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => ir(p.ir)}>
+          {p.rotulo}
+        </button>
+      </div>
+    </div>
+  );
+
+  const cartaoProduto = (g) => {
+    const est = estadoPendencia(g.itens[0]);
+    const [tipoG, rotG] = ROTULO_GRUPO[g.grupo] || ["info", ""];
+    const itemId = itemDoNome(g.nome);
+    return (
+      <div key={g.id} className={`inicio-cartao${est ? ` st-${est}` : ""}`}>
+        <div className="inicio-cartao-cab">
+          <Bolinha tipo={est} />
+          <b className="inicio-cartao-nome">{g.anuncio ? `Anúncio: ${g.nome}` : g.nome}</b>
+          {g.canais.map((c) => (canalDoNome(c) ? <CanalTag key={c} canal={canalDoNome(c)} /> : null))}
+          <Estado tipo={tipoG}>{rotG}</Estado>
+          {g.itens.length > 1 && <span className="muted-cel">{g.itens.length} avisos</span>}
+          {itemId && (
+            <button type="button" className="btn btn-mini inicio-cartao-abrir" onClick={() => abrirProduto(itemId)}>
+              Abrir produto →
+            </button>
           )}
         </div>
-      </li>
+        {g.itens.map((p) => linhaAviso(p, true))}
+      </div>
     );
   };
 
-  // Uma linha do "Pra fazer" (aviso automático ou tarefa manual).
-  const linhaPendencia = (p) => p.anuncio ? linhaAnuncio(p) : (
-    <li key={p.id} className={`inicio-item${estadoPendencia(p) ? ` st-${estadoPendencia(p)}` : ""}${p.tarefa ? " inicio-tarefa" : ""}`}>
-      <Bolinha tipo={estadoPendencia(p)} />
-      {p.tarefa ? (
-        <LinhaTarefa
-          p={p}
-          itens={itens}
-          onEditar={(t) => setDialogTarefa({ tarefa: t })}
-          onConcluir={concluir}
-          onExcluir={setExcluir}
-          onAbrir={(t) => abrirTarefa(t, itens, onIrPara)}
-        />
-      ) : (
-      <>
-      <div className="inicio-item-txt">
-        <b>{p.titulo}</b>
-        <span>{p.texto}</span>
-        {podeAdiar(p) && (
-          <span className="inicio-item-sec">
-            <button type="button" className="link-btn" onClick={() => adiar30(p)} title="Some do Pra fazer por 30 dias e volta sozinho se ainda valer. Nada mais muda.">
-              lembrar em 30 dias
-            </button>
-          </span>
-        )}
-        {p.ciente && (
-          <span className="inicio-item-sec">
-            <button type="button" className="link-btn" onClick={() => ciente(p.ciente)} title="Esse aviso não volta mais pra esta impressora.">
-              ok, ciente
-            </button>
-          </span>
-        )}
+  const cartaoLoja = (p) => {
+    const est = estadoPendencia(p);
+    const [tipoG, rotG] = ROTULO_GRUPO[p.grupo] || ["info", ""];
+    return (
+      <div key={p.id} className={`inicio-cartao inicio-cartao-loja${est ? ` st-${est}` : ""}`}>
+        <div className="inicio-cartao-cab">
+          <Bolinha tipo={est} />
+          <b className="inicio-cartao-nome">{p.titulo}</b>
+          <Estado tipo={tipoG}>{rotG}</Estado>
+        </div>
+        {linhaAviso({ ...p, titulo: "" }, false)}
       </div>
-      <button type="button" className={`btn btn-mini${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => ir(p.ir)}>
-        {p.rotulo}
-      </button>
-      </>
-      )}
-    </li>
-  );
+    );
+  };
 
   return (
     <div className="inicio">
-      {urgentes.length > 0 && (
-        <div className="inicio-urgentes" role="alert">
-          <b>
-            ! {urgentes.length === 1 ? "1 urgente" : `${urgentes.length} urgentes`}
-          </b>
-          <span className="inicio-urgentes-lista">
-            {urgentes.slice(0, 3).map((p) => (
-              <button key={p.id} type="button" className="link-btn" onClick={() => (p.tarefa ? document.querySelector(".inicio-fazer")?.scrollIntoView({ behavior: "smooth" }) : ir(p.ir))}>
-                {p.tarefa ? `tarefa vencida: ${p.titulo}` : p.titulo}
-              </button>
-            ))}
-            {urgentes.length > 3 && <span>e mais {urgentes.length - 3}</span>}
-          </span>
-          <button type="button" className="btn btn-mini" onClick={() => document.querySelector(".inicio-fazer")?.scrollIntoView({ behavior: "smooth" })}>
-            ver
-          </button>
-        </div>
-      )}
-      <div className="inicio-status">
-        {CARDS.map((c) => (
-          <button key={c.k} type="button" className={`inicio-card${estadoStatus(status[c.k].tom) ? ` st-${estadoStatus(status[c.k].tom)}` : ""}`} onClick={() => rolar(c.k)}>
-            <span className="inicio-card-tit">
-              <Bolinha tipo={estadoStatus(status[c.k].tom)} /> {c.titulo}
-            </span>
-            <span className="inicio-card-frase">{carregando ? "carregando…" : status[c.k].frase}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="panel inicio-fazer">
+      {/* 1 · Como a loja está */}
+      <div className="panel">
         <h3 className="section-title">
           <span>
-            Pra fazer <span className="h3-contagem">{pendencias.length ? `${pendencias.length} ${pendencias.length === 1 ? "item" : "itens"}` : ""}</span>
+            Como a loja está{" "}
+            <span className="h3-contagem">
+              {diaMes(loja.de)} a {diaMes(loja.ate)} · comparado com {diaMes(loja.deAntes)} a {diaMes(loja.ateAntes)}
+            </span>
+          </span>
+          <button type="button" className="btn btn-sm" style={{ marginLeft: "auto" }} onClick={() => onIrPara?.("resumoMes")}>
+            Resumo do mês →
+          </button>
+        </h3>
+        <Kpis
+          itens={[
+            {
+              label: "Vendas",
+              valor: temPedidos ? BRL(loja.atual.vendas) : "—",
+              sub: temPedidos ? (
+                <>
+                  {loja.atual.pedidos} pedido{loja.atual.pedidos === 1 ? "" : "s"} · <Variacao v={variacao(loja.atual.vendas, loja.antes.vendas)} />
+                </>
+              ) : (
+                "importe os pedidos em Atualizar dados"
+              ),
+            },
+            {
+              label: "Lucro depois do Ads",
+              valor: temPedidos ? BRL(loja.atual.depoisAds) : "—",
+              tom: temPedidos && loja.atual.depoisAds < 0 ? "bad" : undefined,
+              sub: temPedidos ? (
+                <>
+                  Ads {BRL(loja.atual.ads)} · <Variacao v={loja.antes.depoisAds > 0 ? variacao(loja.atual.depoisAds, loja.antes.depoisAds) : null} />
+                </>
+              ) : (
+                "pelos pedidos importados"
+              ),
+            },
+            {
+              label: "Caixa hoje",
+              valor: caixa ? BRL(caixa.saldoHoje) : "—",
+              tom: caixa && caixa.saldoHoje < 0 ? "bad" : undefined,
+              sub: caixa ? (aPagar7 > 0 ? `a pagar em 7 dias: ${BRL(aPagar7)}` : "nada a pagar nos próximos 7 dias") : "sem lançamentos no Caixa",
+            },
+            {
+              label: "Meta do mês",
+              valor: metaFat > 0 && temPedidos ? `${Math.round((loja.atual.vendas / metaFat) * 100)}%` : "—",
+              sub: metaFat > 0 ? `${BRL(loja.atual.vendas)} de ${BRL(metaFat)}${temPedidos ? ` · no ritmo: ${BRL(loja.ritmo)}` : ""}` : "sem meta (Dinheiro → Metas)",
+              extra:
+                metaFat > 0 && temPedidos ? (
+                  <div className="inicio-barra">
+                    <i style={{ width: `${Math.min(100, Math.round((loja.atual.vendas / metaFat) * 100))}%` }} />
+                  </div>
+                ) : null,
+            },
+          ]}
+        />
+        {loja.atual.semCusto > 0 && <p className="hint" style={{ margin: "6px 0 0" }}>{loja.atual.semCusto} venda(s) sem custo cadastrado ficam fora do lucro.</p>}
+      </div>
+
+      {/* 2 · Seus dados */}
+      {situacao.length > 0 && (
+        <div className="panel inicio-dados">
+          <h3 className="section-title">
+            <span>
+              Seus dados <span className="h3-contagem">o app só acerta com os arquivos em dia</span>
+            </span>
+            <button type="button" className="btn btn-sm primary" style={{ marginLeft: "auto" }} onClick={() => onIrPara?.("importar")}>
+              Atualizar dados
+            </button>
+          </h3>
+          <div className="inicio-dados-chips">
+            {situacao.map((d) => (
+              <span key={d.chave} className={`inicio-dado st-${d.estado === "ok" ? "oportunidade" : "atencao"}`}>
+                <Bolinha tipo={d.estado === "ok" ? "oportunidade" : "atencao"} /> <b>{d.rotulo}</b> {d.texto}
+              </span>
+            ))}
+          </div>
+          {avisosDados.length > 0 && (
+            <ul className="inicio-dados-avisos">
+              {avisosDados.map((p) => (
+                <li key={p.id}>
+                  <b>{p.titulo}</b> <span className="muted-cel">{p.texto}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* 3 · Pra fazer */}
+      <div className="panel inicio-fazer">
+        <h3 className="section-title">
+          <span className="inicio-fazer-tit">
+            Pra fazer
+            {contagem("resolver") > 0 && <Estado tipo="resolver">{`${contagem("resolver")} resolver`}</Estado>}
+            {contagem("rotina") > 0 && <Estado tipo="atencao">{`${contagem("rotina")} atenção`}</Estado>}
+            {contagem("oportunidade") > 0 && <Estado tipo="oportunidade">{`${contagem("oportunidade")} oportunidade${contagem("oportunidade") > 1 ? "s" : ""}`}</Estado>}
           </span>
           <button
             type="button"
@@ -529,19 +559,14 @@ export default function Inicio({ onIrPara, onToast }) {
             + Tarefa
           </button>
         </h3>
-        {contagemArea.length > 1 && (
-          <div className="inicio-filtros" role="group" aria-label="Filtrar o Pra fazer">
-            <button type="button" className={`chip-filtro-area${filtroAtivo === "todos" ? " ativo" : ""}`} onClick={() => setFiltro("todos")}>
-              Todos <span>{pendencias.length}</span>
+        <div className="inicio-filtros" role="group" aria-label="Filtrar o Pra fazer">
+          {FILTROS.map((f) => (
+            <button key={f.chave} type="button" className={`chip-filtro-area${filtroAtivo === f.chave ? " ativo" : ""}`} onClick={() => setFiltro(f.chave)}>
+              {f.rotulo} <span>{nFiltro[f.chave]}</span>
             </button>
-            {contagemArea.map((a) => (
-              <button key={a.chave} type="button" className={`chip-filtro-area${filtroAtivo === a.chave ? " ativo" : ""}`} onClick={() => setFiltro(a.chave)}>
-                {a.rotulo} <span>{a.n}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {filtroAtivo !== "todos" && urgentes.length > 0 && <p className="hint" style={{ margin: "0 0 6px" }}>Os urgentes (Resolver) aparecem com qualquer filtro.</p>}
+          ))}
+        </div>
+        {filtroAtivo !== "todos" && nUrgentes > 0 && <p className="hint" style={{ margin: "0 0 6px" }}>Os urgentes (resolver) aparecem com qualquer filtro.</p>}
         {desfazer && (
           <div className="tarefa-desfazer" role="status">
             ✓ “{desfazer.tarefa.descricao}” concluída{desfazer.prox ? ` · próxima em ${diaMes(desfazer.prox)}` : ""}
@@ -552,42 +577,49 @@ export default function Inicio({ onIrPara, onToast }) {
         )}
         {carregando && !pendencias.length ? (
           <div className="empty">Carregando…</div>
-        ) : !pendencias.length ? (
+        ) : !avisos.length && !tf.total ? (
           <div className="empty inicio-vazio">Nada pendente hoje ✓</div>
         ) : (
           <>
-            {GRUPOS_PENDENCIA.map((g) => {
-              const doGrupo = doGrupoVis(g.chave);
-              if (!doGrupo.length) return null;
-              return (
-                <div key={g.chave} className="inicio-grupo">
-                  <div className="inicio-grupo-tit">
-                    <Estado tipo={(ESTADO_GRUPO[g.chave] || ["info"])[0]} icone={(ESTADO_GRUPO[g.chave] || [])[1]}>
-                      {g.titulo}
-                    </Estado>{" "}
-                    <span className="muted-cel">{totalGrupo(g.chave)}</span>
-                  </div>
-                  <ul className="inicio-lista">{doGrupo.map(linhaPendencia)}</ul>
-                </div>
-              );
-            })}
-            {filtroAtivo === "todos" && restoEnt.length > VISIVEIS && (
-              <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodos((v) => !v)}>
-                {verTodos ? "ver menos" : `ver todos (${avisos.length})`}
-              </button>
+            {cartoesVis.length > 0 && (
+              <>
+                <div className="inicio-sec">Produtos</div>
+                {cartoesVis.map(cartaoProduto)}
+                {escondidos > 0 && (
+                  <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodos(true)}>
+                    ver todos os produtos ({cartoes.length})
+                  </button>
+                )}
+                {verTodos && filtroAtivo === "todos" && cartoesResto.length > VISIVEIS && (
+                  <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodos(false)}>
+                    ver menos
+                  </button>
+                )}
+              </>
             )}
-            {mostraTarefas && tf.minhas.length > 0 && (
-              <div className="inicio-grupo inicio-minhas">
-                <div className="inicio-grupo-tit">
-                  <span className="inicio-minhas-tit">Minhas tarefas</span> <span className="muted-cel">{tf.n.minhas}</span>
-                </div>
-                <ul className="inicio-lista">{tf.minhas.map(linhaPendencia)}</ul>
-              </div>
+            {lojaVis.length > 0 && (
+              <>
+                <div className="inicio-sec">Loja</div>
+                {lojaVis.map(cartaoLoja)}
+              </>
             )}
-            {mostraTarefas && tf.total > LIMITE_TAREFAS && (
-              <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodasTarefas((v) => !v)}>
-                {verTodasTarefas ? "ver menos tarefas" : `ver todas as tarefas (${tf.total})`}
-              </button>
+            {(verTarefas ? tarefasLista : tf.resolver).length > 0 && (
+              <>
+                <div className="inicio-sec">Minhas tarefas</div>
+                <ul className="inicio-lista">
+                  {(verTarefas ? tarefasLista : tf.resolver).map((p) => (
+                    <li key={p.id} className={`inicio-item inicio-tarefa${estadoPendencia(p) ? ` st-${estadoPendencia(p)}` : ""}`}>
+                      <Bolinha tipo={estadoPendencia(p)} />
+                      <LinhaTarefa p={p} itens={itens} onEditar={(t) => setDialogTarefa({ tarefa: t })} onConcluir={concluir} onExcluir={setExcluir} onAbrir={(t) => abrirTarefa(t, itens, onIrPara)} />
+                    </li>
+                  ))}
+                </ul>
+                {verTarefas && tf.total > tarefasLista.length && (
+                  <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodasTarefas(true)}>
+                    ver todas as tarefas ({tf.total})
+                  </button>
+                )}
+              </>
             )}
           </>
         )}
@@ -635,6 +667,53 @@ export default function Inicio({ onIrPara, onToast }) {
         )}
       </div>
 
+      {/* 4 · Seus produtos */}
+      <div className="panel">
+        <h3 className="section-title">
+          <span>
+            Seus produtos <span className="h3-contagem">últimos 7 dias × os 7 antes · pelos pedidos importados</span>
+          </span>
+          <button type="button" className="link-btn" style={{ marginLeft: "auto" }} onClick={() => onIrPara?.("anuncios")}>
+            ver todos em Anúncios →
+          </button>
+        </h3>
+        {!semana.length ? (
+          <div className="empty">Sem vendas nos últimos 14 dias nos pedidos importados.</div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Produto</th>
+                  <th className="num">Vendas</th>
+                  <th className="num">Lucro</th>
+                  <th className="num">vs antes</th>
+                  <th>Situação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {semana.map((x) => {
+                  const g = cartaoDoNome.get(String(x.nome).toLowerCase());
+                  const dif = x.vendas - x.vendasAntes;
+                  const est = g ? estadoPendencia(g.itens[0]) : null;
+                  return (
+                    <tr key={x.chave} className="linha-clicavel" onClick={() => abrirProduto(x.itemId)}>
+                      <td>
+                        <b>{x.nome}</b> {x.canais.map((c) => <CanalTag key={c.id} canal={c} />)}
+                      </td>
+                      <td className="num">{x.vendas}</td>
+                      <td className={`num${x.lucro < 0 ? " neg" : ""}`}>{x.vendas ? BRL(x.lucro) : "—"}</td>
+                      <td className={`num${dif > 0 ? " pos-forte" : dif < 0 ? " neg-forte" : ""}`}>{dif > 0 ? `↑ ${dif}` : dif < 0 ? `↓ ${-dif}` : "="}</td>
+                      <td>{g ? <Estado tipo={est || "info"}>{semPrefixo(g.itens[0])}</Estado> : <span className="muted-cel">✓ sem aviso</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {dialogTarefa && <TarefaDialog tarefa={dialogTarefa.tarefa || null} itens={itens} lojaId={lojaId} onToast={onToast} onClose={() => setDialogTarefa(null)} />}
       {excluir && (
         <ConfirmDialog
@@ -651,116 +730,6 @@ export default function Inicio({ onIrPara, onToast }) {
           }}
         />
       )}
-
-      <Area k="dinheiro" tom={status.dinheiro.tom} aberta={aberta("dinheiro")} onAlternar={() => alternar("dinheiro")} n={1} titulo="Dinheiro" resumo={status.dinheiro.frase}>
-        {!caixa ? (
-          <div className="empty">
-            Sem lançamentos no Fluxo de Caixa.{" "}
-            <button type="button" className="link-btn" onClick={() => onIrPara?.("caixa")}>Abrir Fluxo de Caixa</button>
-          </div>
-        ) : (
-          <>
-            <Kpis
-              itens={[
-                { label: "Saldo hoje", valor: BRL(caixa.saldoHoje), tom: caixa.saldoHoje < 0 ? "bad" : undefined, sub: "realizado até hoje" },
-                {
-                  label: "Menor saldo em 3 meses",
-                  valor: caixa.menor ? BRL(caixa.menor.saldoFinal) : "—",
-                  tom: caixa.menor && caixa.menor.saldoFinal < 0 ? "bad" : undefined,
-                  sub: caixa.menor ? `fim de ${rotuloMes(caixa.menor.mes, false)} · projeção do Fluxo de Caixa` : "",
-                },
-                { label: "Faturamento do mês", valor: BRL(caixa.faturamento), sub: metaFat > 0 ? `meta ${BRL(metaFat)} · ${Math.round((caixa.faturamento / metaFat) * 100)}%` : "sem meta (aba Metas)" },
-                { label: "Resultado do mês", valor: BRL(caixa.resultado), tom: caixa.resultado < 0 ? "bad" : undefined, sub: "entradas − saídas realizadas" },
-              ]}
-            />
-            <h4 className="sub-h">Próximos 7 dias</h4>
-            {caixa.proximos.length ? (
-              <ul className="inicio-mini">
-                {caixa.proximos.slice(0, 8).map((l) => (
-                  <li key={l.id}>
-                    <span className="muted-cel">{diaMes(l.data_prevista)}</span> {l.descricao || "—"}
-                    <b className={l.tipo === "saida" ? "neg" : "pos"}>{l.tipo === "saida" ? "−" : "+"}{BRL(Number(l.valor || 0))}</b>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="muted-cel">Nada previsto nos próximos 7 dias.</div>
-            )}
-          </>
-        )}
-      </Area>
-
-      <Area k="vendas" tom={status.vendas.tom} aberta={aberta("vendas")} onAlternar={() => alternar("vendas")} n={2} titulo="Vendas e crescimento" resumo={status.vendas.frase}>
-        <Kpis
-          itens={[
-            { label: "Lucro da semana", valor: lucroSemana != null ? BRL(lucroSemana) : "—", sub: lucroSemana != null ? "produtos em rampa (última semana fechada)" : "importe os pedidos da semana" },
-            { label: "Ads da semana", valor: linhasAds?.loja?.gasto > 0 ? BRL(linhasAds.loja.gasto) : "—", sub: linhasAds?.loja?.gasto > 0 ? `${Math.round(linhasAds.loja.vendasAds)} vendas via Ads · 7 dias${linhasAds.loja.ate ? ` (CSV até ${linhasAds.loja.ate.slice(8, 10)}/${linhasAds.loja.ate.slice(5, 7)})` : ""}` : "sem gasto de Ads nos últimos 7 dias" },
-            { label: "Produtos em rampa", valor: String(linhas.length), sub: linhas.length ? `${linhas.filter((l) => l.est.sugestao?.chave === "subir").length} prontos pra subir` : "nenhum ainda" },
-            ...(afAtivo
-              ? [{ label: "Afiliados na semana", valor: String(semanaAf.vendasAf), sub: semanaAf.comissao > 0 ? `comissão ${BRL(semanaAf.comissao)}` : "vendas via afiliado" }]
-              : []),
-          ]}
-        />
-        <h4 className="sub-h">Vendas por origem</h4>
-        {semanasComVenda >= 2 ? <GraficoOrigem semanas={origem} /> : <div className="empty">Importe os pedidos de 2 semanas (Atualizar dados) pra ver o gráfico.</div>}
-        {origem.some((w) => w.adsIncompleto && w.total > 0) && (
-          <div className="hint" style={{ margin: "4px 0 0" }}>
-            Algumas semanas ainda não têm o CSV do Ads cobrindo todos os dias — as vendas via Ads delas aparecem como orgânico até você enviar o CSV (Atualizar dados).
-          </div>
-        )}
-        {linhas.length > 0 && (
-          <ul className="inicio-mini">
-            {linhas.map((l) => (
-              <li key={l.r.id}>
-                <span>
-                  {l.produto.nome} <CanalTag canal={l.canal} /> <span className="muted-cel">{l.est.fase.rotulo} · {l.ehGrupo ? `${l.g.pctAtual}% do preço salvo` : `vendendo ${BRL(l.est.preco)}`}</span>
-                </span>
-                <button type="button" className="link-btn" onClick={() => irParaAba("crescimento", { sub: "rampa", rampaId: l.r.id })}>
-                  {l.est.sugestao.rotulo}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Area>
-
-      <Area k="catalogo" tom={status.catalogo.tom} aberta={aberta("catalogo")} onAlternar={() => alternar("catalogo")} n={3} titulo="Catálogo" resumo={status.catalogo.frase}>
-        {!anunciados.length ? (
-          <div className="empty">Nenhum anúncio marcado como feito na Anunciar ainda.</div>
-        ) : !precosAlerta.length && !anunciosAtualizar.length ? (
-          <div className="inicio-ok">✓ ok — {anunciados.length} {anunciados.length === 1 ? "anúncio" : "anúncios"} sem problema</div>
-        ) : (
-          <ul className="inicio-mini">
-            {[...precosAlerta.map((a) => ({ ...a, problema: a.al.tipo === "prejuizo" ? "prejuízo" : "abaixo do mínimo", tom: a.al.tipo === "prejuizo" ? "bad" : "warn", aba: "historico" })),
-              ...anunciosAtualizar.map((a) => ({ ...a, problema: "↻ atualizar anúncio", tom: "warn", aba: "publicar" }))].map((a) => (
-              <li key={`${a.item.id}|${a.canal.id}|${a.problema}`}>
-                <span>
-                  {a.item.nome} <CanalTag canal={a.canal} /> <Estado tipo={a.tom === "bad" ? "resolver" : "atencao"}>{a.problema}</Estado>
-                </span>
-                <button type="button" className="link-btn" onClick={() => (a.aba === "historico" ? irParaAba("historico", { busca: a.item.nome }) : onIrPara?.("publicar"))}>
-                  {a.aba === "historico" ? "ver em Produtos precificados" : "abrir Anunciar"}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Area>
-
-      <Area k="producao" tom={status.producao.tom} aberta={aberta("producao")} onAlternar={() => alternar("producao")} n={4} titulo="Produção" resumo={status.producao.frase}>
-        <Kpis
-          itens={[
-            { label: "Taxa de falha", valor: taxa ? PCT(taxa.taxa) : "—", sub: taxa ? `${taxa.falhas} falhas em ${taxa.total} impressões · referência 12,5%` : "registre impressões" },
-            {
-              label: "Repor a produção do mês",
-              valor: reservaMes ? BRL(reservaMes.repor) : "—",
-              sub: reservaMes
-                ? `${reservaMes.unidades} un. vendidas${reservaMes.temReserva ? ` · separado ${BRL(reservaMes.separado)} · reserva ${BRL(reservaMes.saldo)}` : ""}`
-                : "aparece com as vendas do mês (Fluxo de Caixa → Vendas do mês)",
-            },
-          ]}
-        />
-        <button type="button" className="link-btn" onClick={() => onIrPara?.("registroImpressoes")}>Abrir Registro de Impressões</button>
-      </Area>
     </div>
   );
 }

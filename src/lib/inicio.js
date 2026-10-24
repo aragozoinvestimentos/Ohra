@@ -478,19 +478,19 @@ export function montarPendencias({
       rotulo: "Abrir Fluxo de Caixa",
     });
   }
-  if (anunciosAtualizar.length) {
-    const nomes = [...new Set(anunciosAtualizar.map((a) => a.item.nome))];
+  // Um aviso por anúncio a atualizar (24/10/2026 — Início por produto: cada um
+  // entra no cartão do produto dele).
+  for (const a of anunciosAtualizar)
     add({
-      id: "anunciar|atualizar",
+      id: `anunciar|${a.item.id}|${a.canal.id}`,
       grupo: "rotina",
       ordem: 4,
       tom: "warn",
-      titulo: `${plural(anunciosAtualizar.length, "anúncio a atualizar", "anúncios a atualizar")}`,
-      texto: `${nomes.slice(0, 3).join(", ")}${nomes.length > 3 ? ` e mais ${nomes.length - 3}` : ""} · só a promo muda`,
+      titulo: `${a.item.nome}: atualizar o anúncio`,
+      texto: `${a.canal.nome} · ${a.x?.oQueMudou || "o preço de agora mudou"}`,
       ir: { aba: "publicar" },
       rotulo: "Abrir Anunciar",
     });
-  }
   for (const a of promosAcima)
     add({
       id: `promo-limite|${a.item.id}|${a.canal.id}`,
@@ -640,4 +640,71 @@ export function agruparPorAnuncio(avisos, nomesCanais) {
     g.tom = g.itens[0].tom;
     return g;
   });
+}
+
+// ---- Início por PRODUTO (24/10/2026, aprovado pela prévia inicio-novo-v1) ----
+// Avisos de rotina dos arquivos (importar pedidos/desempenho, CSV do Ads,
+// avaliações, SKU) saem do Pra fazer e vão pro bloco "Seus dados".
+const IDS_DADOS = ["analise|importar", "analise|avaliacoes", "ads|andamento", "analise|sku-comeco"];
+export const ehAvisoDeDados = (p) => !p.tarefa && (IDS_DADOS.includes(p.id) || String(p.id).startsWith("gmv-furo|"));
+
+/** Nome do produto do aviso ("<Nome>: …"; variação "X — Kit 2" e "(kit …)" viram X) e o canal (começo do texto). */
+export function produtoDoAviso(p, nomesCanais) {
+  if (!p || p.tarefa) return null;
+  const m = /^(?:Anúncio:\s)?(.+?):\s/.exec(p.titulo || "");
+  if (!m) return null;
+  const nome = m[1].replace(/\s+[—–-]\s+.*$/, "").replace(/\s*\((kit|variação)[^)]*\)\s*$/i, "").trim();
+  if (!nome || /^(GMV Max da Loja|Campanha da loja|Cupom da loja)$/i.test(nome)) return null;
+  const c = String(p.texto || "").split(" · ")[0].trim();
+  return { nome, canal: nomesCanais.includes(c) ? c : null, anuncio: /^Anúncio:\s/.test(p.titulo || "") };
+}
+
+/** Avisos → { produtos: [{ id, nome, grupo, tom, itens, canais }], loja: [avisos] } — produto no grupo do aviso mais grave. */
+export function agruparPorProduto(avisos, nomesCanais, ehProduto = () => true) {
+  const porNome = new Map();
+  const loja = [];
+  for (const p of avisos) {
+    const k = produtoDoAviso(p, nomesCanais);
+    if (!k || !ehProduto(k.nome)) {
+      loja.push(p);
+      continue;
+    }
+    const chave = k.nome.toLowerCase();
+    let g = porNome.get(chave);
+    if (!g) porNome.set(chave, (g = { produto: true, id: `produto|${chave}`, nome: k.nome, anuncio: k.anuncio, itens: [], canais: [] }));
+    g.itens.push({ ...p, _canal: k.canal });
+    if (k.canal && !g.canais.includes(k.canal)) g.canais.push(k.canal);
+  }
+  const produtos = [...porNome.values()].map((g) => {
+    g.itens.sort((a, b) => (ORDEM_GRUPO[a.grupo] ?? 3) - (ORDEM_GRUPO[b.grupo] ?? 3) || (a.ordem ?? 9) - (b.ordem ?? 9));
+    g.grupo = g.itens[0].grupo;
+    g.tom = g.itens[0].tom;
+    return g;
+  });
+  produtos.sort((a, b) => (ORDEM_GRUPO[a.grupo] ?? 3) - (ORDEM_GRUPO[b.grupo] ?? 3) || b.itens.length - a.itens.length);
+  return { produtos, loja };
+}
+
+/** Situação das importações (bloco "Seus dados"): [{ chave, rotulo, texto, estado: ok|atencao|info }]. */
+export function situacaoDados({ importacoes, avaliacoesPend = [], temAdsLigado = false, hoje }) {
+  if (!importacoes?.disponivel) return [];
+  const dias = (rel) => {
+    const u = [...(importacoes.lista || [])].filter((i) => i.ok && (typeof rel === "string" ? i.relatorio === rel : rel(i.relatorio))).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0];
+    if (!u?.criado_em) return null;
+    const d = new Date(u.criado_em).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+    return Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${d}T12:00:00`)) / 86400000);
+  };
+  const quando = (d) => (d == null ? "nunca enviado" : d === 0 ? "hoje" : d === 1 ? "ontem" : `há ${d} dias`);
+  const out = [];
+  const dp = dias((r) => String(r).startsWith("pedidos:"));
+  out.push({ chave: "pedidos", rotulo: "Pedidos (Olist)", texto: quando(dp), estado: dp == null || dp > 7 ? "atencao" : "ok" });
+  if ((importacoes.plataformas || []).some((p) => p.id === "shopee")) {
+    const dd = dias("shopee:desempenho");
+    out.push({ chave: "desempenho", rotulo: "Desempenho Shopee", texto: quando(dd), estado: dd == null || dd > 7 ? "atencao" : "ok" });
+    const da = dias("shopee:ads");
+    if (temAdsLigado || da != null) out.push({ chave: "ads", rotulo: "Ads (CSV)", texto: quando(da), estado: temAdsLigado && (da == null || da > 3) ? "atencao" : "ok" });
+  }
+  const n = avaliacoesPend.length;
+  out.push({ chave: "avaliacoes", rotulo: "Avaliações", texto: n ? `${n} anúncio${n > 1 ? "s venderam" : " vendeu"} sem conferir` : "em dia", estado: n ? "atencao" : "ok" });
+  return out;
 }

@@ -1385,13 +1385,6 @@ button.ficha-anuncio-cab:hover { background: var(--surface-2); }
 .bolinha-status.good { display: none; }
 .bolinha-status.warn { background: var(--warn); }
 .bolinha-status.bad { background: var(--bad); }
-.inicio-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
-.inicio-card { text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; transition: border-color .15s; }
-.inicio-card:hover { border-color: var(--border-strong); }
-.inicio-card.bad { border-left: 3px solid var(--bad); }
-.inicio-card.warn { border-left: 3px solid var(--warn); }
-.inicio-card-tit { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); display: flex; align-items: center; gap: 6px; }
-.inicio-card-frase { font-size: 13.5px; font-weight: 550; color: var(--ink); line-height: 1.35; }
 .inicio-vazio { font-size: 14px; }
 .inicio-grupo + .inicio-grupo { margin-top: 10px; }
 .inicio-grupo-tit { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); margin: 2px 0 6px; }
@@ -1405,9 +1398,6 @@ button.ficha-anuncio-cab:hover { background: var(--surface-2); }
 .inicio-item-sec { display: flex; gap: 12px; flex-wrap: wrap; }
 .inicio-item-sec .link-btn, .semana-pend-acoes .link-btn { margin: 0; }
 .inicio-ver-todos { margin-top: 8px; }
-.inicio-num { display: inline-flex; width: 18px; height: 18px; border-radius: 50%; background: var(--surface-3); font-size: 11px; font-weight: 700; align-items: center; justify-content: center; margin-right: 2px; }
-.inicio-resumo { display: inline-flex; align-items: center; gap: 6px; }
-.inicio-area .section-title { cursor: default; }
 .inicio-mini { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; }
 .inicio-mini li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
 .inicio-mini li:last-child { border-bottom: none; }
@@ -1415,14 +1405,44 @@ button.ficha-anuncio-cab:hover { background: var(--surface-2); }
 .inicio-mini .pos { color: var(--ink); font-variant-numeric: tabular-nums; }
 .inicio-mini .link-btn { margin: 0; white-space: nowrap; }
 .inicio-ok { color: var(--ink-soft); font-weight: 550; font-size: 13px; }
-@media (max-width: 1100px) { .inicio-status { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
-  .inicio-status { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .inicio-item { flex-wrap: wrap; }
   .inicio-item-txt { flex-basis: calc(100% - 20px); }
   .inicio-item > .btn { margin-left: 18px; }
   .inicio-mini li { flex-wrap: wrap; }
-  .inicio-resumo { display: none; }
+}
+
+/* Início por produto (24/10/2026) */
+.inicio-barra { height: 6px; background: var(--border); border-radius: 4px; margin-top: 6px; overflow: hidden; }
+.inicio-barra i { display: block; height: 100%; background: var(--accent); }
+.pos-forte { color: var(--st-oportunidade); font-weight: 700; }
+.neg-forte { color: var(--st-resolver); font-weight: 700; }
+.inicio-dados-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.inicio-dado { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; font-size: 12.5px; background: var(--surface-2, var(--surface)); }
+.inicio-dado b { font-weight: 650; }
+.inicio-dados-avisos { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.inicio-dados-avisos li b { font-weight: 600; }
+.inicio-fazer-tit { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.inicio-sec { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); margin: 12px 0 6px; }
+.inicio-cartao { border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 10px; padding: 9px 12px; margin-bottom: 8px; background: var(--surface); }
+.inicio-cartao.st-resolver { border-left-color: var(--st-resolver); }
+.inicio-cartao.st-atencao { border-left-color: var(--st-atencao); }
+.inicio-cartao.st-oportunidade { border-left-color: var(--st-oportunidade); }
+.inicio-cartao-cab { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.inicio-cartao-nome { font-size: 14px; font-weight: 750; }
+.inicio-cartao-abrir { margin-left: auto; }
+.inicio-aviso { display: flex; align-items: flex-start; gap: 10px; padding-top: 7px; margin-top: 7px; border-top: 1px dashed var(--border); }
+.inicio-cartao-loja .inicio-aviso { border-top: none; margin-top: 2px; padding-top: 2px; }
+.inicio-aviso-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.inicio-aviso-txt b { font-size: 13px; font-weight: 650; }
+.inicio-aviso-txt b:empty { display: none; }
+.inicio-aviso-txt > span { color: var(--ink-soft); }
+.inicio-aviso-acoes { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.inicio-aviso-acoes .link-btn { margin: 0; white-space: nowrap; }
+@media (max-width: 760px) {
+  .inicio-aviso { flex-wrap: wrap; }
+  .inicio-aviso-acoes { width: 100%; justify-content: flex-start; }
+  .inicio-cartao-abrir { margin-left: 0; }
 }
 
 /* Semana pendente (Crescimento) e registro por período */
@@ -1486,15 +1506,10 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .legenda-estados > div > span:last-child { color: var(--ink-soft); }
 .legenda-estados-ok { color: var(--ink-faint); }
 .topbar-legenda .ajuda-btn { width: 22px; height: 22px; }
-.inicio-card.st-resolver, .inicio-card.st-atencao, .inicio-card.st-oportunidade, .inicio-card.st-decisao { border-left: 3px solid var(--st-c); }
 .inicio-grupo-tit .st { margin-right: 4px; }
 
 [data-theme="dark"] .bolinha-menu { color: #1b1a17; }
 .bolinha-menu.bolinha-urgente { background: var(--st-resolver); }
-.inicio-urgentes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 9px 14px; margin-bottom: 12px; border-radius: var(--radius); background: var(--st-resolver-soft); border: 1px solid var(--st-resolver); color: var(--st-resolver); }
-.inicio-urgentes > b { white-space: nowrap; }
-.inicio-urgentes-lista { display: flex; flex-wrap: wrap; gap: 4px 12px; flex: 1; min-width: 0; }
-.inicio-urgentes-lista .link-btn { color: var(--st-resolver); font-weight: 600; text-align: left; }
 .inicio-filtros { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .chip-filtro-area { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-soft); cursor: pointer; }
 .chip-filtro-area span { font-size: 11px; font-weight: 700; color: var(--ink-faint); }
@@ -1813,11 +1828,6 @@ td { border-bottom-color: color-mix(in oklab, var(--border) 70%, transparent); }
 :root[data-theme="dark"] .btn.primary:hover { color: #1a0f08; }
 .subabas { border-radius: 11px; border-color: transparent; }
 .subabas .btn { border-radius: 8px; }
-.inicio-card { border-radius: 14px; padding: 12px 16px; }
-.inicio-card.bad, .inicio-card.warn { border-left: 1px solid var(--border); }
-.inicio-card.bad { background: linear-gradient(180deg, var(--st-resolver-soft), var(--surface) 75%); }
-.inicio-card.warn { background: linear-gradient(180deg, var(--st-atencao-soft), var(--surface) 75%); }
-.inicio-card-frase { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
 .inicio-item { border-radius: 11px; }
 .chip-cel { border-radius: 999px; }
 
