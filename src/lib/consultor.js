@@ -355,7 +355,7 @@ export function consultoriaVisivel(sug, registro, hoje, espera = 14) {
 }
 
 // ---------- pacote "Levar pro Claude" ----------
-export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, uso, kpis, aprendizado = [] }) {
+export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, uso, kpis, aprendizado = [], opinioes = [] }) {
   const l = [];
   l.push(`# Consultor da Sede — ${nomeLoja} — ${dm(hoje)}/${hoje.slice(0, 4)}`);
   if (kpis) l.push(`Mês até hoje: vendas ${BRL(kpis.vendas || 0)} · lucro depois do Ads ${BRL(kpis.depoisAds || 0)} · caixa ${kpis.caixa != null ? BRL(kpis.caixa) : "—"}${kpis.meta ? ` · meta ${BRL(kpis.meta)}` : ""}`);
@@ -366,10 +366,14 @@ export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, u
       if (p.dados?.numeros) l.push(`  números do momento: ${JSON.stringify(p.dados.numeros, (k, x) => (typeof x === "number" ? Math.round(x * 100) / 100 : x))}`);
     }
   }
+  if (opinioes.length) {
+    l.push("", "## Respostas minhas pra você validar (não viraram regra)");
+    for (const o of opinioes) l.push(`- (${dm(String(o.criado_em).slice(0, 10))}) pergunta: ${o.dados?.texto}`, `  minha resposta: ${o.dados?.opiniao}`);
+  }
   if (consultorias.length) {
-    l.push("", "## Consultorias aprovadas");
+    l.push("", "## Consultorias, propostas e ideias aprovadas");
     for (const c of consultorias) {
-      l.push(`- ${c.dados?.titulo}`, `  o que vi: ${c.dados?.viu}`, `  por que agora: ${c.dados?.porque}`, `  o que a análise deve responder: ${c.dados?.responderia}`);
+      l.push(`- ${c.dados?.titulo}${c.dados?.credito ? ` (💡 ${c.dados.credito})` : ""}`, `  o que vi: ${c.dados?.viu}`, `  por que agora: ${c.dados?.porque}`, `  o que a análise deve responder: ${c.dados?.responderia}`);
     }
   }
   if (erros.length) {

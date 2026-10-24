@@ -431,6 +431,14 @@ export default function App() {
     window.addEventListener("ohra:sede-tela", ouvir);
     return () => window.removeEventListener("ohra:sede-tela", ouvir);
   });
+  // "← Voltar pra Sede": a Sede mandou pra outra tela
+  const [voltaSede, setVoltaSede] = useState(false);
+  if (tab === "sede" && voltaSede) setVoltaSede(false);
+  useEffect(() => {
+    const ouvir = () => setVoltaSede(true);
+    window.addEventListener("ohra:volta-sede", ouvir);
+    return () => window.removeEventListener("ohra:volta-sede", ouvir);
+  }, []);
   function sairTelaSede() {
     if (abaAntesDaSede.current) setTab(abaAntesDaSede.current);
     abaAntesDaSede.current = null;
@@ -457,6 +465,7 @@ export default function App() {
   const abaAtiva = (a) => (a.tab === tab && (!a.s || a.s === subDaAba[a.tab])) || (a.tambem && a.tambem === tab);
   // Vai pra uma sub-aba do cabeçalho: troca a aba e a sub-aba dela.
   function irParaEntrada(a) {
+    setVoltaSede(false);
     if (a.tab === "canal") setCanalSub(a.s);
     else if (a.tab === "config") setConfigSub(a.s);
     else if (a.s) trocarSubAba(SUB_CHAVE[a.tab], a.s);
@@ -465,6 +474,7 @@ export default function App() {
   }
   // Item do menu: volta pra última tela usada dentro dele (senão a 1ª).
   function irParaMenu(item) {
+    setVoltaSede(false);
     const ultima = ultimaDoMenu[item.key];
     const entrada = (ultima && ultima !== "sede" && item.abas.find((a) => !a.sep && a.tab === ultima)) || item.abas.find((a) => !a.sep && !a.oculta);
     if (entrada.tab === ultima) {
@@ -561,6 +571,16 @@ export default function App() {
           )}
         </header>
 
+        {voltaSede && tab !== "sede" && (
+          <div className="voltar-sede">
+            <button type="button" className="btn btn-sm primary" onClick={() => setTab("sede")}>
+              ← Voltar pra Sede
+            </button>
+            <button type="button" className="btn btn-sm" aria-label="Fechar" onClick={() => setVoltaSede(false)}>
+              ×
+            </button>
+          </div>
+        )}
         <div className="content">
         <section className={`view ${tab === "inicio" ? "active" : ""}`}>
           {visitadas.has("inicio") && (

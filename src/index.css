@@ -2682,3 +2682,15 @@ td.vendas-opcao { padding-left: 26px; }
 .consultor-ensinar button { justify-self: start; }
 .consultor-aprendi { display: grid; gap: 6px; }
 .inicio-dado-btn { margin-left: 4px; padding: 1px 9px; font-size: 11.5px; }
+.consultor-opiniao { font-size: 12px; color: var(--ink-soft); background: var(--st-info-soft, transparent); border-left: 3px solid var(--st-info, var(--border)); padding: 3px 8px; margin-top: 4px; border-radius: 4px; }
+/* "← Voltar pra Sede" fixo (a Sede mandou pra outra tela) */
+.voltar-sede { position: fixed; left: 246px; bottom: 18px; z-index: 60; display: flex; gap: 4px; box-shadow: 0 6px 22px rgba(0,0,0,.18); border-radius: 10px; }
+@media (max-width: 760px) { .voltar-sede { left: 12px; bottom: calc(var(--nav-cel-h, 0px) + 12px); } }
+/* ☀️ Bom dia do consultor */
+.bom-dia { border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; background: var(--surface); display: grid; gap: 4px; font-size: 13px; margin-bottom: 10px; }
+.bom-dia ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.bom-dia li span { display: inline-block; min-width: 58px; color: var(--ink-faint); font-weight: 700; font-size: 12px; }
+.bom-dia li small, .bom-dia-nota { color: var(--ink-faint); }
+.bom-dia i { color: var(--st-atencao); font-style: normal; }
+.bom-dia-falta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--st-atencao); font-weight: 600; background: var(--st-atencao-soft); border-radius: 8px; padding: 4px 8px; }
+.bom-dia.compacto { font-size: 12.5px; }

@@ -13,6 +13,8 @@ import { useLoja } from "../lib/LojaContext.jsx";
 import { vendeuSemAvaliacao } from "../lib/semanasAuto.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 import { useBackup } from "../hooks/useBackup.js";
+import { bomDia } from "../lib/bomDia.js";
+import BomDia from "./BomDia.jsx";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { hojeISO, loadEstimativas, resumoCaixa } from "../lib/fluxoCaixa.js";
 import { linhasAnunciar } from "../lib/anunciar.js";
@@ -410,8 +412,13 @@ export default function Inicio({ onIrPara, onToast }) {
           .map((l) => ({ descricao: l.descricao || l.categoria || "conta", valor: Number(l.valor) || 0, data: l.data_prevista }))
       : null,
   };
+  // ☀️ Bom dia: ontem, depois de conferir os arquivos (também vai pro consultor da Sede)
+  const bom = useMemo(
+    () => (reais.carregando ? null : bomDia({ importacoes: reais.importacoes, pedidos: pedidosValidos, linhasAds, periodosAds: adsP.periodos, aPagar: kpisSede.aPagar, hoje })),
+    [reais.carregando, reais.importacoes, pedidosValidos, linhasAds, adsP.periodos, kpisSede.aPagar, hoje]
+  );
   useEffect(() => {
-    if (!carregando) publicarSede({ pendencias, kpis: kpisSede });
+    if (!carregando) publicarSede({ pendencias, kpis: { ...kpisSede, bomDia: bom } });
   });
 
   // --- 4 · Seus produtos (últimos 7 dias) ---
@@ -497,6 +504,7 @@ export default function Inicio({ onIrPara, onToast }) {
         <span aria-hidden="true">🏢</span> Entrar na Sede da {nomeLoja}
         <small>o escritório da loja, ao vivo</small>
       </button>
+      <BomDia d={bom} onAtualizar={() => onIrPara?.("importar")} />
       {/* 1 · Como a loja está */}
       <div className="panel">
         <h3 className="section-title">

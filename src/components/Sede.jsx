@@ -14,13 +14,14 @@ import { consultoriaVisivel, propostasDaEquipe, sugerirConsultorias } from "../l
 import { assuntoDe, esperaAgoraNao, ordenarPeloPerfil, perfilDecisoes, resultadosParaGravar } from "../lib/consultorAprende.js";
 import { gravarRegistro } from "../lib/consultorAcoes.js";
 import { useBackup } from "../hooks/useBackup.js";
+import { IDEIAS_MAX, ideiasDaEquipe } from "../lib/consultorIdeias.js";
 import ConsultorPainel from "./ConsultorPainel.jsx";
 import { criarSede, TAMANHO_SEDE } from "../lib/sedeMotor.js";
 import { periodoLigado } from "../lib/ads.js";
 import { hojeSP } from "../lib/datas.js";
 import { ehValido } from "../lib/pedidos.js";
 import { irParaAba } from "../lib/navegar.js";
-import { pedirTelaSede } from "../lib/sedeTela.js";
+import { marcarVoltaSede, pedirTelaSede } from "../lib/sedeTela.js";
 import { BRL } from "../lib/format.js";
 import Estado from "./Estado.jsx";
 
@@ -73,8 +74,8 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const cres = useCrescimento();
   const cons = useConsultor();
   const ctxConsultor = useMemo(
-    () => ({ pedidos: cres?.pedidosValidos || [], linhasAds: cres?.linhasAds, hoje, kpis: sede.kpis, pendencias: sede.pendencias, produtos: cat.produtos || [], kits: cat.kits || [], impressoras: cat.impressoras || [], farmConfig: cat.farmConfig }),
-    [cres?.pedidosValidos, cres?.linhasAds, hoje, sede.kpis, sede.pendencias, cat.produtos, cat.kits, cat.impressoras, cat.farmConfig]
+    () => ({ pedidos: cres?.pedidosValidos || [], linhasAds: cres?.linhasAds, hoje, kpis: sede.kpis, pendencias: sede.pendencias, produtos: cat.produtos || [], kits: cat.kits || [], kitProdutos: cat.kitProdutos || [], impressoras: cat.impressoras || [], farmConfig: cat.farmConfig }),
+    [cres?.pedidosValidos, cres?.linhasAds, hoje, sede.kpis, sede.pendencias, cat.produtos, cat.kits, cat.kitProdutos, cat.impressoras, cat.farmConfig]
   );
   const decisao = useMemo(() => new Map(cons.registros.filter((r) => r.tipo === "consultoria").map((r) => [r.chave, r])), [cons.registros]);
   const consultoriasTodas = useMemo(() => sugerirConsultorias(ctxConsultor), [ctxConsultor]);
@@ -84,6 +85,9 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const propostasTodas = useMemo(() => propostasDaEquipe(ctxConsultor), [ctxConsultor]);
   const consultorias = ordenarPeloPerfil(consultoriasTodas.filter(visivel), perfil);
   const propostas = ordenarPeloPerfil(propostasTodas.filter(visivel), perfil);
+  // ideias da equipe (com crédito): no máximo IDEIAS_MAX por vez, as que você mais aprova primeiro
+  const ideiasTodas = useMemo(() => ideiasDaEquipe(ctxConsultor), [ctxConsultor]);
+  const ideias = ordenarPeloPerfil(ideiasTodas.filter(visivel), perfil).slice(0, IDEIAS_MAX);
   // resultado do que foi aprovado: o aviso sumiu (resolveu) ou continuou — grava uma vez
   // (só depois de 15 s na Sede: os avisos do Início e os pedidos precisam ter carregado,
   // senão "sumiu" seria só "ainda não carregou")
@@ -95,16 +99,16 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   }, []);
   useEffect(() => {
     if (!maduro || !cons.disponivel || cons.carregando || !sede.pronto) return;
-    for (const { registro, dados } of resultadosParaGravar(cons.registros, [...consultoriasTodas, ...propostasTodas], hoje)) {
+    for (const { registro, dados } of resultadosParaGravar(cons.registros, [...consultoriasTodas, ...propostasTodas, ...ideiasTodas], hoje)) {
       if (resultadosGravados.current.has(registro.id)) continue;
       resultadosGravados.current.add(registro.id);
       gravarRegistro(registro.loja_id, "consultoria", registro.chave, dados, registro.status);
     }
-  }, [maduro, cons.registros, cons.disponivel, cons.carregando, consultoriasTodas, propostasTodas, hoje, sede.pronto]);
+  }, [maduro, cons.registros, cons.disponivel, cons.carregando, consultoriasTodas, propostasTodas, ideiasTodas, hoje, sede.pronto]);
   const cheiasNovas = useMemo(() => Object.fromEntries(consultoriasTodas.filter((c) => c.cheia).map((c) => [c.sala, true])), [consultoriasTodas]);
   // arquivos que o consultor entrega (backup de 15 em 15 dias) — gera só no clique
   const backup = useBackup(onToast);
-  const nConsultor = consultorias.length + propostas.length + (backup.estado.vencido ? 1 : 0);
+  const nConsultor = consultorias.length + propostas.length + ideias.length + (backup.estado.vencido ? 1 : 0);
 
   // ---------- motor (canvas) ----------
   const canvasRef = useRef(null);
@@ -261,6 +265,8 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   }
   const abrir = (p) => {
     if (!p.ir?.aba) return;
+    if (tela) onSairTela?.();
+    marcarVoltaSede();
     if (p.ir.pedido) irParaAba(p.ir.aba, p.ir.pedido);
     else onIrPara?.(p.ir.aba);
   };
@@ -521,6 +527,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
               disponivel={cons.disponivel}
               consultorias={consultorias}
               propostas={propostas}
+              ideias={ideias}
               backup={backup}
               nomes={nomes}
               abrir={abrir}

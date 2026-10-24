@@ -19,13 +19,40 @@ const VAZIAS = new Set(
 export function palavras(t) {
   return [...new Set(normalizar(t).split(" ").filter((w) => w.length >= 3 && !VAZIAS.has(w)))];
 }
-/** Resposta já aprendida pra uma pergunta parecida (≥ 60% das palavras em comum e ao menos 2). */
+// Resposta VALIDADA (do Claude) × OPINIÃO do Gustavo (24/10/2026, pedido dele:
+// "a minha resposta não é regra, é levada em consideração; tudo precisa ser
+// validado com o Claude"). Opinião = pergunta com dados.opiniao, status
+// "a-validar"; vira resposta só quando a validação do Claude é guardada
+// (dados.resposta + dados.validada).
+export const ehOpiniaoPendente = (r) => r?.tipo === "pergunta" && !!r.dados?.opiniao && !r.dados?.validada;
+const ehRespostaValida = (r) => r?.tipo === "pergunta" && !!r.dados?.resposta && !ehOpiniaoPendente(r);
+function parecida(pergunta, texto) {
+  const a = palavras(pergunta);
+  const b = palavras(texto);
+  if (!a.length || !b.length) return 0;
+  if (normalizar(pergunta) === normalizar(texto)) return 1;
+  const comum = a.filter((w) => b.includes(w)).length;
+  const score = comum / new Set([...a, ...b]).size;
+  return comum >= Math.min(2, b.length) && score >= 0.6 ? score : 0;
+}
+/** Opinião sua (ainda não validada) sobre uma pergunta parecida — só contexto, nunca a resposta. */
+export function opiniaoSobre(pergunta, registros) {
+  let melhor = null;
+  for (const r of registros || []) {
+    if (!ehOpiniaoPendente(r)) continue;
+    const sc = parecida(pergunta, r.dados.texto);
+    if (sc && (!melhor || sc > melhor.score)) melhor = { registro: r, texto: r.dados.texto, opiniao: r.dados.opiniao, data: String(r.criado_em || "").slice(0, 10), score: sc };
+  }
+  return melhor;
+}
+
+/** Resposta VALIDADA pra uma pergunta parecida (≥ 60% das palavras em comum e ao menos 2). */
 export function respostaAprendida(pergunta, registros) {
   const a = palavras(pergunta);
   if (!a.length) return null;
   let melhor = null;
   for (const r of registros || []) {
-    if (r.tipo !== "pergunta" || !r.dados?.resposta) continue;
+    if (!ehRespostaValida(r)) continue;
     const b = palavras(r.dados.texto);
     const comum = a.filter((w) => b.includes(w)).length;
     const uniao = new Set([...a, ...b]).size;
@@ -40,7 +67,7 @@ export function respostaAprendida(pergunta, registros) {
 /** Perguntas aprendidas mais usadas — viram atalhos embaixo do campo. */
 export function perguntasAprendidas(registros, n = 3) {
   return (registros || [])
-    .filter((r) => r.tipo === "pergunta" && r.dados?.resposta)
+    .filter(ehRespostaValida)
     .sort((x, y) => (Number(y.dados?.usos) || 0) - (Number(x.dados?.usos) || 0))
     .slice(0, n)
     .map((r) => r.dados.texto);
@@ -55,11 +82,16 @@ const ROTULOS = {
   "expansao-producao": "expansão da produção",
   "expansao-expedicao": "expansão da expedição",
   "proposta:acelerando": "produto vendendo acima do normal",
+  "ideia:kit-juntos": "ideia: montar kit do que é comprado junto",
+  "ideia:capa-variacao": "ideia: opção mais vendida como capa",
+  "ideia:dia-forte": "ideia: deixar pronto na véspera do dia forte",
+  "ideia:ads-organico": "ideia: testar Ads no que vende sozinho",
 };
 /** Assunto de uma consultoria/proposta pela chave (várias chaves → um assunto). */
 export function assuntoDe(chave) {
   const c = String(chave || "");
   if (c.startsWith("proposta|acelerando|")) return "proposta:acelerando";
+  if (c.startsWith("ideia|")) return `ideia:${c.split("|")[1]}`;
   if (c.startsWith("proposta|")) {
     const id = c.slice(9);
     const conv = CONVERSAS.find((x) => id.startsWith(x.prefixo));
@@ -180,15 +212,32 @@ export function resumoAprendizado(registros) {
     .filter(([, p]) => p.total || p.resolveu || p.continuou)
     .map(([a, p]) => ({ assunto: a, rotulo: rotuloAssunto(a), ...p, nota: notaDoPerfil(p), espera: esperaAgoraNao(p) }))
     .sort((a, b) => b.total - a.total);
-  const respostas = (registros || []).filter((r) => r.tipo === "pergunta" && r.dados?.resposta);
-  return { assuntos, respostas: respostas.length, ensinadas: respostas.filter((r) => r.dados.ensinada).length, usos: respostas.reduce((s, r) => s + (Number(r.dados.usos) || 0), 0) };
+  const respostas = (registros || []).filter(ehRespostaValida);
+  const opinioes = (registros || []).filter(ehOpiniaoPendente);
+  return { assuntos, respostas: respostas.length, ensinadas: respostas.filter((r) => r.dados.opiniao).length, opinioes: opinioes.length, usos: respostas.reduce((s, r) => s + (Number(r.dados.usos) || 0), 0), placar: placarIdeias(registros) };
 }
 export function linhasAprendizado(registros) {
   const r = resumoAprendizado(registros);
   const l = [];
-  if (r.respostas) l.push(`Respostas aprendidas: ${r.respostas} (${r.ensinadas} ensinadas por você) · usadas ${r.usos}×`);
+  if (r.respostas) l.push(`Respostas validadas: ${r.respostas} (${r.ensinadas} começaram como opinião sua) · usadas ${r.usos}×`);
+  if (r.opinioes) l.push(`Opiniões suas esperando validação: ${r.opinioes}`);
+  for (const p of r.placar) l.push(`- 💡 ideias de ${p.de}: ${p.total} · aprovadas ${p.sim} · deram certo ${p.resolveu}`);
   for (const a of r.assuntos.slice(0, 12)) l.push(`- ${a.rotulo}: aprovou ${a.sim} · adiou ${a.depois} · nunca ${a.nunca}${a.resolveu + a.continuou ? ` · resolveu ${a.resolveu}/${a.resolveu + a.continuou}` : ""}`);
   return l;
+}
+
+/** Placar das ideias por funcionário (crédito): total, aprovadas, deram certo. */
+export function placarIdeias(registros) {
+  const m = new Map();
+  for (const r of registros || []) {
+    if (r.tipo !== "consultoria" || !String(r.chave).startsWith("ideia|") || !r.dados?.de) continue;
+    const x = m.get(r.dados.de) || { de: r.dados.de, total: 0, sim: 0, resolveu: 0 };
+    x.total++;
+    if (historicoDe(r).some((h) => SIM.has(h.status))) x.sim++;
+    x.resolveu += (r.dados.resultados || []).filter((res) => res.status === "resolveu").length;
+    m.set(r.dados.de, x);
+  }
+  return [...m.values()].sort((a, b) => b.sim - a.sim || b.total - a.total);
 }
 
 // ---------- 4) o que o consultor aprendeu com as mudanças do app ----------
@@ -199,5 +248,8 @@ export const NOVIDADES_CONSULTOR = [
   { data: "2026-10-24", texto: "Proponho consultorias (queda de vendas, dependência de um produto, Ads pesado, muitos avisos) e expansão da produção/expedição quando lota." },
   { data: "2026-10-24", texto: "A equipe conversa entre os setores e propõe soluções pra você aprovar." },
   { data: "2026-10-24", texto: "Entrego o backup de todas as lojas a cada 15 dias: aviso quando vence e você só clica em “Gerar e baixar”." },
+  { data: "2026-10-24", texto: "Sua resposta é opinião, não regra: levo pro Claude validar e, até lá, mostro como contexto junto dos números." },
+  { data: "2026-10-24", texto: "A equipe dá ideias (com o crédito de quem teve): kit do que é comprado junto, opção mais vendida como capa, dia forte de vendas e Ads no que vende sozinho." },
+  { data: "2026-10-24", texto: "Todo dia dou o “Bom dia” com o dia de ontem — mas só depois de conferir se os arquivos de ontem foram enviados." },
   { data: "2026-10-24", texto: "Aprendo sozinho: guardo as respostas do Claude (e as que você me ensina), o que você costuma aprovar ou adiar, e se o que foi aprovado resolveu." },
 ];
