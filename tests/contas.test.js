@@ -143,3 +143,28 @@ describe("backup", () => {
     expect(estadoBackup({ data: "2026-10-09" }, "2026-10-24").vencido).toBe(true);
   });
 });
+
+describe("relatórios do consultor", async () => {
+  const { semanaPassada, relatoriosDevidos, produtosParados, relatorioFechamento } = await import("../src/lib/relatorios.js");
+  it("semana passada = segunda a domingo completos", () => {
+    expect(semanaPassada("2026-10-24")).toBe("2026-10-12"); // sábado → semana de 12 a 18
+    expect(semanaPassada("2026-10-26")).toBe("2026-10-19"); // segunda → a semana que acabou ontem
+  });
+  it("oferece fechamento/Ads do mês que fechou e a reunião da semana até gerar", () => {
+    expect(relatoriosDevidos({}, "2026-11-01").map((d) => d.k)).toEqual(["fechamento", "ads", "semana"]);
+    expect(relatoriosDevidos({ fechamento: "2026-10", ads: "2026-10", semana: "2026-10-19" }, "2026-11-01")).toEqual([]);
+  });
+  it("produto parado: tem preço salvo e não vende há 30 dias", () => {
+    const pedidos = [{ valido: true, item: { id: "p:a" }, data: "2026-10-20", q: 1, pago: 10 }, { valido: true, item: { id: "p:b" }, data: "2026-08-01", q: 1, pago: 10 }];
+    const precos = ["a", "b", "c"].map((id) => ({ item_tipo: "produto", item_id: id, preco: 10 }));
+    const lista = produtosParados({ pedidos, produtos: [{ id: "a", nome: "A" }, { id: "b", nome: "B" }, { id: "c", nome: "C" }], precos, hoje: "2026-10-24" });
+    expect(lista.map((x) => x.nome).sort()).toEqual(["B", "C"]);
+  });
+  it("fechamento: lucro líquido = lucro − Ads − contas fixas", () => {
+    const pedidos = [{ valido: true, pedido: "1", item: { id: "p:a" }, data: "2026-09-10", q: 1, pago: 100, lucro: 40, recebe: 70, custo: 30 }];
+    const lancamentos = [{ recorrencia: "mensal", tipo: "saida", categoria: "aluguel", valor: 15, data_prevista: "2026-01-05" }];
+    const r = relatorioFechamento({ pedidos, linhasAds: null, lancamentos, hoje: "2026-10-24", nomeDe: () => "A" }, "2026-09");
+    const kpi = (rot) => r.blocos[0].itens.find((i) => i.rotulo === rot).valor.replace(/\s/g, " ");
+    expect(kpi("Lucro líquido")).toBe("R$ 25,00");
+  });
+});

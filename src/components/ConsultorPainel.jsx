@@ -20,6 +20,7 @@ import { hojeSP } from "../lib/datas.js";
 import Estado from "./Estado.jsx";
 import { ELENCO } from "../lib/sede.js";
 import BomDia from "./BomDia.jsx";
+import RelatoriosConsultor, { CartoesRelatorioDevido } from "./RelatoriosConsultor.jsx";
 
 // Painel do consultor da Sede (24/10/2026): Perguntar · Propostas · Levar pro
 // Claude · Nível do app (senha). Só grava em consultor_registros (v65).
@@ -39,17 +40,18 @@ const ABAS = [
   { k: "perguntar", r: "Perguntar" },
   { k: "propostas", r: "Propostas" },
   { k: "levar", r: "Levar pro Claude" },
+  { k: "relatorios", r: "📄 Relatórios" },
   { k: "aprendi", r: "📚 Aprendi" },
   { k: "app", r: "🔒 App" },
 ];
 
-export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros, disponivel, consultorias, propostas, ideias = [], backup, nomes, abrir, onToast, telaAtual }) {
+export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros, disponivel, consultorias, propostas, ideias = [], backup, relatorios, nomes, abrir, onToast, telaAtual }) {
   const [aba, setAba] = useState("perguntar");
   const hoje = hojeSP();
   const perguntasAbertas = registros.filter((r) => r.tipo === "pergunta" && r.status === "aberta");
   const aprovadas = registros.filter((r) => r.tipo === "consultoria" && r.status === "quero");
   const opinioes = registros.filter((r) => ehOpiniaoPendente(r) && r.status === "a-validar");
-  const nPropostas = consultorias.length + propostas.length + ideias.length + (backup?.estado.vencido ? 1 : 0);
+  const nPropostas = consultorias.length + propostas.length + ideias.length + (backup?.estado.vencido ? 1 : 0) + (relatorios?.devidos.length || 0);
   const nLevar = perguntasAbertas.length + aprovadas.length + opinioes.length;
   return (
     <div className="consultor">
@@ -68,8 +70,9 @@ export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros
         ))}
       </div>
       {aba === "perguntar" && <Perguntar ctx={ctx} lojaId={lojaId} disponivel={disponivel} registros={registros} onToast={onToast} telaAtual={telaAtual} />}
-      {aba === "propostas" && <Propostas ideias={ideias} backup={backup} lojaId={lojaId} disponivel={disponivel} registros={registros} hoje={hoje} consultorias={consultorias} propostas={propostas} aprovadas={aprovadas} nomes={nomes} abrir={abrir} onToast={onToast} />}
+      {aba === "propostas" && <Propostas relatorios={relatorios} ideias={ideias} backup={backup} lojaId={lojaId} disponivel={disponivel} registros={registros} hoje={hoje} consultorias={consultorias} propostas={propostas} aprovadas={aprovadas} nomes={nomes} abrir={abrir} onToast={onToast} />}
       {aba === "levar" && <Levar nomeLoja={nomeLoja} hoje={hoje} registros={registros} perguntas={perguntasAbertas} opinioes={opinioes} aprovadas={aprovadas} kpis={ctx.kpis} onToast={onToast} />}
+      {aba === "relatorios" && relatorios && <RelatoriosConsultor rel={relatorios} />}
       {aba === "aprendi" && <Aprendi lojaId={lojaId} disponivel={disponivel} registros={registros} nomes={nomes} onToast={onToast} />}
       {aba === "app" && <NivelApp />}
     </div>
@@ -240,7 +243,7 @@ function ColarResposta({ onSalvar, onCancelar, placeholder = "Cole aqui a respos
   );
 }
 
-function Propostas({ ideias = [], backup, lojaId, disponivel, registros, hoje, consultorias: todasC, propostas: todasP, aprovadas, nomes, abrir, onToast }) {
+function Propostas({ relatorios, ideias = [], backup, lojaId, disponivel, registros, hoje, consultorias: todasC, propostas: todasP, aprovadas, nomes, abrir, onToast }) {
   const perfil = useMemo(() => perfilDecisoes(registros), [registros]);
   const registroDe = (chave) => registros.find((r) => r.tipo === "consultoria" && r.chave === chave);
   // o que o consultor aprendeu sobre o assunto (aprovações, adiamentos e se resolveu)
@@ -316,10 +319,12 @@ function Propostas({ ideias = [], backup, lojaId, disponivel, registros, hoje, c
       ))}
     </>
   ) : null;
-  if (!todasC.length && !todasP.length && !aprovadas.length && !ideias.length) return cartaoBackup || <div className="sede-ok">Nenhuma proposta agora. A equipe está em dia ✓</div>;
+  const cartoesRel = <CartoesRelatorioDevido rel={relatorios} />;
+  if (!todasC.length && !todasP.length && !aprovadas.length && !ideias.length && !relatorios?.devidos.length) return cartaoBackup || <div className="sede-ok">Nenhuma proposta agora. A equipe está em dia ✓</div>;
   return (
     <div className="consultor-propostas">
       {cartaoBackup}
+      {cartoesRel}
       {cartoesIdeias}
       {consultorias.map((c) => (
         <div key={c.chave} className="consultor-cartao">

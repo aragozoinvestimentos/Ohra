@@ -15,6 +15,7 @@ import { assuntoDe, esperaAgoraNao, ordenarPeloPerfil, perfilDecisoes, resultado
 import { gravarRegistro } from "../lib/consultorAcoes.js";
 import { useBackup } from "../hooks/useBackup.js";
 import { IDEIAS_MAX, ideiasDaEquipe } from "../lib/consultorIdeias.js";
+import { useRelatorios } from "../hooks/useRelatorios.js";
 import ConsultorPainel from "./ConsultorPainel.jsx";
 import { criarSede, TAMANHO_SEDE } from "../lib/sedeMotor.js";
 import { periodoLigado } from "../lib/ads.js";
@@ -108,7 +109,13 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const cheiasNovas = useMemo(() => Object.fromEntries(consultoriasTodas.filter((c) => c.cheia).map((c) => [c.sala, true])), [consultoriasTodas]);
   // arquivos que o consultor entrega (backup de 15 em 15 dias) — gera só no clique
   const backup = useBackup(onToast);
-  const nConsultor = consultorias.length + propostas.length + ideias.length + (backup.estado.vencido ? 1 : 0);
+  // relatórios exportáveis (montados só no clique)
+  const relCtx = useMemo(() => {
+    const nomeDe = (k) => (String(k).startsWith("p:") ? (cat.produtos || []).find((x) => x.id === k.slice(2))?.nome : (cat.kits || []).find((x) => x.id === String(k).slice(2))?.nome);
+    return { pedidos: cres?.pedidosValidos || [], linhasAds: cres?.linhasAds, lancamentos, produtos: cat.produtos || [], kits: cat.kits || [], precos: cat.precos || [], canais: cat.canais || [], registros: cons.registros, ideias, nomes, funcoes: Object.fromEntries(ELENCO.map((e) => [e.id, e.funcao])), nomeDe };
+  }, [cres?.pedidosValidos, cres?.linhasAds, lancamentos, cat.produtos, cat.kits, cat.precos, cat.canais, cons.registros, ideias, nomes]);
+  const relatorios = useRelatorios({ ctx: relCtx, nomeLoja, onToast });
+  const nConsultor = consultorias.length + propostas.length + ideias.length + (backup.estado.vencido ? 1 : 0) + relatorios.devidos.length;
 
   // ---------- motor (canvas) ----------
   const canvasRef = useRef(null);
@@ -566,6 +573,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
               propostas={propostas}
               ideias={ideias}
               backup={backup}
+              relatorios={relatorios}
               nomes={nomes}
               abrir={abrir}
               onToast={onToast}
