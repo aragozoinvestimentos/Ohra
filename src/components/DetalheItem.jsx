@@ -35,7 +35,8 @@ export default function DetalheItem({ it, onEditar, onToast }) {
   };
   const canaisDo = (x) => canais.map((c) => ({ c, s: precoDe(x, c) })).filter((y) => y.s && num(y.s.preco) > 0);
     const prod = it.tipo !== "Kit" ? produtos.find((p) => p.id === (it.produtoId || it.id.slice(2))) : null;
-    const r = it.tipo === "Produto" && prod?.producao_detalhe ? custoProdutoPorPeca(prod, materiais) : null;
+    const revenda = prod?.origem === "revenda";
+    const r = it.tipo === "Produto" && !revenda && prod?.producao_detalhe ? custoProdutoPorPeca(prod, materiais) : null;
     const kitLinhas = it.tipo === "Kit" ? linhasDoKit(it.componentes, produtos) : [];
     const emKits = it.tipo === "Produto" ? itens.filter((k) => k.tipo === "Kit" && (k.componentes || []).some((c) => c.produtoId === it.id.slice(2))) : [];
     const emGrupos = mapaGrupos.get(it.id) || [];
@@ -58,7 +59,7 @@ export default function DetalheItem({ it, onEditar, onToast }) {
       if (resto > 0.005) partes.push({ nome: "Consumíveis e modelagem", valor: resto });
     } else if (kitLinhas.length) {
       kitLinhas.forEach((l) => partes.push({ nome: `${l.quantidade} × ${l.produto.nome}`, valor: l.subtotal, sub: `${BRL(l.custoPeca)}/peça${l.manual ? " · à mão" : ` · chapa de ${l.pecasChapa}`}` }));
-    } else partes.push({ nome: "Produção", valor: it.custoProducao ?? 0 });
+    } else partes.push({ nome: revenda ? "Custo de compra (média das notas)" : "Produção", valor: it.custoProducao ?? 0 });
     if (num(it.embalagem) > 0) partes.push({ nome: "Embalagem", valor: num(it.embalagem) });
     const frete = num(it.freteProduto ?? it.frete);
     if (frete > 0) partes.push({ nome: "Frete", valor: frete });
@@ -67,8 +68,8 @@ export default function DetalheItem({ it, onEditar, onToast }) {
     const imp = prod ? impressoraDoProduto(prod, impressoras) : null;
     const info = [
       `peso de envio ${g(it.peso)}`,
-      prod && it.tipo === "Produto" && prod.producao_detalhe?.sem3d ? "só artesanal" : prod && it.tipo === "Produto" ? `${imp?.nome || "sem impressora"} · chapa de ${Math.max(1, num(prod.pecas_por_impressao) || 1)}` : null,
-      prod && !prod.producao_detalhe ? "custo de produção digitado à mão" : null,
+      revenda ? "revenda — comprado pronto" : prod && it.tipo === "Produto" && prod.producao_detalhe?.sem3d ? "só artesanal" : prod && it.tipo === "Produto" ? `${imp?.nome || "sem impressora"} · chapa de ${Math.max(1, num(prod.pecas_por_impressao) || 1)}` : null,
+      prod && !revenda && !prod.producao_detalhe ? "custo de produção digitado à mão" : null,
     ].filter(Boolean);
     return (
           <div className="detalhe-cel catalogo-det">

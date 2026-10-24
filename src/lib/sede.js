@@ -7,7 +7,7 @@ export const SALAS_SEDE = [
   { k: "diretoria", nome: "Diretoria", x0: 1, y0: 2, x1: 11, y1: 9, piso: ["#a9774e", "#9c6c45"], porta: [6, 10], aba: "inicio", rotulo: "Abrir o Início" },
   { k: "live", nome: "Estúdio de Live", x0: 13, y0: 2, x1: 20, y1: 9, piso: ["#e9cfd8", "#e0c3cd"], porta: [16, 10], aba: "live", rotulo: "Abrir Live" },
   { k: "financeiro", nome: "Financeiro", x0: 22, y0: 2, x1: 28, y1: 9, piso: ["#d9ded6", "#cfd5cb"], porta: [25, 10], aba: "caixa", rotulo: "Abrir Dinheiro" },
-  { k: "revenda", nome: "Revenda", x0: 30, y0: 2, x1: 38, y1: 9, piso: ["#ddd3c4", "#d4c9b8"], porta: [34, 10], aba: null, rotulo: null },
+  { k: "revenda", nome: "Revenda", x0: 30, y0: 2, x1: 38, y1: 9, piso: ["#ddd3c4", "#d4c9b8"], porta: [34, 10], aba: "estoque", rotulo: "Estoque e compras" },
   { k: "comercial", nome: "Comercial", x0: 1, y0: 15, x1: 15, y1: 23, piso: ["#ded6c8", "#d4cbbc"], porta: [8, 14], aba: "anuncios", rotulo: "Abrir Anúncios" },
   { k: "producao", nome: "Produção", x0: 17, y0: 15, x1: 25, y1: 23, piso: ["#b3b2ae", "#a9a8a3"], porta: [21, 14], aba: "farm", rotulo: "Abrir Minha farm" },
   { k: "estoque", nome: "Estoque & Expedição", x0: 27, y0: 15, x1: 38, y1: 23, piso: ["#cdbb9e", "#c3b092"], porta: [32, 14], aba: "importar", rotulo: "Atualizar dados" },
@@ -64,6 +64,7 @@ const SALA_DA_ABA = {
   caixa: "financeiro", metas: "financeiro", ranking: "financeiro", resumoMes: "financeiro",
   farm: "producao", registroImpressoes: "producao", otimizacao: "producao", producao: "producao", insumos: "producao",
   importar: "estoque",
+  estoque: "revenda",
 };
 export function salaDoAviso(p) {
   const k = chaveDoDestino(p.ir);
@@ -77,6 +78,7 @@ export function pessoaDoAviso(p) {
   if (sala === "financeiro") return "bia";
   if (sala === "producao") return "teo";
   if (sala === "estoque") return k.startsWith("importar") ? "ze" : "duda";
+  if (sala === "revenda") return "duda";
   if (sala === "live") return "ceo2";
   if (k.startsWith("crescimento:ads") || k.startsWith("crescimento:afiliados")) return "leo";
   if (k.startsWith("crescimento") || k === "canal:publicar" || k.startsWith("anuncio")) return "nina";
@@ -113,7 +115,7 @@ export function avisosDaSede(pendencias) {
 // Salas abertas pelo que a loja TEM (24/10/2026, decisão do Gustavo: 100%
 // automático, sem botão — sala aberta = tem trabalho lá; o que a loja não usa
 // fica fechada com o motivo escrito). Só o NOME da sala é editável (✎ Nomes).
-export function salasDaLoja({ impressoras = [], produtos = [], canais = [], lives = [], temRevenda = false }) {
+export function salasDaLoja({ impressoras = [], produtos = [], canais = [], lives = [], temRevenda = (produtos || []).some((p) => p.origem === "revenda") }) {
   const fechadas = {};
   const temImpressao = (impressoras || []).some((i) => i.ativa !== false) || (produtos || []).some((p) => p.producao_detalhe && !p.producao_detalhe.sem3d);
   if (!temImpressao) fechadas.producao = "abre quando você cadastrar a primeira impressora (Produção → Minha farm) ou um produto com custo de impressão";

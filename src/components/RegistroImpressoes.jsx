@@ -286,7 +286,7 @@ export default function RegistroImpressoes({ onToast }) {
             <select value={form.produtoId} onChange={(e) => setForm((prev) => ({ ...prev, produtoId: e.target.value, nomeLivre: "" }))}>
               <option value="">— peça avulsa / ainda não cadastrada —</option>
               <optgroup label="Produtos">
-                {produtos.map((p) => (
+                {produtos.filter((p) => p.origem !== "revenda").map((p) => (
                   <option key={p.id} value={p.id}>{p.nome}</option>
                 ))}
               </optgroup>
@@ -432,7 +432,7 @@ export default function RegistroImpressoes({ onToast }) {
             <label>Produto</label>
             <select value={produtoSimuladorId} onChange={(e) => setProdutoSimuladorId(e.target.value)}>
               <option value="">— escolha um produto —</option>
-              {produtos.map((p) => (
+              {produtos.filter((p) => p.origem !== "revenda").map((p) => (
                 <option key={p.id} value={p.id}>{p.nome}</option>
               ))}
             </select>

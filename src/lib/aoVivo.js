@@ -17,6 +17,8 @@ const centavos = (v) => Math.round(num(v) * 100) / 100;
 // Produto com detalhamento de produção salvo é recalculado; produto com
 // custo digitado na mão (sem detalhamento) usa o valor digitado.
 export function custoProducaoAtual(produto, materiais) {
+  // Revenda (v66): o custo é o de compra (média das notas, gravado em custo_producao).
+  if (produto?.origem === "revenda") return centavos(produto?.custo_producao);
   if (produto?.producao_detalhe && (materiais || []).length) {
     const r = custoProdutoPorPeca(produto, materiais);
     if (r && isFinite(r.total)) return centavos(r.total);

@@ -244,6 +244,8 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-24", texto: "Revenda: produto comprado pronto. O custo vem da nota de compra (XML) e o estoque começa na 1ª nota — sai sozinho pelos pedidos da Olist. Aviso quando precisa repor." },
+  { data: "2026-10-24", texto: "Impostos da loja: no MEI não há imposto por venda; acompanho o limite de faturamento do ano (3D + revenda)." },
   { data: "2026-10-24", texto: "Nasci na Sede: respondo vendas, lucro, Ads, meta, caixa, contas a pagar, produto pelo nome e o que fazer primeiro." },
   { data: "2026-10-24", texto: "Proponho consultorias (queda de vendas, dependência de um produto, Ads pesado, muitos avisos) e expansão da produção/expedição quando lota." },
   { data: "2026-10-24", texto: "A equipe conversa entre os setores e propõe soluções pra você aprovar." },

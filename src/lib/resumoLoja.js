@@ -107,7 +107,7 @@ export function produtosDaSemana(pedidos, hoje, n = 6) {
 
 // ---- Análise → Diagnóstico (24/10/2026) ----
 
-const CATS_FORA_FIXAS = ["anuncios", "filamento", "embalagem", "retirada", "aporte", "saldo_inicial"];
+const CATS_FORA_FIXAS = ["anuncios", "filamento", "mercadoria", "embalagem", "retirada", "aporte", "saldo_inicial"];
 /**
  * Despesas FIXAS do mês = contas recorrentes (Dinheiro → Contas fixas) de saída
  * ativas no mês. Ads (vem dos CSVs), material/embalagem (já no custo) e

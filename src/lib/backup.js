@@ -23,6 +23,7 @@ export const TABELAS_BACKUP = [
   "lembretes", "tarefas", "preferencias_loja",
   "pedidos_itens", "importacoes", "skus_ignorados", "avaliacoes_produto",
   "lives", "live_eventos", "acoes_comerciais", "consultor_registros",
+  "fornecedores", "fornecedor_itens", "compras_revenda", "compras_revenda_itens", "estoque_movimentos",
 ];
 
 const PAGINA = 1000; // o Supabase devolve no máximo 1000 linhas por busca

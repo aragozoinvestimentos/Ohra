@@ -19,6 +19,8 @@ import Ajuda from "./Ajuda.jsx";
 import VariacoesProduto from "./VariacoesProduto.jsx";
 import QuandoVende from "./QuandoVende.jsx";
 import { EmbalagemOrganicoBloco } from "./EmbalagemOrganico.jsx";
+import BlocoRevenda from "./BlocoRevenda.jsx";
+import { useRevenda } from "../hooks/useRevenda.js";
 
 const VAZIO = {
   nome: "",
@@ -34,6 +36,9 @@ const VAZIO = {
   pecas_por_impressao: 1,
   peso_g: "",
   impressora_id: null,
+  origem: "fabricado",
+  ean: "",
+  fornecedor_id: null,
 };
 
 // Pedidos de "abrir pra editar" vindos de outras telas (23/10/2026): cada um vale
@@ -56,6 +61,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   // gravados), embalagens e materiais (receita e detalhamento) e kits (SKU
   // duplicado) vêm do catálogo compartilhado: uma busca + um realtime.
   const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, impressoras, farmConfig, carregando, canais: canaisCat = [] } = useCatalogo();
+  const revendaDados = useRevenda();
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
   const [detalheSalvo, setDetalheSalvo] = useState(null); // snapshot carregado do banco, só pra comparar "valor anterior"
@@ -63,6 +69,8 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   const [salvando, setSalvando] = useState(false);
   const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
   const [produtoCriado, setProdutoCriado] = useState(null); // { id, nome } — só depois de CADASTRAR um produto novo (não numa edição), pro atalho "Ir para Precificação por Canal"
+  const ehRev = form.origem === "revenda";
+  const temNotas = ehRev && !!editandoId && revendaDados.comprasItens.some((i) => i.produto_id === editandoId);
 
   // Abre um produto específico pra edição vindo de outra aba (hoje: o ✎ de
   // "editar cadastro completo" em Produtos precificados) — mesma ação de clicar
@@ -260,8 +268,14 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       pecas_por_impressao: Math.max(1, parseInt(form.pecas_por_impressao, 10) || 1),
       peso_g: form.peso_g === "" || form.peso_g == null ? null : Number(String(form.peso_g).replace(",", ".")) || null,
       ...(impressoras.length ? { impressora_id: form.impressora_id || impressoraPadrao(impressoras)?.id || null } : {}),
+      // Revenda (v66): o custo vem das notas de compra — o detalhamento da impressão
+      // (se houver) fica guardado, mas não é usado (aoVivo.js olha a origem).
+      origem: form.origem === "revenda" ? "revenda" : "fabricado",
+      ean: form.ean.trim() || null,
+      fornecedor_id: form.fornecedor_id || null,
       atualizado_em: new Date().toISOString(),
     };
+    if (form.origem === "revenda") payload.custo_producao = arredondarPreco(parseFloat(form.custo_producao) || 0);
     setSalvando(true);
     let produtoId = editandoId;
     let error;
@@ -280,6 +294,11 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       return { error: r.error, id: r.data?.id };
     }
     let resp = await gravar(payload);
+    if (resp.error && /origem|ean|fornecedor_id/.test(resp.error.message || "")) {
+      const { origem: _o, ean: _e, fornecedor_id: _f, ...semRevenda } = payload;
+      resp = await gravar(semRevenda);
+      if (!resp.error) onToast("Produto salvo sem os campos de revenda — rode o schema_v66.sql no Supabase");
+    }
     if (resp.error && /peso_g/.test(resp.error.message || "")) {
       const { peso_g: _peso, ...semPeso } = payload;
       resp = await gravar(semPeso);
@@ -348,6 +367,9 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       pecas_por_impressao: p.pecas_por_impressao ?? 1,
       peso_g: p.peso_g != null ? String(p.peso_g) : "",
       impressora_id: p.impressora_id || null,
+      origem: p.origem === "revenda" ? "revenda" : "fabricado",
+      ean: p.ean || "",
+      fornecedor_id: p.fornecedor_id || null,
     });
     setDetalheSalvo(p.producao_detalhe || null);
     setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
@@ -421,6 +443,16 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           {editandoId ? "Editar produto" : "Cadastrar produto"}
           <Ajuda texto="Dica: em Custo de Produção, o botão “Salvar como produto” já traz o custo calculado pra cá. Pra ver, buscar, clonar, editar ou excluir os produtos já cadastrados, use Catálogo → Produtos precificados." />
         </h3>
+        <div className="origem-produto" role="radiogroup" aria-label="De onde vem este produto">
+          <button type="button" role="radio" aria-checked={!ehRev} className={`origem-op${!ehRev ? " on" : ""}`} onClick={() => setForm((prev) => ({ ...prev, origem: "fabricado" }))}>
+            <b>Fabricado</b>
+            <span>Impressão 3D e/ou artesanal — custo pela produção.</span>
+          </button>
+          <button type="button" role="radio" aria-checked={ehRev} className={`origem-op${ehRev ? " on" : ""}`} onClick={() => setForm((prev) => ({ ...prev, origem: "revenda" }))}>
+            <b>Revenda — comprado pronto</b>
+            <span>Custo pelas notas de compra (média das últimas). Tem estoque.</span>
+          </button>
+        </div>
         <div className="row3">
           <div className="field">
             <label>Nome do produto</label>
@@ -454,6 +486,15 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
               </div>
             )}
           </div>
+          {ehRev ? (
+            <div className="field">
+              <label>
+                EAN (código de barras)
+                <Ajuda texto="O código de barras do fabricante (vem na nota de compra). Com ele, o app liga sozinho o item da nota a este produto." />
+              </label>
+              <input type="text" inputMode="numeric" placeholder="ex: 7891234567895" value={form.ean} onChange={setCampo("ean")} />
+            </div>
+          ) : (
           <div className="field">
             <label>
               Material
@@ -481,6 +522,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
               </div>
             )}
           </div>
+          )}
         </div>
         {sugestoes.length > 0 && (
           <div className="hint" style={{ marginTop: -4 }}>
@@ -497,15 +539,26 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
         )}
         <div className="row4">
           <div className="field">
-            <label>Custo de produção (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              disabled={!!form.producao_detalhe}
-              value={form.producao_detalhe ? resultadoDetalhe?.total.toFixed(2) ?? "0.00" : form.custo_producao}
-              onChange={setCampo("custo_producao")}
-              title={form.producao_detalhe ? "Calculado a partir do detalhamento abaixo" : "Valor manual — preencha o detalhamento abaixo pra calcular sozinho"}
-            />
+            <label>{ehRev ? "Custo de compra (R$)" : "Custo de produção (R$)"}</label>
+            {ehRev ? (
+              <input
+                type="number"
+                step="0.01"
+                disabled={temNotas}
+                value={form.custo_producao}
+                onChange={setCampo("custo_producao")}
+                title={temNotas ? "Média das últimas notas de compra — muda sozinho a cada nota importada" : "Valor manual até a 1ª nota de compra ser importada"}
+              />
+            ) : (
+              <input
+                type="number"
+                step="0.01"
+                disabled={!!form.producao_detalhe}
+                value={form.producao_detalhe ? resultadoDetalhe?.total.toFixed(2) ?? "0.00" : form.custo_producao}
+                onChange={setCampo("custo_producao")}
+                title={form.producao_detalhe ? "Calculado a partir do detalhamento abaixo" : "Valor manual — preencha o detalhamento abaixo pra calcular sozinho"}
+              />
+            )}
           </div>
           <div className="field">
             <label>Frete padrão (R$)</label>
@@ -553,6 +606,15 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           rotuloVazio='Nenhuma embalagem cadastrada — cadastre em Cadastros → Embalagens (caixa, plástico bolha...), ou use o campo manual acima.'
         />
 
+        {ehRev ? (
+          <BlocoRevenda
+            produtoId={editandoId}
+            fornecedorId={form.fornecedor_id}
+            onFornecedor={(id) => setForm((prev) => ({ ...prev, fornecedor_id: id || null }))}
+            dados={revendaDados}
+          />
+        ) : (
+          <>
         <h3 className="section-title">
           Detalhamento do custo de produção
           <Ajuda texto="As métricas que geraram o custo de produção desse produto (filamento, tempo de impressão, consumíveis, ROI da máquina etc.), pra você consultar ou ajustar depois. Recalcula ao vivo com os preços ATUAIS de material. Ao lado de um campo que você mudou aparece '(era X)' com o valor salvo antes dessa edição." />
@@ -575,6 +637,8 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           maquina={maquinaForm}
           onChangeImpressora={(id) => setForm((prev) => ({ ...prev, impressora_id: id || null }))}
         />
+          </>
+        )}
 
         {editandoId ? (
           <VariacoesProduto

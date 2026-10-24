@@ -315,7 +315,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
                 <label>Produto cadastrado (opcional)</label>
                 <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
                   <option value="">— novo cálculo —</option>
-                  {produtos.map((p) => (
+                  {produtos.filter((p) => p.origem !== "revenda").map((p) => (
                     <option key={p.id} value={p.id}>{p.nome}</option>
                   ))}
                 </select>
@@ -337,7 +337,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
               <label>Produto cadastrado (opcional)</label>
               <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
                 <option value="">— novo cálculo —</option>
-                {produtos.map((p) => (
+                {produtos.filter((p) => p.origem !== "revenda").map((p) => (
                   <option key={p.id} value={p.id}>{p.nome}</option>
                 ))}
               </select>

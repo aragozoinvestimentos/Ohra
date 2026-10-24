@@ -10,6 +10,7 @@ import { degrauAnterior, passoDaEscada, tetoPorFaixas } from "../src/lib/ads.js"
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
 import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
 import { ateDoEnvioPedidos } from "../src/lib/pedidos.js";
+import { custoDosItens, custoMedioRevenda, estoqueDoProduto, lerNfe, limiteMei, situacaoEstoque, vendasPorProduto } from "../src/lib/revenda.js";
 
 const semCusto = { custoProduto: 0, frete: 0, embalagem: 0 };
 const perto = (v, alvo) => expect(Math.round(v * 100) / 100).toBe(alvo);
@@ -197,5 +198,85 @@ describe("Pedidos da Olist: até onde o envio cobre", () => {
   });
   it("arquivo de período antigo não cobre a semana de hoje", () => {
     expect(ateDoEnvioPedidos({ periodo_ate: "2026-09-30", criado_em: "2026-10-24T12:00:00Z" })).toBe("2026-09-30");
+  });
+});
+
+describe("Revenda: nota de compra (XML), custo e estoque", () => {
+  // NF-e mínima no formato oficial (2 itens, frete na nota, ST no 1º, DIFAL possível no 2º)
+  const xml = `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe35261000000000000100550010000047301000047300" versao="4.00">
+<ide><serie>1</serie><nNF>4730</nNF><dhEmi>2026-10-24T10:00:00-03:00</dhEmi></ide>
+<emit><CNPJ>00000000000100</CNPJ><xNome>Distribuidora Beleza LTDA</xNome><enderEmit><UF>MG</UF></enderEmit></emit>
+<dest><enderDest><UF>SP</UF></enderDest></dest>
+<det nItem="1"><prod><cProd>10233</cProd><cEAN>7891234567895</cEAN><xProd>BATOM MATTE NUDE 3,5G</xProd><uCom>UN</uCom><qCom>24.0000</qCom><vUnCom>10.50</vUnCom><vProd>252.00</vProd><cEANTrib>7891234567895</cEANTrib></prod>
+<imposto><ICMS><ICMS10><vICMS>30.24</vICMS><pICMS>12.00</pICMS><vICMSST>15.60</vICMSST></ICMS10></ICMS><IPI><IPITrib><vIPI>12.60</vIPI></IPITrib></IPI></imposto></det>
+<det nItem="2"><prod><cProd>20410</cProd><cEAN>SEM GTIN</cEAN><xProd>MASCARA CILIOS CX12</xProd><uCom>CX</uCom><qCom>2</qCom><vUnCom>108.00</vUnCom><vProd>216.00</vProd></prod>
+<imposto><ICMS><ICMS00><vICMS>25.92</vICMS><pICMS>12.00</pICMS></ICMS00></ICMS></imposto></det>
+<total><ICMSTot><vProd>468.00</vProd><vST>15.60</vST><vFrete>12.00</vFrete><vIPI>12.60</vIPI><vDesc>0</vDesc><vNF>508.20</vNF></ICMSTot></total>
+<cobr><dup><nDup>001</nDup><dVenc>2026-11-24</dVenc><vDup>254.10</vDup></dup><dup><nDup>002</nDup><dVenc>2026-12-24</dVenc><vDup>254.10</vDup></dup></cobr>
+</infNFe></NFe></nfeProc>`;
+  it("lê a nota", () => {
+    const n = lerNfe(xml);
+    expect(n.numero).toBe("4730");
+    expect(n.emissao).toBe("2026-10-24");
+    expect(n.chave).toHaveLength(44);
+    expect(n.emitente.uf).toBe("MG");
+    expect(n.itens[0].ean).toBe("7891234567895");
+    expect(n.itens[1].ean).toBe(null);
+    expect(n.duplicatas).toHaveLength(2);
+    expect(lerNfe("<x/>").erro).toBeTruthy();
+  });
+  it("custo final por unidade: preço + IPI + ST + frete rateado; caixa vira unidades; DIFAL só sem ST", () => {
+    const n = lerNfe(xml);
+    const [a, b] = custoDosItens(n, { fatores: { 2: 12 }, difal: { ligado: true, aliquotaInterna: 0.18 } });
+    // batom: 252 + 12,60 + 15,60 + frete 12 × 252/468 = 6,46 → 286,66 / 24
+    expect(a.custoUn).toBeCloseTo(11.944, 2);
+    expect(a.difal).toBe(0);
+    // máscara: 216 + frete 5,54 + DIFAL (216 × 18% − 25,92 = 12,96) → 234,50 / 24 un
+    expect(b.quantidade).toBe(24);
+    expect(b.difal).toBeCloseTo(12.96, 2);
+    expect(b.custoUn).toBeCloseTo(9.771, 2);
+  });
+  it("custo médio das 3 últimas notas, ponderado", () => {
+    const m = custoMedioRevenda([
+      { emissao: "2026-10-01", custo_un: 10, quantidade: 10 },
+      { emissao: "2026-10-10", custo_un: 12, quantidade: 10 },
+      { emissao: "2026-10-20", custo_un: 11, quantidade: 20 },
+      { emissao: "2026-10-24", custo_un: 13, quantidade: 10 },
+    ]);
+    expect(m.preco).toBe(11.75); // (12×10 + 11×20 + 13×10) ÷ 40
+  });
+  it("estoque começa na 1ª nota; venda antes não baixa; kit baixa as peças", () => {
+    const itens = [{ id: "k:1", componentes: [{ produtoId: "B", quantidade: 2 }] }, { id: "v:9", produtoId: "B", quantidade: 3 }];
+    const pedidos = [
+      { valido: true, id_item: "p:B", q: 1, data: "2026-10-01" }, // antes da 1ª nota: não conta
+      { valido: true, id_item: "k:1", q: 1, data: "2026-10-21" },
+      { valido: true, id_item: "v:9", q: 1, data: "2026-10-22" },
+      { valido: false, id_item: "p:B", q: 5, data: "2026-10-22" }, // cancelado
+    ];
+    const vendas = vendasPorProduto(pedidos, itens).get("B");
+    const est = estoqueDoProduto({ movimentos: [{ data: "2026-10-20", tipo: "entrada", quantidade: 12 }, { data: "2026-10-23", tipo: "ajuste", quantidade: -1 }], vendas, hoje: "2026-10-24" });
+    expect(est.inicio).toBe("2026-10-20");
+    expect(est.saldo).toBe(6); // 12 − 2 − 3 − 1
+    // 5 un vendidas em 7 dias de base = 0,71/dia → dura ~8,4 dias
+    expect(situacaoEstoque(est, { prazo: 5, folga: 3 }, "2026-10-24").tipo).toBe("ok");
+    const s = situacaoEstoque(est, { prazo: 7, folga: 3 }, "2026-10-24");
+    expect(s.tipo).toBe("repor");
+    expect(s.comprar).toBe(21); // 0,714 × (7 + 30) = 26,4 → 27 − 6
+  });
+  it("limite do MEI: faturamento do ano e quando passa", () => {
+    const pedidos = [{ valido: true, data: "2026-10-01", pago: 9000 }, { valido: true, data: "2026-03-01", pago: 60000 }, { valido: false, data: "2026-10-02", pago: 999 }];
+    const r = limiteMei({ pedidos, limite: 81000, hoje: "2026-10-24" });
+    expect(r.faturado).toBe(69000);
+    expect(r.atencao).toBe(true);
+  });
+});
+
+describe("Revenda: unidades por caixa (palpite)", () => {
+  it("pela unidade tributável da nota e pelo nome", async () => {
+    const { palpiteFator } = await import("../src/lib/revenda.js");
+    expect(palpiteFator({ qtd: 2, unidade: "CX", qtdTrib: 24, unidadeTrib: "UN" })).toBe(12);
+    expect(palpiteFator({ qtd: 2, unidade: "CX", descricao: "MASCARA CILIOS CX12" })).toBe(12);
+    expect(palpiteFator({ qtd: 3, unidade: "PCT", descricao: "ELASTICO C/ 6 UN" })).toBe(6);
+    expect(palpiteFator({ qtd: 24, unidade: "UN", descricao: "BATOM CX12" })).toBe(null);
   });
 });

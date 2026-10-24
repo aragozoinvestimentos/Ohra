@@ -18,7 +18,7 @@ import { configCalendario, quandoVendeDe, rotuloQuando, TIPOS_QUANDO } from "../
 
 // Filtros do Catálogo (painel "Filtros ▾"). Regra: todo atributo novo do
 // produto que dê pra filtrar entra AQUI (um grupo a mais em FILTROS_VAZIO e no painel).
-const FILTROS_VAZIO = { tipo: "todos", quando: "", impressora: "", canal: "", rampa: "", semSku: false, abc: "" };
+const FILTROS_VAZIO = { tipo: "todos", quando: "", impressora: "", canal: "", rampa: "", semSku: false, abc: "", origem: "" };
 
 // Cadastros → Catálogo: tudo que foi cadastrado (produtos com as variações,
 // kits) numa lista só, pra CONSULTAR sem abrir Precificação. Só lê — os números
@@ -81,13 +81,14 @@ export default function CatalogoLista({ onToast }) {
   const alvo = busca.trim().toLowerCase();
   const bate = (it) => !alvo || it.nome.toLowerCase().includes(alvo) || (it.sku || "").toLowerCase().includes(alvo);
   // Filtros que só valem pra produto (kit não tem Quando vende, impressora nem rampa).
-  const soProduto = !!(filtros.quando || filtros.impressora || filtros.rampa);
+  const soProduto = !!(filtros.quando || filtros.impressora || filtros.rampa || filtros.origem);
   const passaProduto = (p, vs) => {
     const prod = produtos.find((x) => x.id === p.id.slice(2));
     if (filtros.quando) {
       const q = quandoVendeDe(prod);
       if (filtros.quando === "sem" ? !!q : q?.tipo !== filtros.quando) return false;
     }
+    if (filtros.origem && (prod?.origem === "revenda" ? "revenda" : "fabricado") !== filtros.origem) return false;
     if (filtros.impressora && impressoraDoProduto(prod, impressoras)?.id !== filtros.impressora) return false;
     if (filtros.rampa) {
       const em = rampas.some((r) => r.produto_id === prod?.id);
@@ -117,6 +118,7 @@ export default function CatalogoLista({ onToast }) {
   const ativos = [
     filtros.tipo !== "todos" && { k: "tipo", txt: filtros.tipo === "kits" ? "só kits" : "só produtos" },
     filtros.quando && { k: "quando", txt: filtros.quando === "sem" ? "sem classificação" : TIPOS_QUANDO.find((t) => t.chave === filtros.quando)?.rotulo.replace("…", "").toLowerCase() },
+    filtros.origem && { k: "origem", txt: filtros.origem === "revenda" ? "só revenda" : "só fabricados" },
     filtros.impressora && { k: "impressora", txt: impressoras.find((x) => x.id === filtros.impressora)?.nome || "impressora" },
     filtros.canal && { k: "canal", txt: `com preço em ${canais.find((c) => c.id === filtros.canal)?.nome || "canal"}` },
     filtros.rampa && { k: "rampa", txt: filtros.rampa === "sim" ? "em rampa" : "fora da rampa" },
@@ -170,7 +172,7 @@ export default function CatalogoLista({ onToast }) {
         <td className="num"><b>{BRL(it.custoTotal)}</b></td>
         <td className="num">{g(it.peso)}</td>
         <td className="muted-cel">
-          {prod ? `${imp?.nome || "—"} · chapa de ${Math.max(1, num(prod.pecas_por_impressao) || 1)}${prod.producao_detalhe ? "" : " · custo à mão"}` : it.tipo === "Kit" ? `${it.pecas} peças` : `${it.quantidade} un.`}
+          {prod?.origem === "revenda" ? "revenda — comprado pronto" : prod ? `${imp?.nome || "—"} · chapa de ${Math.max(1, num(prod.pecas_por_impressao) || 1)}${prod.producao_detalhe ? "" : " · custo à mão"}` : it.tipo === "Kit" ? `${it.pecas} peças` : `${it.quantidade} un.`}
         </td>
         <td>
           <span className="catalogo-canais">
@@ -242,6 +244,14 @@ export default function CatalogoLista({ onToast }) {
                 </option>
               ))}
               <option value="sem">Sem classificação</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Origem</label>
+            <select value={filtros.origem} onChange={(e) => setFiltros({ ...filtros, origem: e.target.value })}>
+              <option value="">Qualquer</option>
+              <option value="fabricado">Fabricado</option>
+              <option value="revenda">Revenda (comprado pronto)</option>
             </select>
           </div>
           <div className="field">

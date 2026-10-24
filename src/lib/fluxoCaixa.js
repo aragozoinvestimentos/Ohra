@@ -14,6 +14,7 @@ export const CATEGORIAS = {
   ],
   saida: [
     { key: "filamento", label: "Filamento / material" },
+    { key: "mercadoria", label: "Mercadoria pra revenda" },
     { key: "embalagem", label: "Embalagem" },
     { key: "frete", label: "Frete" },
     { key: "anuncios", label: "Anúncios / Ads (recarga)" },

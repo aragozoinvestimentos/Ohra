@@ -93,10 +93,40 @@ export function montarPendencias({
   cupomRuins = [], // [{ item, canal, lucro, estado }] cupom ativo da loja deixando anúncio no prejuízo/abaixo (cupomLoja.js)
   diagnosticos = [], // [{ l (montarAnuncios), d (lib/diagnostico.js) }] — só atenção/oportunidade
   vendasSemana = () => 0, // (itemId, canalId) → unidades por semana (pedidos de 4 semanas) — pro valor em R$ do aviso
+  estoque = [], // useEstoque().linhas (revenda, v66) — repor / zerado / negativo
+  limiteMei = null, // lib/revenda.js limiteMei() — só com regime MEI
   hoje = "",
 }) {
   const out = [];
   const add = (p) => out.push(p);
+
+  // ---- Revenda (v66): estoque a repor / negativo e o limite do MEI ----
+  for (const l of estoque) {
+    const t = l.sit?.tipo;
+    if (!["repor", "zerado", "negativo"].includes(t)) continue;
+    add({
+      id: `estoque|${l.produto.id}`,
+      grupo: "rotina",
+      ordem: 3,
+      tom: "warn",
+      titulo: `${l.produto.nome}: ${t === "negativo" ? "estoque negativo" : t === "zerado" ? "estoque acabou" : "repor o estoque"}`,
+      texto: l.sit.texto,
+      valor: t === "negativo" ? 0 : Math.round((l.est.porDia || 0) * 7 * (Number(l.produto.custo_producao) || 0) * 0.5),
+      ir: { aba: "estoque", pedido: { sub: t === "negativo" ? "inventario" : "estoque" } },
+      rotulo: t === "negativo" ? "Conferir (inventário)" : "Ver estoque",
+    });
+  }
+  if (limiteMei?.atencao)
+    add({
+      id: "mei|limite",
+      grupo: "rotina",
+      ordem: 4,
+      tom: "warn",
+      titulo: `Limite do MEI: ${Math.round(limiteMei.pct * 100)}% do ano já faturado`,
+      texto: limiteMei.passaEm ? `no ritmo atual passa do limite por volta de ${limiteMei.passaEm.slice(8, 10)}/${limiteMei.passaEm.slice(5, 7)} — converse com o contador sobre virar ME` : "acompanhe o faturamento até o fim do ano",
+      ir: { aba: "regras", pedido: null },
+      rotulo: "Ver impostos da loja",
+    });
 
   // ---- Diagnóstico comercial (24/10/2026): um aviso por diagnóstico que pede ação ----
   for (const { l, d } of diagnosticos)

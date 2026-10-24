@@ -10,6 +10,7 @@ import MetasPrecoLoja from "./MetasPrecoLoja.jsx";
 import CalendarioLoja from "./CalendarioLoja.jsx";
 import { RegrasPortoes } from "./Crescimento.jsx";
 import CuponsAtivos from "./CuponsAtivos.jsx";
+import ImpostosLoja from "./ImpostosLoja.jsx";
 import Ajuda from "./Ajuda.jsx";
 
 // Configuração → Regras (remap 21/10/2026): as regras da loja que ficavam
@@ -46,6 +47,9 @@ export default function Regras({ onToast }) {
         <b>Regras da loja {loja?.nome || ""}</b>
         Cada seção vale pro app inteiro desta loja. As telas continuam com o atalho pras regras delas — é a mesma configuração.
       </div>
+      <Secao titulo="Impostos da loja (MEI ou Simples)" aberta={!cfg.impostos?.regime} onde="preço e lucro de todo o app · limite do MEI no Início" ajuda="MEI: nenhum imposto por venda, DAS fixo por mês e limite de faturamento por ano (3D + revenda juntos). Simples: por enquanto o imposto (%) de cada canal.">
+        <ImpostosLoja onToast={onToast} />
+      </Secao>
       <MetasPrecoLoja onToast={onToast} />
       <CalendarioLoja onToast={onToast} />
       <Secao titulo="Cupons ativos da loja" aberta onde="Rampa (O que digitar), Painel do anúncio e Promoções → Cupom da loja" ajuda="Os cupons que estão ligados na plataforma (ex.: Shopee 2% acima de R$ 5 · 5% acima de R$ 20). O app calcula o lucro de 1 unidade com o cupom da faixa que o preço alcança — o pior caso — e avisa se algum anúncio fica no prejuízo. Nenhum preço muda.">

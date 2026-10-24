@@ -2708,3 +2708,12 @@ td.vendas-opcao { padding-left: 26px; }
 .inicio-top3-txt { font-size: 12.5px; color: var(--ink-soft); }
 .inicio-fora { border: 1px dashed var(--border); border-radius: 12px; padding: 8px 12px; display: grid; gap: 3px; font-size: 12.5px; color: var(--ink-soft); margin-top: 8px; }
 .inicio-fora > b { color: var(--ink); }
+
+/* Revenda (v66): Fabricado × Revenda no cadastro do produto */
+.origem-produto { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 4px 0 12px; }
+.origem-op { text-align: left; font: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; cursor: pointer; color: var(--ink-soft); }
+.origem-op b { color: var(--ink); font-size: 13.5px; }
+.origem-op span { font-size: 12.5px; }
+.origem-op.on { border: 2px solid var(--accent); padding: 9px 11px; background: color-mix(in oklab, var(--accent) 7%, var(--surface)); }
+.origem-op.on b { color: var(--accent); }
+@media (max-width: 760px) { .origem-produto { grid-template-columns: 1fr; } }

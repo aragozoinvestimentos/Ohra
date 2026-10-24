@@ -46,6 +46,8 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import { LinhaTarefa, TarefaDialog } from "./Tarefas.jsx";
 import { useTarefas } from "../hooks/useTarefas.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
+import { useEstoque } from "../hooks/useEstoque.js";
+import { limiteMei, regimeDaLoja } from "../lib/revenda.js";
 import { saldoAds } from "../lib/saldoAds.js";
 import { concluidasRecentes, repartirTarefas } from "../lib/tarefas.js";
 import { abrirTarefa, concluirTarefa, desfazerConclusao, excluirTarefa, rotuloLink } from "../lib/tarefasAcoes.js";
@@ -322,9 +324,13 @@ export default function Inicio({ onIrPara, onToast }) {
     }
     return (itemId, canalId) => (m.get(`${itemId}|${canalId}`) || 0) / 4;
   }, [pedidosValidos, hoje]);
+  // Revenda (v66): estoque a repor/negativo e o limite do MEI
+  const estoqueRev = useEstoque();
+  const regime = regimeDaLoja(dados.cfgLoja);
+  const limMei = useMemo(() => (regime.regime === "mei" ? limiteMei({ pedidos: pedidosValidos || [], limite: regime.limiteAnual, hoje }) : null), [regime.regime, regime.limiteAnual, pedidosValidos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, hoje }),
-    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, hoje]
+    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, hoje }),
+    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.
@@ -427,6 +433,15 @@ export default function Inicio({ onIrPara, onToast }) {
     metaPct: metaFat > 0 && temPedidos ? loja.atual.vendas / metaFat : null,
     meta: metaFat,
     ritmo: loja.ritmo,
+    // revenda (v66): estoque e limite do MEI pro consultor
+    estoque: estoqueRev.linhas.length
+      ? {
+          valor: estoqueRev.linhas.reduce((t, l) => t + (l.est.semControle ? 0 : l.valor), 0),
+          itens: estoqueRev.linhas.filter((l) => !l.est.semControle).length,
+          repor: estoqueRev.linhas.filter((l) => ["repor", "zerado", "negativo"].includes(l.sit.tipo)).map((l) => ({ nome: l.produto.nome, texto: l.sit.texto })),
+        }
+      : null,
+    limiteMei: limMei,
     // contas a pagar (atrasadas + próximos 7 dias) pro consultor da Sede
     aPagar: caixa
       ? [...(caixa.atrasados || []), ...(caixa.proximos || [])]

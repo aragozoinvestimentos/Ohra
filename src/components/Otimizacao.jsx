@@ -122,7 +122,7 @@ export default function Otimizacao({ onToast }) {
     return !error;
   }
 
-  const linhas = produtos.map((p) => ({ produto: p, capacidade: calcularCapacidade(p, loja, pedidosDia) }));
+  const linhas = produtos.filter((p) => p.origem !== "revenda").map((p) => ({ produto: p, capacidade: calcularCapacidade(p, loja, pedidosDia) }));
   const produtosComDados = linhas.filter((l) => l.capacidade != null);
 
   const simProduto = produtos.find((p) => p.id === simProdutoId) || null;
@@ -210,7 +210,7 @@ export default function Otimizacao({ onToast }) {
                 </tr>
               </thead>
               <tbody>
-                {produtos.map((p) => (
+                {produtos.filter((p) => p.origem !== "revenda").map((p) => (
                   <tr key={p.id}>
                     <td>{p.nome}</td>
                     <td className="num">

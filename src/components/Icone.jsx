@@ -14,6 +14,12 @@ const PATHS = {
       <path d="M8 7h8M8 12h2M14 12h2M8 16h2M14 16h2" />
     </>
   ),
+  estoque: (
+    <>
+      <path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5v-9Z" />
+      <path d="M3 7.5 12 12l9-4.5M12 12v9" />
+    </>
+  ),
   registroImpressoes: (
     <>
       <path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />

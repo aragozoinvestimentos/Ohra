@@ -28,7 +28,7 @@ export const ROTULOS_ABA = {
   anuncios: "Anúncios", anuncio: "Painel do anúncio", historico: "Preços salvos", canal: "Passos do preço", crescimento: "Vender mais (Rampa/Ads/Afiliados)",
   promocoes: "Promoções e cupons", orcamento: "Orçamento e atacado", live: "Live", resumoMes: "Resumo do mês", caixa: "Dinheiro (Caixa)", metas: "Metas",
   ranking: "Ranking", diagnostico: "Análise → Diagnóstico", analise: "Análise", compararPeriodos: "Comparar períodos", carrinhos: "Carrinhos abandonados",
-  registroImpressoes: "Registro de impressões", otimizacao: "Otimização", farm: "Minha farm", insumos: "Insumos", config: "Configuração", tutorial: "Tutorial",
+  registroImpressoes: "Registro de impressões", otimizacao: "Otimização", farm: "Minha farm", insumos: "Insumos", estoque: "Estoque e compras", config: "Configuração", tutorial: "Tutorial",
 };
 
 // ---------- período pelo texto ----------
@@ -105,6 +105,19 @@ export function responderPergunta(pergunta, ctx) {
   // pergunta de análise ("por que…", "vale a pena…", "o que acha…") é pro Claude
   if (/^(por que|porque|pq|vale a pena|devo|o que (voce )?acha|como (melhorar|aumentar|faco pra))/.test(t)) return naoSei;
   const temPedidos = (pedidos || []).some((p) => p.valido);
+
+  // 0) revenda: estoque / repor / limite do MEI (v66)
+  if (/estoque|repor|mercadoria/.test(t)) {
+    const e = kpis?.estoque;
+    if (!e) return { entendeu: true, texto: "Ainda não há produto de revenda com estoque — o estoque começa na 1ª nota de compra (XML) importada em Estoque e compras.", numeros: null };
+    const rep = e.repor.length ? ` Pra repor: ${e.repor.map((r) => `${r.nome} (${r.texto})`).join("; ")}.` : " Nada pra repor agora.";
+    return { entendeu: true, texto: `Estoque de revenda: ${e.itens} ${e.itens === 1 ? "produto" : "produtos"}, ${BRL(e.valor)} parados pelo custo médio.${rep}`, numeros: { estoque: e.valor } };
+  }
+  if (/\bmei\b|limite de faturamento/.test(t)) {
+    const l = kpis?.limiteMei;
+    if (!l) return { entendeu: true, texto: "O regime da loja não está como MEI — escolha em Configuração → Regras → Impostos da loja.", numeros: null };
+    return { entendeu: true, texto: `Faturado no ano: ${BRL(l.faturado)} de ${BRL(l.limite)} (${Math.round(l.pct * 100)}%). No ritmo dos últimos 90 dias o ano fecha em ~${BRL(l.projecao)}${l.passaEm ? ` — passa do limite por volta de ${l.passaEm.slice(8, 10)}/${l.passaEm.slice(5, 7)}` : ""}.`, numeros: { faturado: l.faturado } };
+  }
 
   // 1) um produto ou kit citado pelo nome
   const itens = [...produtos.map((p) => ({ id: `p:${p.id}`, nome: p.nome })), ...kits.map((k) => ({ id: `k:${k.id}`, nome: k.nome }))];
