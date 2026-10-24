@@ -132,7 +132,8 @@ export function montarPendencias({
   }
 
   // ---- Venda direta (Orgânico): vale revisar o preço? (tempo ou custo) ----
-  for (const { item, canal, motivos } of revisoes)
+  for (const r of revisoes) {
+    const { item, canal, motivos } = r;
     add({
       id: `revisar|${item.id}|${canal.id}`,
       grupo: "rotina",
@@ -142,7 +143,9 @@ export function montarPendencias({
       texto: `${canal.nome} · ${motivos.map((m) => m.texto).join(" · ")}`,
       ir: { aba: "historico", pedido: { busca: item.nome } },
       rotulo: "Ver em Produtos precificados",
+      revisado: r,
     });
+  }
 
   // ---- Ads sazonal: virada de fase (Aquecer/Ajustar/Alavancar/Corte) e andamento ----
   for (const x of adsSazonal)

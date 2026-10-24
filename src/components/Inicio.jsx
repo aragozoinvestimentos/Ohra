@@ -3,6 +3,7 @@ import { vendasPeloComeco } from "../lib/vinculoSku.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
 import { PLATAFORMAS } from "../lib/pedidos.js";
 import { revisoesPrecoDireto } from "../lib/revisarPreco.js";
+import { marcarPrecoRevisado } from "../lib/revisarPrecoAcoes.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLembretes } from "../hooks/useLembretes.js";
 import { pausaAtiva, pausasDeRampa } from "../lib/pausaRampa.js";
@@ -156,7 +157,7 @@ export default function Inicio({ onIrPara, onToast }) {
         if (!(dados.publicacoesCanal || []).some((x) => x.item_id === p.item_id && x.canal_id === c.id)) continue;
         const preco = dados.agoraDe?.(it, c)?.agora?.preco || Number(p.preco);
         const cfg = dados.cfgDoProduto(it.produtoId || (pre === "p" ? p.item_id : null));
-        const r = comCupomAtivo({ canal: c, preco, custo: Number(it.custoTotal) || 0, peso: Number(it.peso) || 0, cfg }, faixas);
+        const r = comCupomAtivo({ canal: c, preco, custo: Number((dados.itemNoCanal ? dados.itemNoCanal(it, c) : it)?.custoTotal) || 0, peso: Number(it.peso) || 0, cfg }, faixas);
         if (r && (r.estado === "prejuizo" || r.estado === "abaixo")) out.push({ item: it, canal: c, ...r });
       }
     }
@@ -288,7 +289,7 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- Pra fazer + status ---
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
-  const revisoes = useMemo(() => revisoesPrecoDireto({ itens, canais, precos, hoje }), [itens, canais, precos, hoje]);
+  const revisoes = useMemo(() => revisoesPrecoDireto({ itens, canais, precos, hoje, itemNoCanal: dados.itemNoCanal }), [itens, canais, precos, hoje, dados.itemNoCanal]);
   const adsP = useAdsPeriodos();
   const [baseAds] = usePreferencia("caixa:saldo-ads-base", null);
   const backup = useBackup(onToast);
@@ -485,6 +486,19 @@ export default function Inicio({ onIrPara, onToast }) {
         {podeAdiar(p) && (
           <button type="button" className="link-btn" onClick={() => adiar30(p)} title="Some do Pra fazer por 30 dias e volta sozinho se ainda valer. Nada mais muda.">
             lembrar em 30 dias
+          </button>
+        )}
+        {p.revisado && (
+          <button
+            type="button"
+            className="link-btn"
+            onClick={async () => {
+              const { error } = await marcarPrecoRevisado(p.revisado);
+              onToast?.(error ? `Não foi possível marcar: ${error.message}` : "Preço mantido — o custo de hoje vira a referência.");
+            }}
+            title="O preço salvo continua o mesmo. O custo de hoje vira a referência: o aviso só volta se o custo subir mais 10% ou daqui a 12 meses."
+          >
+            ✓ revisado, manter o preço
           </button>
         )}
         {p.ciente && (

@@ -20,8 +20,11 @@ function mesesEntre(de, ate) {
   return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) - (b.getDate() < a.getDate() ? 1 : 0);
 }
 
-/** → [{ item, canal, motivos: [{ tipo: 'tempo'|'custo', texto }] }] */
-export function revisoesPrecoDireto({ itens = [], canais = [], precos = [], hoje }) {
+/** → [{ item, canal, linha, custoHoje, motivos: [{ tipo: 'tempo'|'custo', texto }] }]
+ * `itemNoCanal` (useRankingData): o custo de hoje é o DO CANAL — embalagem e
+ * frete do Orgânico, os mesmos usados quando o preço foi salvo. Sem isso o
+ * custo de marketplace (caixa, etiqueta, frete) parecia "subiu 150%". */
+export function revisoesPrecoDireto({ itens = [], canais = [], precos = [], hoje, itemNoCanal }) {
   const out = [];
   for (const canal of canais.filter(canalDireto)) {
     for (const item of itens) {
@@ -33,11 +36,25 @@ export function revisoesPrecoDireto({ itens = [], canais = [], precos = [], hoje
       const meses = salvoEm ? mesesEntre(salvoEm, hoje) : 0;
       if (salvoEm && meses >= REVISAR_MESES) motivos.push({ tipo: "tempo", texto: `preço salvo há ${meses} meses` });
       const custoSalvo = num(linha.custo_salvo ?? linha.custo_total);
-      const custoHoje = num(item.custoTotal);
+      const custoHoje = num((itemNoCanal ? itemNoCanal(item, canal) : item)?.custoTotal ?? item.custoTotal);
       if (custoSalvo > 0 && custoHoje >= custoSalvo * (1 + REVISAR_CUSTO))
         motivos.push({ tipo: "custo", texto: `custo subiu ${Math.round((custoHoje / custoSalvo - 1) * 100)}% desde que salvou` });
-      if (motivos.length) out.push({ item, canal, motivos });
+      if (motivos.length) out.push({ item, canal, linha, custoHoje, motivos });
     }
+  }
+  return out;
+}
+
+// "✓ Revisado — manter o preço": o preço salvo continua o mesmo; o custo de
+// referência passa a ser o de hoje (e o lucro/margem de hoje) e a data vira
+// hoje — o aviso só volta se o custo subir +10% de novo ou daqui a 12 meses.
+export function camposRevisado(linha, custoHoje, lucroHoje) {
+  const preco = num(linha.preco);
+  const c = Math.round(num(custoHoje) * 100) / 100;
+  const out = { custo_total: c, atualizado_em: new Date().toISOString() };
+  if (lucroHoje != null && isFinite(Number(lucroHoje))) {
+    out.lucro = Math.round(Number(lucroHoje) * 100) / 100;
+    if (preco > 0) out.margem = Number(lucroHoje) / preco;
   }
   return out;
 }

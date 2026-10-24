@@ -8,6 +8,7 @@ import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
 import { quebraLucro } from "../src/lib/precoAgora.js";
 import { degrauAnterior, passoDaEscada, tetoPorFaixas } from "../src/lib/ads.js";
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
+import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
 
 const semCusto = { custoProduto: 0, frete: 0, embalagem: 0 };
 const perto = (v, alvo) => expect(Math.round(v * 100) / 100).toBe(alvo);
@@ -166,5 +167,23 @@ describe("relatórios do consultor", async () => {
     const r = relatorioFechamento({ pedidos, linhasAds: null, lancamentos, hoje: "2026-10-24", nomeDe: () => "A" }, "2026-09");
     const kpi = (rot) => r.blocos[0].itens.find((i) => i.rotulo === rot).valor.replace(/\s/g, " ");
     expect(kpi("Lucro líquido")).toBe("R$ 25,00");
+  });
+});
+
+describe("Vale revisar o preço? (Orgânico)", () => {
+  // Caso real 24/10/2026: kit cadastrado só no Orgânico, salvo hoje com a
+  // embalagem do Orgânico (R$ 6,00); o custo de marketplace (R$ 15,40, com
+  // caixa/etiqueta/frete) fazia aparecer "custo subiu 157%".
+  const canal = { id: "org", tipo: "custom", modo_preco: "markup", nome: "Orgânico" };
+  const item = { id: "k:1", nome: "Kit Decoração", custoTotal: 15.4 };
+  const precos = [{ id: "x", item_tipo: "kit", item_id: "1", canal_id: "org", preco: 15, custo_total: 6, atualizado_em: "2026-10-24T12:00:00Z" }];
+  it("usa o custo do canal (embalagem do Orgânico)", () => {
+    const itemNoCanal = (it) => ({ ...it, custoTotal: 6 });
+    expect(revisoesPrecoDireto({ itens: [item], canais: [canal], precos, hoje: "2026-10-24", itemNoCanal })).toHaveLength(0);
+  });
+  it("avisa quando o custo do canal sobe 10%", () => {
+    const itemNoCanal = (it) => ({ ...it, custoTotal: 6.7 });
+    const r = revisoesPrecoDireto({ itens: [item], canais: [canal], precos, hoje: "2026-10-24", itemNoCanal });
+    expect(r[0].motivos[0].texto).toBe("custo subiu 12% desde que salvou");
   });
 });

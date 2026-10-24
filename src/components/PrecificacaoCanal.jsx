@@ -483,7 +483,7 @@ export default function PrecificacaoCanal({ custoRecebido, produtoParaSelecionar
   // separadas nesse canal (mesma lógica da escada — ver sugestaoKit).
   const canalAjustado = canalCadastrado ? { ...canalCadastrado, imposto_pct: n(f.imposto) / 100, custos_fixos_pct: n(f.custosFixos) / 100 } : null;
   const sugKit =
-    kitSelecionadoId && canalAjustado && itemSel ? sugestaoKit({ canal: canalAjustado, kitItem: itemSel, itens: baseItens, precos, cfg: cfgEscada }) : null;
+    kitSelecionadoId && canalAjustado && itemSel ? sugestaoKit({ canal: canalAjustado, kitItem: itemNoCanal(itemSel, canalAjustado), itens: baseItens.map((x) => itemNoCanal(x, canalAjustado)), precos, cfg: cfgEscada }) : null;
   const kitCalculado = sugKit ? kitVsSeparado(sugKit, canalAjustado, resultado.preco, cfgEscada) : null;
   const kitSalvo = sugKit && precoExistente ? kitVsSeparado(sugKit, canalAjustado, Number(precoExistente.preco), cfgEscada) : null;
 

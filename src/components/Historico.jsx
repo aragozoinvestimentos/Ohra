@@ -31,6 +31,7 @@ import OndeSeDecide from "./OndeSeDecide.jsx";
 import { CartoesAlvoAgora, DiferencaAlvoAgora, LinhaAgora } from "./AlvoAgora.jsx";
 import TirarDoCanalDialog from "./TirarDoCanalDialog.jsx";
 import { revisoesPrecoDireto } from "../lib/revisarPreco.js";
+import { marcarPrecoRevisado } from "../lib/revisarPrecoAcoes.js";
 import { excluirVariacaoTodos } from "../lib/tirarDoCanal.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import Estado, { PontoSaude } from "./Estado.jsx";
@@ -274,7 +275,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
   // grátis > custo mudou > em rampa > estratégia. O resto fica no detalhe.
   // Venda direta (canal próprio por markup): "vale revisar o preço?" — a MESMA
   // conta do aviso do Início (preço salvo há 12 meses ou custo +10%).
-  const revisoesDireto = useMemo(() => new Map(revisoesPrecoDireto({ itens, canais, precos, hoje: hojeSP() }).map((r) => [`${r.item.id}|${r.canal.id}`, r])), [itens, canais, precos]);
+  const revisoesDireto = useMemo(() => new Map(revisoesPrecoDireto({ itens, canais, precos: precosVivos, hoje: hojeSP(), itemNoCanal }).map((r) => [`${r.item.id}|${r.canal.id}`, r])), [itens, canais, precosVivos, itemNoCanal]);
 
   function infoCelula(item, canalObj) {
     const p = precoDe(item, canalObj);
@@ -374,7 +375,18 @@ export default function Historico({ onEditarCompleto, onToast }) {
           )}
           {revisoesDireto.has(`${item.id}|${canalObj.id}`) && (
             <div className="aviso-cel atencao">
-              <b>Vale revisar o preço?</b> {revisoesDireto.get(`${item.id}|${canalObj.id}`).motivos.map((x) => x.texto).join(" · ")}. Venda direta parte do custo: confira o preço pelo markup no 1º Avulso (o aviso some quando você salvar um preço novo).
+              <b>Vale revisar o preço?</b> {revisoesDireto.get(`${item.id}|${canalObj.id}`).motivos.map((x) => x.texto).join(" · ")}. Venda direta parte do custo: confira o preço pelo markup no 1º Avulso (o aviso some quando você salvar um preço novo).{" "}
+              <button
+                type="button"
+                className="link-btn"
+                onClick={async () => {
+                  const { error } = await marcarPrecoRevisado(revisoesDireto.get(`${item.id}|${canalObj.id}`));
+                  onToast?.(error ? `Não foi possível marcar: ${error.message}` : "Preço mantido — o custo de hoje vira a referência.");
+                }}
+                title="O preço salvo continua o mesmo. O custo de hoje vira a referência: o aviso só volta se o custo subir mais 10% ou daqui a 12 meses."
+              >
+                ✓ revisado, manter o preço
+              </button>
             </div>
           )}
           {al?.frete && (
