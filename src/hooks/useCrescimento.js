@@ -213,6 +213,7 @@ function useCalculoCrescimento() {
     const regs = [];
     const parciais = new Map();
     const seteDias = new Map();
+    const antes = new Map();
     const cobreDe = (canal) => (de, ate) => reais.cobertura.cobre(canal, de, ate);
     for (const r of [...rampas, ...(rampasGrupo || []), ...rampasKit]) {
       const canal = canais.find((c) => c.id === r.canal_id);
@@ -254,8 +255,12 @@ function useCalculoCrescimento() {
       // Últimos 7 dias AO VIVO (23/10/2026): vendas pelos pedidos e Ads pelo
       // CSV até hoje — "Lucro da semana" não espera a semana fechar.
       seteDias.set(r.id, { vendas: vendasEm(somarDias(hoje, -6), hoje), ads: adsNaJanela(periodosR, [], somarDias(hoje, -7), hoje).gasto });
+      // Vendas importadas ANTES do 1º marco da rampa (ficam fora da conta;
+      // o Detalhe oferece somar em vendas_iniciais — 24/10/2026).
+      const ini0 = grav.filter((g) => ["inicio", "subida", "descida", "semana"].includes(g.tipo)).map((g) => String(g.tipo === "semana" && g.periodo_inicio ? g.periodo_inicio : g.data).slice(0, 10)).sort()[0];
+      if (ini0) antes.set(r.id, vendasEm("2000-01-01", somarDias(ini0, -1)));
     }
-    return { registros: juntarRegistros(regs, []), parciais, seteDias };
+    return { registros: juntarRegistros(regs, []), parciais, seteDias, antes };
   }, [rampas, rampasGrupo, rampasKit, registrosGravados, canais, itens, produtos, kits, adsH.periodos, avalH.registros, pedidosPorCanal, skuGrupo, desempenhos, reais.cobertura, hoje, grupos, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
   const registros = vivo.registros;
   const rampasHV = useMemo(() => ({ ...rampasH, registros }), [rampasH, registros]);
@@ -283,7 +288,7 @@ function useCalculoCrescimento() {
         const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === r.produto_id && p.canal_id === r.canal_id);
         const adsAtivo = periodoAtivo(periodosDoItem(adsH.periodos, "produto", r.produto_id, r.canal_id), hoje);
         const sazonal = infoSazonal(quandoVendeDe(produto), calendario, hoje);
-        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null };
+        const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null, antesDoInicio: vivo.antes?.get(r.id) || 0 };
         const regs = registros.filter((g) => g.rampa_id === r.id);
         const est = estadoRampa(r, regs, regras, ctx, hoje);
         return { r, produto, canal, item, cfg, ctx, est, soNoGrupo: soNoGrupo.has(item.id) };
@@ -308,14 +313,14 @@ function useCalculoCrescimento() {
               break;
             }
           }
-          const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null };
+          const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null, antesDoInicio: vivo.antes?.get(r.id) || 0 };
           const est = estadoRampa(r, registros.filter((g) => g.rampa_id === r.id), regras, ctx, hoje);
           return { r, produto: { id: null, nome: kit.nome, sku: kit.sku || "" }, kit, ehKit: true, canal, item, cfg, ctx, est, soNoGrupo: soNoGrupo.has(item.id) };
         })
       )
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, rampasKit, kits, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha, soNoGrupo, vivo.parciais, vivo.seteDias]);
+  }, [rampas, rampasKit, kits, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha, soNoGrupo, vivo.parciais, vivo.seteDias, vivo.antes]);
 
   // Rampa do ANÚNCIO com vários itens (v54, grupoRampa.js): degraus em % do
   // preço salvo de cada opção; mesma estadoRampa por dentro.
@@ -376,7 +381,7 @@ function useCalculoCrescimento() {
       const ini = inicioCobertura(canal);
       if (!ini) return gravadas;
       const { semanas } = semanasAutomaticas({ chave, gravados: gravadas, inicioMin: ini, hoje, vendasEm, cobre: (de, ate) => reais.cobertura.cobre(canal, de, ate), precoEm: () => preco, periodos, funis });
-      return juntarRegistros(gravadas, semanas.filter((w) => w.data > ini));
+      return juntarRegistros(gravadas, semanas.filter((w) => w.tipo === "semana" && w.data > ini));
     };
     const semanasDe = (tipo, id, canalId, rampa, canal, preco, periodos, it) => {
       if (rampa) return registros.filter((g) => g.rampa_id === rampa.r.id && g.tipo === "semana");

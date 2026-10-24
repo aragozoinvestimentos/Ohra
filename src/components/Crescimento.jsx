@@ -10,7 +10,7 @@ import { comCupomAtivo, cuponsAtivos, textoFaixa } from "../lib/cupomLoja.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
-import { adsNaJanela } from "../lib/ads.js";
+import { adsNaJanela, numerosDoPeriodo } from "../lib/ads.js";
 import { numerosAds } from "../lib/anuncios.js";
 
 // "2026-10-03" → "03/10" (sem passar por Date, que no fuso do Brasil voltaria um dia).
@@ -1180,6 +1180,9 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
   const av = adsLinha?.av || null;
   // Ads ao vivo (mesma conta do Painel do anúncio): período ligado pelo CSV.
   const adsVivo = av?.ativo ? numerosAds(adsLinha) : null;
+  // Sem período ligado: o último período encerrado (histórico — 24/10/2026).
+  const ultPer = !av?.ativo ? [...(adsLinha?.periodos || [])].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)))[0] || null : null;
+  const ultNum = ultPer ? numerosDoPeriodo(ultPer, adsLinha.semanas || [], adsLinha.preco, av?.empate ?? e.roasMin) : null;
   const hojeAds = hojeISO();
   const ads7 = adsVivo ? adsNaJanela(adsLinha.periodos, adsLinha.semanas, new Date(new Date(`${hojeAds}T12:00:00`).getTime() - 7 * 86400000).toISOString().slice(0, 10), hojeAds) : null;
   const roasV = adsVivo ? adsVivo.roas : e.roas;
@@ -1234,6 +1237,16 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
           {l.produto.nome} <CanalTag canal={l.canal} />
           <span className="h3-contagem">
             degrau {e.i + 1} de {e.degraus.length} desde {dataBR(l.r.desde)} ({e.dias} dia{e.dias === 1 ? "" : "s"}) · {e.vendasTotal} vendas no total{e.conhecidosTotal > 0 ? ` (${e.conhecidosTotal} de conhecidos)` : ""}
+            {num(l.ctx?.antesDoInicio) > num(l.r.vendas_iniciais) && (
+              <button
+                type="button"
+                className="link-btn"
+                title="Vendas dos pedidos importados de antes do início da rampa — ficam fora da conta. Clique pra somar no total (não mexe nos portões do degrau atual)."
+                onClick={() => supabase.from("rampas_preco").update({ vendas_iniciais: Math.round(num(l.ctx.antesDoInicio)) }).eq("id", l.r.id)}
+              >
+                {" "}+ incluir {num(l.ctx.antesDoInicio) - num(l.r.vendas_iniciais)} de antes do início
+              </button>
+            )}
             {(() => {
               const aj = Array.isArray(l.r.checklist?.ajustesDegrau) ? l.r.checklist.ajustesDegrau : [];
               const u = aj[aj.length - 1];
@@ -1747,6 +1760,18 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
               </div>
             )}
           </div>
+          {ultNum && (
+            <div className="alerta alerta-neutro" style={{ margin: "0 0 6px" }}>
+              <b>
+                Último período de Ads: {dataBR(String(ultPer.inicio).slice(0, 10))} a {ultPer.fim ? dataBR(String(ultPer.fim).slice(0, 10)) : "—"}
+                {ultPer.motivo_fim ? ` (${ultPer.motivo_fim})` : ""}
+              </b>
+              Gastou {BRL(ultNum.gasto || 0)} · {ultNum.vendas || 0} venda{ultNum.vendas === 1 ? "" : "s"} via Ads
+              {ultNum.roas != null ? ` · ROAS ${virgula(ultNum.roas, 1)}` : ""}
+              {ultNum.retorno != null ? ` (retorno ${virgula(ultNum.retorno, 1)}×)` : ""}
+              {ultNum.custoPorVenda != null ? ` · ${BRL(ultNum.custoPorVenda)} por venda` : ""}. Hoje sem Ads próprio — o que a GMV Max da Loja gastar nele aparece em Ads → GMV Max da Loja.
+            </div>
+          )}
           {adsVivo && (
             <p className="hint" style={{ margin: "0 0 6px" }}>
               {adsVivo.cliques ? `${adsVivo.cliques} cliques · ` : ""}
@@ -2059,7 +2084,17 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
   const [precoHoje, setPrecoHoje] = useState(editar ? virgula(num(editar.degraus[editar.degrau_atual])) : "");
   const [aval, setAval] = useState(refazer ? String(refazer.est.avaliacoesTotal ?? "") : "");
   const [nota, setNota] = useState(refazer?.est.nota != null ? virgula(refazer.est.nota, 1) : "");
-  const [vendas, setVendas] = useState(refazer ? String(refazer.est.vendasTotal ?? "") : "");
+  // Vendas já importadas do item neste canal (pedidos da Olist): vêm
+  // preenchidas ao iniciar (24/10/2026 — antes a venda de ontem ficava de fora). Até ontem: a de hoje
+  // já entra pelo "em aberto" da rampa nova.
+  const { pedidosValidos } = useCrescimento();
+  const [vendasDig, setVendas] = useState(refazer ? String(refazer.est.vendasTotal ?? "") : null);
+  const vendasImportadas = useMemo(() => {
+    if (!selItem || !canal) return 0;
+    const ids = new Set(ehKit ? [selItem] : [selItem, ...itens.filter((i) => i.id.startsWith("v:") && i.produtoId === produtoId).map((i) => i.id)]);
+    return (pedidosValidos || []).reduce((t, l) => t + (l.valido && !l.grupo && l.canal_id === canal.id && String(l.data) < hoje && ids.has(l.id_item) ? Number(l.q) || 0 : 0), 0);
+  }, [pedidosValidos, selItem, canal, ehKit, itens, produtoId, hoje]);
+  const vendas = vendasDig ?? (vendasImportadas ? String(vendasImportadas) : "");
   const [salvando, setSalvando] = useState(false);
   // Produto "só na época de…" (Quando vende): rampa sazonal até a data-limite.
   const sazonal = useMemo(() => {
@@ -2301,6 +2336,7 @@ export function IniciarRampaDialog({ dados, rampas, regras, editar: editarProp, 
               <div className="field">
                 <label>Vendas que o anúncio já tem</label>
                 <input type="number" min="0" value={vendas} onChange={(e) => setVendas(e.target.value)} />
+                {vendasImportadas > 0 && <span className="muted-cel">{vendasDig == null ? `${vendasImportadas} pelos pedidos importados` : `pedidos importados: ${vendasImportadas}`}</span>}
               </div>
               <div className="field">
                 <label>Avaliações hoje</label>

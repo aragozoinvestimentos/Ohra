@@ -481,8 +481,10 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const parcialV = ctx.parcial && ctx.parcial.de >= desde ? num(ctx.parcial.vendas) : 0;
   const vendasDesde = semanas.filter((s) => s.data >= desde).reduce((s, r) => s + vendasParaDecisao(r), 0) + parcialV;
   const conhecidosDesde = semanas.filter((s) => s.data >= desde).reduce((s, r) => s + conhecidosDe(r), 0);
-  const vendasTotal = num(rampa.vendas_iniciais) + semanas.reduce((s, r) => s + num(r.vendas), 0) + (ctx.parcial ? num(ctx.parcial.vendas) : 0);
-  const vendasTotalDecisao = num(rampa.vendas_iniciais) + semanas.reduce((s, r) => s + vendasParaDecisao(r), 0) + (ctx.parcial ? num(ctx.parcial.vendas) : 0);
+  // "sobra" = dias soltos antes de um marco (semanasAuto.js): só nas somas.
+  const sobras = regs.filter((r) => r.tipo === "sobra");
+  const vendasTotal = num(rampa.vendas_iniciais) + [...semanas, ...sobras].reduce((s, r) => s + num(r.vendas), 0) + (ctx.parcial ? num(ctx.parcial.vendas) : 0);
+  const vendasTotalDecisao = num(rampa.vendas_iniciais) + [...semanas, ...sobras].reduce((s, r) => s + vendasParaDecisao(r), 0) + (ctx.parcial ? num(ctx.parcial.vendas) : 0);
   const conhecidosTotal = semanas.reduce((s, r) => s + conhecidosDe(r), 0);
   const avaliacoesDesde = Math.max(0, avaliacoesTotal - num(rampa.base_avaliacoes));
   const dias = Math.max(0, diasEntre(desde, hoje));

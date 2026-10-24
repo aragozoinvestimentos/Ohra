@@ -11,7 +11,7 @@ const somar = (iso, n) => {
 
 export default function SemanasFonte({ e, grupo = false, n = 6 }) {
   const regs = e?.registros || [];
-  const semanas = regs.filter((r) => r.tipo === "semana").slice(-n).reverse();
+  const semanas = regs.filter((r) => r.tipo === "semana" || r.tipo === "sobra").slice(-n).reverse();
   const aval = [...regs].reverse().find((r) => r.tipo === "avaliacao") || null;
   const parcial = e?.parcial || null;
   if (!semanas.length && !parcial && !aval) return null;
@@ -33,6 +33,7 @@ export default function SemanasFonte({ e, grupo = false, n = 6 }) {
               {dm(de)}–{dm(ate)}
             </b>{" "}
             · {Number(r.vendas) || 0} venda{Number(r.vendas) === 1 ? "" : "s"}
+            {r.tipo === "sobra" && <span className="faint"> · dias antes da mudança de preço (contam no total, não como semana)</span>}
             {precoTxt(r) && <span className="faint"> · {precoTxt(r)}</span>}
             {r.ads_gasto != null && Number(r.ads_gasto) > 0 && <span className="faint"> · Ads {BRL(Number(r.ads_gasto))}</span>}
             <span className="chips-fonte">

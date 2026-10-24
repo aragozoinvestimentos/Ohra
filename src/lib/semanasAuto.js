@@ -166,6 +166,17 @@ export function semanasAutomaticas({ chave, gravados = [], inicioMin = null, hoj
       });
       a = somarDiasIso(b, 1);
     }
+    // Dias soltos antes da próxima âncora (24/10/2026 — venda do Kit Leão de
+    // 22/10 sumia quando a rampa ganhava um marco em 23/10): viram uma "sobra"
+    // — conta nas vendas no total, mas NÃO é semana (fica fora das regras
+    // semanais, que não devem extrapolar 1–2 dias pra 7).
+    if (prox && limite) {
+      const fim = somarDiasIso(limite, -1) < ontem ? somarDiasIso(limite, -1) : ontem;
+      if (fim >= a && cobre(a, fim)) {
+        const v = vendasEm(a, fim);
+        if (v) semanas.push({ id: `auto|${chave}|sobra|${a}`, auto: true, tipo: "sobra", data: somarDiasIso(fim, 1), periodo_inicio: a, criado_em: `${somarDiasIso(fim, 1)}T00:00:00`, vendas: v, conhecidos: null, preco: precoEm(a), fontes: { pedidos: true } });
+      }
+    }
     // depois da última âncora: dias em aberto até hoje = parcial (ao vivo)
     if (!prox && a <= hoje) parcial = { de: a, ate: hoje, vendas: vendasEm(a, hoje) };
   }
