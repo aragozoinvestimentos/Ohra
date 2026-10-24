@@ -2594,3 +2594,18 @@ td.vendas-opcao { padding-left: 26px; }
 .sede-nomes-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
 .sede-nomes-acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 @media (prefers-reduced-motion: reduce) { .sede-boas { transition: none; } }
+/* Sede em tela cheia (botão ⛶ ou no lugar da tela de descanso) */
+.sede-tela-cheia { position: fixed; inset: 0; z-index: 300; background: #12161d; padding: 10px 14px; display: flex; flex-direction: column; overflow: hidden; }
+.sede-tela-cheia .sede-topo { margin-bottom: 8px; }
+.sede-tela-cheia .sede-titulo { color: #f4efe7; }
+.sede-tela-cheia .sede-kpis > span { background: #1f2530; border-color: #2f3644; color: #b8bec9; }
+.sede-tela-cheia .sede-kpis b { color: #fff; }
+.sede-dica-tela { font-size: 12px; color: #8d95a3; }
+.sede-tela-cheia .sede-grade { display: block; flex: 1; min-height: 0; position: relative; }
+.sede-tela-cheia .sede-grade > div:first-child { height: 100%; display: flex; justify-content: center; align-items: center; }
+.sede-tela-cheia .sede-cena { width: min(100%, calc((100vh - 70px) * 640 / 416)); }
+.sede-tela-cheia .sede-fala { font-size: 15px; max-width: 280px; padding: 5px 11px; }
+.sede-agora-flutua { position: absolute; left: 12px; bottom: 12px; margin: 0; max-width: 420px; background: rgba(255,255,255,.92); color: #18171a; border: none; box-shadow: 0 4px 18px rgba(0,0,0,.3); }
+.sede-agora-flutua li span { color: #6b6a70; }
+.sede-tela-cheia .sede-painel { position: absolute; right: 12px; top: 12px; width: 320px; max-height: calc(100% - 24px); overflow: auto; z-index: 2; }
+.sede-painel-fechar { float: right; }

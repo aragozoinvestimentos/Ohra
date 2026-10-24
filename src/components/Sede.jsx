@@ -13,6 +13,7 @@ import { periodoLigado } from "../lib/ads.js";
 import { hojeSP } from "../lib/datas.js";
 import { ehValido } from "../lib/pedidos.js";
 import { irParaAba } from "../lib/navegar.js";
+import { pedirTelaSede } from "../lib/sedeTela.js";
 import { BRL } from "../lib/format.js";
 import Estado from "./Estado.jsx";
 
@@ -42,7 +43,7 @@ const gravarVisita = (lojaId, v) => {
   }
 };
 
-export default function Sede({ onIrPara, ativo = true }) {
+export default function Sede({ onIrPara, ativo = true, tela = null, onSairTela }) {
   const { lojaId, lojas } = useLoja();
   const nomeLoja = (lojas || []).find((l) => l.id === lojaId)?.nome || "loja";
   const [salvos, setSalvos] = usePreferencia("sede:personagens", {});
@@ -65,6 +66,7 @@ export default function Sede({ onIrPara, ativo = true }) {
   const camadaRef = useRef(null);
   const motor = useRef(null);
   const [sel, setSel] = useState({ sala: "diretoria" });
+  const [painelTela, setPainelTela] = useState(false);
   const chaveMotor = `${ehOhra(nomeLoja) ? "ohra" : "outra"}|${impressoras}|${ELENCO.map((e) => nomes[e.id]).join(",")}`;
   useEffect(() => {
     if (!canvasRef.current || !camadaRef.current) return undefined;
@@ -75,7 +77,10 @@ export default function Sede({ onIrPara, ativo = true }) {
       personagens: { estilo: chaveMotor.split("|")[0], nomes },
       impressoras,
       reduzir,
-      onSala: (k) => setSel({ sala: k }),
+      onSala: (k) => {
+        setSel({ sala: k });
+        setPainelTela(true);
+      },
     });
     motor.current = m;
     return () => {
@@ -199,12 +204,58 @@ export default function Sede({ onIrPara, ativo = true }) {
     if (!q) return;
     if (q.nome) setSel({ pessoa: q });
     else if (q.sala) setSel({ sala: q.sala });
+    setPainelTela(true);
   }
   const abrir = (p) => {
     if (!p.ir?.aba) return;
     if (p.ir.pedido) irParaAba(p.ir.aba, p.ir.pedido);
     else onIrPara?.(p.ir.aba);
   };
+
+  // ---------- tela cheia ----------
+  // Manual: botão (pede tela cheia do navegador junto); sai pelo botão, Esc ou
+  // quando o navegador sai da tela cheia. Descanso: sai ao primeiro movimento.
+  const entrarTela = () => {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+    pedirTelaSede("manual");
+  };
+  const sairTela = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    setPainelTela(false);
+    onSairTela?.();
+  };
+  const sairTelaRef = useRef(sairTela);
+  useEffect(() => {
+    sairTelaRef.current = sairTela;
+  });
+  useEffect(() => {
+    if (!tela) return undefined;
+    const sair = () => sairTelaRef.current();
+    const tecla = (e) => {
+      if (e.key === "Escape") sair();
+    };
+    const fs = () => {
+      if (!document.fullscreenElement && tela === "manual") sair();
+    };
+    let tirar = () => {};
+    // descanso: espera 1 s antes de ouvir (o mesmo movimento que abriu não fecha)
+    const t =
+      tela === "descanso"
+        ? setTimeout(() => {
+            const ev = ["mousemove", "keydown", "pointerdown", "touchstart", "wheel"];
+            ev.forEach((n) => window.addEventListener(n, sair, { passive: true }));
+            tirar = () => ev.forEach((n) => window.removeEventListener(n, sair));
+          }, 1000)
+        : null;
+    window.addEventListener("keydown", tecla);
+    document.addEventListener("fullscreenchange", fs);
+    return () => {
+      clearTimeout(t);
+      tirar();
+      window.removeEventListener("keydown", tecla);
+      document.removeEventListener("fullscreenchange", fs);
+    };
+  }, [tela]);
 
   // ---------- nomes ----------
   const [editando, setEditando] = useState(null);
@@ -218,11 +269,19 @@ export default function Sede({ onIrPara, ativo = true }) {
   };
 
   return (
-    <div className="sede">
+    <div className={`sede${tela ? " sede-tela-cheia" : ""}`}>
       <div className="sede-topo">
-        <button type="button" className="btn btn-sm" onClick={() => onIrPara?.("inicio")}>
-          ← Sair da Sede
-        </button>
+        {tela === "descanso" ? (
+          <span className="sede-dica-tela">mexa o mouse pra voltar</span>
+        ) : tela ? (
+          <button type="button" className="btn btn-sm" onClick={sairTela}>
+            ✕ Sair da tela cheia <small>(Esc)</small>
+          </button>
+        ) : (
+          <button type="button" className="btn btn-sm" onClick={() => onIrPara?.("inicio")}>
+            ← Sair da Sede
+          </button>
+        )}
         <b className="sede-titulo">Sede da {nomeLoja}</b>
         <div className="sede-kpis">
           <span>
@@ -237,13 +296,20 @@ export default function Sede({ onIrPara, ativo = true }) {
           <span>
             Pra decidir <b className={nDecidir ? "sede-ruim" : ""}>{nDecidir}</b>
           </span>
-          <button type="button" className="btn btn-sm" onClick={() => setEditando(editando ? null : { ...nomes })}>
-            ✎ Nomes
-          </button>
+          {!tela && (
+            <>
+              <button type="button" className="btn btn-sm" onClick={() => setEditando(editando ? null : { ...nomes })}>
+                ✎ Nomes
+              </button>
+              <button type="button" className="btn btn-sm" onClick={entrarTela} title="Abrir a Sede na tela inteira">
+                ⛶ Tela cheia
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {editando && (
+      {editando && !tela && (
         <div className="panel sede-nomes">
           <h3>Nomes dos personagens — só aqui na Sede</h3>
           <div className="sede-nomes-grade">
@@ -298,10 +364,10 @@ export default function Sede({ onIrPara, ativo = true }) {
               </div>
             )}
           </div>
-          <div className="sede-agora">
+          <div className={`sede-agora${tela ? " sede-agora-flutua" : ""}`}>
             <b>Acontecendo agora</b>
             <ul>
-              {feed.map((f, i) => (
+              {(tela ? feed.slice(0, 3) : feed).map((f, i) => (
                 <li key={`${f.hora}-${i}`}>
                   <span>{f.hora}</span>
                   {f.txt}
@@ -310,7 +376,13 @@ export default function Sede({ onIrPara, ativo = true }) {
             </ul>
           </div>
         </div>
+        {(!tela || painelTela) && (
         <aside className="panel sede-painel">
+          {tela && (
+            <button type="button" className="btn btn-sm sede-painel-fechar" onClick={() => setPainelTela(false)} aria-label="Fechar">
+              ✕
+            </button>
+          )}
           {sel.pessoa ? (
             <PainelPessoa q={sel.pessoa} nomes={nomes} av={av} pendencias={sede.pendencias} abrir={abrir} />
           ) : (
@@ -320,6 +392,7 @@ export default function Sede({ onIrPara, ativo = true }) {
             Clique nas placas, nas salas e nas pessoas. A Sede só mostra — pra mudar algo, use o botão que leva pra tela certa.
           </div>
         </aside>
+        )}
       </div>
     </div>
   );

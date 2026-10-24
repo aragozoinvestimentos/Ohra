@@ -174,7 +174,7 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
   // ---------- rotinas (só visual) ----------
   const sentar = (p) => () => { p.est = p.empe ? "trabalhando" : "sentado"; p.t = 8 + Math.random() * 14; };
   function proximaTarefa(p) {
-    if (noite && p !== TEO) { ir(p, ENTRADA, () => { p.est = "fora"; p.t = 9999; }); return; }
+    // a Sede trabalha 24 horas (pedido do Gustavo): à noite só a luz muda, ninguém vai embora
     const casa = p.casa, volta = () => ir(p, casa, sentar(p));
     const dado = Math.random();
     if (p.dono) {
@@ -226,7 +226,6 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
   function atualizar(p, dt) {
     if (p.falaT > 0) { p.falaT -= dt; if (p.falaT <= 0) p.fala = null; }
     if (p.est === "andando") { if (!mover(p, dt)) { p.est = "parado"; const f = p.depois; p.depois = null; if (f) f(); } return; }
-    if (p.est === "fora") { if (!noite) { p.px = ENTRADA[0] * T; p.py = ENTRADA[1] * T; ir(p, p.casa, sentar(p)); } return; }
     p.t -= dt;
     p.quadro += dt * (p.est === "sentado" || p.est === "trabalhando" ? 6 : 2);
     if (p.t <= 0) { if (p.depois2) { const f = p.depois2; p.depois2 = null; f(); } else proximaTarefa(p); }
@@ -400,15 +399,13 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
     if (carimbo > 0) { const X = 24 * T + 6, Y = 5 * T - 10; r(X, Y, 22, 9, "#22a35a"); r(X + 3, Y + 3, 16, 3, "#bff0cf"); }
     if (sino > 0) { const X = 36 * T, Y = 20 * T - 18 - (Math.floor(perf / 120) % 2); r(X, Y, 6, 5, "#e8b923"); r(X + 2, Y + 5, 2, 1, "#a87a10"); }
     for (const c of confete) r(c.x, c.y, 2, 2, c.c);
-    if (noite) { ctx.fillStyle = "rgba(12,18,40,.48)"; ctx.fillRect(0, 0, LARG, ALT); for (const [x, y] of [[6, 6], [24, 6], [8, 19], [21, 19], [32, 19], [20, 12]]) { const g = ctx.createRadialGradient(x * T, y * T, 2, x * T, y * T, 46); g.addColorStop(0, "rgba(255,220,150,.22)"); g.addColorStop(1, "rgba(255,220,150,0)"); ctx.fillStyle = g; ctx.fillRect(x * T - 46, y * T - 46, 92, 92); } }
+    if (noite) { ctx.fillStyle = "rgba(12,18,40,.38)"; ctx.fillRect(0, 0, LARG, ALT); for (const [x, y] of [[6, 6], [24, 6], [8, 19], [21, 19], [32, 19], [20, 12]]) { const g = ctx.createRadialGradient(x * T, y * T, 2, x * T, y * T, 46); g.addColorStop(0, "rgba(255,220,150,.22)"); g.addColorStop(1, "rgba(255,220,150,0)"); ctx.fillStyle = g; ctx.fillRect(x * T - 46, y * T - 46, 92, 92); } }
     desenhaFalas();
   }
   let ultimo = 0, raf = 0, rodando = false, relogio = 0;
   function conferirHora() {
     const h = Number(new Intl.DateTimeFormat("pt-BR", { hour: "numeric", hour12: false, timeZone: "America/Sao_Paulo" }).format(new Date())) % 24;
-    const era = noite;
     noite = h >= 20 || h < 7;
-    if (era !== noite) for (const p of PESSOAS) if (p !== TEO) p.t = Math.random() * 2;
   }
   function frame(t) {
     const dt = Math.min(0.05, ultimo ? (t - ultimo) / 1000 : 0);

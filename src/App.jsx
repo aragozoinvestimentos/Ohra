@@ -407,6 +407,27 @@ export default function App() {
     setMenuAberto(false);
   }
 
+  // Sede em tela cheia (botão da Sede, ou no lugar da tela de descanso).
+  const [telaSede, setTelaSede] = useState(null);
+  const abaAntesDaSede = useRef(null);
+  if (tab !== "sede" && telaSede) setTelaSede(null);
+  useEffect(() => {
+    const ouvir = (e) => {
+      const tipo = e.detail;
+      if (tipo === "descanso" && telaSede) return;
+      abaAntesDaSede.current = tipo === "descanso" && tab !== "sede" ? tab : null;
+      setTab("sede");
+      setTelaSede(tipo);
+    };
+    window.addEventListener("ohra:sede-tela", ouvir);
+    return () => window.removeEventListener("ohra:sede-tela", ouvir);
+  });
+  function sairTelaSede() {
+    if (abaAntesDaSede.current) setTab(abaAntesDaSede.current);
+    abaAntesDaSede.current = null;
+    setTelaSede(null);
+  }
+
   // Pedidos de navegação vindos de dentro das telas (lib/navegar.js).
   useEffect(() => {
     const ouvir = (e) => irPara(e.detail.aba);
@@ -543,7 +564,7 @@ export default function App() {
         <section className={`view ${tab === "sede" ? "active" : ""}`}>
           {visitadas.has("sede") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
-              <Sede key={lojaId || "sem-loja"} onIrPara={irPara} ativo={tab === "sede"} />
+              <Sede key={lojaId || "sem-loja"} onIrPara={(k) => { sairTelaSede(); irPara(k); }} ativo={tab === "sede"} tela={tab === "sede" ? telaSede : null} onSairTela={sairTelaSede} />
             </Suspense>
           )}
         </section>

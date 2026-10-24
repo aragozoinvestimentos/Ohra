@@ -6,6 +6,7 @@ import { calcularRanking } from "../hooks/useRankingData.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useMargemDesejada } from "../hooks/useMargemDesejada.js";
+import { pedirTelaSede } from "../lib/sedeTela.js";
 
 const CHAVE_ULTIMA_DATA = "ohra:tela-descanso:ultima-data";
 const LIMITE_INATIVIDADE_MS = 5 * 60 * 1000;
@@ -28,11 +29,13 @@ function hojeStr() {
 //    abaixo: antes qualquer clique fechava, e isso incluía digitar o PIN
 //    de loja pra entrar no app de manhã — a tela nem chegava a aparecer
 //    de verdade, sumia junto com o clique que confirmava o PIN).
-// 2) A qualquer momento, depois de 5 minutos sem nenhuma interação:
-//    versão leve, só frase + versículo — some ao primeiro mexer do mouse.
+// 2) A qualquer momento, depois de 5 minutos sem nenhuma interação: abre a
+//    Sede da loja em tela cheia (24/10/2026, pedido do Gustavo — substituiu
+//    a versão leve com o versículo); some ao primeiro mexer do mouse e volta
+//    pra tela de antes.
 export default function TelaDescanso() {
   const margemLoja = useMargemDesejada();
-  // null | "cheia" | "leve" — primeira abertura do dia já nasce "cheia".
+  // null | "cheia" — primeira abertura do dia já nasce "cheia".
   const [modo, setModo] = useState(() => {
     try {
       return localStorage.getItem(CHAVE_ULTIMA_DATA) !== hojeStr() ? "cheia" : null;
@@ -63,8 +66,8 @@ export default function TelaDescanso() {
   }, []);
 
   // Rastreia atividade globalmente (o app inteiro, não só esta tela) e,
-  // depois de 5 minutos sem nada, dispara a versão leve — só se nenhuma
-  // das duas já estiver na tela.
+  // depois de 5 minutos sem nada, abre a Sede em tela cheia (se a tela do
+  // dia não estiver aberta).
   useEffect(() => {
     ultimaAtividadeRef.current = Date.now();
     function registrar() {
@@ -74,7 +77,8 @@ export default function TelaDescanso() {
     eventos.forEach((ev) => window.addEventListener(ev, registrar, { passive: true }));
     const intervalo = setInterval(() => {
       if (modoRef.current == null && Date.now() - ultimaAtividadeRef.current > LIMITE_INATIVIDADE_MS) {
-        setModo("leve");
+        ultimaAtividadeRef.current = Date.now();
+        pedirTelaSede("descanso");
       }
     }, 15000);
     return () => {
@@ -83,31 +87,7 @@ export default function TelaDescanso() {
     };
   }, []);
 
-  // Versão leve some ao primeiro mexer do mouse — bem baixo atrito, de
-  // propósito, pra nunca atrapalhar um trabalho em andamento.
-  useEffect(() => {
-    if (modo !== "leve") return;
-    function sumir() {
-      setModo(null);
-    }
-    window.addEventListener("mousemove", sumir, { once: true });
-    return () => window.removeEventListener("mousemove", sumir);
-  }, [modo]);
-
   if (!modo) return null;
-
-  if (modo === "leve") {
-    return (
-      <div className="tela-descanso tela-descanso-leve">
-        {logoAtual ? <img className="td-logo" src={logoAtual} alt="" /> : <MarcaApp tamanho={72} className="td-logo" />}
-        <div className="td-frase">{versiculo.frase}</div>
-        <div className="td-versiculo">
-          {versiculo.texto}
-          <span className="ref">{versiculo.referencia}</span>
-        </div>
-      </div>
-    );
-  }
 
   const top3 = calcularRanking(itens, canais, { canalFiltro: "melhor", tipoFiltro: "todos", precos, margemPct: margemLoja, agoraDe }).slice(0, 3);
 
