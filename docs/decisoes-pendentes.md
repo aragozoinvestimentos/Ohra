@@ -39,3 +39,13 @@ Nada daqui foi implementado. Quando o Gustavo pedir, reler e decidir junto.
 - Faturamento atribuído a Ads fora da Shopee: "Dados insuficientes".
 
 Sem SQL (a não ser categoria). Começar pelos itens 1 e 2.
+
+## 3. "Diagnóstico Comercial Inteligente" (2º prompt do ChatGPT, 24/10/2026) — junta com o item 2
+
+Avaliação com os arquivos REAIS da Shopee (16–22/10 e 17–23/10):
+- **Desempenho do produto** (`parentskudetail.*.xlsx`, 5 abas: Melhor Desempenho (só ela tem SKU — o app lê só ela, e ela já traz TODOS os produtos), Recém-Cadastrados, Impulsionar com ADS, Otimize seus ADS, Acompanhar ADS). Colunas que o app NÃO lê hoje e valem: Pedido Feito × Produto Pago, Unidades realizado × pago, **Compradores** (realizado/pago), **Visitantes do Produto (Visita)**, Visualizações da Página, **Visitantes que saíram / Taxa de Rejeição**, **Cliques em buscas** (orgânico), Curtidas, **Visitantes (Adicionar ao Carrinho)**, Unidades (adicionar ao carrinho), Taxa de conversão (carrinho), **Taxa de Recompra** e média de dias pra recompra (da Shopee — resolve a recompra que a Olist não dá), e carrinho POR VARIAÇÃO.
+- **Tráfego do produto** (`producttraffic_Product_Card.*.xlsx`): só impressões/cliques/pedidos/compradores do cartão do produto — nada novo; NÃO importar.
+- **Shopee Ads CSV**: também traz "Adicionar ao carrinho", "Conversões Diretas" × total, ACOS (= 1/ROAS).
+- **GMV Max da Loja CSV**: já lido.
+
+Ordem proposta: (1) semana curta da rampa; (2) ler as colunas novas do Desempenho (sem SQL — vai no `importacoes.dados`); (3) diagnóstico único por anúncio pra TODOS os anúncios (não só rampa), funil de 4 etapas impressão → clique → carrinho → pago, cenários 2, 4, 6, 7, 10 novos, estrutura diagnóstico/evidência/ação/como/prioridade/reavaliar/sucesso, no "O que fazer agora" do Painel + Início; (4) Análise → Diagnóstico (lista + compra mínima pelos pedidos + lucro líquido); (5) histórico de ações + antes × depois (SQL, tabela nova; ações do app entram sozinhas, manuais com 1 clique; "associação, não causa"). Fora: ACOS separado, motor de 9 pesos (usar os 3 grupos + impacto R$/semana), custo compartilhado em pedido, importar o Tráfego.
