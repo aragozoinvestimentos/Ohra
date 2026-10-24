@@ -251,5 +251,6 @@ export const NOVIDADES_CONSULTOR = [
   { data: "2026-10-24", texto: "Sua resposta é opinião, não regra: levo pro Claude validar e, até lá, mostro como contexto junto dos números." },
   { data: "2026-10-24", texto: "A equipe dá ideias (com o crédito de quem teve): kit do que é comprado junto, opção mais vendida como capa, dia forte de vendas e Ads no que vende sozinho." },
   { data: "2026-10-24", texto: "Todo dia dou o “Bom dia” com o dia de ontem — mas só depois de conferir se os arquivos de ontem foram enviados." },
+  { data: "2026-10-24", texto: "As salas da Sede abrem sozinhas pelo que a loja tem (Produção, Estúdio de Live, Revenda) — e dá pra renomear as salas." },
   { data: "2026-10-24", texto: "Aprendo sozinho: guardo as respostas do Claude (e as que você me ensina), o que você costuma aprovar ou adiar, e se o que foi aprovado resolveu." },
 ];

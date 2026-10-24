@@ -8,14 +8,17 @@ import { SALAS_SEDE } from "./sede.js";
 const T = 16, MW = 40, MH = 26, LARG = MW * T, ALT = MH * T;
 export const TAMANHO_SEDE = { largura: LARG, altura: ALT };
 
-export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzir = false, onSala, onConversa }) {
+export function criarSede({ canvas, camada, personagens, salas = {}, impressoras = 1, reduzir = false, onSala, onConversa }) {
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   const r = (x, y, w, h, c) => {
     ctx.fillStyle = c;
     ctx.fillRect(Math.round(x), Math.round(y), w, h);
   };
-  const SALAS = SALAS_SEDE.map((s) => ({ ...s, luz: "o" }));
+  // salas.fechadas = { k: motivo } (o que a loja ainda não tem) · salas.nomes = { k: nome }
+  const FECHADAS = salas.fechadas || {};
+  const SALAS = SALAS_SEDE.map((s) => ({ ...s, nome: salas.nomes?.[s.k] || s.nome, fechada: !!FECHADAS[s.k], luz: "o" }));
+  const abertas = (ks) => ks.filter((k) => !FECHADAS[k]);
   const ENTRADA = [35, 24];
 
   // grade: 0 parede, 1 piso
@@ -23,7 +26,8 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
   const salaDe = [...Array(MH)].map(() => Array(MW).fill(null));
   for (const s of SALAS) for (let y = s.y0; y <= s.y1; y++) for (let x = s.x0; x <= s.x1; x++) { grid[y][x] = 1; salaDe[y][x] = s.k; }
   for (let y = 11; y <= 13; y++) for (let x = 1; x <= 38; x++) { grid[y][x] = 1; salaDe[y][x] = "corredor"; }
-  for (const s of SALAS) { const [px, py] = s.porta; grid[py][px] = 1; salaDe[py][px] = "porta"; }
+  // sala fechada: porta trancada (ninguém entra)
+  for (const s of SALAS) { const [px, py] = s.porta; grid[py][px] = s.fechada ? 0 : 1; salaDe[py][px] = s.fechada ? null : "porta"; }
   grid[ENTRADA[1]][ENTRADA[0]] = 1;
   salaDe[ENTRADA[1]][ENTRADA[0]] = "porta";
   const andavel = grid.map((l) => l.slice());
@@ -58,7 +62,7 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
   estante(1, 2, 3, [["#8b3a2b", "#2f4a6b", "#d9b26f", "#4c6b3c", "#e0874f", "#6b5a8a", "#c9c2b3", "#3b5e7a", "#b8432f"], ["#2f4a6b", "#d9b26f", "#e0874f", "#4c6b3c", "#8b3a2b"], ["#c9c2b3", "#6b5a8a", "#3b5e7a"]]);
   mesa(3, 5, "#6e4a33", true, "G"); cadeira(4, 4);
   mesa(7, 5, "#6e4a33", true, "J"); cadeira(8, 4);
-  sofa(3, 8, 4, "#4a5a6e"); planta(10, 2); planta(1, 8);
+  sofa(3, 8, 4, "#4a5a6e"); planta(11, 8); planta(1, 8); // a planta saiu da frente do termômetro da meta
   // Live
   movel(14, 2, 6, 1, (X, Y) => { r(X, Y - 10, 96, 24, "#f2a7bf"); r(X + 4, Y - 7, 88, 18, "#f7c3d3"); for (let i = 0; i < 6; i++) r(X + 10 + i * 14, Y - 2, 6, 6, i % 2 ? "#fff" : "#e05a7a"); });
   mesa(15, 4, "#f4f1ec", false); movel(15, 4, 2, 1, () => {}, true);
@@ -68,9 +72,9 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
   mesa(24, 5, "#8f7253"); cadeira(25, 4);
   movel(27, 2, 2, 1, (X, Y) => { r(X, Y - 10, 30, 26, "#8d969f"); for (let n = 0; n < 3; n++) { r(X + 2, Y - 8 + n * 8, 26, 6, "#a6aeb6"); r(X + 13, Y - 6 + n * 8, 4, 1, "#555"); } });
   planta(22, 8);
-  // Beleza (vazia, pra crescer)
-  estante(31, 2, 2, [["#f29ab8", "#e05a7a"], ["#fff2f6"], []]);
-  movel(36, 2, 2, 1, (X, Y) => { r(X + 2, Y + 2, 28, 10, "#f4eef0"); r(X + 2, Y + 12, 28, 3, "#d9c9cf"); r(X + 8, Y - 12, 16, 14, "#c9e4f0"); r(X + 7, Y - 13, 18, 1, "#e8c5d0"); r(X + 7, Y + 1, 18, 1, "#e8c5d0"); });
+  // Revenda (produto comprado pronto): caixas de fornecedor e balcão de recebimento/conferência
+  estante(31, 2, 2, [["#b08a5a", "#c9a37a", "#b08a5a"], ["#c9a37a", "#d8b68c"], []]);
+  movel(36, 2, 2, 1, (X, Y) => { r(X + 2, Y + 2, 28, 10, "#a8835e"); r(X + 2, Y + 2, 28, 2, "#c9a37a"); r(X + 2, Y + 12, 28, 3, "#7d5f42"); r(X + 6, Y - 5, 9, 7, "#d8b68c"); r(X + 10, Y - 5, 1, 7, "#a8835e"); r(X + 18, Y - 3, 8, 5, "#f4f1ec"); r(X + 19, Y - 2, 6, 1, "#888"); });
   // Corredor: mural, café, relógio, plantas, bebedouro
   movel(9, 11, 1, 1, () => {}, false);
   movel(30, 11, 2, 1, (X, Y) => { r(X + 2, Y + 3, 28, 11, "#8a6a4a"); r(X + 2, Y + 3, 28, 1, "#a8855f"); r(X + 4, Y - 4, 8, 9, "#2b2b30"); r(X + 6, Y - 2, 4, 2, "#ff6b4a"); r(X + 15, Y, 5, 4, "#fff"); r(X + 22, Y, 5, 4, "#f2e3cf"); });
@@ -125,8 +129,8 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
   function pessoa(id) {
     const casa = CASA[id];
     const p = { id, nome: personagens.nomes[id] || id, funcao: FUNCAO[id], sala: SALA[id], casa, look: LOOKS[id], x: casa[0], y: casa[1], px: casa[0] * T, py: casa[1] * T, cam: [], est: "sentado", t: 2 + Math.random() * 6, quadro: 0, dir: "f", carrega: null, fala: null, falaT: 0, aviso: null, dono: id === "ceo1" || id === "ceo2", empe: ["teo", "duda", "ze", "consultor"].includes(id) };
-    // desligado no "✎ Nomes" (botão ao lado do nome): não aparece nem anda
-    if (personagens.ocultos?.has(id)) {
+    // desligado no "✎ Nomes" (botão ao lado do nome) ou a sala dele está fechada: não aparece nem anda
+    if (personagens.ocultos?.has(id) || (SALA[id] && FECHADAS[SALA[id]])) {
       p.oculto = true;
       p.est = "fora";
     }
@@ -189,7 +193,7 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
     const dado = Math.random();
     if (p.dono) {
       if (p === CEO2 && liveLigada) { ir(p, [16, 6], () => { p.est = "live"; p.t = 30; falar(p, "Oi, gente! 💕", 4, true); }); return; }
-      if (dado < 0.35) { const s = sorteio(["comercial", "producao", "estoque", "financeiro", "live", "beleza"]); ir(p, pontoLivre(s), () => { p.est = "parado"; p.t = 4; falar(p, sorteio(["Como estão as coisas?", "Bora!", "Ficou ótimo", "Me mostra isso?"]), 3); p.depois2 = volta; }); return; }
+      if (dado < 0.35) { const s = sorteio(abertas(["comercial", "producao", "estoque", "financeiro", "live", "revenda"])); ir(p, pontoLivre(s), () => { p.est = "parado"; p.t = 4; falar(p, sorteio(["Como estão as coisas?", "Bora!", "Ficou ótimo", "Me mostra isso?"]), 3); p.depois2 = volta; }); return; }
       if (dado < 0.5) { ir(p, [31, 12], () => { p.est = "parado"; p.t = 4; falar(p, "☕", 3); p.depois2 = volta; }); return; }
       sentar(p)();
       return;
@@ -198,7 +202,7 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
       // o consultor anda pelos setores com a prancheta; com proposta pendente, vai à Diretoria
       p.carrega = "papel";
       if (pendentesConsultor > 0 && dado < 0.4) { ir(p, [6, 7], () => { p.est = "parado"; p.t = 5; falar(p, pendentesConsultor === 1 ? "Tenho uma proposta 📋" : `Tenho ${pendentesConsultor} propostas 📋`, 3.5, true); }); return; }
-      const alvos = SALAS.filter((s) => cheias[s.k] || luzAtual[s.k] === "r" || luzAtual[s.k] === "a").map((s) => s.k);
+      const alvos = SALAS.filter((s) => !s.fechada && (cheias[s.k] || luzAtual[s.k] === "r" || luzAtual[s.k] === "a")).map((s) => s.k);
       const sala = sorteio(alvos.length && dado < 0.8 ? alvos : ["comercial", "producao", "estoque", "financeiro", "live", "diretoria"]);
       ir(p, pontoLivre(sala), () => { p.est = "parado"; p.t = 4 + Math.random() * 4; if (Math.random() < 0.35) falar(p, cheias[sala] ? "Esse setor tá lotado… 📝" : "Hmm, anotando 📝", 2.5); });
       return;
@@ -351,8 +355,8 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
     { const X = 9 * T, Y = 10 * T + 1; r(X - 6, Y, 30, 13, "#b98a5e"); r(X - 5, Y + 1, 28, 11, "#e9d8bf"); r(X - 3, Y + 2, 7, 5, "#fff6a8"); r(X + 6, Y + 3, 7, 5, "#ffd3e0"); r(X + 15, Y + 2, 6, 5, "#cfe8ff"); }
     // LIVE na parede do estúdio
     { const X = 17 * T + 4, Y = 1 * T + 2; r(X, Y, 22, 8, "#2b2b30"); r(X + 2, Y + 2, 3, 3, liveLigada ? (Math.floor(perf / 300) % 2 ? "#ff3b3b" : "#a11") : "#552"); r(X + 7, Y + 3, 12, 2, liveLigada ? "#ff6b6b" : "#666"); }
-    // "espaço pra crescer" na Beleza
-    ctx.setLineDash([3, 3]); ctx.strokeStyle = "#d4a9b8"; ctx.lineWidth = 1; ctx.strokeRect(31 * T + .5, 5 * T + .5, 7 * T, 4 * T); ctx.setLineDash([]);
+    // "espaço pra crescer" na Revenda
+    if (!FECHADAS.revenda) { ctx.setLineDash([3, 3]); ctx.strokeStyle = "#b9a080"; ctx.lineWidth = 1; ctx.strokeRect(31 * T + .5, 5 * T + .5, 7 * T, 4 * T); ctx.setLineDash([]); }
   }
   
   function desenhaBicho(g) {
@@ -385,8 +389,8 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
   for (const s of SALAS) {
     const d = document.createElement("button");
     d.type = "button";
-    d.className = "sede-placa n";
-    d.innerHTML = `<i></i>${s.nome}`;
+    d.className = s.fechada ? "sede-placa fechada" : "sede-placa n";
+    d.innerHTML = s.fechada ? `🔒 ${s.nome} <b>· em breve</b>` : `<i></i>${s.nome}`;
     const [px, py] = s.porta;
     d.style.left = `${((px * T + 8) / LARG) * 100}%`;
     d.style.top = `${((s.y0 > 12 ? (py - 0.2) * T : (py + 0.5) * T) / ALT) * 100}%`;
@@ -435,6 +439,14 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
       ...presentes.map((g) => ({ y: g.y * T + 15, fn: () => desenhaPresente(g) })),
     ];
     fila.sort((a, b) => a.y - b.y).forEach((f) => f.fn());
+    // salas fechadas: luz apagada + fita na porta trancada
+    for (const sl of SALAS) {
+      if (!sl.fechada) continue;
+      ctx.fillStyle = "rgba(20,22,30,.62)";
+      ctx.fillRect(sl.x0 * T, sl.y0 * T - T, (sl.x1 - sl.x0 + 1) * T, (sl.y1 - sl.y0 + 2) * T);
+      const [px, py] = sl.porta;
+      for (let i = 0; i < 4; i++) r(px * T - 4 + i * 6, py * T + 6, 6, 4, i % 2 ? "#2b2b30" : "#f2c230");
+    }
     if (adsOn) { const X = 3 * T + 26, Y = 22 * T - 4; r(X, Y, 5, 5, Math.floor(perf / 250) % 2 ? "#41d27a" : "#1a7a40"); }
     if (carimbo > 0) { const X = 24 * T + 6, Y = 5 * T - 10; r(X, Y, 22, 9, "#22a35a"); r(X + 3, Y + 3, 16, 3, "#bff0cf"); }
     if (sino > 0) { const X = 36 * T, Y = 20 * T - 18 - (Math.floor(perf / 120) % 2); r(X, Y, 6, 5, "#e8b923"); r(X + 2, Y + 5, 2, 1, "#a87a10"); }
@@ -469,6 +481,16 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
 
   // reações aos eventos do app (no app: realtime das tabelas)
   const EVENTOS = {
+    // sala que acabou de abrir (a loja passou a ter o que ela precisa): inauguração
+    salaAberta(info) {
+      const sl = SALAS.find((x) => x.k === info?.k);
+      if (!sl) return;
+      const [px, py] = sl.porta;
+      chamar(CEO1, [px - 1, 12], `${sl.nome} inaugurada! 🎉`);
+      chamar(CEO2, [px + 1, 12], "Que orgulho!");
+      pugsPraDiretoria();
+      setTimeout(() => soltarConfete(px * T + 8, py * T), 2500);
+    },
     produto(info) {
       const g = { x: 6, y: 7 };
       presentes.push(g);
@@ -505,8 +527,9 @@ export function criarSede({ canvas, camada, personagens, impressoras = 1, reduzi
       conversas = conversasNovas;
       pendentesConsultor = pendentes;
       for (const [k, el] of placas) {
-        el.className = `sede-placa ${luz[k] || "n"}${cheias[k] ? " cheia" : ""}`;
-        el.innerHTML = `<i></i>${SALAS.find((s) => s.k === k).nome}${cheias[k] ? " <b>· lotado</b>" : ""}`;
+        const sl = SALAS.find((s) => s.k === k);
+        el.className = sl.fechada ? "sede-placa fechada" : `sede-placa ${luz[k] || "n"}${cheias[k] ? " cheia" : ""}`;
+        el.innerHTML = sl.fechada ? `🔒 ${sl.nome} <b>· em breve</b>` : `<i></i>${sl.nome}${cheias[k] ? " <b>· lotado</b>" : ""}`;
       }
       for (const p of PESSOAS) p.aviso = p.dono || p === CONS ? null : porPessoa[p.id] || null;
       meta.pct = metaPct || 0;

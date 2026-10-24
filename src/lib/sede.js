@@ -7,7 +7,7 @@ export const SALAS_SEDE = [
   { k: "diretoria", nome: "Diretoria", x0: 1, y0: 2, x1: 11, y1: 9, piso: ["#a9774e", "#9c6c45"], porta: [6, 10], aba: "inicio", rotulo: "Abrir o Início" },
   { k: "live", nome: "Estúdio de Live", x0: 13, y0: 2, x1: 20, y1: 9, piso: ["#e9cfd8", "#e0c3cd"], porta: [16, 10], aba: "live", rotulo: "Abrir Live" },
   { k: "financeiro", nome: "Financeiro", x0: 22, y0: 2, x1: 28, y1: 9, piso: ["#d9ded6", "#cfd5cb"], porta: [25, 10], aba: "caixa", rotulo: "Abrir Dinheiro" },
-  { k: "beleza", nome: "Beleza", x0: 30, y0: 2, x1: 38, y1: 9, piso: ["#f1e2e8", "#ead7df"], porta: [34, 10], aba: null, rotulo: null },
+  { k: "revenda", nome: "Revenda", x0: 30, y0: 2, x1: 38, y1: 9, piso: ["#ddd3c4", "#d4c9b8"], porta: [34, 10], aba: null, rotulo: null },
   { k: "comercial", nome: "Comercial", x0: 1, y0: 15, x1: 15, y1: 23, piso: ["#ded6c8", "#d4cbbc"], porta: [8, 14], aba: "anuncios", rotulo: "Abrir Anúncios" },
   { k: "producao", nome: "Produção", x0: 17, y0: 15, x1: 25, y1: 23, piso: ["#b3b2ae", "#a9a8a3"], porta: [21, 14], aba: "farm", rotulo: "Abrir Minha farm" },
   { k: "estoque", nome: "Estoque & Expedição", x0: 27, y0: 15, x1: 38, y1: 23, piso: ["#cdbb9e", "#c3b092"], porta: [32, 14], aba: "importar", rotulo: "Atualizar dados" },
@@ -103,9 +103,31 @@ export function avisosDaSede(pendencias) {
   const luz = {};
   for (const s of SALAS_SEDE) {
     const w = pior(porSala[s.k]);
-    luz[s.k] = w ? LUZ[w.grupo] || "a" : s.k === "beleza" ? "n" : "o";
+    luz[s.k] = w ? LUZ[w.grupo] || "a" : s.k === "revenda" ? "n" : "o";
   }
   const porPessoa = {};
   for (const [id, l] of Object.entries(porPessoaL)) porPessoa[id] = LUZ[pior(l).grupo] || "a";
   return { porSala, luz, porPessoa };
+}
+
+// Salas abertas pelo que a loja TEM (24/10/2026, decisão do Gustavo: 100%
+// automático, sem botão — sala aberta = tem trabalho lá; o que a loja não usa
+// fica fechada com o motivo escrito). Só o NOME da sala é editável (✎ Nomes).
+export function salasDaLoja({ impressoras = [], produtos = [], canais = [], lives = [], temRevenda = false }) {
+  const fechadas = {};
+  const temImpressao = (impressoras || []).some((i) => i.ativa !== false) || (produtos || []).some((p) => p.producao_detalhe && !p.producao_detalhe.sem3d);
+  if (!temImpressao) fechadas.producao = "abre quando você cadastrar a primeira impressora (Produção → Minha farm) ou um produto com custo de impressão";
+  const temCanalLive = (canais || []).some((c) => c.tipo === "tiktok" || c.tipo === "shopee");
+  if (!temCanalLive || !(lives || []).length) fechadas.live = temCanalLive ? "abre quando você criar a primeira live (menu Live)" : "abre quando a loja tiver TikTok ou Shopee e criar a primeira live";
+  if (!temRevenda) fechadas.revenda = "abre quando você cadastrar o primeiro produto de revenda (comprado pronto pra vender)";
+  return fechadas;
+}
+/** Nomes das salas: o gravado em `sede:personagens._salas` por cima do padrão. */
+export function nomesDasSalas(salvos) {
+  const out = {};
+  for (const s of SALAS_SEDE) {
+    const v = salvos?._salas?.[s.k];
+    out[s.k] = typeof v === "string" && v.trim() ? v.trim().slice(0, 22) : s.nome;
+  }
+  return out;
 }

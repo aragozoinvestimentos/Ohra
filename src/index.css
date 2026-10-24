@@ -2694,3 +2694,5 @@ td.vendas-opcao { padding-left: 26px; }
 .bom-dia i { color: var(--st-atencao); font-style: normal; }
 .bom-dia-falta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--st-atencao); font-weight: 600; background: var(--st-atencao-soft); border-radius: 8px; padding: 4px 8px; }
 .bom-dia.compacto { font-size: 12.5px; }
+.sede-placa.fechada { background: #3a3d45; color: #c9ccd3; border-color: #555a66; padding-left: 8px; }
+.sede-placa.fechada b { color: #f2c230; font-weight: 700; }

@@ -7,7 +7,7 @@ import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 import { assinarSede, lerSede } from "../lib/sedeDados.js";
-import { ELENCO, SALAS_SEDE, avisosDaSede, ehOhra, nomesDaLoja, nomesPadrao, ocultosDaLoja, pessoaDoAviso } from "../lib/sede.js";
+import { ELENCO, SALAS_SEDE, avisosDaSede, ehOhra, nomesDaLoja, nomesDasSalas, nomesPadrao, ocultosDaLoja, pessoaDoAviso, salasDaLoja } from "../lib/sede.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useConsultor } from "../hooks/useConsultor.js";
 import { consultoriaVisivel, propostasDaEquipe, sugerirConsultorias } from "../lib/consultor.js";
@@ -116,7 +116,10 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const motor = useRef(null);
   const [sel, setSel] = useState({ sala: "diretoria" });
   const [painelTela, setPainelTela] = useState(false);
-  const chaveMotor = `${ehOhra(nomeLoja) ? "ohra" : "outra"}|${impressoras}|${ELENCO.map((e) => nomes[e.id]).join(",")}|${[...ocultos].sort().join(",")}`;
+  // salas abertas pelo que a loja tem (automático) + nomes das salas (✎ Nomes)
+  const fechadas = useMemo(() => salasDaLoja({ impressoras: cat.impressoras, produtos: cat.produtos, canais: cat.canais, lives }), [cat.impressoras, cat.produtos, cat.canais, lives]);
+  const nomesSalas = nomesDasSalas(salvos);
+  const chaveMotor = `${ehOhra(nomeLoja) ? "ohra" : "outra"}|${impressoras}|${ELENCO.map((e) => nomes[e.id]).join(",")}|${[...ocultos].sort().join(",")}|${Object.keys(fechadas).sort().join(",")}|${Object.values(nomesSalas).join(",")}`;
   const aoConversar = useRef(null);
   useEffect(() => {
     if (!canvasRef.current || !camadaRef.current) return undefined;
@@ -125,6 +128,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
       canvas: canvasRef.current,
       camada: camadaRef.current,
       personagens: { estilo: chaveMotor.split("|")[0], nomes, ocultos },
+      salas: { fechadas, nomes: nomesSalas },
       onConversa: (c) => aoConversar.current?.(c),
       impressoras,
       reduzir,
@@ -142,6 +146,16 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chaveMotor]);
   useEffect(() => motor.current?.ativo(ativo), [ativo, chaveMotor]);
+  // sala que abriu com a Sede aberta (cadastrou a 1ª impressora, criou a 1ª live…) → inauguração
+  const fechadasAntes = useRef(null);
+  const prontoSalas = !cat.carregando && !carregandoLives;
+  useEffect(() => {
+    if (!prontoSalas) return;
+    const antes = fechadasAntes.current;
+    fechadasAntes.current = fechadas;
+    if (!antes) return;
+    for (const k of Object.keys(antes)) if (!fechadas[k]) setTimeout(() => motor.current?.evento("salaAberta", { k }), 600);
+  }, [fechadas, prontoSalas]);
   const producao = av.luz.producao === "r" || av.luz.producao === "a" ? av.luz.producao : null;
   useEffect(() => {
     motor.current?.dados({ luz: av.luz, porPessoa: av.porPessoa, metaPct: sede.kpis?.metaPct || 0, live, ads: adsLigados.length > 0, producao, pendentes: nConsultor, cheiasNovas, conversasNovas: propostas });
@@ -366,7 +380,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const k = sede.kpis;
   const nDecidir = av.porSala.diretoria.length;
   const quemNaSala = (s) => {
-    const ids = { diretoria: ["ceo1", "ceo2"], live: ["ceo2"], financeiro: ["bia"], comercial: ["rafa", "nina", "leo", "celia"], producao: ["teo"], estoque: ["duda", "ze"], beleza: [] }[s] || [];
+    const ids = { diretoria: ["ceo1", "ceo2"], live: ["ceo2"], financeiro: ["bia"], comercial: ["rafa", "nina", "leo", "celia"], producao: ["teo"], estoque: ["duda", "ze"], revenda: [] }[s] || [];
     return ids.map((id) => `${nomes[id]} (${ELENCO.find((e) => e.id === id).funcao})`).join(" · ");
   };
 
@@ -411,7 +425,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
           </button>
           {!tela && (
             <>
-              <button type="button" className="btn btn-sm" onClick={() => setEditando(editando ? null : { ...nomes, _ocultos: [...ocultos] })}>
+              <button type="button" className="btn btn-sm" onClick={() => setEditando(editando ? null : { ...nomes, _ocultos: [...ocultos], _salas: { ...nomesSalas } })}>
                 ✎ Nomes
               </button>
               <button type="button" className="btn btn-sm" onClick={entrarTela} title="Abrir a Sede na tela inteira">
@@ -459,12 +473,35 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
               );
             })}
           </div>
+          <h3>Salas — nome que aparece na placa</h3>
+          <div className="sede-nomes-grade">
+            {SALAS_SEDE.map((sl) => (
+              <div key={sl.k} className="field sede-nome">
+                <span>
+                  {sl.nome}
+                  {fechadas[sl.k] ? " · 🔒 fechada (abre sozinha)" : ""}
+                </span>
+                <input
+                  value={editando._salas?.[sl.k] ?? ""}
+                  maxLength={22}
+                  placeholder={sl.nome}
+                  aria-label={`Nome da sala ${sl.nome}`}
+                  onChange={(ev) => setEditando((x) => ({ ...x, _salas: { ...(x._salas || {}), [sl.k]: ev.target.value } }))}
+                />
+              </div>
+            ))}
+          </div>
           <div className="sede-nomes-acoes">
             <button
               type="button"
               className="btn primary btn-sm"
               onClick={() => {
-                const out = { _ocultos: editando._ocultos || [] };
+                const salasNovas = {};
+                for (const sl of SALAS_SEDE) {
+                  const v = String(editando._salas?.[sl.k] ?? "").trim();
+                  if (v && v !== sl.nome) salasNovas[sl.k] = v;
+                }
+                const out = { _ocultos: editando._ocultos || [], ...(Object.keys(salasNovas).length ? { _salas: salasNovas } : {}) };
                 for (const e of ELENCO) {
                   const v = String(editando[e.id] ?? "").trim();
                   if (v && v !== (padrao[e.id] || "")) out[e.id] = v;
@@ -475,7 +512,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
             >
               Salvar nomes
             </button>
-            <button type="button" className="btn btn-sm" onClick={() => setEditando({ ...padrao, _ocultos: [...ocultosDaLoja(nomeLoja, null)] })}>
+            <button type="button" className="btn btn-sm" onClick={() => setEditando({ ...padrao, _ocultos: [...ocultosDaLoja(nomeLoja, null)], _salas: Object.fromEntries(SALAS_SEDE.map((sl) => [sl.k, sl.nome])) })}>
               Voltar ao padrão
             </button>
             <button type="button" className="btn btn-sm" onClick={() => setEditando(null)}>
@@ -537,7 +574,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
           ) : sel.pessoa ? (
             <PainelPessoa q={sel.pessoa} nomes={nomes} av={av} pendencias={sede.pendencias} abrir={abrir} />
           ) : (
-            <PainelSala k={sel.sala} quem={quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} />
+            <PainelSala k={sel.sala} nome={nomesSalas[sel.sala]} fechada={fechadas[sel.sala]} quem={fechadas[sel.sala] ? null : quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} />
           )}
           <div className="hint" style={{ marginTop: 10 }}>
             Clique nas placas, nas salas e nas pessoas. A Sede só mostra — pra mudar algo, use o botão que leva pra tela certa.
@@ -570,15 +607,23 @@ function ListaAvisos({ avisos, abrir }) {
   );
 }
 
-function PainelSala({ k, quem, avisos, abrir, onIrPara }) {
+function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara }) {
   const s = SALAS_SEDE.find((x) => x.k === k);
   if (!s) return null;
+  if (fechada)
+    return (
+      <>
+        <h3>🔒 {nome || s.nome}</h3>
+        <div className="sede-quem">sala fechada · em breve</div>
+        <div className="sede-ok">Ainda não tem trabalho aqui: {fechada}. A sala abre sozinha (com festa) quando isso existir na loja.</div>
+      </>
+    );
   return (
     <>
-      <h3>{s.nome}</h3>
+      <h3>{nome || s.nome}</h3>
       {quem && <div className="sede-quem">{quem}</div>}
-      {k === "beleza" ? (
-        <div className="sede-ok">Espaço reservado pra revenda de beleza — vai enchendo quando a revenda entrar no app (prateleiras, produtos e alguém cuidando).</div>
+      {k === "revenda" ? (
+        <div className="sede-ok">Espaço da revenda — produto comprado pronto pra vender na sua loja. Vai enchendo quando a revenda entrar no app.</div>
       ) : (
         <ListaAvisos avisos={avisos} abrir={abrir} />
       )}
