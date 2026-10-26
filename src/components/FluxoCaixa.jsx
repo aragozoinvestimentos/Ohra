@@ -37,6 +37,7 @@ import { saldoReserva } from "../lib/vendasMes.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { saldoAds } from "../lib/saldoAds.js";
 import SaldoAdsCaixa from "./SaldoAdsCaixa.jsx";
+import AReceberCaixa from "./AReceberCaixa.jsx";
 import Payoff from "./Payoff.jsx";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 
@@ -625,6 +626,7 @@ export default function FluxoCaixa({ onToast }) {
           </ResumoFixo>
 
           <SaldoAdsCaixa s={saldoDeAds} hoje={hoje} onRecarga={abrirRecargaAds} nomeDe={nomeDoPeriodoAds} />
+          <AReceberCaixa />
 
           {nPendencias > 0 && (
             <div className={`pendencias-caixa${verPendentes ? " aberto" : ""}`}>

@@ -6,7 +6,7 @@
 // vai pro Fluxo de Caixa (só ENTREGUES — enviado é "a receber", fora do saldo).
 // Nunca guarda nome, CPF, endereço nem telefone do cliente.
 import { canalComEmbalagem } from "./embalagemCanal.js";
-import { lucroNoPreco } from "./escada.js";
+import { lucroNoPreco, taxasNoPreco } from "./escada.js";
 import { dataSP } from "./datas.js";
 
 const num = (v) => {
@@ -189,7 +189,19 @@ export function enriquecer(pedidos, { itens, canais, cfgDoProduto, itemNoCanal =
     // skuExato = o SKU do pedido é o do item (ou o de uma opção de anúncio com vários itens);
     // false = ligado só pela regra do "começo do SKU" (aviso em Atualizar dados).
     const skuExato = !item0 ? null : !!(op && porId.has(op.itemId)) || normSku(p.sku) === normSku(item0.sku);
-    return { ...p, id_item: id, item, grupo, canal, q, pago, bruto: valorBruto(p), lucro, recebe: lucro != null ? lucro + custo : pago, custo, valido: ehValido(p), naoPago: ehNaoPago(p.situacao), entregue: ehEntregue(p.situacao), skuExato };
+    // recebe = o REPASSE da plataforma: pago − comissão − taxa fixa (26/10/2026,
+    // conferido com a Minha Renda da Shopee e a liquidação do TikTok). O imposto %
+    // e os custos fixos % do canal NÃO saem do repasse — ficam em `imposto` e só
+    // descontam do lucro. taxas = tudo que sai do pago antes de repor (repasse + imposto).
+    let recebe = pago;
+    let imposto = 0;
+    if (canal && pago > 0) {
+      const cfg = cfgDoProduto && item ? cfgDoProduto(item.produtoId || (id && id.startsWith("p:") ? id.slice(2) : null)) : null;
+      const t = taxasNoPreco(canal, pago / q, item ? num(item.peso) : 0, cfg);
+      recebe = (pago / q) * (1 - t.comissaoPct) * q - t.taxaFixa * q;
+      imposto = pago * (num(canal.imposto_pct) + num(canal.custos_fixos_pct));
+    }
+    return { ...p, id_item: id, item, grupo, canal, q, pago, bruto: valorBruto(p), lucro, recebe, imposto, taxas: pago - recebe + imposto, custo, valido: ehValido(p), naoPago: ehNaoPago(p.situacao), entregue: ehEntregue(p.situacao), skuExato };
   });
 }
 
@@ -229,7 +241,7 @@ export function caixaDosPedidos(linhas) {
   const fmt = (x, txt) => ({ ...x, valor: cent(x.valor), n: x.pedidos.size, descricao: `${nome(x.plataforma)} ${dm(x.semana)}–${dm(somarDias(x.semana, 6))} · ${x.pedidos.size} ${txt}` });
   return {
     lancamentos: [...lanc.values()].map((x) => fmt(x, x.plataforma === "fisico" ? (x.pedidos.size === 1 ? "venda" : "vendas") : x.pedidos.size === 1 ? "pedido entregue" : "pedidos entregues")),
-    aReceber: [...arec.values()].map((x) => fmt(x, "enviados (não entregues)")),
+    aReceber: [...arec.values()].map((x) => fmt(x, "pagos, ainda não entregues")),
   };
 }
 

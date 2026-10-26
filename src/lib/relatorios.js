@@ -72,7 +72,7 @@ function quebraDoDinheiro(pedidos, de, ate) {
     const d = String(p.data).slice(0, 10);
     if (d < de || d > ate) continue;
     vendas += num(p.pago);
-    taxas += Math.max(0, num(p.pago) - num(p.recebe));
+    taxas += Math.max(0, num(p.taxas ?? num(p.pago) - num(p.recebe)));
     repor += num(p.custo);
   }
   return { vendas, taxas, repor };

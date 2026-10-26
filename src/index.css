@@ -2717,3 +2717,7 @@ td.vendas-opcao { padding-left: 26px; }
 .origem-op.on { border: 2px solid var(--accent); padding: 9px 11px; background: color-mix(in oklab, var(--accent) 7%, var(--surface)); }
 .origem-op.on b { color: var(--accent); }
 @media (max-width: 760px) { .origem-produto { grid-template-columns: 1fr; } }
+
+/* Caixa → A receber das plataformas (26/10/2026) */
+.areceber-caixa{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:8px 14px;margin:0 0 10px;border:1px dashed var(--border);border-radius:12px;font-size:13px}
+.areceber-caixa .faint{color:var(--ink-faint);font-size:12px}

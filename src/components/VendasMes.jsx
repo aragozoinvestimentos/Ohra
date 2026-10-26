@@ -422,7 +422,7 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
                                 <small>Por venda (média)</small>
                                 <b>{BRL(l.faturamento / l.unidades)}</b>
                                 <span>
-                                  recebe {BRL(l.recebe / l.unidades)} − repor {BRL(l.repor / l.unidades)} = lucro {BRL(l.lucro / l.unidades)}
+                                  recebe {BRL(l.recebe / l.unidades)} − repor {BRL(l.repor / l.unidades)}{l.imposto > 0.005 ? ` − imposto ${BRL(l.imposto / l.unidades)}` : ""} = lucro {BRL(l.lucro / l.unidades)}
                                 </span>
                               </div>
                               <div className="kv-cel">

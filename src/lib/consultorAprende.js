@@ -245,6 +245,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-26", texto: "O que vai pro Caixa pelas vendas importadas agora é o repasse de verdade da plataforma (pago − comissão − taxa fixa), conferido com a Minha Renda da Shopee. O imposto % do canal só desconta do lucro. Caixa mostra “A receber das plataformas” e Atualizar dados tem a conferência com a Minha Renda." },
   { data: "2026-10-26", texto: "Relatório de Ads com número real: lucro por venda dos pedidos pagos (com promo e cupom), vendas do CSV nunca acima dos pedidos pagos, “Sobrou depois do Ads”, situação de hoje (ligado/pausado/encerrado) e o que fazer. GMV Max da Loja entra pela média da loja." },
   { data: "2026-10-26", texto: "Queda de vendas que veio do Ads pausado não vira proposta de análise — era venda do Ads (o relatório de Ads mostra se ele se pagava)." },
   { data: "2026-10-26", texto: "Quando o produto nº 1 (≥ 50% do lucro) é de época, proponho começar a lançar um produto de ano todo, com a data limite (45 dias antes da data)." },

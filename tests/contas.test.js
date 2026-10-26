@@ -321,3 +321,20 @@ describe("Consultor: queda por Ads pausado e produto novo de época", () => {
     expect(comAds.some((c) => c.chave.startsWith("queda|"))).toBe(false);
   });
 });
+
+describe("Repasse dos pedidos = Minha Renda da Shopee (26/10/2026)", () => {
+  it("recebe = pago − comissão − taxa fixa; imposto do canal só sai do lucro", async () => {
+    const { enriquecer, caixaDosPedidos } = await import("../src/lib/pedidos.js");
+    const canais = [{ id: "s", tipo: "shopee", imposto_pct: 0.02, custos_fixos_pct: 0 }, { id: "t", tipo: "tiktok", imposto_pct: 0.02 }];
+    const itens = [{ id: "p:ch", custoTotal: 2, peso: 30 }];
+    const ped = (pedido, canal_id, unit, desc, situacao) => ({ pedido, canal_id, item_tipo: "produto", item_id: "ch", quantidade: 1, valor_unitario: unit, desconto_pedido: desc, situacao, data: "2026-10-06" });
+    const ls = enriquecer([ped("a", "s", 10.59, 0.22, "Entregue"), ped("b", "s", 19.96, 0.4, "Enviado"), ped("c", "t", 17.9, 0, "Entregue")], { itens, canais });
+    expect(ls[0].recebe).toBeCloseTo(3.8, 2); // chaveiro real: rendeu R$ 3,79/3,80
+    expect(ls[1].recebe).toBeCloseTo(11.15, 2); // kit 2 real: R$ 11,15
+    expect(ls[2].recebe).toBeCloseTo(11.04, 2); // TikTok, liquidação real 21/10
+    expect(ls[0].imposto).toBeCloseTo(0.2074, 3);
+    expect(ls[0].lucro).toBeCloseTo(3.8 - 2 - 0.2074, 2); // lucro continua descontando o imposto
+    const c = caixaDosPedidos(ls);
+    expect(c.aReceber[0].descricao).toContain("pagos, ainda não entregues");
+  });
+});

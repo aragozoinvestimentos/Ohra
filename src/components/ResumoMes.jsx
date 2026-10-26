@@ -33,7 +33,7 @@ export default function ResumoMes() {
 
   const r = useMemo(() => {
     const ls = (cres.pedidosValidos || []).filter((p) => p.valido && String(p.data) >= de && String(p.data) <= ate);
-    const t = { pedidos: new Set(), un: 0, bruto: 0, pago: 0, recebe: 0, custo: 0, lucro: 0, semCusto: 0 };
+    const t = { pedidos: new Set(), un: 0, bruto: 0, pago: 0, recebe: 0, taxas: 0, custo: 0, lucro: 0, semCusto: 0 };
     const porCanal = new Map();
     const porAnuncio = new Map();
     for (const p of ls) {
@@ -42,14 +42,16 @@ export default function ResumoMes() {
       t.bruto += num(p.bruto);
       t.pago += num(p.pago);
       t.recebe += num(p.recebe);
+      t.taxas += num(p.taxas ?? num(p.pago) - num(p.recebe));
       t.custo += num(p.custo);
       if (p.lucro == null) t.semCusto++;
       t.lucro += num(p.lucro);
       const kc = p.canal?.id || "fisico";
-      const c = porCanal.get(kc) || { canal: p.canal, un: 0, pago: 0, recebe: 0, custo: 0, lucro: 0 };
+      const c = porCanal.get(kc) || { canal: p.canal, un: 0, pago: 0, recebe: 0, taxas: 0, custo: 0, lucro: 0 };
       c.un += num(p.q);
       c.pago += num(p.pago);
       c.recebe += num(p.recebe);
+      c.taxas += num(p.taxas ?? num(p.pago) - num(p.recebe));
       c.custo += num(p.custo);
       c.lucro += num(p.lucro);
       porCanal.set(kc, c);
@@ -60,7 +62,7 @@ export default function ResumoMes() {
         const a = porAnuncio.get(ka) || { itemId: p.grupo ? `g:${p.grupo.id}` : itemId, canal: p.canal, nome, un: 0, pago: 0, taxas: 0, custo: 0, lucro: 0 };
         a.un += num(p.q);
         a.pago += num(p.pago);
-        a.taxas += Math.max(0, num(p.pago) - num(p.recebe));
+        a.taxas += Math.max(0, num(p.taxas ?? num(p.pago) - num(p.recebe)));
         a.custo += num(p.custo);
         a.lucro += num(p.lucro);
         porAnuncio.set(ka, a);
@@ -77,7 +79,7 @@ export default function ResumoMes() {
 
   const { t, ads } = r;
   const descontos = Math.max(0, t.bruto - t.pago);
-  const taxas = Math.max(0, t.pago - t.recebe);
+  const taxas = Math.max(0, t.taxas);
   const sobra = t.lucro - ads;
   const base = t.pago || 1;
   const partes = [
@@ -161,7 +163,7 @@ export default function ResumoMes() {
                     <td>{c.canal ? <CanalTag canal={c.canal} /> : "Venda física"}</td>
                     <td className="num">{c.un}</td>
                     <td className="num">{BRL(c.pago)}</td>
-                    <td className="num">{BRL(Math.max(0, c.pago - c.recebe))}</td>
+                    <td className="num">{BRL(Math.max(0, c.taxas))}</td>
                     <td className="num">{BRL(c.custo)}</td>
                     <td className="num">{BRL(c.lucro)}</td>
                   </tr>

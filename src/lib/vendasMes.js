@@ -40,7 +40,7 @@ const ID_PREFIXO = { produto: "p", variacao: "v", kit: "k" };
 export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros = [], afRegistros = [], organicas = [], itens = [], canais = [], cfgDoProduto = () => null, pedidos = [], cobertura = null, itemNoCanal = null }) {
   const porChave = new Map();
   const itemDe = (tipo, id) => itens.find((i) => i.id === `${ID_PREFIXO[tipo] || "p"}:${id}`) || null;
-  const novaLinha = (chave, item, canal) => porChave.get(chave) || { chave, item, canal, unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, ads: 0, comissao: 0, semanas: 0, aMao: 0, real: 0 };
+  const novaLinha = (chave, item, canal) => porChave.get(chave) || { chave, item, canal, unidades: 0, faturamento: 0, recebe: 0, repor: 0, imposto: 0, lucro: 0, ads: 0, comissao: 0, semanas: 0, aMao: 0, real: 0 };
   const coberto = (canal, data) => !!(cobertura && canal && cobertura.cobre(canal, diaFimRegistro(data)));
   const somar = ({ tipo, id, canalId, unidades, preco, ads, comissao, aMao = false, soCustos = false }) => {
     const item = itemDe(tipo, id);
@@ -129,6 +129,7 @@ export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros
     l.unidades += p.q;
     l.faturamento += p.pago;
     l.recebe += p.recebe;
+    l.imposto += p.imposto || 0;
     l.repor += p.custo;
     l.lucro += p.lucro ?? 0;
     l.real += p.q;
@@ -136,7 +137,7 @@ export function vendasDoMes({ mes, rampas = [], rampasGrupo = [], rampaRegistros
   }
 
   const linhas = [...porChave.values()]
-    .map((l) => ({ ...l, faturamento: cent(l.faturamento), recebe: cent(l.recebe), repor: cent(l.repor), lucro: cent(l.lucro), ads: cent(l.ads), comissao: cent(l.comissao) }))
+    .map((l) => ({ ...l, faturamento: cent(l.faturamento), recebe: cent(l.recebe), repor: cent(l.repor), imposto: cent(l.imposto || 0), lucro: cent(l.lucro), ads: cent(l.ads), comissao: cent(l.comissao) }))
     .sort((a, b) => b.lucro - a.lucro);
   const soma = (k) => cent(linhas.reduce((t, l) => t + l[k], 0));
   const total = { unidades: linhas.reduce((t, l) => t + l.unidades, 0), faturamento: soma("faturamento"), recebe: soma("recebe"), repor: soma("repor"), lucro: soma("lucro"), ads: soma("ads"), comissao: soma("comissao") };
@@ -164,7 +165,7 @@ export function saldoReserva(registros = []) {
 
 // Vários meses juntos (19/10/2026, filtro "últimos N meses / todo o período"
 // em Vendas do mês): soma as linhas de cada mês pela mesma chave.
-const CAMPOS_SOMA = ["unidades", "faturamento", "recebe", "repor", "lucro", "ads", "comissao", "semanas", "aMao", "real"];
+const CAMPOS_SOMA = ["unidades", "faturamento", "recebe", "repor", "imposto", "lucro", "ads", "comissao", "semanas", "aMao", "real"];
 export function juntarMeses(resultados = []) {
   const porChave = new Map();
   const total = { unidades: 0, faturamento: 0, recebe: 0, repor: 0, lucro: 0, ads: 0, comissao: 0, real: 0, adsAnuncios: 0, sobra: 0 };
@@ -176,7 +177,7 @@ export function juntarMeses(resultados = []) {
     }
     for (const c of Object.keys(total)) total[c] += num(r.total[c]);
   }
-  const linhas = [...porChave.values()].map((l) => ({ ...l, faturamento: cent(l.faturamento), recebe: cent(l.recebe), repor: cent(l.repor), lucro: cent(l.lucro), ads: cent(l.ads), comissao: cent(l.comissao) })).sort((a, b) => b.lucro - a.lucro);
+  const linhas = [...porChave.values()].map((l) => ({ ...l, faturamento: cent(l.faturamento), recebe: cent(l.recebe), repor: cent(l.repor), imposto: cent(l.imposto || 0), lucro: cent(l.lucro), ads: cent(l.ads), comissao: cent(l.comissao) })).sort((a, b) => b.lucro - a.lucro);
   for (const c of Object.keys(total)) total[c] = c === "unidades" || c === "real" ? total[c] : cent(total[c]);
   return { linhas, total };
 }

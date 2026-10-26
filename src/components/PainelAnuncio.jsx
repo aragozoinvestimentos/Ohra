@@ -499,7 +499,7 @@ function AbaVendas({ l, v, vAnt, pedP, de, hoje, dias, esc }) {
     porItem.set(k, x);
   }
   const ticket = pedP.length ? v.fat / new Set(pedP.map((p) => p.pedido)).size : null;
-  const taxas = pedP.reduce((t, p) => t + Math.max(0, num(p.pago) - num(p.recebe)), 0);
+  const taxas = pedP.reduce((t, p) => t + Math.max(0, num(p.taxas ?? num(p.pago) - num(p.recebe))), 0);
   const repor = pedP.reduce((t, p) => t + num(p.custo), 0);
   const seta = (a, b) => (b > 0 ? `${a >= b ? "↑" : "↓"} ${Math.abs(Math.round(((a - b) / b) * 100))}% vs ${dias} dias antes` : "sem base pra comparar");
   return (

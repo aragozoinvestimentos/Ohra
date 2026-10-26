@@ -504,6 +504,19 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   const recentes = (lista) => [...lista].sort((a, b) => b.semana.localeCompare(a.semana)).slice(0, 8);
   const totRec = caixa.lancamentos.reduce((t, x) => t + x.valor, 0);
   const totArec = caixa.aReceber.reduce((t, x) => t + x.valor, 0);
+  // Conferência por plataforma (26/10/2026): o total do app (todos os pedidos
+  // importados, recebido + a receber) tem que bater com o total da plataforma.
+  const conferencia = (() => {
+    const m = new Map();
+    for (const [lista, campo] of [[caixa.lancamentos, "rec"], [caixa.aReceber, "arec"]])
+      for (const x of lista) {
+        if (x.plataforma === "fisico") continue;
+        const c = m.get(x.plataforma) || { plat: x.plataforma, nome: PLATAFORMAS.find((p) => p.id === x.plataforma)?.nome || x.plataforma, rec: 0, arec: 0 };
+        c[campo] += x.valor;
+        m.set(x.plataforma, c);
+      }
+    return [...m.values()];
+  })();
 
   if (!ped.disponivel)
     return (
@@ -837,7 +850,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       <div className="panel">
         <h3 className="section-title">
           O que foi pro Fluxo de Caixa
-          <Ajuda texto="Uma entrada por plataforma × semana com os pedidos ENTREGUES (o que a plataforma repassa = pago pelo cliente − taxas do canal, com as taxas de hoje) e uma por semana das vendas físicas. A receber (enviado, ainda não entregue) só aparece aqui: não soma no saldo nem na projeção. Reenviando o arquivo, o que virou Entregue passa pra recebido e o que foi cancelado/devolvido sai. Se já houver uma entrada de venda lançada à mão na mesma semana e canal, o app avisa (pra não contar duas vezes)." />
+          <Ajuda texto="Uma entrada por plataforma × semana com os pedidos ENTREGUES (o que a plataforma repassa = pago pelo cliente − comissão − taxa fixa; o imposto/custos fixos % do canal não saem do repasse, só do lucro) e uma por semana das vendas físicas. A receber (pago, ainda não entregue) só aparece aqui: não soma no saldo nem na projeção. Reenviando o arquivo, o que virou Entregue passa pra recebido e o que foi cancelado/devolvido sai. Se já houver uma entrada de venda lançada à mão na mesma semana e canal, o app avisa (pra não contar duas vezes)." />
           <span className="dir">uma linha por plataforma × semana</span>
         </h3>
         <div className="ana-caixa-resumo">
@@ -854,6 +867,16 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
             </div>
           ))}
         {!caixa.lancamentos.length && !caixa.aReceber.length && <div className="empty">Nada ainda — importe os pedidos ou registre uma venda física.</div>}
+        {conferencia.map((c) => (
+          <div key={c.plat} className="ana-caixa-lin">
+            <span>
+              <b>Conferir com a {c.nome}:</b> total {BRL(c.rec + c.arec)} (recebido {BRL(c.rec)} + a receber {BRL(c.arec)})
+              {c.plat === "shopee" ? " — deve bater com Completos + Pendente da Minha Renda. O “recebido” daqui conta na entrega; a Shopee libera alguns dias depois, então lá ele ainda aparece em Pendente." : " — deve bater com o que a plataforma mostra liberado + pendente."}
+            </span>
+            <span />
+            <b />
+          </div>
+        ))}
         {Object.values(avisos).flat().filter((a) => /caixa/.test(a)).map((a) => <div key={a} className="ana-aviso" style={{ margin: "0 14px 10px" }}>⚠ {a}</div>)}
       </div>
 
