@@ -106,8 +106,8 @@ export default function AvaliacoesBloco({ canal, cres, esc, hoje, onToast }) {
           </button>
         ))}
         {!outro ? (
-          <button type="button" className="chip-aval chip-outro" onClick={() => setOutro(true)}>
-            + outro produto
+          <button type="button" className="btn btn-mini" onClick={() => setOutro(true)} title="Pra avaliação de venda antiga ou de qualquer anúncio — não precisa ter venda nova">
+            + Lançar avaliação de qualquer produto
           </button>
         ) : (
           <select value={sel && !vendeu.some((v) => v.chave === sel) ? sel : ""} onChange={(e) => escolher(e.target.value || null)} aria-label="Outro produto" style={{ width: "auto", maxWidth: 280 }}>
@@ -118,7 +118,7 @@ export default function AvaliacoesBloco({ canal, cres, esc, hoje, onToast }) {
           </select>
         )}
       </div>
-      {!vendeu.length && !sel && <div className="ana-relat-onde">Nada vendeu na {canal.nome} desde a última atualização das avaliações — nada a fazer aqui hoje.</div>}
+      {!vendeu.length && !sel && <div className="ana-relat-onde">Nada vendeu na {canal.nome} desde a última atualização das avaliações. Chegou avaliação de uma venda antiga? Use “+ Lançar avaliação de qualquer produto”.</div>}
 
       {sel && (
         <div className="ana-aval-form">
