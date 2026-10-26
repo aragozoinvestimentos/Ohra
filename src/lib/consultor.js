@@ -3,6 +3,8 @@
 // "expansão do ambiente" quando um setor fica cheio) e o pacote "Levar pro
 // Claude". Só LÊ — gravações em consultorAcoes.js.
 import { adsNoPeriodo, somaPedidos } from "./resumoLoja.js";
+import { adsNaJanela } from "./ads.js";
+import { infoSazonal, quandoVendeDe } from "./calendario.js";
 import { BRL } from "./format.js";
 
 const num = (v) => Number(v) || 0;
@@ -221,10 +223,11 @@ const REGRAS = {
   expedicaoPedidosDia: 8,
   expedicaoCrescimento: 1.5,
   minPorPedido: 5, // embalar + etiqueta + postar, estimado
+  lancarAntes: 45, // produto novo: lançar até N dias antes da data da época
 };
 
 export function sugerirConsultorias(ctx) {
-  const { pedidos, linhasAds, hoje, pendencias = [], produtos = [], kits = [], impressoras = [], farmConfig = null } = ctx;
+  const { pedidos, linhasAds, hoje, pendencias = [], produtos = [], kits = [], kitProdutos = [], impressoras = [], farmConfig = null, cal = null } = ctx;
   const out = [];
   const nomeDe = (k) => (k.startsWith("p:") ? produtos.find((p) => p.id === k.slice(2))?.nome : kits.find((x) => x.id === k.slice(2))?.nome);
   const d14 = somarDias(hoje, -13), d28 = somarDias(hoje, -27), d30 = somarDias(hoje, -29);
@@ -236,6 +239,14 @@ export function sugerirConsultorias(ctx) {
     const at = atual.get(ant.chave) || { unidades: 0, lucro: 0 };
     if (at.unidades > ant.unidades * REGRAS.quedaPct) continue;
     const queda = 1 - at.unidades / ant.unidades;
+    // Queda que veio do Ads pausado/reduzido (26/10/2026, Chaveiro Ore e
+    // Confie): as vendas via Ads que sumiram explicam ≥ metade da queda →
+    // é esperado, não vira proposta de análise (o Ads e o relatório de Ads
+    // já mostram se ele se pagava).
+    const doItem = (linhasAds?.linhas || []).filter((l) => `${l.tipo === "kit" ? "k" : "p"}:${l.id}` === ant.chave);
+    const viaAds = (de, ate) => doItem.reduce((s, l) => s + num(adsNaJanela(l.periodos || [], l.semanas || [], de, ate)?.vendas), 0);
+    const perdaAds = viaAds(d28, somarDias(d14, -1)) - viaAds(d14, hoje);
+    if (perdaAds > 0 && perdaAds >= (ant.unidades - at.unidades) / 2) continue;
     out.push({
       chave: `queda|${ant.chave}`,
       sala: "comercial",
@@ -262,6 +273,27 @@ export function sugerirConsultorias(ctx) {
       responderia: "Quais produtos têm potencial pra dividir esse peso e o que fazer pra puxar eles.",
       ganho: "Menos risco — não é ganho direto, é proteção.",
     });
+  }
+  // 2b) o nº 1 é de ÉPOCA → começar a lançar um produto de ano todo (26/10/2026,
+  // validado com o Gustavo: uma regra só — ≥ 50% do lucro de 30 dias e "só na
+  // época de…"; o lucro dele cai com data marcada). Prazo = 45 dias antes da data.
+  if (top && lucro30 >= REGRAS.concentracaoMinLucro && top.lucro / lucro30 >= REGRAS.concentracao) {
+    const pecas = top.chave.startsWith("k:") ? kitProdutos.filter((kp) => kp.kit_id === top.chave.slice(2)).map((kp) => produtos.find((p) => p.id === kp.produto_id)) : [produtos.find((p) => p.id === top.chave.slice(2))];
+    const epoca = pecas.map((p) => quandoVendeDe(p)).find((q) => q?.tipo === "epoca");
+    const inf = epoca ? infoSazonal(epoca, cal, hoje) : null;
+    if (inf && inf.fase !== "entressafra" && inf.fase !== "aguardando") {
+      const prazo = somarDias(inf.evento, -REGRAS.lancarAntes);
+      out.push({
+        chave: `lancar|${top.chave}|${inf.evento.slice(0, 4)}`,
+        sala: "diretoria",
+        tipo: "analise",
+        titulo: `Comece a lançar um produto novo — o ${top.nome} é de época`,
+        viu: `Ele fez ${pct(top.lucro / lucro30)} do lucro dos últimos 30 dias e só vende até ${inf.nome} (${dm(inf.evento)}).`,
+        porque: `Depois de ${inf.nome} esse lucro cai com data marcada. Pra o produto novo já estar vendendo, o ideal é lançar até ${dm(prazo)}${prazo < hoje ? " — já passou, então quanto antes melhor" : ""}.`,
+        responderia: "Qual produto de ano todo lançar. Pistas: margem igual ou acima da desejada, bom lucro por hora de impressora, algo que já converte bem com pouco tráfego (Análise → Diagnóstico) ou que aparece em “comprados juntos”.",
+        ganho: "Manter o lucro da loja depois da época, em vez de cair junto.",
+      });
+    }
   }
   // 3) Ads comendo o lucro
   const s30 = somaPedidos(pedidos, d30, hoje);
@@ -368,7 +400,15 @@ export function consultoriaVisivel(sug, registro, hoje, espera = 14) {
 }
 
 // ---------- pacote "Levar pro Claude" ----------
-export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, uso, kpis, aprendizado = [], opinioes = [] }) {
+// O "o que vi" fica GRAVADO no dia em que ele aprovou (26/10/2026, Gustavo:
+// "esses números são de quando sugeriu ou se atualizam?") — o pacote mostra a
+// data deles e, embaixo, o mesmo assunto com os números de HOJE (`atuais` =
+// sugestões calculadas agora; sumiu = o problema não aparece mais).
+const quandoAprovou = (r) => {
+  const h = (Array.isArray(r.dados?.historico) ? r.dados.historico : []).filter((x) => x.status === "quero" || x.status === "aprovada");
+  return h.length ? h[h.length - 1].data : String(r.atualizado_em || r.criado_em || "").slice(0, 10);
+};
+export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, uso, kpis, aprendizado = [], opinioes = [], atuais = null }) {
   const l = [];
   l.push(`# Consultor da Sede — ${nomeLoja} — ${dm(hoje)}/${hoje.slice(0, 4)}`);
   if (kpis) l.push(`Mês até hoje: vendas ${BRL(kpis.vendas || 0)} · lucro depois do Ads ${BRL(kpis.depoisAds || 0)} · caixa ${kpis.caixa != null ? BRL(kpis.caixa) : "—"}${kpis.meta ? ` · meta ${BRL(kpis.meta)}` : ""}`);
@@ -386,7 +426,14 @@ export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, u
   if (consultorias.length) {
     l.push("", "## Consultorias, propostas e ideias aprovadas");
     for (const c of consultorias) {
-      l.push(`- ${c.dados?.titulo}${c.dados?.credito ? ` (💡 ${c.dados.credito})` : ""}`, `  o que vi: ${c.dados?.viu}`, `  por que agora: ${c.dados?.porque}`, `  o que a análise deve responder: ${c.dados?.responderia}`);
+      const em = quandoAprovou(c);
+      l.push(`- ${c.dados?.titulo}${c.dados?.credito ? ` (💡 ${c.dados.credito})` : ""}`, `  o que vi${em ? ` (números de ${dm(em)}, quando aprovou)` : ""}: ${c.dados?.viu}`);
+      if (atuais) {
+        const agora = atuais.find((x) => x.chave === c.chave);
+        if (agora && agora.viu !== c.dados?.viu) l.push(`  hoje (${dm(hoje)}): ${agora.titulo} — ${agora.viu}`);
+        else if (!agora && !/\|\d{4}-\d{2}$/.test(c.chave)) l.push(`  hoje (${dm(hoje)}): não aparece mais — o que gerou essa sugestão sumiu`);
+      }
+      l.push(`  por que agora: ${c.dados?.porque}`, `  o que a análise deve responder: ${c.dados?.responderia}`);
     }
   }
   if (erros.length) {

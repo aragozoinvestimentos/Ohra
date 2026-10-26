@@ -280,3 +280,44 @@ describe("Revenda: unidades por caixa (palpite)", () => {
     expect(palpiteFator({ qtd: 24, unidade: "UN", descricao: "BATOM CX12" })).toBe(null);
   });
 });
+
+describe("Relatório de Ads com lucro real (26/10/2026)", () => {
+  it("usa o lucro dos pedidos, corta vendas do CSV acima dos pedidos pagos e mostra o que sobrou", async () => {
+    const { relatorioAds } = await import("../src/lib/relatorios.js");
+    const { BRL } = await import("../src/lib/format.js");
+    const periodo = (id, gasto, vendas, extra = {}) => ({ item_tipo: "produto", item_id: id, canal_id: "c1", inicio: "2026-10-05", parcial: { ate: "2026-10-20", gasto, vendas }, ...extra });
+    const linhasAds = {
+      linhas: [
+        { tipo: "produto", id: "a", canal: { id: "c1", nome: "Shopee" }, item: { nome: "Chaveiro" }, lucro: 5, periodos: [periodo("a", 76, 4, { motivo_fim: "pausei" })], semanas: [] },
+        { tipo: "produto", id: "b", canal: { id: "c1", nome: "Shopee" }, item: { nome: "Natal" }, lucro: 20, periodos: [periodo("b", 50, 5)], semanas: [] },
+      ],
+    };
+    const ped = (id, lucro, data = "2026-10-15") => ({ valido: true, canal_id: "c1", data, q: 1, lucro, an: id });
+    const pedidos = [ped("a", 1.8), ped("a", 1.8), ped("b", 14), ped("b", 14), ped("b", 14), ped("b", 14), ped("b", 14), ped("b", 14, "2026-10-21")];
+    const r = relatorioAds({ linhasAds, hoje: "2026-10-26", pedidos, anuncioDoPedido: (p) => ({ tipo: "produto", id: p.an }) }, "2026-10");
+    const t = r.blocos.find((b) => b.tipo === "tabela").linhas;
+    const chaveiro = t.find((l) => l[0].startsWith("Chaveiro"));
+    expect(chaveiro[1]).toBe("encerrado");
+    expect(chaveiro[3]).toBe("2 (CSV 4)"); // só 2 pedidos pagos até o fim do CSV
+    expect(chaveiro[5]).toBe(BRL(3.6)); // 2 × R$ 1,80 dos pedidos, não 4 × R$ 5 do preço de hoje
+    expect(chaveiro[8]).toBe("parado ✓");
+    const natal = t.find((l) => l[0].startsWith("Natal"));
+    expect(natal[1]).toBe("ligado");
+    expect(natal[5]).toBe(BRL(70)); // 5 × R$ 14 reais
+    expect(natal[6]).toBe(BRL(20));
+    expect(natal[8]).toBe("manter");
+  });
+});
+
+describe("Consultor: queda por Ads pausado e produto novo de época", () => {
+  it("não propõe análise quando a queda veio do Ads", async () => {
+    const { sugerirConsultorias } = await import("../src/lib/consultor.js");
+    const ped = (data) => ({ valido: true, data, q: 1, pago: 10, lucro: 2, id_item: "p:x", item: { id: "p:x", nome: "Chaveiro" } });
+    const pedidos = ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-20"].map(ped);
+    const semAds = sugerirConsultorias({ pedidos, linhasAds: { linhas: [] }, hoje: "2026-10-26" });
+    expect(semAds.some((c) => c.chave.startsWith("queda|"))).toBe(true);
+    const linhasAds = { linhas: [{ tipo: "produto", id: "x", periodos: [{ item_tipo: "produto", item_id: "x", canal_id: "c", inicio: "2026-09-29", fim: "2026-10-08", parcial: { ate: "2026-10-08", gasto: 60, vendas: 5 } }], semanas: [] }] };
+    const comAds = sugerirConsultorias({ pedidos, linhasAds, hoje: "2026-10-26" });
+    expect(comAds.some((c) => c.chave.startsWith("queda|"))).toBe(false);
+  });
+});

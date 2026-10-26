@@ -21,6 +21,7 @@ import ConsultorPainel from "./ConsultorPainel.jsx";
 import { criarSede, TAMANHO_SEDE } from "../lib/sedeMotor.js";
 import { periodoLigado } from "../lib/ads.js";
 import { hojeSP } from "../lib/datas.js";
+import { configCalendario } from "../lib/calendario.js";
 import { ehValido } from "../lib/pedidos.js";
 import { irParaAba } from "../lib/navegar.js";
 import { marcarVoltaSede, pedirTelaSede } from "../lib/sedeTela.js";
@@ -75,9 +76,10 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   // ---------- consultor: perguntas, consultorias (com o porquê) e propostas da equipe ----------
   const cres = useCrescimento();
   const cons = useConsultor();
+  const calLoja = useMemo(() => configCalendario(lojas.find((l) => l.id === lojaId)?.config_escada), [lojas, lojaId]);
   const ctxConsultor = useMemo(
-    () => ({ pedidos: cres?.pedidosValidos || [], linhasAds: cres?.linhasAds, hoje, kpis: sede.kpis, pendencias: sede.pendencias, produtos: cat.produtos || [], kits: cat.kits || [], kitProdutos: cat.kitProdutos || [], impressoras: cat.impressoras || [], farmConfig: cat.farmConfig }),
-    [cres?.pedidosValidos, cres?.linhasAds, hoje, sede.kpis, sede.pendencias, cat.produtos, cat.kits, cat.kitProdutos, cat.impressoras, cat.farmConfig]
+    () => ({ pedidos: cres?.pedidosValidos || [], linhasAds: cres?.linhasAds, hoje, kpis: sede.kpis, pendencias: sede.pendencias, produtos: cat.produtos || [], kits: cat.kits || [], kitProdutos: cat.kitProdutos || [], impressoras: cat.impressoras || [], farmConfig: cat.farmConfig, cal: calLoja }),
+    [calLoja, cres?.pedidosValidos, cres?.linhasAds, hoje, sede.kpis, sede.pendencias, cat.produtos, cat.kits, cat.kitProdutos, cat.impressoras, cat.farmConfig]
   );
   const decisao = useMemo(() => new Map(cons.registros.filter((r) => r.tipo === "consultoria").map((r) => [r.chave, r])), [cons.registros]);
   const consultoriasTodas = useMemo(() => sugerirConsultorias(ctxConsultor), [ctxConsultor]);
@@ -89,6 +91,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const propostas = ordenarPeloPerfil(propostasTodas.filter(visivel), perfil);
   // ideias da equipe (com crédito): no máximo IDEIAS_MAX por vez, as que você mais aprova primeiro
   const ideiasTodas = useMemo(() => ideiasDaEquipe(ctxConsultor), [ctxConsultor]);
+  const atuaisConsultor = useMemo(() => [...consultoriasTodas, ...propostasTodas, ...ideiasTodas], [consultoriasTodas, propostasTodas, ideiasTodas]);
   const ideias = ordenarPeloPerfil(ideiasTodas.filter(visivel), perfil).slice(0, IDEIAS_MAX);
   // resultado do que foi aprovado: o aviso sumiu (resolveu) ou continuou — grava uma vez
   // (só depois de 15 s na Sede: os avisos do Início e os pedidos precisam ter carregado,
@@ -113,8 +116,8 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   // relatórios exportáveis (montados só no clique)
   const relCtx = useMemo(() => {
     const nomeDe = (k) => (String(k).startsWith("p:") ? (cat.produtos || []).find((x) => x.id === k.slice(2))?.nome : (cat.kits || []).find((x) => x.id === String(k).slice(2))?.nome);
-    return { pedidos: cres?.pedidosValidos || [], linhasAds: cres?.linhasAds, lancamentos, produtos: cat.produtos || [], kits: cat.kits || [], precos: cat.precos || [], canais: cat.canais || [], registros: cons.registros, ideias, nomes, funcoes: Object.fromEntries(ELENCO.map((e) => [e.id, e.funcao])), nomeDe };
-  }, [cres?.pedidosValidos, cres?.linhasAds, lancamentos, cat.produtos, cat.kits, cat.precos, cat.canais, cons.registros, ideias, nomes]);
+    return { pedidos: cres?.pedidosValidos || [], anuncioDoPedido: cres?.anuncioDoPedido, linhasAds: cres?.linhasAds, lancamentos, produtos: cat.produtos || [], kits: cat.kits || [], precos: cat.precos || [], canais: cat.canais || [], registros: cons.registros, ideias, nomes, funcoes: Object.fromEntries(ELENCO.map((e) => [e.id, e.funcao])), nomeDe };
+  }, [cres?.pedidosValidos, cres?.anuncioDoPedido, cres?.linhasAds, lancamentos, cat.produtos, cat.kits, cat.precos, cat.canais, cons.registros, ideias, nomes]);
   const relatorios = useRelatorios({ ctx: relCtx, nomeLoja, onToast });
   const nConsultor = consultorias.length + propostas.length + ideias.length + (backup.estado.vencido ? 1 : 0) + relatorios.devidos.length;
 
@@ -569,6 +572,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
               lojaId={lojaId}
               nomeLoja={nomeLoja}
               ctx={ctxConsultor}
+              atuais={atuaisConsultor}
               registros={cons.registros}
               disponivel={cons.disponivel}
               consultorias={consultorias}

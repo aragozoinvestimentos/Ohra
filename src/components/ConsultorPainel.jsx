@@ -45,7 +45,7 @@ const ABAS = [
   { k: "app", r: "🔒 App" },
 ];
 
-export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros, disponivel, consultorias, propostas, ideias = [], backup, relatorios, nomes, abrir, onToast, telaAtual }) {
+export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros, disponivel, consultorias, propostas, ideias = [], atuais = null, backup, relatorios, nomes, abrir, onToast, telaAtual }) {
   const [aba, setAba] = useState("perguntar");
   const hoje = hojeSP();
   const perguntasAbertas = registros.filter((r) => r.tipo === "pergunta" && r.status === "aberta");
@@ -71,7 +71,7 @@ export default function ConsultorPainel({ nome, lojaId, nomeLoja, ctx, registros
       </div>
       {aba === "perguntar" && <Perguntar ctx={ctx} lojaId={lojaId} disponivel={disponivel} registros={registros} onToast={onToast} telaAtual={telaAtual} />}
       {aba === "propostas" && <Propostas relatorios={relatorios} ideias={ideias} backup={backup} lojaId={lojaId} disponivel={disponivel} registros={registros} hoje={hoje} consultorias={consultorias} propostas={propostas} aprovadas={aprovadas} nomes={nomes} abrir={abrir} onToast={onToast} />}
-      {aba === "levar" && <Levar nomeLoja={nomeLoja} hoje={hoje} registros={registros} perguntas={perguntasAbertas} opinioes={opinioes} aprovadas={aprovadas} kpis={ctx.kpis} onToast={onToast} />}
+      {aba === "levar" && <Levar nomeLoja={nomeLoja} hoje={hoje} registros={registros} perguntas={perguntasAbertas} opinioes={opinioes} aprovadas={aprovadas} kpis={ctx.kpis} atuais={atuais} onToast={onToast} />}
       {aba === "relatorios" && relatorios && <RelatoriosConsultor rel={relatorios} />}
       {aba === "aprendi" && <Aprendi lojaId={lojaId} disponivel={disponivel} registros={registros} nomes={nomes} onToast={onToast} />}
       {aba === "app" && <NivelApp />}
@@ -415,11 +415,11 @@ function Propostas({ relatorios, ideias = [], backup, lojaId, disponivel, regist
   );
 }
 
-function Levar({ nomeLoja, hoje, registros, perguntas, opinioes = [], aprovadas, kpis, onToast }) {
+function Levar({ nomeLoja, hoje, registros, perguntas, opinioes = [], aprovadas, kpis, atuais, onToast }) {
   const erros = registros.filter((r) => r.tipo === "erro" && String(r.chave).slice(0, 10) >= somarDias(hoje, -13));
   const uso = resumoUso(registros, somarDias(hoje, -29));
   const aprendizado = useMemo(() => linhasAprendizado(registros), [registros]);
-  const texto = useMemo(() => montarPacote({ nomeLoja, hoje, perguntas, consultorias: aprovadas, erros, uso, kpis, aprendizado, opinioes }), [nomeLoja, hoje, perguntas, aprovadas, erros, uso, kpis, aprendizado, opinioes]);
+  const texto = useMemo(() => montarPacote({ nomeLoja, hoje, perguntas, consultorias: aprovadas, erros, uso, kpis, aprendizado, opinioes, atuais }), [nomeLoja, hoje, perguntas, aprovadas, erros, uso, kpis, aprendizado, opinioes, atuais]);
   async function copiar() {
     try {
       await navigator.clipboard.writeText(texto);

@@ -5,7 +5,7 @@
 // fixas (despesasFixasDoMes). PDF pelo próprio navegador ("salvar como PDF")
 // e CSV das tabelas (abre no Excel). Nada aqui grava dado.
 import { adsNoPeriodo, despesasFixasDoMes, mesAnterior, somaPedidos } from "./resumoLoja.js";
-import { adsNaJanela } from "./ads.js";
+import { adsNaJanela, pausasDoPeriodo, periodoLigado } from "./ads.js";
 import { BRL } from "./format.js";
 
 const num = (v) => Number(v) || 0;
@@ -165,41 +165,114 @@ export function relatorioFechamento(ctx, mes) {
   };
 }
 
+// Situação do Ads HOJE (pelos períodos do app): ligado / pausado / encerrado.
+function situacaoHoje(periodos, hoje) {
+  const lig = (periodos || []).filter((p) => periodoLigado(p, hoje));
+  if (!lig.length) return "encerrado";
+  return lig.some((p) => !pausasDoPeriodo(p, hoje).pausado) ? "ligado" : "pausado";
+}
+
+// Lucro das vendas via Ads com número REAL (26/10/2026, Gustavo: "as
+// informações devem ser reais"): vendas via Ads = CSV da Shopee, mas nunca
+// mais que as unidades PAGAS do anúncio nos pedidos importados (a Shopee conta
+// pedido não pago/cancelado); lucro por venda = o dos pedidos do anúncio no
+// período (com promo, cupom e desconto que o cliente teve) — sem pedido, o do
+// preço de hoje (marcado com *). GMV Max da Loja = lucro médio por venda da loja.
 export function relatorioAds(ctx, mes) {
-  const { linhasAds, hoje } = ctx;
+  const { linhasAds, hoje, pedidos = [], anuncioDoPedido } = ctx;
   const de = `${mes}-01`, ate = fimDoMes(mes) < hoje ? fimDoMes(mes) : hoje;
+  const validos = (pedidos || []).filter((p) => p.valido && String(p.data).slice(0, 10) >= de && String(p.data).slice(0, 10) <= ate);
+  const ultimoPedido = new Map(); // canal → último dia com pedido importado
+  for (const p of pedidos || []) {
+    const d = String(p.data).slice(0, 10);
+    if (!ultimoPedido.has(p.canal_id) || ultimoPedido.get(p.canal_id) < d) ultimoPedido.set(p.canal_id, d);
+  }
+  const lojaMedia = (() => {
+    const un = validos.reduce((t, p) => t + num(p.q), 0);
+    return un > 0 ? validos.reduce((t, p) => t + num(p.lucro), 0) / un : null;
+  })();
   const linhas = [];
-  let gasto = 0, lucroAds = 0;
+  let gasto = 0, lucroAds = 0, estimado = false, cortou = false;
+  let ateCsv = null, atePed = null;
   for (const l of linhasDeAds(linhasAds)) {
     const a = adsNaJanela(l.periodos || [], l.semanas || [], de, ate);
     if (!(num(a?.gasto) > 0)) continue;
-    const lucro = l.lucro != null ? num(a.vendas) * num(l.lucro) : null;
+    const fimCsv = a.ate || ate;
+    if (a.ate && (!ateCsv || a.ate > ateCsv)) ateCsv = a.ate;
+    const ehLoja = l.tipo === "loja";
+    let vendas = num(a.vendas);
+    let porVenda = null, fonte = "";
+    if (ehLoja) {
+      porVenda = lojaMedia;
+      fonte = "média da loja";
+    } else {
+      const meus = anuncioDoPedido ? validos.filter((p) => p.canal_id === l.canal?.id && String(p.data).slice(0, 10) <= fimCsv && (() => { const an = anuncioDoPedido(p); return an && an.tipo === l.tipo && an.id === l.id; })()) : [];
+      const un = meus.reduce((t, p) => t + num(p.q), 0);
+      const cobre = (ultimoPedido.get(l.canal?.id) || "") >= fimCsv;
+      if (ultimoPedido.get(l.canal?.id) && (!atePed || ultimoPedido.get(l.canal?.id) > atePed)) atePed = ultimoPedido.get(l.canal?.id);
+      if (cobre && vendas > un) {
+        vendas = un;
+        cortou = true;
+      }
+      if (un > 0) {
+        porVenda = meus.reduce((t, p) => t + num(p.lucro), 0) / un;
+        fonte = "pedidos";
+      } else if (l.lucro != null) {
+        porVenda = num(l.lucro);
+        fonte = "preço de hoje*";
+        estimado = true;
+      }
+    }
+    const lucro = porVenda != null ? vendas * porVenda : null;
     const retorno = lucro != null && a.gasto > 0 ? lucro / a.gasto : null;
     gasto += num(a.gasto);
     lucroAds += num(lucro);
-    linhas.push({ nome: l.item?.nome || l.nome || "—", canal: l.canal?.nome || "—", gasto: num(a.gasto), vendas: num(a.vendas), lucro, retorno });
+    const hojeSt = situacaoHoje(l.periodos, hoje);
+    const fazer = retorno == null ? "—" : retorno >= 1 ? (hojeSt === "ligado" ? "manter" : "—") : hojeSt === "ligado" ? "pausar ou revisar o anúncio" : "parado ✓";
+    linhas.push({ nome: l.item?.nome || l.nome || "—", canal: l.canal?.nome || "—", hoje: hojeSt, gasto: num(a.gasto), vendas, csvVendas: num(a.vendas), porVenda, fonte, lucro, sobrou: lucro != null ? lucro - num(a.gasto) : null, retorno, fazer });
   }
   linhas.sort((a, b) => b.gasto - a.gasto);
-  const pagaram = linhas.filter((x) => x.retorno != null && x.retorno >= 1);
+  const medidas = linhas.filter((x) => x.retorno != null);
+  const pagaram = medidas.filter((x) => x.retorno >= 1);
+  const sobrou = lucroAds - gasto;
+  const fmtV = (x) => x.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  const notas = [
+    `Vendas via Ads: CSV do Shopee Ads${ateCsv ? ` até ${dm(ateCsv)}` : ""}. Lucro por venda: o REAL dos pedidos pagos de cada anúncio${atePed ? ` (importados até ${dm(atePed)})` : ""} — já com promo, cupom e desconto.`,
+    ...(cortou ? ["Quando o CSV conta mais vendas que os pedidos pagos (a Shopee conta pedido não pago ou cancelado), vale o número dos pedidos — o do CSV fica entre parênteses."] : []),
+    ...(estimado ? ["* anúncio sem pedido pago no período: lucro por venda estimado pelo preço de hoje."] : []),
+    "GMV Max da Loja: lucro pela média por venda da loja no período (a campanha divulga vários produtos).",
+  ];
   return {
     titulo: `Ads de ${nomeDoMes(mes)}`,
-    subtitulo: `${dm(de)} a ${dm(ate)} · pelos CSVs do Shopee Ads (e semanas registradas) · retorno = lucro das vendas via Ads ÷ gasto`,
+    subtitulo: `${dm(de)} a ${dm(ate)} · retorno = lucro das vendas via Ads ÷ gasto · sobrou = lucro − gasto`,
     blocos: [
       {
         tipo: "kpis",
         itens: [
           { rotulo: "Gasto de Ads", valor: BRL(gasto), sub: `${linhas.length} campanha${linhas.length === 1 ? "" : "s"}` },
-          { rotulo: "Lucro das vendas via Ads", valor: BRL(lucroAds), sub: "antes de descontar o Ads" },
+          { rotulo: "Lucro das vendas via Ads", valor: BRL(lucroAds), sub: "pedidos reais, antes do Ads" },
+          { rotulo: "Sobrou depois do Ads", valor: BRL(sobrou), sub: sobrou >= 0 ? "o Ads se pagou no total" : "o Ads custou mais do que trouxe" },
           { rotulo: "Retorno geral", valor: gasto > 0 ? `${(lucroAds / gasto).toFixed(2).replace(".", ",")}×` : "—", sub: "cada R$ 1 voltou isso de lucro" },
-          { rotulo: "Se pagaram", valor: `${pagaram.length} de ${linhas.length}`, sub: "retorno ≥ 1×" },
+          { rotulo: "Se pagaram", valor: `${pagaram.length} de ${medidas.length}`, sub: "retorno ≥ 1×" },
         ],
       },
       {
         tipo: "tabela",
         titulo: "Por anúncio",
-        colunas: ["Anúncio", "Canal", "Gasto", "Vendas via Ads", "Lucro dessas vendas", "Retorno", "Se pagou?"],
-        linhas: linhas.map((x) => [x.nome, x.canal, BRL(x.gasto), x.vendas.toLocaleString("pt-BR", { maximumFractionDigits: 1 }), x.lucro != null ? BRL(x.lucro) : "—", x.retorno != null ? `${x.retorno.toFixed(2).replace(".", ",")}×` : "—", x.retorno == null ? "—" : x.retorno >= 1 ? "sim" : "não"]),
+        colunas: ["Anúncio", "Hoje", "Gasto", "Vendas via Ads", "Lucro/venda", "Lucro dessas vendas", "Sobrou", "Retorno", "O que fazer"],
+        linhas: linhas.map((x) => [
+          `${x.nome} (${x.canal})`,
+          x.hoje,
+          BRL(x.gasto),
+          `${fmtV(x.vendas)}${x.csvVendas > x.vendas + 0.05 ? ` (CSV ${fmtV(x.csvVendas)})` : ""}`,
+          x.porVenda != null ? `${BRL(x.porVenda)}${x.fonte === "preço de hoje*" ? "*" : ""}` : "—",
+          x.lucro != null ? BRL(x.lucro) : "—",
+          x.sobrou != null ? BRL(x.sobrou) : "—",
+          x.retorno != null ? `${x.retorno.toFixed(2).replace(".", ",")}×` : "—",
+          x.fazer,
+        ]),
       },
+      { tipo: "texto", titulo: "De onde vêm os números", linhas: notas },
     ],
   };
 }

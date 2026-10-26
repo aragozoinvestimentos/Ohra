@@ -77,6 +77,7 @@ export function perguntasAprendidas(registros, n = 3) {
 const ROTULOS = {
   queda: "vendas de um produto caindo",
   concentracao: "loja dependendo de um produto",
+  lancar: "lançar produto novo (o nº 1 é de época)",
   "ads-pesado": "Ads pesando no lucro",
   avisos: "muitos avisos acumulados",
   "expansao-producao": "expansão da produção",
@@ -244,6 +245,10 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-26", texto: "Relatório de Ads com número real: lucro por venda dos pedidos pagos (com promo e cupom), vendas do CSV nunca acima dos pedidos pagos, “Sobrou depois do Ads”, situação de hoje (ligado/pausado/encerrado) e o que fazer. GMV Max da Loja entra pela média da loja." },
+  { data: "2026-10-26", texto: "Queda de vendas que veio do Ads pausado não vira proposta de análise — era venda do Ads (o relatório de Ads mostra se ele se pagava)." },
+  { data: "2026-10-26", texto: "Quando o produto nº 1 (≥ 50% do lucro) é de época, proponho começar a lançar um produto de ano todo, com a data limite (45 dias antes da data)." },
+  { data: "2026-10-26", texto: "No “Levar pro Claude”, cada proposta aprovada mostra a data dos números (quando você aprovou) e, embaixo, os números de hoje." },
   { data: "2026-10-24", texto: "Revenda: produto comprado pronto. O custo vem da nota de compra (XML) e o estoque começa na 1ª nota — sai sozinho pelos pedidos da Olist. Aviso quando precisa repor." },
   { data: "2026-10-24", texto: "Impostos da loja: no MEI não há imposto por venda; acompanho o limite de faturamento do ano (3D + revenda)." },
   { data: "2026-10-24", texto: "Nasci na Sede: respondo vendas, lucro, Ads, meta, caixa, contas a pagar, produto pelo nome e o que fazer primeiro." },
