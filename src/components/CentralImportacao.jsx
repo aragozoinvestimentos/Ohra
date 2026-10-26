@@ -5,6 +5,8 @@ import { lerXls } from "../lib/lerXls.js";
 import { andamentoDoCsv, somarJanelasAds, juntarAds, juntarDesempenho, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioDoGuardado, relatorioParaGuardar } from "../lib/relatorioShopee.js";
 import { PLATAFORMAS, caixaDosPedidos, ehNaoPago, interpretarPedidosOlist, ligarSku, plataformaDoNumero, tipoEIdDoItem, normSku } from "../lib/pedidos.js";
 import { CHAVE_CARRINHOS, lembrarCarrinhos } from "../lib/carrinhos.js";
+import { interpretarExtratoShopee, liberadoDoExtrato } from "../lib/carteiras.js";
+import { gravarExtrato } from "../lib/carteirasAcoes.js";
 import { excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
 import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { canalComEmbalagem } from "../lib/embalagemCanal.js";
@@ -185,6 +187,27 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     window.dispatchEvent(new Event("focus"));
     setOcupado(null);
     onToast?.(`Pedidos importados${partes.length ? ` (${partes.join(" · ")})` : ""}${cx.ok ? " · Fluxo de Caixa atualizado (entregues)" : ""}`);
+  }
+  // Extrato do Meu Saldo da Shopee (v67): o que já foi LIBERADO na carteira
+  // da Shopee (Caixa → carteiras) e os saques (viram transferência no Caixa).
+  async function enviarExtrato(arquivo) {
+    const rel = "shopee:extrato";
+    setOcupado(rel);
+    try {
+      const r = interpretarExtratoShopee(await lerPlanilha(arquivo));
+      if (!r.ok) throw new Error(r.erro);
+      const g = await gravarExtrato({ lojaId, plataforma: "shopee", transacoes: r.transacoes });
+      if (!g.ok) throw new Error(g.msg);
+      const lib = liberadoDoExtrato(r.transacoes.map((t) => ({ ...t, plataforma: "shopee" })), "shopee");
+      const resumo = `${dm(r.de)} a ${dm(r.ate)} · ${r.transacoes.length} transaç${r.transacoes.length === 1 ? "ão" : "ões"} · liberado ${BRL(lib?.saldo || 0)}${g.saques ? ` · ${g.saques} saque${g.saques > 1 ? "s" : ""} no Caixa` : ""}`;
+      await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivo.name, periodo: { de: r.de, ate: r.ate }, ok: true, resumo });
+      setResultado((x) => ({ ...x, [rel]: { t: "ok", txt: `${resumo} · agora` } }));
+      window.dispatchEvent(new Event("focus"));
+      onToast?.("Extrato da Shopee importado — veja em Dinheiro → Caixa (carteira Shopee)");
+    } catch (e) {
+      setResultado((x) => ({ ...x, [rel]: { t: "erro", txt: e.message || "Não foi possível ler o arquivo." } }));
+    }
+    setOcupado(null);
   }
   async function descartarSku(sku) {
     const r = await ignorarSku({ lojaId, sku });
@@ -596,6 +619,18 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
               ),
               onArquivo: (fs) => enviarGmv(fs),
             })}
+            {relat({
+              rel: "shopee:extrato",
+              nome: "Extrato do Meu Saldo (carteira)",
+              limite: 7,
+              aceita: ".xlsx",
+              onde: (
+                <>
+                  Shopee → Minha Renda → <b>Meu Saldo → Exportar</b> (período desde o 1º envio, pode repetir dias — não duplica). Diz o que já está <b>liberado</b> na carteira da Shopee; saque que aparecer vira transferência pra Conta da loja no Caixa
+                </>
+              ),
+              onArquivo: (f) => enviarExtrato(f),
+            })}
             {perguntas.map((q) => (
               <div key={q.chave} className="ana-pend">
                 <b>
@@ -850,19 +885,19 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       <div className="panel">
         <h3 className="section-title">
           O que foi pro Fluxo de Caixa
-          <Ajuda texto="Uma entrada por plataforma × semana com os pedidos ENTREGUES (o que a plataforma repassa = pago pelo cliente − comissão − taxa fixa; o imposto/custos fixos % do canal não saem do repasse, só do lucro) e uma por semana das vendas físicas. A receber (pago, ainda não entregue) só aparece aqui: não soma no saldo nem na projeção. Reenviando o arquivo, o que virou Entregue passa pra recebido e o que foi cancelado/devolvido sai. Se já houver uma entrada de venda lançada à mão na mesma semana e canal, o app avisa (pra não contar duas vezes)." />
+          <Ajuda texto="Uma entrada por plataforma × semana com os pedidos ENTREGUES (o que a plataforma repassa = pago pelo cliente − comissão − taxa fixa; o imposto/custos fixos % do canal não saem do repasse, só do lucro) e uma por semana das vendas físicas. A receber (pago, ainda não entregue) só aparece aqui: não soma no saldo nem na projeção. Cada entrada vai pra carteira da plataforma no Caixa (venda física = Conta da loja). Reenviando o arquivo, o que foi entregue passa pra Entregue e o que foi cancelado/devolvido sai. Se já houver uma entrada de venda lançada à mão na mesma semana e canal, o app avisa (pra não contar duas vezes)." />
           <span className="dir">uma linha por plataforma × semana</span>
         </h3>
         <div className="ana-caixa-resumo">
-          <div><span className="faint">Recebido (entra no saldo)</span><b style={{ color: "var(--good)" }}>{BRL(totRec)}</b></div>
-          <div><span className="faint">A receber (só aparece — fora do saldo e da projeção)</span><b>{BRL(totArec)}</b></div>
+          <div><span className="faint">Entregue (entra no saldo, na carteira da plataforma)</span><b style={{ color: "var(--good)" }}>{BRL(totRec)}</b></div>
+          <div><span className="faint">A caminho (pago, não entregue — fora do saldo)</span><b>{BRL(totArec)}</b></div>
         </div>
         {[...recentes(caixa.lancamentos).map((x) => ({ ...x, arec: false })), ...recentes(caixa.aReceber).map((x) => ({ ...x, arec: true }))]
           .sort((a, b) => b.semana.localeCompare(a.semana))
           .map((x) => (
             <div key={(x.arec ? "a" : "r") + x.origem_import} className={`ana-caixa-lin${x.arec ? " arec" : ""}`}>
               <span><span className="bolinha" style={{ background: x.arec ? "var(--ink-faint)" : "var(--good)" }} />{x.descricao}</span>
-              <span className="faint">{x.arec ? "a receber · fora do saldo" : "recebido"}</span>
+              <span className="faint">{x.arec ? "a caminho · fora do saldo" : x.plataforma === "fisico" ? "recebido" : "entregue"}</span>
               <b>{BRL(x.valor)}</b>
             </div>
           ))}
@@ -870,8 +905,8 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         {conferencia.map((c) => (
           <div key={c.plat} className="ana-caixa-lin">
             <span>
-              <b>Conferir com a {c.nome}:</b> total {BRL(c.rec + c.arec)} (recebido {BRL(c.rec)} + a receber {BRL(c.arec)})
-              {c.plat === "shopee" ? " — deve bater com Completos + Pendente da Minha Renda. O “recebido” daqui conta na entrega; a Shopee libera alguns dias depois, então lá ele ainda aparece em Pendente." : " — deve bater com o que a plataforma mostra liberado + pendente."}
+              <b>Conferir com a {c.nome}:</b> total {BRL(c.rec + c.arec)} (entregue {BRL(c.rec)} + a caminho {BRL(c.arec)})
+              {c.plat === "shopee" ? " — deve bater com Completos + Pendente da Minha Renda. O “entregue” daqui conta na entrega; a Shopee libera alguns dias depois, então lá ele ainda aparece em Pendente — o Extrato do Meu Saldo diz o que já foi liberado." : " — deve bater com o que a plataforma mostra liberado + pendente."}
             </span>
             <span />
             <b />

@@ -28,6 +28,7 @@ export const CATEGORIAS = {
 };
 
 export function rotuloCategoria(tipo, key) {
+  if (key === "transferencia") return "Transferência (saque)";
   return (CATEGORIAS[tipo] || []).find((c) => c.key === key)?.label || "Outros";
 }
 
@@ -137,7 +138,7 @@ export function mediaMensal(lancamentos, tipo, mesAtual, n = 3) {
   if (!meses.size) return 0;
   let soma = 0;
   for (const l of lancamentosReais(lancamentos)) {
-    if (l.tipo !== tipo || !contaNoCaixa(l) || !l.data_realizada || l.recorrencia_origem_id || l.categoria === "saldo_inicial" || l.categoria === "aporte") continue;
+    if (l.tipo !== tipo || !contaNoCaixa(l) || !l.data_realizada || l.recorrencia_origem_id || l.categoria === "saldo_inicial" || l.categoria === "aporte" || l.categoria === "transferencia") continue;
     if (meses.has(mesDe(l.data_realizada))) soma += Number(l.valor) || 0;
   }
   return soma / meses.size;
@@ -258,7 +259,7 @@ export function saveEstimativas(lojaId, valor) {
 // mesma conta da aba Metas.
 export function realDoMes(lancamentos, mes) {
   const validos = (lancamentos || []).filter(
-    (l) => l.recorrencia !== "mensal" && l.data_realizada && mesDe(l.data_realizada) === mes && l.categoria !== "saldo_inicial" && l.categoria !== "aporte"
+    (l) => l.recorrencia !== "mensal" && l.data_realizada && mesDe(l.data_realizada) === mes && l.categoria !== "saldo_inicial" && l.categoria !== "aporte" && l.categoria !== "transferencia"
   );
   const faturamento = validos.filter((l) => l.tipo === "entrada" && (l.categoria === "venda" || l.categoria === "encomenda")).reduce((s, l) => s + Number(l.valor || 0), 0);
   const resultado = validos.reduce((s, l) => s + (l.tipo === "entrada" ? 1 : -1) * Number(l.valor || 0), 0);
@@ -273,7 +274,8 @@ export function resumoCaixa(lancamentos, { hoje, estimativas = { vendas: "", cus
   const mesAtual = mesDe(hoje);
   const vendasEst = estimativas.vendas === "" ? mediaMensal(lancamentos, "entrada", mesAtual) : Number(estimativas.vendas) || 0;
   const custosEst = estimativas.custos === "" ? mediaMensal(lancamentos, "saida", mesAtual) : Number(estimativas.custos) || 0;
-  const proj = projetar(lancamentos, { mesAtual, meses, vendasEstimadas: vendasEst, custosEstimados: custosEst });
+  // Saque entre carteiras (v67) só troca o dinheiro de lugar: fora das colunas.
+  const proj = projetar((lancamentos || []).filter((l) => l.categoria !== "transferencia"), { mesAtual, meses, vendasEstimadas: vendasEst, custosEstimados: custosEst });
   const menor = proj.linhas.reduce((m, l) => (!m || l.saldoFinal < m.saldoFinal ? l : m), null);
   const limite = (() => {
     const d = new Date(`${hoje}T12:00:00`);

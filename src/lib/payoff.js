@@ -29,7 +29,7 @@ export const NOMES_MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago"
 export const rotuloMes = (m) => `${NOMES_MES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`;
 
 export function payoff({ lancamentos = [], hoje, saldoAdsShopee = 0, mesesMedia = 3 }) {
-  const reais = lancamentos.filter((l) => l.recorrencia !== "mensal" && l.data_realizada && l.data_realizada <= hoje);
+  const reais = lancamentos.filter((l) => l.recorrencia !== "mensal" && l.data_realizada && l.data_realizada <= hoje && l.categoria !== "transferencia");
   // Venda lançada À MÃO numa semana que já tem a entrada dos pedidos
   // importados (mesmo canal, ou sem canal) = provável duplicada: fica fora do
   // "entrou" e aparece no quadro "De onde vem o que entrou".

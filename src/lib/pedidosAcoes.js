@@ -73,6 +73,7 @@ export async function sincronizarCaixa({ lojaId, pedidos, ctx }) {
   const { data: existentes, error } = await q;
   if (error) return { ok: false, msg: erroMsg(error) };
   const avisos = [];
+  let semCarteira = false;
   const manuais = (existentes || []).filter((l) => !l.origem_import && l.tipo === "entrada" && ["venda", "encomenda"].includes(l.categoria));
   for (const x of lancamentos) {
     const ja = (existentes || []).some((l) => l.origem_import === x.origem_import);
@@ -81,7 +82,13 @@ export async function sincronizarCaixa({ lojaId, pedidos, ctx }) {
       if (dup) avisos.push(`Já existe no caixa a entrada “${dup.descricao}” na mesma semana — confira se não está contando duas vezes com “${x.descricao}”.`);
     }
     const row = { loja_id: lojaId || null, origem_import: x.origem_import, tipo: "entrada", categoria: "venda", canal_id: x.canal_id, descricao: x.descricao, valor: Math.max(0, x.valor), data_prevista: x.data, data_realizada: x.data, observacao: "lançado pela aba Análise (pedidos importados)" };
-    const r = await supabase.from("lancamentos_caixa").upsert(row, { onConflict: "loja_id,origem_import" });
+    // Carteira (v67): pedidos da plataforma ficam na carteira dela; venda física cai na Conta da loja.
+    const carteira = x.plataforma === "fisico" || x.plataforma === "olist" ? "loja" : x.plataforma;
+    let r = await supabase.from("lancamentos_caixa").upsert(semCarteira ? row : { ...row, carteira }, { onConflict: "loja_id,origem_import" });
+    if (r.error && !semCarteira && /carteira/.test(r.error.message || "")) {
+      semCarteira = true;
+      r = await supabase.from("lancamentos_caixa").upsert(row, { onConflict: "loja_id,origem_import" });
+    }
     if (r.error) return { ok: false, msg: erroMsg(r.error) };
   }
   const vivas = new Set(lancamentos.map((x) => x.origem_import));

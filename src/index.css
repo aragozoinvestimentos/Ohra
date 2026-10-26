@@ -2719,5 +2719,22 @@ td.vendas-opcao { padding-left: 26px; }
 @media (max-width: 760px) { .origem-produto { grid-template-columns: 1fr; } }
 
 /* Caixa → A receber das plataformas (26/10/2026) */
-.areceber-caixa{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:8px 14px;margin:0 0 10px;border:1px dashed var(--border);border-radius:12px;font-size:13px}
-.areceber-caixa .faint{color:var(--ink-faint);font-size:12px}
+/* Carteiras do Caixa (v67) */
+.carteiras-caixa{margin:0 0 10px;display:flex;flex-direction:column;gap:10px}
+.carteiras-abas{flex-wrap:wrap}
+.carteiras-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.carteira-kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px 12px;display:flex;flex-direction:column;gap:2px}
+.carteira-kpi span{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);font-weight:700}
+.carteira-kpi b{font-size:20px;font-variant-numeric:tabular-nums}
+.carteira-kpi small{font-size:12px;color:var(--ink-faint)}
+.carteira-kpi.forte{border-color:var(--accent)}
+.carteiras-cartoes{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.carteira-cartao{text-align:left;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;cursor:pointer}
+.carteira-cartao:hover{border-color:var(--ink-faint)}
+.carteira-cartao.ativo{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.carteira-cab{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px}
+.carteira-saldo{font-size:17px;font-variant-numeric:tabular-nums}
+.carteira-linha{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.carteira-linha.faint{display:block;color:var(--ink-faint);font-size:12px}
+.lanc-transf .lanc-cat{color:var(--ink-faint);text-align:center}
+@media (max-width:760px){.carteiras-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}

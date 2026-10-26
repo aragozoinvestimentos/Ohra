@@ -37,7 +37,12 @@ import { saldoReserva } from "../lib/vendasMes.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { saldoAds } from "../lib/saldoAds.js";
 import SaldoAdsCaixa from "./SaldoAdsCaixa.jsx";
-import AReceberCaixa from "./AReceberCaixa.jsx";
+import CarteirasCaixa, { TransferirDialog } from "./CarteirasCaixa.jsx";
+import { useExtratoCarteira } from "../hooks/useExtratoCarteira.js";
+import { useCrescimento } from "../hooks/useCrescimento.js";
+import { caixaDosPedidos } from "../lib/pedidos.js";
+import { CARTEIRA_LOJA, carteiraDe, ehTransferencia, nomeCarteira, resumoCarteiras } from "../lib/carteiras.js";
+import { excluirTransferencia } from "../lib/carteirasAcoes.js";
 import Payoff from "./Payoff.jsx";
 import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 
@@ -79,6 +84,7 @@ const novoForm = (tipo) => ({
   modeloId: null, // confirmando uma ocorrência de recorrente
   usarReserva: false, // saída paga com a reserva de produção (schema v51)
   pagoCom: "", // saída: "bolso" | "loja" (schema v63); vazio = o último usado
+  carteira: "", // v67: vazio = Conta da loja
 });
 
 const STATUS_BADGE = {
@@ -139,6 +145,26 @@ export default function FluxoCaixa({ onToast }) {
     }
   };
   const [verConfig, setVerConfig] = useState(false);
+  // Carteiras (v67): Geral = a loja inteira; cada carteira = onde o dinheiro está.
+  const [carteiraSel, setCarteiraSel] = useState(() => {
+    try {
+      return localStorage.getItem("ohra:caixa:carteira") || "geral";
+    } catch {
+      return "geral";
+    }
+  });
+  const trocarCarteira = (v) => {
+    setCarteiraSel(v);
+    try {
+      localStorage.setItem("ohra:caixa:carteira", v);
+    } catch {
+      // sem problema
+    }
+  };
+  const [transferir, setTransferir] = useState(null);
+  const extrato = useExtratoCarteira();
+  const { pedidosValidos } = useCrescimento();
+  const aReceberPed = useMemo(() => caixaDosPedidos(pedidosValidos || []).aReceber, [pedidosValidos]);
   const reserva = useReservaProducao();
   const adsP = useAdsPeriodos();
   const [baseAds] = usePreferencia("caixa:saldo-ads-base", null);
@@ -179,26 +205,39 @@ export default function FluxoCaixa({ onToast }) {
       }
     }
     carregar();
+    // Gravações de fora desta tela (saque, extrato) pedem a recarga na hora.
+    window.addEventListener("ohra:caixa", carregar);
     const ch = supabase
       .channel("fluxo-caixa-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "lancamentos_caixa" }, carregar)
       .subscribe();
     return () => {
       ativo = false;
+      window.removeEventListener("ohra:caixa", carregar);
       supabase.removeChannel(ch);
     };
   }, [lojaId]);
 
+  // --- Carteiras (v67) ---
+  const resumoCart = useMemo(() => resumoCarteiras({ lancamentos, canais, hoje, aReceber: aReceberPed, extrato: extrato.registros }), [lancamentos, canais, hoje, aReceberPed, extrato.registros]);
+  const carteiras = resumoCart.carteiras;
+  const cartSel = carteiraSel === "geral" || carteiras.some((c) => c.id === carteiraSel) ? carteiraSel : "geral";
+  // O que as contas do topo e a projeção enxergam: Geral = tudo sem os saques
+  // (só trocam o dinheiro de lugar); uma carteira = só ela, com os saques.
+  const lancVisao = useMemo(() => (cartSel === "geral" ? lancamentos.filter((l) => !ehTransferencia(l)) : lancamentos.filter((l) => carteiraDe(l) === cartSel)), [lancamentos, cartSel]);
+  const geral = cartSel === "geral";
+
   // --- Números do topo e projeção ---
-  const saldoAtual = useMemo(() => saldoRealizado(lancamentos, hoje), [lancamentos, hoje]);
+  const saldoAtual = useMemo(() => saldoRealizado(lancVisao, hoje), [lancVisao, hoje]);
   const mediaVendas = useMemo(() => mediaMensal(lancamentos, "entrada", mesAtual), [lancamentos, mesAtual]);
   const mediaCustos = useMemo(() => mediaMensal(lancamentos, "saida", mesAtual), [lancamentos, mesAtual]);
-  const vendasEst = estimativas.vendas === "" ? mediaVendas : Number(estimativas.vendas) || 0;
-  const custosEst = estimativas.custos === "" ? mediaCustos : Number(estimativas.custos) || 0;
+  // Estimativa de vendas/custos futuros só na visão Geral (não se sabe a carteira).
+  const vendasEst = !geral ? 0 : estimativas.vendas === "" ? mediaVendas : Number(estimativas.vendas) || 0;
+  const custosEst = !geral ? 0 : estimativas.custos === "" ? mediaCustos : Number(estimativas.custos) || 0;
 
   const projecao = useMemo(
-    () => projetar(lancamentos, { mesAtual, meses: horizonte, mesesPassados: MESES_PASSADOS, vendasEstimadas: vendasEst, custosEstimados: custosEst }),
-    [lancamentos, mesAtual, horizonte, vendasEst, custosEst]
+    () => projetar(lancVisao, { mesAtual, meses: horizonte, mesesPassados: MESES_PASSADOS, vendasEstimadas: vendasEst, custosEstimados: custosEst }),
+    [lancVisao, mesAtual, horizonte, vendasEst, custosEst]
   );
   // Gráfico e tabela: os meses passados (só realizado) + a projeção.
   const linhasProjecao = [...projecao.passado, ...projecao.linhas];
@@ -207,13 +246,13 @@ export default function FluxoCaixa({ onToast }) {
   // os KPIs do topo mostram ele. Mesma conta da projeção, cobrindo os 12
   // meses antes e depois (alcance do seletor), pra qualquer mês escolhido.
   const projecaoAmpla = useMemo(
-    () => projetar(lancamentos, { mesAtual, meses: 13, mesesPassados: 12, vendasEstimadas: vendasEst, custosEstimados: custosEst }),
-    [lancamentos, mesAtual, vendasEst, custosEst]
+    () => projetar(lancVisao, { mesAtual, meses: 13, mesesPassados: 12, vendasEstimadas: vendasEst, custosEstimados: custosEst }),
+    [lancVisao, mesAtual, vendasEst, custosEst]
   );
   // Saídas do mês escolhido pagas do bolso (fora do caixa da loja).
   const bolsoMes = useMemo(
-    () => lancamentos.filter((l) => l.tipo === "saida" && l.pago_com === "bolso" && l.data_realizada && l.recorrencia !== "mensal" && String(l.data_realizada).slice(0, 7) === mesFiltro).reduce((t, l) => t + Number(l.valor || 0), 0),
-    [lancamentos, mesFiltro]
+    () => lancVisao.filter((l) => l.tipo === "saida" && l.pago_com === "bolso" && l.data_realizada && l.recorrencia !== "mensal" && String(l.data_realizada).slice(0, 7) === mesFiltro).reduce((t, l) => t + Number(l.valor || 0), 0),
+    [lancVisao, mesFiltro]
   );
   const linhaSel = [...projecaoAmpla.passado, ...projecaoAmpla.linhas].find((l) => l.mes === mesFiltro) || mesCorrente;
   const selFase = mesFiltro < mesAtual ? "passado" : mesFiltro > mesAtual ? "futuro" : "atual";
@@ -222,15 +261,18 @@ export default function FluxoCaixa({ onToast }) {
 
   // --- Lista do mês filtrado (inclui ocorrências de recorrentes ainda não confirmadas) ---
   const listaMes = useMemo(() => {
-    const reais = lancamentosReais(lancamentos).filter((l) => mesDe(l.data_realizada || l.data_prevista) === mesFiltro);
-    const virtuais = ocorrenciasRecorrentes(lancamentos, mesFiltro, mesFiltro);
+    // Geral: o saque aparece UMA vez (a ponta de saída, "Saque Shopee → Conta da loja").
+    const base = geral ? lancamentos.filter((l) => !(ehTransferencia(l) && l.tipo === "entrada")) : lancVisao;
+    const reais = lancamentosReais(base).filter((l) => mesDe(l.data_realizada || l.data_prevista) === mesFiltro);
+    const virtuais = ocorrenciasRecorrentes(base, mesFiltro, mesFiltro);
     return [...reais, ...virtuais]
       .filter((l) => tipoFiltro === "todos" || (tipoFiltro === "aberto" ? !l.data_realizada : l.tipo === tipoFiltro))
       .sort((a, b) => (a.data_realizada || a.data_prevista).localeCompare(b.data_realizada || b.data_prevista));
-  }, [lancamentos, mesFiltro, tipoFiltro]);
+  }, [lancamentos, lancVisao, geral, mesFiltro, tipoFiltro]);
   const mostrarCanal = listaMes.some((l) => l.canal_id);
-  const totalMesEntradas = listaMes.filter((l) => l.tipo === "entrada").reduce((s, l) => s + Number(l.valor || 0), 0);
-  const totalMesSaidas = listaMes.filter((l) => l.tipo === "saida").reduce((s, l) => s + Number(l.valor || 0), 0);
+  const neutroNaVisao = (l) => geral && ehTransferencia(l);
+  const totalMesEntradas = listaMes.filter((l) => l.tipo === "entrada" && !neutroNaVisao(l)).reduce((s, l) => s + Number(l.valor || 0), 0);
+  const totalMesSaidas = listaMes.filter((l) => l.tipo === "saida" && !neutroNaVisao(l)).reduce((s, l) => s + Number(l.valor || 0), 0);
 
   const modelos = lancamentos.filter((l) => l.recorrencia === "mensal");
 
@@ -290,14 +332,14 @@ export default function FluxoCaixa({ onToast }) {
   const canalNome = (id) => canais.find((c) => c.id === id)?.nome || "";
 
   const temSaldoInicial = lancamentos.some((l) => l.categoria === "saldo_inicial");
-  const usandoMediaCustos = estimativas.custos === "" && mediaCustos > 0;
+  const usandoMediaCustos = geral && estimativas.custos === "" && mediaCustos > 0;
   const nMesesMedia = mesesDaMedia(lancamentos, mesAtual).size;
   const textoMeses = nMesesMedia === 1 ? "do último mês fechado" : `dos ${nMesesMedia} últimos meses fechados`;
-  const usandoMediaVendas = estimativas.vendas === "" && mediaVendas > 0;
+  const usandoMediaVendas = geral && estimativas.vendas === "" && mediaVendas > 0;
 
   // --- Ações ---
   function abrirNovo(tipo) {
-    setForm(novoForm(tipo));
+    setForm({ ...novoForm(tipo), carteira: cartSel !== "geral" ? cartSel : CARTEIRA_LOJA });
   }
 
   function abrirRecargaAds() {
@@ -337,6 +379,7 @@ export default function FluxoCaixa({ onToast }) {
       observacao: l.observacao || "",
       modeloId: null,
       pagoCom: l.pago_com || "",
+      carteira: carteiraDe(l),
     });
   }
 
@@ -353,6 +396,7 @@ export default function FluxoCaixa({ onToast }) {
       observacao: l.observacao || "",
       modeloId: l.modeloId,
       pagoCom: l.pago_com || "",
+      carteira: carteiraDe(l),
     });
   }
 
@@ -374,6 +418,7 @@ export default function FluxoCaixa({ onToast }) {
       recorrencia_ate: form.recorrente && form.recorrencia_ate ? form.recorrencia_ate : null,
       recorrencia_origem_id: form.modeloId || null,
       observacao: form.observacao.trim() || null,
+      carteira: form.carteira || CARTEIRA_LOJA,
     };
     // Pago com (v63): retirada e saída da reserva saem do caixa da loja.
     const pagoComEsc = form.tipo !== "saida" ? null : form.categoria === "retirada" || form.usarReserva ? "loja" : form.pagoCom || pagoComPadrao;
@@ -402,6 +447,10 @@ export default function FluxoCaixa({ onToast }) {
           ? supabase.from("lancamentos_caixa").insert(registro).select("id").single()
           : supabase.from("lancamentos_caixa").insert(registro);
     let r = await enviar();
+    if (r.error && /carteira/.test(r.error.message)) {
+      delete registro.carteira;
+      r = await enviar();
+    }
     if (r.error && /pago_com/.test(r.error.message)) {
       delete registro.pago_com;
       r = await enviar();
@@ -435,6 +484,12 @@ export default function FluxoCaixa({ onToast }) {
   }
 
   async function excluir(l, comGrupo = false) {
+    if (ehTransferencia(l) && l.transferencia_id) {
+      const r = await excluirTransferencia(l.transferencia_id);
+      if (!r.ok) return onToast?.(r.msg);
+      setLancamentos((prev) => prev.filter((x) => x.transferencia_id !== l.transferencia_id));
+      return onToast?.("Saque excluído (as duas pontas)");
+    }
     const { error } = await supabase.from("lancamentos_caixa").delete().eq("id", l.id);
     if (error) return onToast?.(`Não foi possível excluir: ${error.message}`);
     let ids = [l.id];
@@ -563,6 +618,11 @@ export default function FluxoCaixa({ onToast }) {
         <button type="button" className="btn so-pc" onClick={() => setCompraDialog({})} title="Registra a compra (atualiza o preço/kg do material) e cria a saída — à vista ou parcelada">
           Compra de material
         </button>
+        {carteiras.some((c) => c.plataforma) && (
+          <button type="button" className="btn" onClick={() => setTransferir({ de: carteiras.find((c) => c.id === cartSel && c.plataforma)?.id || carteiras.find((c) => c.plataforma)?.id })} title="Saque: o dinheiro sai da carteira da plataforma e entra na Conta da loja">
+            ⇄ Transferir (saque)
+          </button>
+        )}
         <button type="button" className="btn" onClick={() => abrirNovo("saida")}>
           − Saída
         </button>
@@ -587,11 +647,12 @@ export default function FluxoCaixa({ onToast }) {
 
       {sub === "caixa" && (
         <>
+          <CarteirasCaixa resumo={resumoCart} sel={cartSel} onSel={trocarCarteira} extratoDisponivel={extrato.disponivel} onTransferir={(de) => setTransferir({ de })} />
           <ResumoFixo>
             <Kpis
               itens={[
                 {
-                  label: "Saldo atual",
+                  label: geral ? "Saldo atual" : `Saldo atual · ${nomeCarteira(cartSel)}`,
                   valor: BRL(saldoAtual),
                   tom: saldoAtual >= 0 ? "destaque" : "bad",
                   sub: reserva.disponivel && saldoDaReserva > 0 ? `livre ${BRL(livre)} · reserva de produção ${BRL(saldoDaReserva)}` : "dinheiro da loja (o pago do seu bolso não sai daqui)",
@@ -626,7 +687,6 @@ export default function FluxoCaixa({ onToast }) {
           </ResumoFixo>
 
           <SaldoAdsCaixa s={saldoDeAds} hoje={hoje} onRecarga={abrirRecargaAds} nomeDe={nomeDoPeriodoAds} />
-          <AReceberCaixa />
 
           {nPendencias > 0 && (
             <div className={`pendencias-caixa${verPendentes ? " aberto" : ""}`}>
@@ -810,7 +870,7 @@ export default function FluxoCaixa({ onToast }) {
                 <table className="tabela-lancamentos">
                   <tbody>
                     {porDia.map((g) => {
-                      const somaDia = g.itens.reduce((t, l) => t + (l.tipo === "entrada" ? 1 : -1) * Number(l.valor || 0), 0);
+                      const somaDia = g.itens.filter((l) => !neutroNaVisao(l)).reduce((t, l) => t + (l.tipo === "entrada" ? 1 : -1) * Number(l.valor || 0), 0);
                       return (
                         <Fragment key={g.data}>
                           <tr className="dia-cab">
@@ -826,8 +886,26 @@ export default function FluxoCaixa({ onToast }) {
                             const [tom0, texto0] = STATUS_BADGE[st];
                             const vencida = st === "atrasado" && l.tipo === "saida";
                             const tom = vencida ? "bad" : tom0;
-                            const texto = vencida ? "! Vencida" : texto0;
+                            // Repasse dos pedidos entregues fica na carteira da plataforma (ainda não chegou no banco).
+                            const texto = vencida ? "! Vencida" : st === "recebido" && carteiraDe(l) !== CARTEIRA_LOJA && String(l.origem_import || "").startsWith("pedidos|") ? "✓ Entregue" : texto0;
                             const gp = l.parcela_grupo ? grupos.get(l.parcela_grupo) : null;
+                            if (neutroNaVisao(l))
+                              return (
+                                <tr key={l.id} className="lanc-linha lanc-transf">
+                                  <td className="lanc-cat">⇄</td>
+                                  <td>
+                                    <div className="lanc-desc">{l.descricao}</div>
+                                    <div className="lanc-sub">Transferência entre carteiras — o total da loja não muda{l.observacao ? ` · ${l.observacao}` : ""}</div>
+                                  </td>
+                                  <td></td>
+                                  <td className="num lanc-valor muted-cel">{BRL(l.valor)}</td>
+                                  <td className="num">
+                                    <span className="acoes-linha">
+                                      <button className="del" title="Excluir o saque (as duas pontas)" onClick={() => setExcluirAlvo(l)}>×</button>
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
                             return (
                               <tr key={l.id} className="lanc-linha">
                                 <td className="lanc-cat">
@@ -848,8 +926,9 @@ export default function FluxoCaixa({ onToast }) {
                                   </div>
                                   <div className="lanc-sub">
                                     {rotuloCategoria(l.tipo, l.categoria)}
+                                    {geral && carteiraDe(l) !== CARTEIRA_LOJA ? ` · carteira ${nomeCarteira(carteiraDe(l))}` : ""}
                                     {l.tipo === "saida" && l.pago_com === "bolso" && l.data_realizada ? " · do seu bolso" : ""}
-                                    {mostrarCanal && l.canal_id ? ` · ${canalNome(l.canal_id)}` : ""}
+                                    {mostrarCanal && l.canal_id && !(geral && carteiraDe(l) !== CARTEIRA_LOJA && canalNome(l.canal_id) === nomeCarteira(carteiraDe(l))) ? ` · ${canalNome(l.canal_id)}` : ""}
                                     {l.observacao ? ` · ${l.observacao}` : ""}
                                   </div>
                                 </td>
@@ -1081,6 +1160,19 @@ export default function FluxoCaixa({ onToast }) {
               </select>
             </div>
           </div>
+          {carteiras.length > 1 && !(form.tipo === "saida" && (form.pagoCom || pagoComPadrao) === "bolso" && form.categoria !== "retirada" && !form.usarReserva) && (
+            <div className="field">
+              <label>
+                Carteira
+                <Ajuda texto="Onde o dinheiro entrou/saiu. Conta da loja = o banco da loja (vendas físicas e orgânicas, contas, aportes). A carteira da plataforma é o saldo dentro dela — ex.: recarga de Ads paga com o saldo da Shopee. O repasse dos pedidos entra sozinho na carteira da plataforma." />
+              </label>
+              <select value={form.carteira || CARTEIRA_LOJA} onChange={(e) => setForm((p) => ({ ...p, carteira: e.target.value }))}>
+                {carteiras.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nome}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {!form.id && !form.modeloId && form.tipo === "saida" && form.categoria === "filamento" && (
             <div className="aviso-fluxo">
@@ -1227,11 +1319,26 @@ export default function FluxoCaixa({ onToast }) {
           onCancel={() => setExcluirAlvo(null)}
         />
       )}
+      {transferir && (
+        <TransferirDialog
+          lojaId={lojaId}
+          carteiras={resumoCart.carteiras}
+          inicial={transferir}
+          hoje={hoje}
+          onToast={onToast}
+          onFechar={(ok) => {
+            setTransferir(null);
+            if (ok) window.dispatchEvent(new Event("focus"));
+          }}
+        />
+      )}
       {excluirAlvo && !excluirAlvo.grupoParcelas && (
         <ConfirmDialog
           titulo="Excluir lançamento"
           mensagem={
-            excluirAlvo.recorrencia === "mensal"
+            ehTransferencia(excluirAlvo)
+              ? `Excluir o saque "${excluirAlvo.descricao}" (${BRL(excluirAlvo.valor)})? Saem as duas pontas (a saída da plataforma e a entrada na Conta da loja).`
+              : excluirAlvo.recorrencia === "mensal"
               ? `Excluir o recorrente "${excluirAlvo.descricao}"? Ele sai da projeção dos próximos meses (os meses já confirmados continuam registrados).`
               : `Excluir "${excluirAlvo.descricao}" (${BRL(excluirAlvo.valor)})? Não é possível desfazer.`
           }

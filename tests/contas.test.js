@@ -338,3 +338,37 @@ describe("Repasse dos pedidos = Minha Renda da Shopee (26/10/2026)", () => {
     expect(c.aReceber[0].descricao).toContain("pagos, ainda não entregues");
   });
 });
+
+describe("Carteiras do Caixa (26/10/2026)", () => {
+  it("separa liberado × a liberar pelo extrato e o saque não muda o total nem o resultado", async () => {
+    const { resumoCarteiras, interpretarExtratoShopee, carteiraDe } = await import("../src/lib/carteiras.js");
+    const { realDoMes, saldoRealizado } = await import("../src/lib/fluxoCaixa.js");
+    const ext = interpretarExtratoShopee([
+      ["Relatório"], ["De", "2026-07-26"], ["Para", "2026-10-26"],
+      ["Data", "Tipo de transação", "Descrição", "ID do pedido", "Direção do dinheiro", "Valor", "Status", "Balança após as transações", "Valor a Ser Ajustado"],
+      ["2026-10-22 14:29:22", "Renda do pedido", "Renda do pedido #X1", "X1", "Entrada", "10.32", "Transação completa", "47.78", "0.00"],
+      ["2026-10-09 15:40:21", "Renda do pedido", "Renda do pedido #X0", "X0", "Entrada", "3.79", "Transação completa", "3.79", "0.00"],
+    ]);
+    expect(ext.ok).toBe(true);
+    expect(ext.transacoes).toHaveLength(2);
+    const extrato = ext.transacoes.map((t) => ({ ...t, plataforma: "shopee" }));
+    const L = [
+      { tipo: "entrada", categoria: "venda", valor: 60, data_prevista: "2026-10-20", data_realizada: "2026-10-20", origem_import: "pedidos|shopee|2026-10-19" },
+      { tipo: "entrada", categoria: "venda", valor: 14, data_prevista: "2026-10-20", data_realizada: "2026-10-20", origem_import: "pedidos|fisico|2026-10-19" },
+      { tipo: "saida", categoria: "transferencia", carteira: "shopee", valor: 20, data_prevista: "2026-10-23", data_realizada: "2026-10-23" },
+      { tipo: "entrada", categoria: "transferencia", carteira: "loja", valor: 20, data_prevista: "2026-10-23", data_realizada: "2026-10-23" },
+    ];
+    expect(carteiraDe(L[0])).toBe("shopee");
+    expect(carteiraDe(L[1])).toBe("loja"); // venda física cai direto na Conta da loja
+    const r = resumoCarteiras({ lancamentos: L, canais: [{ tipo: "shopee" }], hoje: "2026-10-26", aReceber: [{ plataforma: "shopee", valor: 8 }], extrato });
+    const sh = r.carteiras.find((c) => c.id === "shopee");
+    expect(sh.saldo).toBe(40);
+    expect(sh.liberado).toBe(27.78); // 47,78 do extrato − saque de 20 registrado depois dele
+    expect(sh.aLiberar).toBe(12.22); // entregue no app e ainda não liberado
+    expect(r.carteiras.find((c) => c.id === "loja").saldo).toBe(34);
+    expect(r.total).toBe(74);
+    expect(r.aCaminho).toBe(8);
+    expect(saldoRealizado(L, "2026-10-26")).toBe(74);
+    expect(realDoMes(L, "2026-10").resultado).toBe(74); // o saque não é venda nem gasto
+  });
+});
