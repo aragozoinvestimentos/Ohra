@@ -146,21 +146,17 @@ export default function FluxoCaixa({ onToast }) {
   };
   const [verConfig, setVerConfig] = useState(false);
   // Carteiras (v67): Geral = a loja inteira; cada carteira = onde o dinheiro está.
-  const [carteiraSel, setCarteiraSel] = useState(() => {
+  // Carteira escolhida: SÓ nesta visita — a tela sempre abre no Geral (26/10/2026:
+  // ficava guardada no aparelho e o Caixa parecia ter perdido os lançamentos).
+  const [carteiraSel, setCarteiraSel] = useState("geral");
+  const trocarCarteira = (v) => setCarteiraSel(v);
+  useEffect(() => {
     try {
-      return localStorage.getItem("ohra:caixa:carteira") || "geral";
-    } catch {
-      return "geral";
-    }
-  });
-  const trocarCarteira = (v) => {
-    setCarteiraSel(v);
-    try {
-      localStorage.setItem("ohra:caixa:carteira", v);
+      localStorage.removeItem("ohra:caixa:carteira");
     } catch {
       // sem problema
     }
-  };
+  }, []);
   const [transferir, setTransferir] = useState(null);
   const extrato = useExtratoCarteira();
   const { pedidosValidos } = useCrescimento();
@@ -648,6 +644,16 @@ export default function FluxoCaixa({ onToast }) {
       {sub === "caixa" && (
         <>
           <CarteirasCaixa resumo={resumoCart} sel={cartSel} onSel={trocarCarteira} extratoDisponivel={extrato.disponivel} onTransferir={(de) => setTransferir({ de })} />
+          {!geral && (
+            <div className="aviso-carteira">
+              <span>
+                Mostrando <b>só a carteira {nomeCarteira(cartSel)}</b> — {lancamentos.filter((l) => l.recorrencia !== "mensal" && carteiraDe(l) !== cartSel).length} lançamentos das outras carteiras estão escondidos.
+              </span>
+              <button type="button" className="btn btn-mini primary" onClick={() => trocarCarteira("geral")}>
+                Ver tudo (Geral)
+              </button>
+            </div>
+          )}
           <ResumoFixo>
             <Kpis
               itens={[

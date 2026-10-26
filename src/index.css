@@ -2729,12 +2729,13 @@ td.vendas-opcao { padding-left: 26px; }
 .carteira-kpi small{font-size:12px;color:var(--ink-faint)}
 .carteira-kpi.forte{border-color:var(--accent)}
 .carteiras-cartoes{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
-.carteira-cartao{text-align:left;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;cursor:pointer}
-.carteira-cartao:hover{border-color:var(--ink-faint)}
+.carteira-cartao{text-align:left;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+
 .carteira-cartao.ativo{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .carteira-cab{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px}
 .carteira-saldo{font-size:17px;font-variant-numeric:tabular-nums}
 .carteira-linha{display:flex;justify-content:space-between;gap:8px;font-size:13px}
 .carteira-linha.faint{display:block;color:var(--ink-faint);font-size:12px}
+.aviso-carteira{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 14px;margin:0 0 10px;border:1px solid var(--st-atencao);background:var(--st-atencao-soft);border-radius:12px;font-size:13px}
 .lanc-transf .lanc-cat{color:var(--ink-faint);text-align:center}
 @media (max-width:760px){.carteiras-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}

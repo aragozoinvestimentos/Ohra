@@ -43,7 +43,7 @@ export default function CarteirasCaixa({ resumo, sel, onSel, extratoDisponivel, 
       </div>
       <div className="carteiras-cartoes">
         {resumo.carteiras.map((c) => (
-          <div key={c.id} className={`carteira-cartao${sel === c.id ? " ativo" : ""}`} onClick={() => onSel(sel === c.id ? "geral" : c.id)} title="Ver só esta carteira">
+          <div key={c.id} className={`carteira-cartao${sel === c.id ? " ativo" : ""}`}>
             <div className="carteira-cab">
               {c.plataforma ? <CanalTag tipo={c.tipo} nome={c.nome} /> : <b>Conta da loja</b>}
               <b className="carteira-saldo">{BRL(c.saldo)}</b>
