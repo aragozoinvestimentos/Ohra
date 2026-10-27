@@ -2563,7 +2563,7 @@ td.vendas-opcao { padding-left: 26px; }
 .sede-grade { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
 @media (max-width: 1050px) { .sede-grade { grid-template-columns: minmax(0, 1fr); } }
 .sede-cena { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); background: #1d2430; }
-.sede-cena canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; cursor: pointer; }
+.sede-cena canvas { display: block; width: 100%; height: auto; cursor: pointer; }
 .sede-camada { position: absolute; inset: 0; pointer-events: none; }
 .sede-placa { pointer-events: auto; position: absolute; transform: translate(-50%, -50%); background: #2b2f38; color: #f4efe7; font: 800 clamp(9px, 1.05vw, 12px) Manrope, sans-serif; letter-spacing: .03em; padding: 3px 8px 3px 18px; border-radius: 5px; border: 2px solid #4a4f5a; white-space: nowrap; cursor: pointer; box-shadow: 0 2px 0 rgba(0,0,0,.35); }
 .sede-placa:hover { border-color: #ffb36b; }
@@ -2603,7 +2603,7 @@ td.vendas-opcao { padding-left: 26px; }
 .sede-dica-tela { font-size: 12px; color: #8d95a3; }
 .sede-tela-cheia .sede-grade { display: block; flex: 1; min-height: 0; position: relative; }
 .sede-tela-cheia .sede-grade > div:first-child { height: 100%; display: flex; justify-content: center; align-items: center; }
-.sede-tela-cheia .sede-cena { width: min(100%, calc((100vh - 70px) * 640 / 416)); }
+.sede-tela-cheia .sede-cena { width: min(100%, calc((100vh - 70px) * 1392 / 780)); }
 .sede-tela-cheia .sede-fala { font-size: 15px; max-width: 280px; padding: 5px 11px; }
 .sede-agora-flutua { position: absolute; left: 12px; bottom: 12px; margin: 0; max-width: 420px; background: rgba(255,255,255,.92); color: #18171a; border: none; box-shadow: 0 4px 18px rgba(0,0,0,.3); }
 .sede-agora-flutua li span { color: #6b6a70; }
@@ -2669,7 +2669,7 @@ td.vendas-opcao { padding-left: 26px; }
   .sede-tela-cheia .sede-topo .btn { background: rgba(20,24,32,.78); color: #f4efe7; border-color: rgba(255,255,255,.18); padding: 3px 9px; font-size: 12px; }
   .sede-tela-cheia .sede-dica-tela { background: rgba(20,24,32,.7); padding: 2px 8px; border-radius: 999px; }
   .sede-tela-cheia .sede-grade > div:first-child { align-items: center; }
-  .sede-tela-cheia .sede-cena { width: min(100%, calc(var(--alt-tela) * 640 / 416)); border: none; border-radius: 0; }
+  .sede-tela-cheia .sede-cena { width: min(100%, calc(var(--alt-tela) * 1392 / 780)); border: none; border-radius: 0; }
   .sede-tela-cheia .sede-fala { font-size: 11.5px; max-width: 170px; padding: 3px 7px; }
   .sede-tela-cheia .sede-placa { font-size: 9px; padding: 2px 6px 2px 15px; }
   .sede-tela-cheia .sede-agora-flutua { left: 8px; bottom: 8px; max-width: 55%; padding: 5px 9px; font-size: 11px; opacity: .9; }
@@ -2739,3 +2739,30 @@ td.vendas-opcao { padding-left: 26px; }
 .aviso-carteira{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 14px;margin:0 0 10px;border:1px solid var(--st-atencao);background:var(--st-atencao-soft);border-radius:12px;font-size:13px}
 .lanc-transf .lanc-cat{color:var(--ink-faint);text-align:center}
 @media (max-width:760px){.carteiras-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Sede nova em perspectiva (27/10/2026): placas na parede, crachás, quadros e zoom */
+.sede-camada > * { position: absolute; left: 0; top: 0; }
+.sede-placa2 { pointer-events: auto; cursor: pointer; font: 800 7.5px/12px Manrope, sans-serif; letter-spacing: .03em; color: #3a2f26; background: #fbf6ee; border: 1px solid #b9a690; border-radius: 2px; padding: 0 4px 0 11px; white-space: nowrap; box-shadow: 0 1px 1px rgba(0,0,0,.25); }
+.sede-placa2 i { position: absolute; left: 3.5px; top: 50%; width: 5px; height: 5px; margin-top: -2.5px; border-radius: 50%; background: #8d95a3; }
+.sede-placa2.r i { background: #e0453a; } .sede-placa2.a i { background: #e8a317; } .sede-placa2.o i { background: #22a35a; }
+.sede-placa2:hover { border-color: #d2622b; }
+.sede-placa2.fechada { padding-left: 4px; background: #e9e4dc; color: #6b655f; }
+.sede-placa2.fechada b, .sede-placa2.cheia::after { color: #b4501f; }
+.sede-placa2.cheia::after { content: " · lotado"; font-weight: 800; }
+.sede-recorde { display: block; font: 700 5.4px/7px Manrope, sans-serif; color: #7a5a10; border-top: 1px solid #e3d3b5; margin-top: 1px; padding-bottom: 1px; letter-spacing: 0; text-align: center; }
+.sede-logo { pointer-events: none; display: flex; align-items: center; gap: 4px; padding: 2px 6px 2px 2px; background: #fffaf3; border: 2px solid #8a6a4a; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.35); white-space: nowrap; }
+.sede-logo span, .sede-logo img { width: 14px; height: 14px; border-radius: 50%; background: #d2622b; color: #fff; font: 800 9px/14px Manrope, sans-serif; text-align: center; object-fit: cover; }
+.sede-logo b { font: 800 8px Manrope, sans-serif; color: #3a2f26; }
+.sede-quadro-txt { pointer-events: none; font: 800 3.6px/4.8px Manrope, sans-serif; text-align: center; white-space: nowrap; }
+.sede-tv { color: #e9f1f7; } .sede-tv small { font-size: 3px; opacity: .8; }
+.sede-destaque { color: #3a2f26; }
+.sede-aovivo { pointer-events: none; font: 800 5px Manrope, sans-serif; color: #fff; background: #6b5d63; border-radius: 2px; padding: 0 3px; opacity: .7; }
+.sede-aovivo.on { background: #e0453a; opacity: 1; }
+.sede-vaga { pointer-events: none; font: 700 8px Manrope, sans-serif; color: #6b5d50; opacity: .8; }
+.sede-entrada { pointer-events: none; font: 800 10px Manrope, sans-serif; color: #e9e1d4; white-space: nowrap; }
+.sede-cracha { pointer-events: none; font: 700 10px/15px Manrope, sans-serif; color: #1f1d1b; background: #fff; border: 1px solid rgba(0,0,0,.18); border-left: 4px solid #9aa39b; border-radius: 7px; padding: 0 6px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.sede-cracha.r { border-left-color: #c0392b; } .sede-cracha.a { border-left-color: #c98a12; } .sede-cracha.o { border-left-color: #1f8a4c; }
+.sede-cracha.apagado { color: #8a8279; background: #ece8e2; }
+.sede-plaquinha { pointer-events: none; font: 700 8px/11px Manrope, sans-serif; color: #f5ecdf; background: linear-gradient(#5a3d2a, #3e2a1d); border: 1px solid #c9a37a; border-radius: 2px; padding: 0 4px; white-space: nowrap; }
+.sede-letra { pointer-events: none; font: 900 2.6px/3px Manrope, sans-serif; color: #d2622b; }
+.sede-voltar-zoom { position: absolute; right: 12px; top: 12px; z-index: 3; box-shadow: 0 2px 8px rgba(0,0,0,.35); }

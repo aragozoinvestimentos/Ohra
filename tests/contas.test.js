@@ -11,6 +11,8 @@ import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js"
 import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
 import { ateDoEnvioPedidos } from "../src/lib/pedidos.js";
 import { custoDosItens, custoMedioRevenda, estoqueDoProduto, lerNfe, limiteMei, situacaoEstoque, vendasPorProduto } from "../src/lib/revenda.js";
+import { pessoaDoAviso, salaDoAviso, salasDaLoja, partesDaLoja } from "../src/lib/sede.js";
+import { montarCena } from "../src/lib/sedeCena.js";
 
 const semCusto = { custoProduto: 0, frete: 0, embalagem: 0 };
 const perto = (v, alvo) => expect(Math.round(v * 100) / 100).toBe(alvo);
@@ -370,5 +372,36 @@ describe("Carteiras do Caixa (26/10/2026)", () => {
     expect(r.aCaminho).toBe(8);
     expect(saldoRealizado(L, "2026-10-26")).toBe(74);
     expect(realDoMes(L, "2026-10").resultado).toBe(74); // o saque não é venda nem gasto
+  });
+});
+
+describe("Sede nova em perspectiva (27/10/2026)", () => {
+  it("cada aviso vai pra sala e pra pessoa certa", () => {
+    const av = (id, aba, sub) => ({ id, ir: { aba, pedido: sub ? { sub } : undefined } });
+    expect(salaDoAviso(av("farm-manut|1", "farm"))).toBe("operacao");
+    expect(pessoaDoAviso(av("farm-manut|1", "farm"))).toBe("ivo");
+    expect(salaDoAviso(av("analise|importar", "importar"))).toBe("recepcao");
+    expect(pessoaDoAviso(av("analise|importar", "importar"))).toBe("ze");
+    expect(pessoaDoAviso(av("caixa|atrasados", "caixa"))).toBe("bia");
+  });
+  it("só a Live fica fechada sem live; impressoras e revenda acendem dentro da Operação", () => {
+    expect(salasDaLoja({ canais: [{ tipo: "shopee" }], lives: [] }).live).toBeTruthy();
+    expect(salasDaLoja({ canais: [{ tipo: "shopee" }], lives: [{ id: 1 }] }).live).toBeUndefined();
+    expect(partesDaLoja({ impressoras: [{ ativa: true }, { ativa: true }] })).toEqual({ impressoras: 2, revenda: false });
+    expect(partesDaLoja({ produtos: [{ origem: "revenda" }] }).revenda).toBe(true);
+  });
+  it("a cena tem lugar pra todo mundo, sem móvel em cima de quem senta", () => {
+    const c = montarCena({ impressoras: 2, revenda: true });
+    for (const id of ["ceo1", "ceo2", "consultor", "bia", "lia", "kai", "celia", "rafa", "nina", "leo", "teo", "ivo", "duda", "rui", "ze"]) {
+      const l = c.lugares[id];
+      expect(l, id).toBeTruthy();
+      expect(c.livre(l.x, l.y), id).toBe(true);
+    }
+    // corredor ↔ Comercial só pela porta; corredor ↔ Diretoria só pela porta da mureta
+    expect(c.passa(20, 16, 20, 17)).toBe(true);
+    expect(c.passa(5, 16, 5, 17)).toBe(false);
+    expect(c.passa(3, 12, 3, 11)).toBe(false);
+    expect(c.passa(7, 12, 7, 11)).toBe(true);
+    expect(c.placas).toHaveLength(8);
   });
 });

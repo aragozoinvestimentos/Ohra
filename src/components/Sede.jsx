@@ -7,7 +7,7 @@ import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 import { assinarSede, lerSede } from "../lib/sedeDados.js";
-import { ELENCO, SALAS_SEDE, avisosDaSede, ehOhra, nomesDaLoja, nomesDasSalas, nomesPadrao, ocultosDaLoja, pessoaDoAviso, salasDaLoja } from "../lib/sede.js";
+import { ELENCO, SALAS_SEDE, avisosDaSede, ehOhra, nomesDaLoja, nomesDasSalas, nomesPadrao, ocultosDaLoja, partesDaLoja, pessoaDoAviso, salaNova, salasDaLoja } from "../lib/sede.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useEstoque } from "../hooks/useEstoque.js";
 import { useConsultor } from "../hooks/useConsultor.js";
@@ -21,19 +21,20 @@ import ConsultorPainel from "./ConsultorPainel.jsx";
 import { criarSede, TAMANHO_SEDE } from "../lib/sedeMotor.js";
 import { periodoLigado } from "../lib/ads.js";
 import { hojeSP } from "../lib/datas.js";
-import { configCalendario } from "../lib/calendario.js";
+import { configCalendario, infoSazonal } from "../lib/calendario.js";
 import { ehValido } from "../lib/pedidos.js";
 import { irParaAba } from "../lib/navegar.js";
 import { marcarVoltaSede, pedirTelaSede } from "../lib/sedeTela.js";
 import { BRL } from "../lib/format.js";
 import Estado from "./Estado.jsx";
 
-// Sede da <loja> (24/10/2026): o escritório da loja em pixel art, ao vivo.
+// Sede da <loja> (24/10/2026; planta nova em perspectiva 27/10/2026): o escritório da loja, ao vivo.
 // SÓ MOSTRA — os avisos vêm do Início (sedeDados.js), as reações vêm do
 // realtime das tabelas (produto novo, pedidos, live, Ads, conta paga, meta).
 // Único dado gravado: os nomes dos personagens (preferencias_loja `sede:personagens`).
 const ESTADO = { resolver: "resolver", rotina: "atencao", oportunidade: "oportunidade" };
 const FAZENDO = { sentado: "trabalhando na mesa", trabalhando: "trabalhando", andando: "andando pela empresa", parado: "conversando", live: "fazendo live", fora: "foi pra casa" };
+const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const agoraHora = () => new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date());
 const saudacao = () => {
   const h = Number(new Intl.DateTimeFormat("pt-BR", { hour: "numeric", hour12: false, timeZone: "America/Sao_Paulo" }).format(new Date())) % 24;
@@ -68,7 +69,6 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const { lancamentos, carregando: carregandoCaixa } = useLancamentosCaixa();
   const hoje = hojeSP();
 
-  const impressoras = (cat.impressoras || []).filter((i) => i.ativa !== false).length || 1;
   const av = useMemo(() => avisosDaSede(sede.pendencias), [sede.pendencias]);
   const live = (lives || []).some((l) => l.status === "aovivo");
   const adsLigados = useMemo(() => (periodos || []).filter((p) => periodoLigado(p, hoje)), [periodos, hoje]);
@@ -110,7 +110,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
       gravarRegistro(registro.loja_id, "consultoria", registro.chave, dados, registro.status);
     }
   }, [maduro, cons.registros, cons.disponivel, cons.carregando, consultoriasTodas, propostasTodas, ideiasTodas, hoje, sede.pronto]);
-  const cheiasNovas = useMemo(() => Object.fromEntries(consultoriasTodas.filter((c) => c.cheia).map((c) => [c.sala, true])), [consultoriasTodas]);
+  const cheiasNovas = useMemo(() => Object.fromEntries(consultoriasTodas.filter((c) => c.cheia).map((c) => [salaNova(c.sala), true])), [consultoriasTodas]);
   // arquivos que o consultor entrega (backup de 15 em 15 dias) — gera só no clique
   const backup = useBackup(onToast);
   // relatórios exportáveis (montados só no clique)
@@ -130,8 +130,11 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   // salas abertas pelo que a loja tem (automático) + nomes das salas (✎ Nomes)
   const estoque = useEstoque();
   const fechadas = useMemo(() => salasDaLoja({ impressoras: cat.impressoras, produtos: cat.produtos, canais: cat.canais, lives, fornecedores: estoque.fornecedores, compras: estoque.compras }), [cat.impressoras, cat.produtos, cat.canais, lives, estoque.fornecedores, estoque.compras]);
+  const partes = useMemo(() => partesDaLoja({ impressoras: cat.impressoras, produtos: cat.produtos, fornecedores: estoque.fornecedores, compras: estoque.compras }), [cat.impressoras, cat.produtos, estoque.fornecedores, estoque.compras]);
   const nomesSalas = nomesDasSalas(salvos);
-  const chaveMotor = `${ehOhra(nomeLoja) ? "ohra" : "outra"}|${impressoras}|${ELENCO.map((e) => nomes[e.id]).join(",")}|${[...ocultos].sort().join(",")}|${Object.keys(fechadas).sort().join(",")}|${Object.values(nomesSalas).join(",")}`;
+  const loja = (lojas || []).find((l) => l.id === lojaId);
+  const chaveMotor = `${ehOhra(nomeLoja) ? "ohra" : "outra"}|${partes.impressoras}|${partes.revenda}|${ELENCO.map((e) => nomes[e.id]).join(",")}|${[...ocultos].sort().join(",")}|${Object.keys(fechadas).sort().join(",")}|${Object.values(nomesSalas).join(",")}|${nomeLoja}|${loja?.icone_url || ""}`;
+  const [zoomSala, setZoomSala] = useState(null);
   const aoConversar = useRef(null);
   useEffect(() => {
     if (!canvasRef.current || !camadaRef.current) return undefined;
@@ -139,13 +142,14 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     const m = criarSede({
       canvas: canvasRef.current,
       camada: camadaRef.current,
-      personagens: { estilo: chaveMotor.split("|")[0], nomes, ocultos },
+      personagens: { estilo: chaveMotor.split("|")[0], nomes, ocultos, letra: String(nomeLoja).trim().charAt(0), nomeLoja, logoUrl: loja?.icone_url || null },
       salas: { fechadas, nomes: nomesSalas },
+      partes,
       onConversa: (c) => aoConversar.current?.(c),
-      impressoras,
+      onZoom: setZoomSala,
       reduzir,
       onSala: (k) => {
-        setSel({ sala: k });
+        setSel(k === "gg" ? { consultor: true } : { sala: k });
         setPainelTela(true);
       },
     });
@@ -168,11 +172,34 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     if (!antes) return;
     for (const k of Object.keys(antes)) if (!fechadas[k]) setTimeout(() => motor.current?.evento("salaAberta", { k }), 600);
   }, [fechadas, prontoSalas]);
-  const producao = av.luz.producao === "r" || av.luz.producao === "a" ? av.luz.producao : null;
+  // quadro RECORDE da Diretoria: o melhor mês fechado de faturamento (pedidos importados) × este mês
+  const recorde = useMemo(() => {
+    const porMes = {};
+    for (const l of cres?.pedidosValidos || []) {
+      const m = String(l.data || "").slice(0, 7);
+      if (m) porMes[m] = (porMes[m] || 0) + (Number(l.pago) || 0);
+    }
+    const mesAtual = hoje.slice(0, 7);
+    const fechados = Object.entries(porMes).filter(([m]) => m < mesAtual).sort((a, b) => b[1] - a[1]);
+    if (!fechados.length) return null;
+    const [m, v] = fechados[0];
+    return { valor: BRL(v), mes: `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`, pct: `${Math.round(((porMes[mesAtual] || 0) / v) * 100)}%` };
+  }, [cres?.pedidosValidos, hoje]);
+  // decoração da época: árvore de Natal em dezembro ou com produto de Natal na temporada
+  const epoca = useMemo(() => {
+    if (hoje.slice(5, 7) === "12") return "natal";
+    const natal = (cat.produtos || []).some((p) => {
+      const q = p.escada_config?.quandoVende;
+      if (!q || !(q.datas || []).includes("natal")) return false;
+      const i = infoSazonal(q, calLoja, hoje);
+      return i && i.chave === "natal" && (i.fase === "subindo" || i.fase === "pico");
+    });
+    return natal ? "natal" : null;
+  }, [cat.produtos, calLoja, hoje]);
   useEffect(() => {
-    motor.current?.dados({ luz: av.luz, porPessoa: av.porPessoa, metaPct: sede.kpis?.metaPct || 0, live, ads: adsLigados.length > 0, producao, pendentes: nConsultor, cheiasNovas, conversasNovas: propostas });
+    motor.current?.dados({ luz: av.luz, porPessoa: av.porPessoa, live, pendentes: nConsultor, cheiasNovas, conversasNovas: propostas, recorde, epoca });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [av, sede.kpis, live, adsLigados.length, producao, chaveMotor, nConsultor, cheiasNovas, JSON.stringify(propostas.map((p) => p.chave))]);
+  }, [av, live, chaveMotor, nConsultor, cheiasNovas, recorde, epoca, JSON.stringify(propostas.map((p) => p.chave))]);
 
   // ---------- "Acontecendo agora" e reações ao vivo ----------
   const [feed, setFeed] = useState(() => [{ hora: agoraHora(), txt: `👋 ${nomes.ceo1} e ${nomes.ceo2} chegaram na Sede` }]);
@@ -280,13 +307,17 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   function clicar(e) {
     const b = e.currentTarget.getBoundingClientRect();
     // girada 90° (horário): o eixo x da cena desce na tela e o y vai pra esquerda
-    const x = girado ? ((e.clientY - b.top) / b.height) * TAMANHO_SEDE.largura : ((e.clientX - b.left) / b.width) * TAMANHO_SEDE.largura;
-    const y = girado ? ((b.right - e.clientX) / b.width) * TAMANHO_SEDE.altura : ((e.clientY - b.top) / b.height) * TAMANHO_SEDE.altura;
-    const q = motor.current?.quemEsta(x, y);
+    const fx = girado ? (e.clientY - b.top) / b.height : (e.clientX - b.left) / b.width;
+    const fy = girado ? (b.right - e.clientX) / b.width : (e.clientY - b.top) / b.height;
+    const q = motor.current?.quemEsta(fx, fy);
     if (!q) return;
     if (q.consultor) setSel({ consultor: true });
     else if (q.nome) setSel({ pessoa: q });
-    else if (q.sala) setSel({ sala: q.sala });
+    else if (q.sala) {
+      // clicar numa sala = entrar nela (zoom); clicar de novo na mesma não muda
+      if (motor.current?.sala() !== q.sala) motor.current?.zoom(q.sala);
+      setSel(q.sala === "gg" ? { consultor: true } : { sala: q.sala });
+    }
     setPainelTela(true);
   }
   const abrir = (p) => {
@@ -358,7 +389,10 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     if (tela === "descanso") pedirTelaNavegador();
     const sair = () => sairTelaRef.current();
     const tecla = (e) => {
-      if (e.key === "Escape") sair();
+      if (e.key !== "Escape") return;
+      // com zoom numa sala, o Esc volta pra Sede inteira antes de sair da tela cheia
+      if (motor.current?.sala()) motor.current.zoom(null);
+      else sair();
     };
     const fs = () => {
       if (!document.fullscreenElement && !document.webkitFullscreenElement && tela === "manual" && pediuTela.current) sair();
@@ -392,7 +426,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const k = sede.kpis;
   const nDecidir = av.porSala.diretoria.length;
   const quemNaSala = (s) => {
-    const ids = { diretoria: ["ceo1", "ceo2"], live: ["ceo2"], financeiro: ["bia"], comercial: ["rafa", "nina", "leo", "celia"], producao: ["teo"], estoque: ["duda", "ze"], revenda: [] }[s] || [];
+    const ids = s === "live" ? ["ceo2"] : s === "reuniao" ? [] : ELENCO.filter((e) => e.sala === s && !ocultos.has(e.id)).map((e) => e.id);
     return ids.map((id) => `${nomes[id]} (${ELENCO.find((e) => e.id === id).funcao})`).join(" · ");
   };
 
@@ -538,8 +572,13 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
       <div className={`sede-grade${sel.consultor ? " com-consultor" : ""}`}>
         <div>
           <div className="sede-cena">
-            <canvas ref={canvasRef} width={TAMANHO_SEDE.largura} height={TAMANHO_SEDE.altura} onClick={clicar} aria-label={`Sede da ${nomeLoja}: escritório animado`} />
+            <canvas ref={canvasRef} onClick={clicar} style={{ aspectRatio: `${TAMANHO_SEDE.largura} / ${TAMANHO_SEDE.altura}` }} aria-label={`Sede da ${nomeLoja}: escritório animado`} />
             <div ref={camadaRef} className="sede-camada" />
+            {zoomSala && (
+              <button type="button" className="btn btn-sm sede-voltar-zoom" onClick={() => motor.current?.zoom(null)}>
+                ← Voltar pra Sede <small>(Esc)</small>
+              </button>
+            )}
             {boas && (
               <div className={`sede-boas ${boas.saindo ? "saindo" : ""}`} onClick={() => setBoas((b) => ({ ...b, saindo: true }))}>
                 <b>{boas.titulo}</b>
@@ -641,7 +680,8 @@ function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque }
     <>
       <h3>{nome || s.nome}</h3>
       {quem && <div className="sede-quem">{quem}</div>}
-      {k === "revenda" && <ResumoEstoque linhas={estoque || []} />}
+      {k === "operacao" && (estoque || []).length > 0 && <ResumoEstoque linhas={estoque || []} />}
+      {k === "reuniao" && <div className="sede-ok">A agenda da equipe (reunião do Bom dia às 9h, reunião da semana, fechamento do mês) chega na próxima etapa da Sede.</div>}
       <ListaAvisos avisos={avisos} abrir={abrir} />
       {k === "diretoria" && <div className="hint">Na Diretoria ficam os avisos urgentes de todas as salas — só vocês decidem.</div>}
       {s.aba && (
