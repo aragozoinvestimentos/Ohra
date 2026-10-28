@@ -20,6 +20,7 @@ import VariacoesProduto from "./VariacoesProduto.jsx";
 import QuandoVende from "./QuandoVende.jsx";
 import { EmbalagemOrganicoBloco } from "./EmbalagemOrganico.jsx";
 import BlocoRevenda from "./BlocoRevenda.jsx";
+import CalculadoraPreco from "./CalculadoraPreco.jsx";
 import { useRevenda } from "../hooks/useRevenda.js";
 
 const VAZIO = {
@@ -541,6 +542,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           <div className="field">
             <label>{ehRev ? "Custo de compra (R$)" : "Custo de produção (R$)"}</label>
             {ehRev ? (
+              <>
               <input
                 type="number"
                 step="0.01"
@@ -549,6 +551,8 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
                 onChange={setCampo("custo_producao")}
                 title={temNotas ? "Média das últimas notas de compra — muda sozinho a cada nota importada" : "Valor manual até a 1ª nota de compra ser importada"}
               />
+              {!temNotas && <CalculadoraPreco unidade="un" onAplicar={(v) => setForm((prev) => ({ ...prev, custo_producao: String(v) }))} />}
+              </>
             ) : (
               <input
                 type="number"

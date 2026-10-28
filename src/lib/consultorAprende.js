@@ -245,6 +245,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-28", texto: "No cadastro de produto de revenda dá pra calcular o custo por unidade pelo total da compra (ex.: caixa com 24 por R$ 138 = R$ 5,75 cada), como já era em Embalagens e Materiais." },
   { data: "2026-10-28", texto: "Nota de compra também pelo PDF (DANFE), quando não tiver o XML — confira os valores antes de gravar. Preços salvos e Anúncios mostram no topo os avisos que geram a bolinha do menu, com “lembrar em 30 dias”, e o custo mudou tem “✓ visto”. Rampa em “não acompanhar” cala todos os avisos daquele anúncio." },
   { data: "2026-10-28", texto: "Cada setor (Financeiro, Comercial, Operação) tem uma nota da semana de 0 a 10, sempre mostrando de onde vem — contas em dia mas pagas do seu bolso não dão 10. A seta compara com a semana passada (precisa do SQL v68)." },
   { data: "2026-10-28", texto: "A equipe ganha estrelas com o que vocês aprovam (★ +1) e com o que dá certo (★ +3); quem junta o bastante fica pronto pra promoção — sempre aprovada por vocês na Sala de reunião, que também mostra a pauta, a opinião dos gerentes e o ranking do mês." },
