@@ -116,6 +116,19 @@ export function montarPendencias({
       rotulo: t === "negativo" ? "Conferir (inventário)" : "Ver estoque",
     });
   }
+  // produtos de revenda criados pela nota com cadastro incompleto (SKU, peso, preço, NCM)
+  const incompletos = estoque.filter((l) => l.faltas?.length);
+  if (incompletos.length)
+    add({
+      id: "revenda|completar",
+      grupo: "rotina",
+      ordem: 4,
+      tom: "warn",
+      titulo: `Completar o cadastro de ${incompletos.length} ${incompletos.length === 1 ? "produto" : "produtos"} de revenda`,
+      texto: incompletos.slice(0, 3).map((l) => `${l.produto.nome} (falta ${l.faltas.join(", ")})`).join(" · ") + (incompletos.length > 3 ? ` · +${incompletos.length - 3}` : ""),
+      ir: { aba: "estoque", pedido: { sub: "estoque" } },
+      rotulo: "Ver a lista",
+    });
   if (limiteMei?.atencao)
     add({
       id: "mei|limite",

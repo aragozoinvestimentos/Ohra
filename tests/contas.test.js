@@ -1,3 +1,6 @@
+import { cascataDoPeriodo } from "../src/lib/resumoLoja.js";
+import { aliquotaEfetiva, aliquotaDaVenda, rbt12, dasDoMes } from "../src/lib/simples.js";
+import { fiscalDoItem, sugerirSku, produtosParecidos, faltasDoCadastro } from "../src/lib/revenda.js";
 import { interpretarDanfe, partesDaChave } from "../src/lib/danfe.js";
 import { comparaSemana, notasDaSemana, semanaDe } from "../src/lib/sedeNotas.js";
 import { estrelasDaEquipe, prontosPraPromocao, promover, proximoNivel, destaqueDaSemana, opinioesDosGerentes } from "../src/lib/sedeEquipe.js";
@@ -521,5 +524,60 @@ describe("Nota de compra pelo PDF (DANFE)", () => {
   it("PDF sem texto ou que não é DANFE", () => {
     expect(interpretarDanfe([{ itens: [] }]).erro).toContain("imagem");
     expect(interpretarDanfe([{ itens: [I("Boleto", 1, 1)] }]).erro).toContain("não parece");
+  });
+});
+
+describe("Nota de compra — fiscal, SKU e produto parecido (v69)", () => {
+  it("nota real Union Medic: CFOP 5405 = ST, NCM 3304 = monofásico, origem pela CST", () => {
+    const f = fiscalDoItem({ ncm: "33042010", cfop: "5405", cst: "260" });
+    expect(f).toMatchObject({ st: true, monofasico: true, origem: "2" });
+    expect(fiscalDoItem({ ncm: "39269090", cfop: "5102", cst: "000" })).toMatchObject({ st: false, monofasico: false });
+  });
+  it("SKU pela referência do fabricante, sem repetir", () => {
+    expect(sugerirSku({ descricao: "CANETA DELINEADORA RR2200 MELU" }).sku).toBe("RR2200");
+    expect(sugerirSku({ descricao: "SOMBRA DE SOBRANCELHA HBF572 RUBYROSE" }, new Set(["HBF572"])).sku).toBe("HBF572-2");
+    expect(sugerirSku({ descricao: "COPO TERMICO INOX", codigo: "2561" }).sku).toBe("COPO-TERMICO-2561");
+  });
+  it("produto parecido: EAN, referência e SKU vendido na Olist", () => {
+    const prods = [{ id: "a", nome: "Delineador Ruby", sku: "RR2200", ean: "" }, { id: "b", nome: "Outro", sku: "X", ean: "7900083000665" }];
+    const r = produtosParecidos({ descricao: "CANETA DELINEADORA RR2200 MELU", ean: "7900083000665" }, prods, { skusVendidos: ["RR2200-PRETO"] });
+    expect(r.candidatos.map((c) => c.produto.id)).toEqual(["b", "a"]);
+    expect(r.skuVendido).toBe("RR2200-PRETO");
+  });
+  it("cadastro incompleto", () => {
+    expect(faltasDoCadastro({ sku: "", peso_g: null, ncm: "" }, { temPreco: false })).toEqual(["SKU", "peso", "preço", "NCM"]);
+  });
+});
+
+describe("Simples Nacional (estimativa)", () => {
+  it("alíquota efetiva pela faixa: Anexo I com RBT12 de R$ 300 mil", () => {
+    // (300.000 × 7,3% − 5.940) ÷ 300.000 = 5,32%
+    expect(aliquotaEfetiva("I", 300000)).toBeCloseTo(0.0532, 4);
+    expect(aliquotaEfetiva("II", 0)).toBe(0.045);
+  });
+  it("ST tira o ICMS e monofásico tira PIS/COFINS da alíquota da venda", () => {
+    const cheia = aliquotaDaVenda({ anexo: "I", rbt: 100000 });
+    expect(cheia).toBeCloseTo(0.04, 6);
+    expect(aliquotaDaVenda({ anexo: "I", rbt: 100000, st: true })).toBeCloseTo(0.04 * 0.66, 6);
+    expect(aliquotaDaVenda({ anexo: "I", rbt: 100000, st: true, monofasico: true })).toBeCloseTo(0.04 * (1 - 0.34 - 0.0276 - 0.1274), 6);
+  });
+  it("RBT12 proporcional no início e DAS do mês separado por tipo", () => {
+    const ped = (data, pago, item) => ({ valido: true, data, pago, item });
+    const pedidos = [ped("2026-08-10", 1000, { id: "p:a" }), ped("2026-09-10", 2000, { id: "p:b" }), ped("2026-10-05", 500, { id: "p:a" }), ped("2026-10-06", 500, { id: "p:b" })];
+    expect(rbt12({ pedidos, mes: "2026-10" })).toMatchObject({ valor: 18000, meses: 2, origem: "proporcional" });
+    const d = dasDoMes({ pedidos, mes: "2026-10", cfgLoja: { impostos: { regime: "simples" } }, produtos: [{ id: "a", origem: "revenda", imposto_st: true, monofasico: true }, { id: "b", origem: "fabricado" }] });
+    expect(d.faturamento).toBe(1000);
+    expect(d.linhas.find((l) => l.tipo === "st-mono").imposto).toBeCloseTo(500 * 0.04 * (1 - 0.34 - 0.0276 - 0.1274), 2);
+    expect(d.linhas.find((l) => l.anexo === "II").imposto).toBeCloseTo(500 * 0.045, 2);
+  });
+});
+
+describe("Do faturamento ao lucro (cascata)", () => {
+  it("fecha linha por linha até o lucro líquido", () => {
+    const canal = { id: "s", nome: "Shopee" };
+    const pedidos = [{ valido: true, data: "2026-10-10", pedido: "1", pago: 90, bruto: 100, recebe: 70, imposto: 0, custo: 30, lucro: 40, canal }];
+    const lancamentos = [{ tipo: "saida", recorrencia: "mensal", categoria: "taxas", descricao: "DAS MEI", valor: 80, data_prevista: "2026-01-20" }];
+    const c = cascataDoPeriodo({ pedidos, linhasAds: { linhas: [] }, lancamentos, de: "2026-10-01", ate: "2026-10-31" }).total;
+    expect(c).toMatchObject({ bruto: 100, descontos: 10, pago: 90, taxas: 20, custo: 30, lucroBruto: 40, ads: 0, depoisAds: 40, fixas: 80, liquido: -40 });
   });
 });

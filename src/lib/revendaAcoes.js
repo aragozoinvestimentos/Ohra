@@ -6,12 +6,21 @@
 import { supabase } from "./supabaseClient.js";
 import { recarregarRevenda } from "../hooks/useRevenda.js";
 import { recarregarCatalogo } from "./catalogoStore.js";
-import { custoMedioRevenda } from "./revenda.js";
+import { custoMedioRevenda, fiscalDoItem } from "./revenda.js";
 
 export const SQL_REVENDA = "Rode o supabase/schema_v66.sql no Supabase pra usar a revenda (notas, fornecedores e estoque)";
 const ehFaltaTabela = (e) => !!e && /fornecedor|compras_revenda|estoque_movimentos|origem|compra_revenda_id|schema cache|does not exist/i.test(e.message || "");
 const erro = (e) => ({ message: ehFaltaTabela(e) ? SQL_REVENDA : e?.message || "erro" });
 const cent = (v) => Math.round((Number(v) || 0) * 100) / 100;
+export const SQL_FISCAL = "Rode o supabase/schema_v69.sql no Supabase pra guardar NCM, CFOP, ST e monofásico";
+const ehFaltaFiscal = (e) => !!e && /ncm|cest|cfop|unidade_com|origem_mercadoria|monofasico|fiscal|cst/i.test(e.message || "");
+const CAMPOS_FISCAIS = ["ncm", "cest", "unidade_com", "origem_mercadoria", "monofasico", "fiscal", "imposto_st"];
+const semFiscais = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !CAMPOS_FISCAIS.includes(k)));
+/** Campos fiscais do produto a partir do item da nota (v69). */
+export function camposFiscais(l) {
+  const f = fiscalDoItem(l);
+  return { ncm: f.ncm, cest: f.cest, unidade_com: l.unidade || null, origem_mercadoria: f.origem, imposto_st: f.st, monofasico: f.monofasico, fiscal: { cfop_compra: f.cfop, cst_compra: f.cst, ...(l.fci ? { fci: l.fci } : {}) } };
+}
 
 /** Recalcula e grava o custo médio dos produtos (3 últimas notas que contam). */
 export async function recalcularCustoRevenda(produtoIds) {
@@ -43,13 +52,16 @@ export async function gravarNota({ lojaId, nota, linhas, fornecedores, difal, co
   if (f.error) return f;
   // produtos novos (cadastrados a partir do item da nota)
   const idsNovos = {};
+  let avisoFiscal = null;
   for (const n of novosProdutos) {
-    const { data, error } = await supabase
-      .from("produtos_cadastro")
-      .insert({ loja_id: lojaId || null, nome: n.nome, ean: n.ean || null, origem: "revenda", fornecedor_id: f.id, custo_producao: cent(n.custo), embalagem_padrao: 0, frete_padrao: 0 })
-      .select("id")
-      .single();
-    if (error) return { error: erro(error) };
+    const base = { loja_id: lojaId || null, nome: n.nome, sku: n.sku || null, ean: n.ean || null, origem: "revenda", fornecedor_id: f.id, custo_producao: cent(n.custo), embalagem_padrao: 0, frete_padrao: 0 };
+    const ins = (o) => supabase.from("produtos_cadastro").insert(o).select("id").single();
+    let { data, error } = await ins({ ...base, ...(n.fiscal || {}) });
+    if (error && ehFaltaFiscal(error)) {
+      ({ data, error } = await ins(base));
+      avisoFiscal = SQL_FISCAL;
+    }
+    if (error) return { error: /duplicate|unique/i.test(error.message) && /sku/i.test(error.message) ? { message: `O SKU ${n.sku} já existe — troque antes de gravar.` } : erro(error) };
     idsNovos[n.chave] = data.id;
   }
   const usadas = linhas.map((l) => ({ ...l, produtoId: l.produtoId === "novo" ? idsNovos[l.n] : l.produtoId })).filter((l) => l.produtoId);
@@ -81,8 +93,9 @@ export async function gravarNota({ lojaId, nota, linhas, fornecedores, difal, co
     .select("id")
     .single();
   if (ec) return { error: /duplicate|unique/i.test(ec.message) ? { message: `A NF ${nota.numero} já foi importada — não entra duas vezes.` } : erro(ec) };
-  const rIt = await supabase.from("compras_revenda_itens").insert(
-    usadas.map((l) => ({
+  const linhasItens = usadas.map((l) => {
+    const fi = fiscalDoItem(l);
+    return {
       loja_id: lojaId || null,
       compra_id: compra.id,
       produto_id: l.produtoId,
@@ -99,8 +112,17 @@ export async function gravarNota({ lojaId, nota, linhas, fornecedores, difal, co
       frete_un: Math.round(l.freteUn * 10000) / 10000,
       difal_un: Math.round(l.difalUn * 10000) / 10000,
       custo_un: l.custoUn,
-    }))
-  );
+      ncm: fi.ncm,
+      cest: fi.cest,
+      cfop: fi.cfop,
+      cst: fi.cst,
+    };
+  });
+  let rIt = await supabase.from("compras_revenda_itens").insert(linhasItens);
+  if (rIt.error && ehFaltaFiscal(rIt.error)) {
+    rIt = await supabase.from("compras_revenda_itens").insert(linhasItens.map(({ ncm: _n, cest: _c, cfop: _f, cst: _s, ...r }) => r));
+    avisoFiscal = SQL_FISCAL;
+  }
   if (rIt.error) {
     await supabase.from("compras_revenda").delete().eq("id", compra.id);
     return { error: erro(rIt.error) };
@@ -112,10 +134,22 @@ export async function gravarNota({ lojaId, nota, linhas, fornecedores, difal, co
     { onConflict: "loja_id,fornecedor_id,codigo" }
   );
   // produto ligado passa a ser de revenda (e ganha o EAN da nota se não tinha)
+  // e os dados fiscais da nota (só preenche o que estava vazio — o que você editou fica)
   for (const l of usadas) {
     const campos = { origem: "revenda", fornecedor_id: f.id };
     if (l.ean && !l.produtoTemEan) campos.ean = l.ean;
-    await supabase.from("produtos_cadastro").update(campos).eq("id", l.produtoId);
+    if (l.produtoFiscal) {
+      const fc = camposFiscais(l);
+      for (const k of ["ncm", "cest", "unidade_com", "origem_mercadoria"]) if (!l.produtoFiscal[k] && fc[k]) campos[k] = fc[k];
+      if (l.produtoFiscal.imposto_st == null) campos.imposto_st = fc.imposto_st;
+      if (l.produtoFiscal.monofasico == null) campos.monofasico = fc.monofasico;
+      campos.fiscal = { ...(l.produtoFiscal.fiscal || {}), ...fc.fiscal };
+    }
+    const r = await supabase.from("produtos_cadastro").update(campos).eq("id", l.produtoId);
+    if (r.error && ehFaltaFiscal(r.error)) {
+      await supabase.from("produtos_cadastro").update(semFiscais(campos)).eq("id", l.produtoId);
+      avisoFiscal = SQL_FISCAL;
+    }
   }
   // Caixa: as duplicatas da nota (ou uma saída na emissão)
   const nome = nota.emitente?.nome || "fornecedor";
@@ -143,7 +177,7 @@ export async function gravarNota({ lojaId, nota, linhas, fornecedores, difal, co
   recarregarRevenda();
   recarregarCatalogo();
   window.dispatchEvent(new Event("focus"));
-  return { error: null, avisoCaixa: rc.error ? `A nota entrou, mas o Caixa não: ${rc.error.message}` : null, compraId: compra.id, itens: usadas.length };
+  return { error: null, avisoCaixa: rc.error ? `A nota entrou, mas o Caixa não: ${rc.error.message}` : null, avisoFiscal, compraId: compra.id, itens: usadas.length };
 }
 
 /** Exclui a nota: itens e entradas de estoque saem; parcelas EM ABERTO saem do Caixa (pagas ficam). */

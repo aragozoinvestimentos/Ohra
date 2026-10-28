@@ -2808,3 +2808,9 @@ td.vendas-opcao { padding-left: 26px; }
 .avisos-tela li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 13px; }
 .avisos-tela li:first-child { border-top: 0; }
 .avisos-tela-txt { color: var(--ink-soft); }
+.completar-lista { list-style: none; margin: 0; padding: 0; }
+.completar-lista li { padding: 5px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.completar-lista li:first-child { border-top: 0; }
+.cascata td { padding-top: 4px; padding-bottom: 4px; }
+.cascata .cascata-total td { font-weight: 700; border-top: 1px solid var(--border); }
+.cascata .cascata-forte td { font-size: 14.5px; background: var(--st-oportunidade-soft); }

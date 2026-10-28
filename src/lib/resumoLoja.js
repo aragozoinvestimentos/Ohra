@@ -202,3 +202,81 @@ export function simularTicket(peds, tickets) {
   const margem = total ? lucro / total : 0;
   return tickets.map((tk) => ({ ticket: tk, faturamento: tk * n, contribuicao: tk * n * margem, dif: tk * n * margem - lucro }));
 }
+
+// ---------- Do faturamento ao lucro (28/10/2026, pedido do Gustavo: "uma tabelinha fácil de ver") ----------
+// Faturamento cheio − descontos = faturado − taxas das plataformas − impostos − custo dos produtos
+// = lucro bruto − Ads = lucro depois do Ads − contas fixas = lucro líquido. Pelos pedidos
+// importados (custo e taxas de HOJE); por canal e total. Ads por canal pelo canal do período
+// (o que não tem canal fica só no total); contas fixas só no total.
+const mesesEntre = (de, ate) => {
+  const out = [];
+  let [a, m] = de.slice(0, 7).split("-").map(Number);
+  const fim = ate.slice(0, 7);
+  for (let k = 0; k < 240; k++) {
+    const mm = `${a}-${String(m).padStart(2, "0")}`;
+    if (mm > fim) break;
+    out.push(mm);
+    m++;
+    if (m > 12) { m = 1; a++; }
+  }
+  return out;
+};
+export const LINHAS_CASCATA = [
+  { k: "bruto", rot: "Faturamento cheio (preço × quantidade)" },
+  { k: "descontos", rot: "− Descontos (promo, cupom, rampa)", menos: true },
+  { k: "pago", rot: "= Faturado (o que o cliente pagou)", total: true },
+  { k: "taxas", rot: "− Taxas das plataformas", menos: true },
+  { k: "imposto", rot: "− Impostos", menos: true },
+  { k: "custo", rot: "− Custo dos produtos (repor)", menos: true },
+  { k: "lucroBruto", rot: "= Lucro bruto", total: true },
+  { k: "ads", rot: "− Ads", menos: true },
+  { k: "depoisAds", rot: "= Lucro depois do Ads", total: true },
+  { k: "fixas", rot: "− Contas fixas", menos: true },
+  { k: "liquido", rot: "= Lucro líquido", total: true, forte: true },
+];
+export function cascataDoPeriodo({ pedidos = [], linhasAds, lancamentos = [], de, ate }) {
+  const vazio = () => ({ bruto: 0, descontos: 0, pago: 0, taxas: 0, imposto: 0, custo: 0, lucroBruto: 0, ads: 0, depoisAds: 0, fixas: null, liquido: null, pedidos: new Set(), semCusto: 0 });
+  const total = vazio();
+  const porCanal = new Map();
+  for (const p of pedidos) {
+    if (!p.valido) continue;
+    const d = String(p.data).slice(0, 10);
+    if (d < de || d > ate) continue;
+    const kc = p.canal?.id || "fisico";
+    const c = porCanal.get(kc) || { ...vazio(), canal: p.canal || null, nome: p.canal?.nome || "Venda física" };
+    for (const x of [total, c]) {
+      const pago = num(p.pago);
+      const bruto = Math.max(pago, num(p.bruto) || pago);
+      x.bruto += bruto;
+      x.descontos += bruto - pago;
+      x.pago += pago;
+      x.taxas += Math.max(0, pago - num(p.recebe ?? pago));
+      x.imposto += num(p.imposto);
+      x.custo += num(p.custo);
+      x.pedidos.add(p.pedido);
+      if (p.lucro == null) x.semCusto++;
+    }
+    porCanal.set(kc, c);
+  }
+  // Ads: por período, a mesma conta do teto (gastoAdsNaJanela); por canal quando a linha tem canal
+  const ls = [...(linhasAds?.linhas || []), ...(linhasAds?.lojaLinha ? [linhasAds.lojaLinha] : [])];
+  for (const l of ls) {
+    const g = gastoAdsNaJanela(l.periodos || [], l.semanas || [], de, ate);
+    if (!g) continue;
+    total.ads += g;
+    const c = l.canal?.id ? porCanal.get(l.canal.id) : null;
+    if (c) c.ads += g;
+  }
+  const fechar = (x, comFixas) => {
+    x.lucroBruto = x.pago - x.taxas - x.imposto - x.custo;
+    x.depoisAds = x.lucroBruto - x.ads;
+    if (comFixas) {
+      x.fixas = mesesEntre(de, ate).reduce((s, m) => s + despesasFixasDoMes(lancamentos, m).total, 0);
+      x.liquido = x.depoisAds - x.fixas;
+    }
+    for (const k of ["bruto", "descontos", "pago", "taxas", "imposto", "custo", "lucroBruto", "ads", "depoisAds", "fixas", "liquido"]) if (x[k] != null) x[k] = Math.round(x[k] * 100) / 100;
+    x.nPedidos = x.pedidos.size;
+    return x;
+  };
+  return { total: fechar(total, true), canais: [...porCanal.values()].map((c) => fechar(c, false)).sort((a, b) => b.pago - a.pago) };
+}

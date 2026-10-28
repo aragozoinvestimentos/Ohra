@@ -21,6 +21,7 @@ import QuandoVende from "./QuandoVende.jsx";
 import { EmbalagemOrganicoBloco } from "./EmbalagemOrganico.jsx";
 import BlocoRevenda from "./BlocoRevenda.jsx";
 import CalculadoraPreco from "./CalculadoraPreco.jsx";
+import DadosFiscais from "./DadosFiscais.jsx";
 import { useRevenda } from "../hooks/useRevenda.js";
 
 const VAZIO = {
@@ -40,6 +41,13 @@ const VAZIO = {
   origem: "fabricado",
   ean: "",
   fornecedor_id: null,
+  // fiscais (v69)
+  ncm: "",
+  cest: "",
+  unidade_com: "",
+  origem_mercadoria: "",
+  imposto_st: null,
+  monofasico: null,
 };
 
 // Pedidos de "abrir pra editar" vindos de outras telas (23/10/2026): cada um vale
@@ -274,6 +282,13 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       origem: form.origem === "revenda" ? "revenda" : "fabricado",
       ean: form.ean.trim() || null,
       fornecedor_id: form.fornecedor_id || null,
+      // fiscais (v69): sem a coluna, salva o resto e avisa
+      ncm: String(form.ncm || "").replace(/\D/g, "") || null,
+      cest: String(form.cest || "").replace(/\D/g, "") || null,
+      unidade_com: String(form.unidade_com || "").trim() || null,
+      origem_mercadoria: form.origem_mercadoria || null,
+      imposto_st: form.imposto_st ?? null,
+      monofasico: form.monofasico ?? null,
       atualizado_em: new Date().toISOString(),
     };
     if (form.origem === "revenda") payload.custo_producao = arredondarPreco(parseFloat(form.custo_producao) || 0);
@@ -295,6 +310,11 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       return { error: r.error, id: r.data?.id };
     }
     let resp = await gravar(payload);
+    if (resp.error && /ncm|cest|unidade_com|origem_mercadoria|monofasico/.test(resp.error.message || "")) {
+      const { ncm: _n, cest: _c, unidade_com: _u, origem_mercadoria: _om, monofasico: _m, ...semFiscal } = payload;
+      resp = await gravar(semFiscal);
+      if (!resp.error) onToast("Produto salvo sem os dados fiscais — rode o schema_v69.sql no Supabase");
+    }
     if (resp.error && /origem|ean|fornecedor_id/.test(resp.error.message || "")) {
       const { origem: _o, ean: _e, fornecedor_id: _f, ...semRevenda } = payload;
       resp = await gravar(semRevenda);
@@ -371,6 +391,12 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       origem: p.origem === "revenda" ? "revenda" : "fabricado",
       ean: p.ean || "",
       fornecedor_id: p.fornecedor_id || null,
+      ncm: p.ncm || "",
+      cest: p.cest || "",
+      unidade_com: p.unidade_com || "",
+      origem_mercadoria: p.origem_mercadoria || "",
+      imposto_st: p.imposto_st ?? null,
+      monofasico: p.monofasico ?? null,
     });
     setDetalheSalvo(p.producao_detalhe || null);
     setPecasPorImpressaoSalvo(p.pecas_por_impressao ?? 1);
@@ -609,6 +635,8 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           onChange={(itens) => setForm((prev) => ({ ...prev, embalagemItens: itens }))}
           rotuloVazio='Nenhuma embalagem cadastrada — cadastre em Cadastros → Embalagens (caixa, plástico bolha...), ou use o campo manual acima.'
         />
+
+        <DadosFiscais form={form} setForm={setForm} revenda={ehRev} />
 
         {ehRev ? (
           <BlocoRevenda

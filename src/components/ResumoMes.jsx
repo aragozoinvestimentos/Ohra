@@ -7,6 +7,7 @@ import { BRL, PCT } from "../lib/format.js";
 import CanalTag from "./CanalTag.jsx";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
+import CascataLucro from "./CascataLucro.jsx";
 
 // Dinheiro → Resumo do mês (remap 21/10/2026, do vídeo "Consolidador
 // financeiro"): o mês em blocos — pra onde foi cada real que o cliente pagou.
@@ -142,6 +143,7 @@ export default function ResumoMes() {
           <div className="empty">Sem pedidos importados neste mês — envie o arquivo da Olist em Atualizar dados.</div>
         </div>
       )}
+      <CascataLucro pedidos={cres.pedidosValidos || []} linhasAds={cres.linhasAds} mes={mes} hoje={hoje} />
       {r.porCanal.length > 0 && (
         <div className="panel">
           <h3>Por canal</h3>

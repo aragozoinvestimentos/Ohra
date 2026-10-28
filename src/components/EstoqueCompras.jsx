@@ -10,8 +10,10 @@ import Estado from "./Estado.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import { BRL } from "../lib/format.js";
-import { ALIQUOTA_INTERNA_PADRAO, compraDeForaDoEstado, custoDosItens, diferencasInventario, palpiteFator, ehRevenda, extratoEstoque, ligarItem, lerNfe } from "../lib/revenda.js";
-import { ajustarEstoque, excluirFornecedor, excluirMovimento, excluirNota, gravarInventario, gravarNota, salvarEstoqueCfg, salvarFornecedor, SQL_REVENDA } from "../lib/revendaAcoes.js";
+import { ALIQUOTA_INTERNA_PADRAO, compraDeForaDoEstado, custoDosItens, diferencasInventario, palpiteFator, ehRevenda, extratoEstoque, ligarItem, lerNfe, fiscalDoItem, produtosParecidos, sugerirSku } from "../lib/revenda.js";
+import { usePedidos } from "../hooks/usePedidos.js";
+import { abrirProduto } from "../lib/anuncios.js";
+import { ajustarEstoque, camposFiscais, excluirFornecedor, excluirMovimento, excluirNota, gravarInventario, gravarNota, salvarEstoqueCfg, salvarFornecedor, SQL_REVENDA } from "../lib/revendaAcoes.js";
 
 // Operação → Estoque e compras (REVENDA, schema v66, 24/10/2026). O estoque de cada
 // produto de revenda começa na 1ª nota importada (XML), sai sozinho pelos pedidos
@@ -90,6 +92,7 @@ function Estoque({ est, onToast }) {
           { label: "Giro", valor: giro != null ? `~${giro} dias` : "—", sub: "tempo médio pra vender o estoque" },
         ]}
       />
+      <CompletarCadastro linhas={linhas} />
       <div className="panel">
         <h3>Produtos de revenda</h3>
         <p className="hint">
@@ -377,19 +380,30 @@ function Notas({ est, onToast }) {
 
 function ImportarNota({ nota, est, onToast, onFechar }) {
   const { lojaId } = useLoja();
-  const { produtos } = useRankingData();
+  const { produtos, kits } = useRankingData();
+  const ped = usePedidos();
   const [pagoComPref, setPagoComPref] = usePreferencia("caixa:pago-com", "bolso");
   const fornecedor = est.fornecedores.find((f) => String(f.cnpj || "").replace(/\D/g, "") === nota.emitente.cnpj) || null;
   const fora = compraDeForaDoEstado(nota);
-  const [ligacoes, setLigacoes] = useState(() =>
-    Object.fromEntries(
+  // SKUs vendidos na Olist (pra sugerir o SKU que já está nos anúncios) e os já cadastrados (pra não repetir)
+  const skusVendidos = useMemo(() => [...new Set((ped.pedidos || []).map((p) => String(p.sku || "").trim()).filter(Boolean))], [ped.pedidos]);
+  const skusUsados = useMemo(() => new Set([...(produtos || []), ...(kits || [])].map((p) => String(p.sku || "").toUpperCase()).filter(Boolean)), [produtos, kits]);
+  const parecidos = useMemo(() => Object.fromEntries(nota.itens.map((i) => [i.n, produtosParecidos(i, produtos, { skusVendidos })])), [nota.itens, produtos, skusVendidos]);
+  const [ligacoes, setLigacoes] = useState(() => {
+    const usados = new Set(skusUsados);
+    return Object.fromEntries(
       nota.itens.map((i) => {
         const l = ligarItem(i, { fornecedorId: fornecedor?.id, fornecedorItens: est.fornecedorItens, produtos });
         const palpite = l.por === "codigo" ? null : palpiteFator(i);
-        return [i.n, { produtoId: l.produtoId || "", fator: String(palpite || l.fator), palpite: !!palpite, por: l.por, nome: tituloBonito(i.descricao) }];
+        // SKU = a referência do fabricante (RR2200…); se a Olist já vende com ela (ex.: RR2200-PRETO),
+        // o pedido liga sozinho pelo começo do SKU — só avisa
+        const vendido = produtosParecidos(i, [], { skusVendidos }).skuVendido;
+        const sg = sugerirSku(i, usados);
+        usados.add(sg.sku.toUpperCase());
+        return [i.n, { produtoId: l.produtoId || "", fator: String(palpite || l.fator), palpite: !!palpite, por: l.por, nome: tituloBonito(i.descricao), sku: sg.sku, skuRef: sg.ref, skuVendido: vendido }];
       })
-    )
-  );
+    );
+  });
   const [difal, setDifal] = useState({ ligado: fora, aliquotaInterna: String(ALIQUOTA_INTERNA_PADRAO * 100) });
   const [contarMedia, setContarMedia] = useState(true);
   const [jaPaga, setJaPaga] = useState(false);
@@ -410,14 +424,22 @@ function ImportarNota({ nota, est, onToast, onFechar }) {
     const linhas = calc.map((c) => {
       const lg = ligacoes[c.n];
       const pid = lg?.produtoId;
-      return { ...c, produtoId: pid || null, produtoTemEan: !!produtos.find((p) => p.id === pid)?.ean };
+      const pr = produtos.find((p) => p.id === pid);
+      const produtoFiscal = pr ? { ncm: pr.ncm, cest: pr.cest, unidade_com: pr.unidade_com, origem_mercadoria: pr.origem_mercadoria, imposto_st: pr.imposto_st, monofasico: pr.monofasico, fiscal: pr.fiscal } : null;
+      return { ...c, produtoId: pid || null, produtoTemEan: !!pr?.ean, produtoFiscal };
     });
-    const novos = linhas.filter((l) => l.produtoId === "novo").map((l) => ({ chave: l.n, nome: ligacoes[l.n].nome || l.descricao, ean: l.ean, custo: l.custoUn }));
+    const skusNovos = linhas.filter((l) => l.produtoId === "novo").map((l) => String(ligacoes[l.n].sku || "").trim().toUpperCase()).filter(Boolean);
+    const repetido = skusNovos.find((x, i) => skusNovos.indexOf(x) !== i || skusUsados.has(x));
+    if (repetido) {
+      setSalvando(false);
+      return onToast?.(`O SKU ${repetido} já existe — troque antes de gravar.`);
+    }
+    const novos = linhas.filter((l) => l.produtoId === "novo").map((l) => ({ chave: l.n, nome: ligacoes[l.n].nome || l.descricao, sku: String(ligacoes[l.n].sku || "").trim() || null, ean: l.ean, custo: l.custoUn, fiscal: camposFiscais(l) }));
     const r = await gravarNota({ lojaId, nota, linhas, fornecedores: est.fornecedores, difal: { ligado: difal.ligado, aliquotaInterna: num(difal.aliquotaInterna) / 100 }, contarMedia, caixa: { pagoCom, jaPaga: jaPaga && !parcelas.length, parcelas }, novosProdutos: novos });
     setSalvando(false);
     if (r.error) return onToast?.(r.error.message);
     setPagoComPref(pagoCom);
-    onToast?.(r.avisoCaixa || `NF ${nota.numero} gravada: ${r.itens} ${r.itens === 1 ? "item" : "itens"} no estoque${novos.length ? ` · ${novos.length} produto(s) novo(s) — complete SKU, peso e embalagem em Cadastro de produtos` : ""}`);
+    onToast?.(r.avisoCaixa || r.avisoFiscal || `NF ${nota.numero} gravada: ${r.itens} ${r.itens === 1 ? "item" : "itens"} no estoque${novos.length ? ` · ${novos.length} produto(s) novo(s) — falta peso e preço: veja "Completar cadastro" no Estoque` : ""}`);
     onFechar();
   }
 
@@ -498,6 +520,11 @@ function ImportarNota({ nota, est, onToast, onFechar }) {
                       <div className="muted-cel">
                         cód. {c.codigo || "—"} · {c.ean ? `EAN ${c.ean}` : "sem EAN"}
                       </div>
+                      {(() => {
+                        const fi = fiscalDoItem(c);
+                        const partes = [fi.ncm && `NCM ${fi.ncm}`, fi.cfop && `CFOP ${fi.cfop}`, fi.st && (fi.porQueSt?.startsWith("CFOP") ? "com ST" : `com ST (${fi.porQueSt})`), fi.monofasico && `monofásico (${fi.monofasicoNome})`].filter(Boolean);
+                        return partes.length ? <div className="muted-cel" title="Vai pro cadastro do produto. No Simples, ST e monofásico pagam menos DAS.">🧾 {partes.join(" · ")}</div> : null;
+                      })()}
                     </td>
                     <td>
                       <select value={lg.produtoId} onChange={(e) => set(c.n, { produtoId: e.target.value, por: null })}>
@@ -522,7 +549,26 @@ function ImportarNota({ nota, est, onToast, onFechar }) {
                           </optgroup>
                         )}
                       </select>
-                      {lg.produtoId === "novo" && <input style={{ marginTop: 4, width: "100%" }} value={lg.nome} onChange={(e) => set(c.n, { nome: e.target.value })} placeholder="Nome do produto" />}
+                      {lg.produtoId === "novo" && (
+                        <>
+                          <input style={{ marginTop: 4, width: "100%" }} value={lg.nome} onChange={(e) => set(c.n, { nome: e.target.value })} placeholder="Nome do produto" />
+                          <label className="muted-cel" style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}>
+                            SKU
+                            <input style={{ width: 140 }} value={lg.sku} onChange={(e) => set(c.n, { sku: e.target.value.toUpperCase(), skuRef: null })} />
+                          </label>
+                          <div className="muted-cel">{lg.skuRef ? `referência do fabricante (${lg.skuRef}) — troque se quiser` : "sugerido pelo nome — troque se quiser"}
+                            {lg.skuVendido && lg.sku && String(lg.skuVendido).toUpperCase().startsWith(String(lg.sku).toUpperCase()) ? ` · ✓ a Olist já vende como ${lg.skuVendido} — os pedidos ligam sozinhos` : lg.skuVendido ? ` · a Olist vende como ${lg.skuVendido}` : ""}</div>
+                        </>
+                      )}
+                      {!lg.produtoId &&
+                        (parecidos[c.n]?.candidatos || []).map((x) => (
+                          <div key={x.produto.id} className="muted-cel">
+                            Parece com <b>{x.produto.nome}</b> ({x.motivo}){" "}
+                            <button type="button" className="link-btn" onClick={() => set(c.n, { produtoId: x.produto.id, por: null })}>
+                              usar
+                            </button>
+                          </div>
+                        ))}
                       {lg.por === "ean" && <div className="muted-cel" style={{ color: "var(--good)" }}>✓ pelo EAN</div>}
                       {lg.por === "codigo" && <div className="muted-cel" style={{ color: "var(--good)" }}>✓ ligado antes</div>}
                     </td>
@@ -564,7 +610,7 @@ function ImportarNota({ nota, est, onToast, onFechar }) {
               <p>
                 Uma saída de {BRL(nota.totais.vNF)} em {dmy(nota.emissao)} <span className="muted-cel">(a nota não traz parcelas)</span>
               </p>
-              <label className="check-inline">
+              <label className="check-inline" style={{ display: "flex", marginBottom: 6 }}>
                 <input type="checkbox" checked={jaPaga} onChange={(e) => setJaPaga(e.target.checked)} /> já paga
               </label>
             </>
@@ -602,6 +648,30 @@ function ImportarNota({ nota, est, onToast, onFechar }) {
         </button>
       </div>
     </>
+  );
+}
+
+// Produtos de revenda com cadastro incompleto (criados pela nota): o que falta pra vender.
+function CompletarCadastro({ linhas }) {
+  const faltando = linhas.filter((l) => l.faltas?.length);
+  if (!faltando.length) return null;
+  return (
+    <div className="panel">
+      <h3>
+        Completar cadastro <span className="h3-contagem">{faltando.length} {faltando.length === 1 ? "produto" : "produtos"}</span>
+      </h3>
+      <p className="hint">Produtos que entraram pela nota e ainda não estão prontos pra vender. Peso = pro frete (ML) e o lucro; preço = salvo em algum canal; NCM = pra parte fiscal.</p>
+      <ul className="completar-lista">
+        {faltando.map((l) => (
+          <li key={l.produto.id}>
+            <b>{l.produto.nome}</b> <span className="muted-cel">falta: {l.faltas.join(", ")}</span>{" "}
+            <button type="button" className="link-btn" onClick={() => abrirProduto(`p:${l.produto.id}`, "cadastro")}>
+              completar →
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

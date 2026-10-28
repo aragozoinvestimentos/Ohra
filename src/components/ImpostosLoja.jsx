@@ -6,6 +6,7 @@ import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { LIMITE_MEI_PADRAO, limiteMei, regimeDaLoja } from "../lib/revenda.js";
+import { configSimples } from "../lib/simples.js";
 import { BRL } from "../lib/format.js";
 import { hojeSP } from "../lib/datas.js";
 
@@ -26,7 +27,15 @@ export default function ImpostosLoja({ onToast }) {
   const { pedidosValidos } = useCrescimento();
   const { lancamentos } = useLancamentosCaixa();
   const [form, setForm] = useState(null);
-  const f = form || { regime: reg.regime || "", limiteAnual: String(reg.limiteAnual).replace(".", ","), dasMensal: reg.dasMensal ? String(reg.dasMensal).replace(".", ",") : "" };
+  const cs = configSimples(cfg);
+  const f = form || {
+    regime: reg.regime || "",
+    limiteAnual: String(reg.limiteAnual).replace(".", ","),
+    dasMensal: reg.dasMensal ? String(reg.dasMensal).replace(".", ",") : "",
+    anexoRevenda: cs.anexoRevenda,
+    anexoFabricado: cs.anexoFabricado,
+    rbt12Manual: cs.rbt12Manual ? String(cs.rbt12Manual).replace(".", ",") : "",
+  };
   const hoje = hojeSP();
   const lim = useMemo(() => (reg.regime === "mei" ? limiteMei({ pedidos: pedidosValidos || [], limite: reg.limiteAnual, hoje }) : null), [reg.regime, reg.limiteAnual, pedidosValidos, hoje]);
   const comImposto = (canais || []).filter((c) => Number(c.imposto_pct) > 0);
@@ -34,7 +43,7 @@ export default function ImpostosLoja({ onToast }) {
 
   const salvar = async () => {
     if (!loja) return;
-    const impostos = { regime: f.regime || null, limiteAnual: num(f.limiteAnual) || LIMITE_MEI_PADRAO, dasMensal: num(f.dasMensal) || null };
+    const impostos = { regime: f.regime || null, limiteAnual: num(f.limiteAnual) || LIMITE_MEI_PADRAO, dasMensal: num(f.dasMensal) || null, anexoRevenda: f.anexoRevenda || "I", anexoFabricado: f.anexoFabricado || "II", rbt12Manual: num(f.rbt12Manual) || null };
     const r = await atualizar(loja.id, { configEscada: { ...cfg, impostos } });
     onToast?.(r.ok ? "Impostos da loja salvos" : `Não foi possível salvar: ${r.error}`);
     if (r.ok) setForm(null);
@@ -85,9 +94,31 @@ export default function ImpostosLoja({ onToast }) {
         </>
       )}
       {f.regime === "simples" && (
-        <p className="hint" style={{ margin: 0 }}>
-          Por enquanto vale o imposto (%) de cada canal em Configuração → Canais. A alíquota automática pelo faturamento dos últimos 12 meses (e o desconto do ICMS em produto com ST) entra na próxima fase.
-        </p>
+        <>
+          <p className="hint" style={{ margin: 0 }}>
+            O app calcula a alíquota efetiva pelo faturamento dos últimos 12 meses (pedidos importados) e separa o que tem ICMS-ST e PIS/COFINS monofásico (pagam menos DAS) — veja em Dinheiro → Fiscal. Nos preços e no lucro vale o imposto (%) de cada canal: lá dá pra usar a alíquota média do mês com um clique. Confirme o anexo com o contador (depende do CNAE).
+          </p>
+          <div className="grid-auto">
+            <label>
+              Revenda (comprado pronto) entra no
+              <select value={f.anexoRevenda} onChange={(e) => setForm({ ...f, anexoRevenda: e.target.value })}>
+                <option value="I">Anexo I — comércio</option>
+                <option value="II">Anexo II — indústria</option>
+              </select>
+            </label>
+            <label>
+              Fabricado por você (3D) entra no
+              <select value={f.anexoFabricado} onChange={(e) => setForm({ ...f, anexoFabricado: e.target.value })}>
+                <option value="II">Anexo II — indústria (CNAE de fabricação)</option>
+                <option value="I">Anexo I — comércio (CNAE só de comércio)</option>
+              </select>
+            </label>
+            <label>
+              Faturamento dos últimos 12 meses (R$, opcional)
+              <input inputMode="decimal" placeholder="vazio = pelos pedidos importados" value={f.rbt12Manual} onChange={(e) => setForm({ ...f, rbt12Manual: e.target.value })} />
+            </label>
+          </div>
+        </>
       )}
       <div>
         <button type="button" className="btn primary" onClick={salvar} disabled={!form}>

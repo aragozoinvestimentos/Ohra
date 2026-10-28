@@ -98,6 +98,14 @@ export function lerNfe(xml) {
       vST: num(txt(tag(icms, "vICMSST"))) + num(txt(tag(icms, "vFCPST"))),
       vICMS: num(txt(tag(icms, "vICMS"))),
       pICMS: num(txt(tag(icms, "pICMS"))) / 100,
+      cfop: txt(tag(prod, "CFOP")) || null,
+      cest: txt(tag(prod, "CEST")) || null,
+      // CST com a origem na frente (como a DANFE mostra: "260" = origem 2 + CST 60) ou o CSOSN
+      cst: (() => {
+        const o = txt(tag(icms, "orig")) || "";
+        const c = txt(tag(icms, "CST")) || txt(tag(icms, "CSOSN")) || "";
+        return c ? `${o}${c}` : null;
+      })(),
     };
   });
   if (!itens.length) return { erro: "A nota não tem itens." };
@@ -359,4 +367,108 @@ export function limiteMei({ pedidos = [], limite = LIMITE_MEI_PADRAO, hoje }) {
     if (dt <= fim) passaEm = dt;
   }
   return { faturado: centavos(faturado), limite, pct: limite > 0 ? faturado / limite : 0, porDia, projecao: centavos(projecao), passaEm, atencao: faturado >= limite * AVISO_LIMITE || !!passaEm };
+}
+
+
+// ---------- Fiscal do item da nota (28/10/2026, v69) ----------
+// ICMS-ST: CFOP de mercadoria com ST (5401–5405, 6401–6404) ou CST 10/30/60/70, ou
+// CSOSN 201/202/203/500. No Simples, a parte do ICMS dessa venda sai do DAS.
+const CFOP_ST = new Set(["5401", "5402", "5403", "5405", "6401", "6402", "6403", "6404"]);
+// PIS/COFINS monofásico (Lei 10.147/2000 e afins) — por começo do NCM. SUGESTÃO: confira com o contador.
+export const NCM_MONOFASICO = [
+  { prefixo: "3303", nome: "perfumes" },
+  { prefixo: "3304", nome: "maquiagem e cuidados com a pele" },
+  { prefixo: "3305", nome: "cabelo" },
+  { prefixo: "3307", nome: "higiene e perfumaria" },
+  { prefixo: "34011190", nome: "sabonete" },
+  { prefixo: "34012010", nome: "sabonete" },
+  { prefixo: "96032100", nome: "escova de dente" },
+  { prefixo: "3003", nome: "medicamentos" },
+  { prefixo: "3004", nome: "medicamentos" },
+  { prefixo: "2201", nome: "água" },
+  { prefixo: "2202", nome: "refrigerante e bebida" },
+  { prefixo: "2203", nome: "cerveja" },
+];
+export function monofasicoPeloNcm(ncm) {
+  const d = soDigitos(ncm);
+  if (d.length < 4) return null;
+  return NCM_MONOFASICO.find((m) => d.startsWith(m.prefixo)) || null;
+}
+/** Item da nota → { ncm, cest, cfop, cst, origem, st, monofasico, porQueSt } */
+export function fiscalDoItem(item) {
+  const cfop = soDigitos(item?.cfop) || null;
+  const cst = String(item?.cst || "").replace(/\D/g, "") || null;
+  const origem = cst && cst.length >= 3 ? cst[0] : null;
+  const trib = cst ? cst.slice(-2) : "";
+  const csosn = cst && cst.length >= 3 ? cst.slice(-3) : "";
+  const stCfop = !!cfop && CFOP_ST.has(cfop);
+  const stCst = ["10", "30", "60", "70"].includes(trib) || ["201", "202", "203", "500"].includes(csosn);
+  const mono = monofasicoPeloNcm(item?.ncm);
+  return {
+    ncm: soDigitos(item?.ncm) || null,
+    cest: soDigitos(item?.cest) || null,
+    cfop,
+    cst,
+    origem,
+    st: stCfop || stCst,
+    porQueSt: stCfop ? `CFOP ${cfop}` : stCst ? `CST ${trib || csosn}` : null,
+    monofasico: !!mono,
+    monofasicoNome: mono?.nome || null,
+  };
+}
+
+// ---------- SKU sugerido pra produto novo da nota ----------
+// Código de referência do fabricante que vem na descrição (RR2200, HBF572, RR51512):
+// letras + números juntos. Sem ele, as 1ªs palavras do nome.
+const semAcento = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+export function referenciaDaDescricao(descricao) {
+  const t = semAcento(descricao).toUpperCase();
+  const m = t.match(/\b[A-Z]{1,5}-?\d{3,}[A-Z0-9]*\b/g) || [];
+  return m.find((x) => !/^(CX|UN|PCT|KIT|ML|GR|KG|MG|NCM|CFOP|FCI)\d/.test(x) && !/^\d/.test(x)) || null;
+}
+export function sugerirSku(item, existentes = new Set()) {
+  const ref = referenciaDaDescricao(item?.descricao);
+  let base = ref;
+  if (!base) {
+    const palavras = semAcento(item?.descricao).toUpperCase().replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !/^(COM|PARA|DE|DA|DO|DAS|DOS)$/.test(w));
+    base = palavras.slice(0, 2).join("-") || "REV";
+    if (item?.codigo) base += `-${String(item.codigo).replace(/[^A-Z0-9]/gi, "").slice(-5)}`;
+  }
+  base = base.replace(/[^A-Z0-9-]/g, "").slice(0, 20);
+  const ocupado = (s) => existentes.has(s.toUpperCase());
+  if (!ocupado(base)) return { sku: base, ref };
+  for (let i = 2; i < 100; i++) if (!ocupado(`${base}-${i}`)) return { sku: `${base}-${i}`, ref };
+  return { sku: base, ref };
+}
+
+// ---------- Produto parecido já cadastrado (antes de criar um novo) ----------
+// EAN igual > referência do fabricante no SKU/nome > SKU vendido na Olist com a referência > nome parecido.
+const palavrasDe = (s) => new Set(semAcento(s).toUpperCase().replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 2));
+export function produtosParecidos(item, produtos, { skusVendidos = [] } = {}) {
+  const out = [];
+  const ref = referenciaDaDescricao(item?.descricao);
+  const pal = palavrasDe(item?.descricao);
+  for (const p of produtos || []) {
+    if (item?.ean && soDigitos(p.ean) === item.ean) { out.push({ produto: p, motivo: "mesmo EAN", nota: 100 }); continue; }
+    const sku = String(p.sku || "").toUpperCase();
+    if (ref && (sku.includes(ref) || semAcento(p.nome).toUpperCase().includes(ref))) { out.push({ produto: p, motivo: `referência ${ref}`, nota: 90 }); continue; }
+    const pp = palavrasDe(p.nome);
+    if (!pal.size || !pp.size) continue;
+    const iguais = [...pp].filter((w) => pal.has(w)).length;
+    const parte = iguais / Math.min(pal.size, pp.size);
+    if (iguais >= 2 && parte >= 0.6) out.push({ produto: p, motivo: "nome parecido", nota: Math.round(parte * 80) });
+  }
+  const vendidoComRef = ref ? skusVendidos.find((s) => String(s).toUpperCase().includes(ref)) : null;
+  return { candidatos: out.sort((a, b) => b.nota - a.nota).slice(0, 3), skuVendido: vendidoComRef || null };
+}
+
+// ---------- Cadastro incompleto (produto criado pela nota) ----------
+/** O que falta num produto de revenda: SKU, peso, preço salvo em algum canal, NCM. */
+export function faltasDoCadastro(p, { temPreco = false } = {}) {
+  const f = [];
+  if (!String(p?.sku || "").trim()) f.push("SKU");
+  if (!(Number(p?.peso_g) > 0)) f.push("peso");
+  if (!temPreco) f.push("preço");
+  if (p && "ncm" in p && !String(p.ncm || "").trim()) f.push("NCM");
+  return f;
 }

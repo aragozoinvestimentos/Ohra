@@ -68,6 +68,7 @@ const Anuncios = lazyAba(() => import("./components/Anuncios.jsx"));
 const PainelAnuncio = lazyAba(() => import("./components/PainelAnuncio.jsx"));
 const PaginaProduto = lazyAba(() => import("./components/PaginaProduto.jsx"));
 const ResumoMes = lazyAba(() => import("./components/ResumoMes.jsx"));
+const Fiscal = lazyAba(() => import("./components/Fiscal.jsx"));
 const CompararPeriodos = lazyAba(() => import("./components/CompararPeriodos.jsx"));
 const CarrinhosAbandonados = lazyAba(() => import("./components/CarrinhosAbandonados.jsx"));
 const AnaliseDiagnostico = lazyAba(() => import("./components/AnaliseDiagnostico.jsx"));
@@ -168,7 +169,7 @@ const MENU = [
         key: "m-dinheiro",
         label: "Dinheiro",
         icone: "caixa",
-        sub: "Resumo do mês, caixa, contas, vendas, payoff, metas e retorno por item",
+        sub: "Resumo do mês, caixa, contas, vendas, payoff, metas, retorno por item e fiscal",
         abas: [
           { tab: "resumoMes", label: "Resumo do mês" },
           SEP,
@@ -179,6 +180,7 @@ const MENU = [
           SEP,
           { tab: "metas", label: "Metas" },
           { tab: "ranking", label: "Ranking por retorno" },
+          { tab: "fiscal", label: "Fiscal" },
         ],
       },
       {
@@ -783,6 +785,14 @@ export default function App() {
           {visitadas.has("resumoMes") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
               <ResumoMes key={lojaId || "sem-loja"} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "fiscal" ? "active" : ""}`}>
+          {visitadas.has("fiscal") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <Fiscal key={lojaId || "sem-loja"} onToast={showToast} />
             </Suspense>
           )}
         </section>
