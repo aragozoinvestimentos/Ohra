@@ -1,3 +1,4 @@
+import { estrelasDaEquipe, prontosPraPromocao, promover, proximoNivel, destaqueDaSemana, opinioesDosGerentes } from "../src/lib/sedeEquipe.js";
 import { caixasDoDia, destinosDoArquivo, momentoDaAgenda, novidadeRecente, textoDaTV } from "../src/lib/sedeAgenda.js";
 // Testes das contas principais do app (24/10/2026, pedido do Gustavo: "é
 // sempre bom garantir a funcionalidade das coisas"). Rodam com `npm test`
@@ -433,5 +434,41 @@ describe("Sede — agenda viva (etapa B)", () => {
     const tv = textoDaTV({ momento: { k: "bomdia" }, agora: ag("2026-10-28", "09:05"), bom: { ontem: "2026-10-27", pedidos: null, faltando: [] }, top3: ["A"] });
     expect(tv.linhas[0]).toContain("aguardando arquivo");
     expect(novidadeRecente([{ data: "2026-10-10" }], "2026-10-28")).toBeNull();
+  });
+});
+
+describe("Sede — equipe (etapa C)", () => {
+  const reg = (chave, de, hist, res = []) => ({ tipo: "consultoria", chave, dados: { de, titulo: chave, historico: hist, resultados: res } });
+  const regs = [
+    reg("ideia|kit|a", "ze", [{ status: "quero", data: "2026-10-20" }], [{ status: "resolveu", em: "2026-10-24" }]),
+    reg("ideia|kit|b", "ze", [{ status: "quero", data: "2026-10-21" }], [{ status: "resolveu", em: "2026-10-23" }]),
+    reg("ideia|capa|c", "ze", [{ status: "agora-nao", data: "2026-10-21" }]),
+    reg("proposta|x", "nina", [{ status: "quero", data: "2026-10-22" }], [{ status: "continuou", em: "2026-10-27" }]),
+    reg("queda|y", null, [{ status: "quero", data: "2026-10-22" }]),
+    reg("relatorio|semana", null, [{ status: "quero", data: "2026-10-22" }]),
+  ];
+  it("estrelas: +1 aprovada, +3 deu certo, 0 tentada; relatório não conta", () => {
+    const e = estrelasDaEquipe(regs);
+    expect(e.ze.estrelas).toBe(8);
+    expect(e.ze.deram).toBe(2);
+    expect(e.ze.ideias).toBe(3);
+    expect(e.nina.estrelas).toBe(1);
+    expect(e.nina.tentadas).toBe(1);
+    expect(e.consultor.estrelas).toBe(1);
+  });
+  it("Zé: Estagiário → Analista com 5★ + 2 que deram certo; promoção aprovada sobe o nível", () => {
+    const e = estrelasDaEquipe(regs);
+    expect(proximoNivel("ze", e, {}).pronto).toBe(true);
+    expect(prontosPraPromocao(["ze", "nina"], e, {}, "2026-10-28").map((x) => x.para)).toEqual(["Analista"]);
+    const eq = promover({}, "ze", 1, "2026-10-28");
+    expect(proximoNivel("ze", e, eq).nome).toBe("Analista sênior");
+    expect(proximoNivel("consultor", e, eq)).toBeNull();
+  });
+  it("destaque da semana e opinião dos gerentes", () => {
+    const e = estrelasDaEquipe(regs);
+    expect(destaqueDaSemana(e, "2026-10-28").id).toBe("ze"); // semana 19–25/10
+    const op = opinioesDosGerentes({ financeiro: [{ grupo: "resolver", titulo: "2 contas atrasadas" }], comercial: [], operacao: [] });
+    expect(op[0].texto).toContain("Antes de tudo");
+    expect(op[1].texto).toContain("✓");
   });
 });

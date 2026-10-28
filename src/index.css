@@ -2780,3 +2780,15 @@ td.vendas-opcao { padding-left: 26px; }
 .sede-plaquinha { pointer-events: none; font: 700 8px/11px Manrope, sans-serif; color: #f5ecdf; background: linear-gradient(#5a3d2a, #3e2a1d); border: 1px solid #c9a37a; border-radius: 2px; padding: 0 4px; white-space: nowrap; }
 .sede-letra { pointer-events: none; font: 900 2.6px/3px Manrope, sans-serif; color: #d2622b; }
 .sede-voltar-zoom { position: absolute; right: 12px; top: 12px; z-index: 3; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.sede-reuniao { margin: 6px 0 8px; font-size: 12.5px; }
+.sede-reuniao-acoes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.sede-reuniao-bloco { margin-bottom: 8px; }
+.sede-reuniao-bloco ol { margin: 4px 0 0 18px; padding: 0; }
+.sede-opiniao { padding: 3px 0 3px 8px; border-left: 3px solid var(--border); margin: 3px 0; color: var(--ink-soft); }
+.sede-opiniao b { color: var(--ink); margin-right: 4px; }
+.sede-opiniao.resolver { border-left-color: var(--st-resolver); }
+.sede-opiniao.rotina { border-left-color: var(--st-atencao); }
+.sede-opiniao.oportunidade { border-left-color: var(--st-oportunidade); }
+.sede-promocao { padding: 8px 10px; margin: 8px 0; border-radius: 10px; background: var(--st-oportunidade-soft); }
+.sede-cartao-equipe { margin: 6px 0 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px; font-size: 12.5px; }
+.sede-destaque-tag { color: var(--accent); font-weight: 700; }

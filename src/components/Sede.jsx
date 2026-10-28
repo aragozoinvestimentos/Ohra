@@ -21,6 +21,8 @@ import ConsultorPainel from "./ConsultorPainel.jsx";
 import { criarSede, TAMANHO_SEDE } from "../lib/sedeMotor.js";
 import { agendaDoDia, agoraDaSede, ataDoBomDia, nomeDoArquivo, novidadeRecente } from "../lib/sedeAgenda.js";
 import { NOVIDADES_CONSULTOR } from "../lib/consultorAprende.js";
+import { FORA_DA_ESCADA, adiarPromocao, destaqueDaSemana, estrelasDaEquipe, nivelDe, nomeDoNivel, opinioesDosGerentes, prontosPraPromocao, promover, proximoNivel, rankingDoPeriodo } from "../lib/sedeEquipe.js";
+import { periodoPadrao } from "../lib/relatorios.js";
 import { periodoLigado } from "../lib/ads.js";
 import { hojeSP } from "../lib/datas.js";
 import { configCalendario, infoSazonal } from "../lib/calendario.js";
@@ -121,6 +123,20 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     return { pedidos: cres?.pedidosValidos || [], anuncioDoPedido: cres?.anuncioDoPedido, linhasAds: cres?.linhasAds, lancamentos, produtos: cat.produtos || [], kits: cat.kits || [], precos: cat.precos || [], canais: cat.canais || [], registros: cons.registros, ideias, nomes, funcoes: Object.fromEntries(ELENCO.map((e) => [e.id, e.funcao])), nomeDe };
   }, [cres?.pedidosValidos, cres?.anuncioDoPedido, cres?.linhasAds, lancamentos, cat.produtos, cat.kits, cat.precos, cat.canais, cons.registros, ideias, nomes]);
   const relatorios = useRelatorios({ ctx: relCtx, nomeLoja, onToast });
+  // ---------- equipe: estrelas, níveis, promoções (etapa C) ----------
+  const [equipe, setEquipe] = usePreferencia("sede:equipe", {});
+  const reagirRef = useRef(null);
+  const est = useMemo(() => estrelasDaEquipe(cons.registros), [cons.registros]);
+  const destaque = useMemo(() => {
+    const d = destaqueDaSemana(est, hoje);
+    return d ? { ...d, nome: nomes[d.id] || d.id } : null;
+  }, [est, hoje, nomes]);
+  const idsEquipe = ELENCO.filter((e) => !e.tipo && !FORA_DA_ESCADA.has(e.id) && !ocultos.has(e.id)).map((e) => e.id);
+  const prontos = prontosPraPromocao(idsEquipe, est, equipe, hoje);
+  const aprovarPromocao = (x) => {
+    setEquipe(promover(equipe, x.id, x.nivel, hoje));
+    reagirRef.current?.("promocao", { id: x.id, nivel: x.para }, `🎖️ ${nomes[x.id]} promovid${["bia", "celia", "lia", "nina", "duda"].includes(x.id) ? "a" : "o"} a ${x.para}`);
+  };
   const nConsultor = consultorias.length + propostas.length + ideias.length + (backup.estado.vencido ? 1 : 0) + relatorios.devidos.length;
 
   // ---------- motor (canvas) ----------
@@ -207,9 +223,9 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     return natal ? "natal" : null;
   }, [cat.produtos, calLoja, hoje]);
   useEffect(() => {
-    motor.current?.dados({ luz: av.luz, porPessoa: av.porPessoa, live, pendentes: nConsultor, cheiasNovas, conversasNovas: propostas, recorde, epoca, agenda: { bom: sede.kpis?.bomDia || null, top3: sede.kpis?.top3 || [], metaPct: sede.kpis?.metaPct || 0, novidade } });
+    motor.current?.dados({ luz: av.luz, porPessoa: av.porPessoa, live, pendentes: nConsultor, cheiasNovas, conversasNovas: propostas, recorde, epoca, agenda: { bom: sede.kpis?.bomDia || null, top3: sede.kpis?.top3 || [], metaPct: sede.kpis?.metaPct || 0, novidade }, estrelas: Object.fromEntries(Object.entries(est).map(([id, x]) => [id, x.estrelas])), destaque });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [av, live, chaveMotor, nConsultor, cheiasNovas, recorde, epoca, novidade, sede.kpis, JSON.stringify(propostas.map((p) => p.chave))]);
+  }, [av, live, chaveMotor, nConsultor, cheiasNovas, recorde, epoca, novidade, sede.kpis, est, destaque, JSON.stringify(propostas.map((p) => p.chave))]);
 
   // ---------- "Acontecendo agora" e reações ao vivo ----------
   const [feed, setFeed] = useState(() => [{ hora: agoraHora(), txt: `👋 ${nomes.ceo1} e ${nomes.ceo2} chegaram na Sede` }]);
@@ -223,6 +239,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     motor.current?.evento(tipo, info);
     noFeed(txt);
   };
+  reagirRef.current = reagir;
   // produto novo
   useEffect(() => {
     if (cat.carregando) return;
@@ -650,9 +667,29 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
               telaAtual="sede"
             />
           ) : sel.pessoa ? (
-            <PainelPessoa q={sel.pessoa} nomes={nomes} av={av} pendencias={sede.pendencias} abrir={abrir} />
+            <PainelPessoa q={sel.pessoa} nomes={nomes} av={av} pendencias={sede.pendencias} abrir={abrir} est={est} equipe={equipe} destaque={destaque} />
           ) : (
-            <PainelSala ata={ataDoBomDia({ bom: sede.kpis?.bomDia, top3: sede.kpis?.top3 || [], data: hoje })} nomes={nomes} novidade={novidade} k={sel.sala} nome={nomesSalas[sel.sala]} fechada={fechadas[sel.sala]} quem={fechadas[sel.sala] ? null : quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} estoque={estoque.linhas} />
+            <PainelSala
+              reuniao={{
+                ata: ataDoBomDia({ bom: sede.kpis?.bomDia, top3: sede.kpis?.top3 || [], data: hoje }),
+                novidade,
+                pauta: sede.kpis?.top3 || [],
+                opinioes: opinioesDosGerentes(av.porSala),
+                ideias,
+                decidir: consultorias.length + propostas.length + ideias.length,
+                prontos,
+                ranking: rankingDoPeriodo(est, `${hoje.slice(0, 7)}-01`, hoje),
+                chamar: () => {
+                  motor.current?.reuniaoAgora();
+                  motor.current?.zoom("reuniao");
+                },
+                ataPdf: () => relatorios.gerar("semana", periodoPadrao("semana", hoje)),
+                abrirConsultor: () => setSel({ consultor: true }),
+                aprovar: aprovarPromocao,
+                depois: (x) => setEquipe(adiarPromocao(equipe, x.id, hoje)),
+              }}
+              nomes={nomes}
+              k={sel.sala} nome={nomesSalas[sel.sala]} fechada={fechadas[sel.sala]} quem={fechadas[sel.sala] ? null : quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} estoque={estoque.linhas} />
           )}
           <div className="hint" style={{ marginTop: 10 }}>
             Clique nas placas, nas salas e nas pessoas. A Sede só mostra — pra mudar algo, use o botão que leva pra tela certa.
@@ -685,7 +722,7 @@ function ListaAvisos({ avisos, abrir }) {
   );
 }
 
-function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque, ata, nomes, novidade }) {
+function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque, reuniao, nomes }) {
   const s = SALAS_SEDE.find((x) => x.k === k);
   if (!s) return null;
   if (fechada)
@@ -706,7 +743,7 @@ function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque, 
       <h3>{nome || s.nome}</h3>
       {quem && <div className="sede-quem">{quem}</div>}
       {k === "operacao" && (estoque || []).length > 0 && <ResumoEstoque linhas={estoque || []} />}
-      {k === "reuniao" && <AgendaReuniao ata={ata} nomes={nomes} novidade={novidade} />}
+      {k === "reuniao" && <SalaReuniao r={reuniao} nomes={nomes} />}
       <ListaAvisos avisos={avisos} abrir={abrir} />
       {k === "diretoria" && <div className="hint">Na Diretoria ficam os avisos urgentes de todas as salas — só vocês decidem.</div>}
       {s.aba && (
@@ -715,6 +752,98 @@ function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque, 
         </button>
       )}
     </>
+  );
+}
+
+// Sala de reunião (etapa C): pauta (as 3 que mais valem dinheiro), opinião dos gerentes, ideias dos
+// analistas, decisões pra vocês, promoções prontas, ranking do mês, agenda do dia e a ata.
+function SalaReuniao({ r, nomes }) {
+  if (!r) return null;
+  const fem = (id) => ["bia", "celia", "lia", "nina", "duda", "ceo2"].includes(id);
+  return (
+    <div className="sede-reuniao">
+      <div className="sede-reuniao-acoes">
+        <button type="button" className="btn btn-sm" onClick={r.chamar}>
+          📣 Chamar reunião agora
+        </button>
+        <button type="button" className="btn btn-sm" onClick={r.ataPdf}>
+          Baixar a ata da semana (PDF)
+        </button>
+      </div>
+      <div className="sede-reuniao-bloco">
+        <div className="sede-ata-sub">Pauta — as que mais valem dinheiro</div>
+        {r.pauta.length ? (
+          <ol>
+            {r.pauta.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ol>
+        ) : (
+          <div className="hint">Nada pesando hoje ✓</div>
+        )}
+      </div>
+      <div className="sede-reuniao-bloco">
+        <div className="sede-ata-sub">Opinião dos gerentes</div>
+        {r.opinioes.map((o) => (
+          <div key={o.id} className={`sede-opiniao ${o.grupo || "ok"}`}>
+            <b>{nomes[o.id]}</b> “{o.texto}”
+          </div>
+        ))}
+      </div>
+      {r.ideias.length > 0 && (
+        <div className="sede-reuniao-bloco">
+          <div className="sede-ata-sub">Dos analistas</div>
+          {r.ideias.map((i) => (
+            <div key={i.chave} className="sede-opiniao">
+              💡 <b>{nomes[i.de] || i.de}</b> {i.titulo}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="sede-reuniao-bloco">
+        <div className="sede-ata-sub">Decisões pra vocês</div>
+        {r.decidir ? (
+          <button type="button" className="btn btn-sm" onClick={r.abrirConsultor}>
+            {r.decidir} esperando no Gerente Geral →
+          </button>
+        ) : (
+          <div className="hint">Nenhuma decisão esperando ✓</div>
+        )}
+      </div>
+      {r.prontos.map((x) => (
+        <div key={x.id} className="sede-promocao">
+          <div>
+            🎖️ <b>{nomes[x.id]}</b> está pront{fem(x.id) ? "a" : "o"} pra promoção: {x.de} → <b>{x.para}</b>
+          </div>
+          <div className="hint">
+            ★ {x.est.estrelas} · {x.est.aprovadas} ideia{x.est.aprovadas === 1 ? "" : "s"} aprovada{x.est.aprovadas === 1 ? "" : "s"} · {x.est.deram} deram certo
+            {x.est.tentadas ? ` · ${x.est.tentadas} tentada${x.est.tentadas === 1 ? "" : "s"} (não somam, mas mostram que está pensando)` : ""}
+          </div>
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => r.aprovar(x)}>
+            Aprovar promoção
+          </button>{" "}
+          <button type="button" className="btn btn-sm" onClick={() => r.depois(x)}>
+            Depois
+          </button>
+        </div>
+      ))}
+      <div className="sede-reuniao-bloco">
+        <div className="sede-ata-sub">Ranking do mês</div>
+        {r.ranking.length ? (
+          <ol>
+            {r.ranking.slice(0, 5).map((x) => (
+              <li key={x.id}>
+                {nomes[x.id] || x.id} — ★ {x.pts}
+                {x.deram ? ` · ${x.deram} deu certo` : ""}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <div className="hint">Ninguém pontuou este mês ainda — as estrelas vêm das ideias e propostas que vocês aprovam (★ +1) e que dão certo (★ +3).</div>
+        )}
+      </div>
+      <AgendaReuniao ata={r.ata} nomes={nomes} novidade={r.novidade} />
+    </div>
   );
 }
 
@@ -780,7 +909,30 @@ function ResumoEstoque({ linhas }) {
   );
 }
 
-function PainelPessoa({ q, nomes, av, pendencias, abrir }) {
+function CartaoEquipe({ q, est, equipe, destaque }) {
+  if (q.dono || q.visita) return null;
+  const e = est?.[q.id] || { estrelas: 0, ideias: 0, aprovadas: 0, deram: 0, tentadas: 0 };
+  const fora = FORA_DA_ESCADA.has(q.id);
+  const prox = proximoNivel(q.id, est, equipe);
+  return (
+    <div className="sede-cartao-equipe">
+      <div>
+        <b>{fora ? "Gerente Geral" : nomeDoNivel(nivelDe(q.id, equipe))}</b> · ★ {e.estrelas}
+        {destaque?.id === q.id && <span className="sede-destaque-tag"> destaque da semana</span>}
+      </div>
+      <div className="hint">
+        {e.ideias} ideia{e.ideias === 1 ? "" : "s"}/proposta{e.ideias === 1 ? "" : "s"} · {e.aprovadas} aprovada{e.aprovadas === 1 ? "" : "s"} · {e.deram} deram certo{e.tentadas ? ` · ${e.tentadas} tentada${e.tentadas === 1 ? "" : "s"}` : ""}
+      </div>
+      {prox && (
+        <div className="hint">
+          {prox.pronto ? `Pronto pra ${prox.nome} — aprovem na Sala de reunião` : `Próximo nível: ${prox.nome} — faltam ${prox.faltaEstrelas ? `${prox.faltaEstrelas} ★` : ""}${prox.faltaEstrelas && prox.faltaDeram ? " e " : ""}${prox.faltaDeram ? `${prox.faltaDeram} ideia${prox.faltaDeram === 1 ? "" : "s"} que dê${prox.faltaDeram === 1 ? "" : "em"} certo` : ""}`}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PainelPessoa({ q, nomes, av, pendencias, abrir, est, equipe, destaque }) {
   if (q.bicho)
     return (
       <>
@@ -796,6 +948,7 @@ function PainelPessoa({ q, nomes, av, pendencias, abrir }) {
         {nomes[q.id] || q.nome} · {q.funcao}
       </h3>
       <div className="sede-quem">agora: {FAZENDO[q.est] || q.est}</div>
+      <CartaoEquipe q={q} est={est} equipe={equipe} destaque={destaque} />
       {q.dono && <div className="sede-quem">Decisões esperando vocês: {meus.length}</div>}
       <ListaAvisos avisos={meus} abrir={abrir} />
     </>

@@ -402,10 +402,12 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
       else juntar(p, emPe.shift() || pontoNaSala("reuniao"), { tag: "reuniao" });
     }
   }
+  let manual = null; // "Chamar reunião agora" (painel da Reunião): 3 minutos
   function aplicarAgenda() {
     const a = agoraDaSede();
-    const m = momentoDaAgenda(a, { novidade: info.novidade });
-    const chave = m ? `${a.data}|${m.k}|${m.turno || ""}` : `${a.data}|-`;
+    if (manual && Date.now() > manual.ate) manual = null;
+    const m = manual ? manual.m : momentoDaAgenda(a, { novidade: info.novidade });
+    const chave = manual ? `manual|${manual.ate}` : m ? `${a.data}|${m.k}|${m.turno || ""}` : `${a.data}|-`;
     atualizarTV(m, a);
     if (chave === momentoChave) return;
     for (const p of PESSOAS) if (p.agenda && p.agenda !== "live" && p.agenda !== "coleta") soltar(p);
@@ -538,11 +540,11 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
       // plaquinha da mesa e a letra da loja na camisa: só com o zoom na sala
       const m = !p.bicho && cena.mesaDe[p.id];
       let pm = mesasEl.get(p.id);
-      if (zoomAqui && m && !p.oculto) {
+      if (zoomAqui && m && !p.oculto && p.sala === zoomSala) {
         if (!pm) { pm = el("sede-plaquinha"); mesasEl.set(p.id, pm); }
         const txt = `${p.nome} · ${FUNCAO[p.id] || ""}`;
         if (pm.textContent !== txt) pm.textContent = txt;
-        const [x, y] = naTela(...P(Math.max(m.x + 0.6, p.casa.x - 0.9), m.y + m.d - 0.05, 20));
+        const [x, y] = naTela(...P(Math.max(m.x + 0.6, (p.casaOrig || p.casa).x - 0.9), m.y + m.d - 0.05, 20));
         pm.style.display = "";
         pm.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -50%) scale(${Math.min(k * 0.75, 1.2).toFixed(3)})`;
       } else if (pm) pm.style.display = "none";
@@ -788,6 +790,13 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
       for (const p of PESSOAS) if (p.agenda === "live") soltar(p);
     },
     pago() { falar(BIA, "Pago! ✅", 2.5, true); },
+    promocao(inf) {
+      const q = porId(inf?.id);
+      if (!q || q.oculto) return;
+      falar(q, `Promovid${inf?.a ? "a" : "o"}! ${inf?.nivel || ""} 🎉`, 4, true);
+      soltarConfete(P(q.x, q.y, 40), 60);
+      for (const d of DONOS) chamar(d, naFrenteDe(q), "Parabéns! 👏");
+    },
   };
   const FUNCAO = { ceo1: "CEO", ceo2: "CEO", consultor: "Gerente Geral", bia: "Gerente financeira", lia: "Analista Shopee", kai: "Analista TikTok", celia: "Gerente comercial", rafa: "Preços", nina: "Anúncios e Rampa", leo: "Ads", teo: "Gerente de operação", ivo: "Técnico de impressão", duda: "Expedição e estoque", rui: "Analista de revenda", ze: "Estagiário" };
 
@@ -839,7 +848,10 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
   iniciar();
   return {
     ativo(sim) { if (sim) iniciar(); else parar(); },
-    dados({ luz: l = {}, porPessoa = {}, live = false, pendentes: pend = 0, cheiasNovas = {}, conversasNovas = [], recorde = null, epoca: ep = null, agenda = {} }) {
+    dados({ luz: l = {}, porPessoa = {}, live = false, pendentes: pend = 0, cheiasNovas = {}, conversasNovas = [], recorde = null, epoca: ep = null, agenda = {}, estrelas = {}, destaque = null }) {
+      for (const p of PESSOAS) p.estrelas = estrelas[p.id] || null;
+      const dtxt = destaque ? `DESTAQUE DA SEMANA<br>${destaque.nome} ★${destaque.pts}` : "DESTAQUE DA SEMANA<br><small>ninguém pontuou</small>";
+      if (destaqueEl.innerHTML !== dtxt) destaqueEl.innerHTML = dtxt;
       info = { bom: agenda.bom || null, top3: agenda.top3 || [], metaPct: agenda.metaPct || 0, novidade: agenda.novidade || null, recorde, nOntem: agenda.bom?.pedidos?.n || 0 };
       if (!pilhaIni && info.bom) { pilhaIni = true; pilha = Math.max(0, alvoPilha() - 1); }
       luz = l;
@@ -863,6 +875,12 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
     },
     evento(tipo, inf) { EVENTOS[tipo]?.(inf); if (!rodando) desenhar(); },
     momento: () => momento,
+    /** "Chamar reunião agora": gerentes + Gerente Geral na sala por 3 minutos (só visual). */
+    reuniaoAgora() {
+      manual = { m: { k: "semana", titulo: "Reunião agora (chamada por vocês)", sala: "reuniao", quem: ["consultor", "ceo1", "ceo2", "bia", "celia", "teo"] }, ate: Date.now() + 180000 };
+      aplicarAgenda();
+      if (!rodando) desenhar();
+    },
     zoom,
     sala: () => zoomSala,
     /** (fx, fy) = posição do clique em fração do canvas (0–1). */
