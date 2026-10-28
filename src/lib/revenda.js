@@ -54,7 +54,7 @@ const txt = (s) =>
         .replace(/&quot;/g, '"')
         .replace(/&apos;/g, "'")
         .trim();
-const eanValido = (s) => {
+export const eanValido = (s) => {
   const d = soDigitos(s);
   return d.length >= 8 && d !== "0".repeat(d.length) ? d : null;
 };

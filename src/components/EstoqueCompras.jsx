@@ -288,7 +288,10 @@ function Notas({ est, onToast }) {
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
-    const nota = lerNfe(await f.text());
+    // XML (exato) ou PDF da DANFE (lido pela posição do texto — conferir antes de gravar)
+    const ehPdf = /\.pdf$/i.test(f.name) || f.type === "application/pdf";
+    if (ehPdf) onToast?.("Lendo o PDF da nota…");
+    const nota = ehPdf ? await (await import("../lib/lerDanfePdf.js")).lerDanfePdf(f) : lerNfe(await f.text());
     if (nota.erro) return onToast?.(nota.erro);
     if (nota.chave && est.compras.some((c) => c.chave_nfe === nota.chave)) return onToast?.(`A NF ${nota.numero} já foi importada — não entra duas vezes.`);
     setImportando(nota);
@@ -299,12 +302,12 @@ function Notas({ est, onToast }) {
       <div className="panel">
         <h3>Notas de compra</h3>
         <div className="toolbar">
-          <input ref={arquivo} type="file" accept=".xml,text/xml,application/xml" hidden onChange={escolher} />
+          <input ref={arquivo} type="file" accept=".xml,text/xml,application/xml,.pdf,application/pdf" hidden onChange={escolher} />
           <button type="button" className="btn primary" onClick={() => arquivo.current?.click()}>
-            📄 Importar nota (XML)
+            📄 Importar nota (XML ou PDF)
           </button>
           <span className="hint" style={{ margin: 0 }}>
-            O XML da NF-e vem no e-mail do fornecedor ou no site dele. Cada nota: entra no estoque, atualiza o custo médio e lança as parcelas no Caixa.
+            O XML da NF-e vem no e-mail do fornecedor ou no site dele (é o exato). Sem o XML, dá pra subir o PDF da nota (DANFE) — o app lê a tabela e você confere antes de gravar. Cada nota: entra no estoque, atualiza o custo médio e lança as parcelas no Caixa.
           </span>
         </div>
         {notas.length ? (
@@ -456,6 +459,11 @@ function ImportarNota({ nota, est, onToast, onFechar }) {
             )}
           </div>
         </div>
+        {nota.origem === "pdf" && (
+          <div className="alerta alerta-warn">
+            <b>Nota lida do PDF (DANFE): confira quantidades e valores antes de gravar</b> (o XML é exato; o PDF é lido pela posição do texto). {(nota.avisos || []).join(" ")}
+          </div>
+        )}
         {fora && <p className="hint">DIFAL na base única, como a sua planilha (preço × alíquota interna − ICMS da nota; item com ST não paga). Confirme com o contador se a sua empresa paga.</p>}
         {faltam > 0 && (
           <div className="alerta alerta-warn">

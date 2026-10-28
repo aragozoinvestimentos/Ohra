@@ -12,6 +12,7 @@ import CanalTag from "./CanalTag.jsx";
 import Estado, { PontoSaude } from "./Estado.jsx";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
+import AvisosDaTela from "./AvisosDaTela.jsx";
 
 // Anúncios (remap 21/10/2026): cada produto/kit/anúncio com vários itens em
 // cada canal onde tem preço salvo. Clicar abre o Painel do anúncio. Só lê —
@@ -58,6 +59,7 @@ export default function Anuncios() {
 
   return (
     <div>
+      <AvisosDaTela chaves={["anuncios", "anuncio", "canal", "canal:publicar"]} onVer={(p) => p.ir?.aba && irParaAba(p.ir.aba, p.ir.pedido)} />
       <Kpis
         itens={[
           { label: "Anúncios", valor: doCanal.length, sub: canalF ? esc.canais.find((c) => c.id === canalF)?.nome : `${canaisCom.length} canais` },

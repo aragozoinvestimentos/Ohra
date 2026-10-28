@@ -24,6 +24,8 @@ import { precoSalvoAoVivo } from "../lib/aoVivo.js";
 import CanalTag from "./CanalTag.jsx";
 import CustoFilamentosDialog from "./CustoFilamentosDialog.jsx";
 import { useLembrado } from "../hooks/useLembrado.js";
+import { usePreferencia } from "../hooks/usePreferencia.js";
+import AvisosDaTela from "./AvisosDaTela.jsx";
 import { pegarPedido } from "../lib/navegar.js";
 import { rampaNoCanal } from "../lib/rampaCanal.js";
 import CupomMaximo from "./CupomMaximo.jsx";
@@ -68,6 +70,9 @@ export default function Historico({ onEditarCompleto, onToast }) {
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos"); // todos | Produto | Kit
   const [soCustoMudou, setSoCustoMudou] = useState(false);
+  // "✓ visto" no custo mudou (28/10/2026): guarda o custo de hoje daquele item × canal;
+  // a etiqueta some até o custo mudar de novo (preço salvo não muda).
+  const [custoVisto, setCustoVisto] = usePreferencia("precificados:custo-visto", {});
   const [soSugeridoDifere, setSoSugeridoDifere] = useState(false); // kits/variações onde a curva sugere outro preço
   const [visao, setVisao] = useLembrado("ohra:precificados:visao", "salvos"); // salvos | comparar
   // Sugeridos em canal onde o item não está (noCanal): desligado = "—"; ligado = cinza, só consulta.
@@ -252,8 +257,11 @@ export default function Historico({ onEditarCompleto, onToast }) {
   function mudancaCusto(item, canalObj) {
     const p = precoDe(item, canalObj);
     if (!p || p.custo_salvo == null || p.lucro_salvo == null) return null;
-    const dCusto = custoNo(item, canalObj) - Number(p.custo_salvo);
+    const hojeCusto = custoNo(item, canalObj);
+    const dCusto = hojeCusto - Number(p.custo_salvo);
     if (Math.abs(dCusto) < 0.05) return null;
+    const visto = custoVisto?.[`${item.id}|${canalObj.id}`];
+    if (visto != null && Math.abs(hojeCusto - Number(visto)) < 0.05) return null;
     // só o efeito do custo (mudança de taxa do canal fica de fora — essa já aparece no ↻)
     return { dCusto, dLucro: -dCusto };
   }
@@ -442,7 +450,18 @@ export default function Historico({ onEditarCompleto, onToast }) {
           )}
           {info?.m && (
             <div className="aviso-cel">
-              <b>Custo mudou desde o salvar</b> custo {sinal(info.m.dCusto)} → lucro {sinal(info.m.dLucro)}/venda (fabricação, embalagem, frete ou filamento).
+              <b>Custo mudou desde o salvar</b> custo {sinal(info.m.dCusto)} → lucro {sinal(info.m.dLucro)}/venda (fabricação, embalagem, frete ou filamento).{" "}
+              <button
+                type="button"
+                className="link-btn"
+                title="O preço salvo não muda. A etiqueta some até o custo mudar de novo."
+                onClick={() => {
+                  setCustoVisto({ ...(custoVisto || {}), [`${item.id}|${canalObj.id}`]: Math.round(custoNo(item, canalObj) * 100) / 100 });
+                  onToast?.("Visto — o aviso de custo volta só se o custo mudar de novo");
+                }}
+              >
+                ✓ visto
+              </button>
             </div>
           )}
           {t && (
@@ -832,6 +851,7 @@ export default function Historico({ onEditarCompleto, onToast }) {
       </button>
     </TopbarAcoes>
     <OndeSeDecide />
+    <AvisosDaTela chaves={["historico"]} onToast={onToast} onVer={(p) => setBusca(p.ir?.pedido?.busca || "")} />
     {supabase && !carregando && itens.length > 0 && (
       <Kpis
         itens={[

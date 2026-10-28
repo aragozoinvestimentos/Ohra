@@ -2804,3 +2804,7 @@ td.vendas-opcao { padding-left: 26px; }
 .sede-seta { color: var(--ink-faint); }
 .sede-seta.sobe { color: var(--st-oportunidade); }
 .sede-seta.desce { color: var(--st-resolver); }
+.avisos-tela ul { list-style: none; margin: 0; padding: 0; }
+.avisos-tela li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.avisos-tela li:first-child { border-top: 0; }
+.avisos-tela-txt { color: var(--ink-soft); }

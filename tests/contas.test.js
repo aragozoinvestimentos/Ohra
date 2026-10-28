@@ -1,3 +1,4 @@
+import { interpretarDanfe, partesDaChave } from "../src/lib/danfe.js";
 import { comparaSemana, notasDaSemana, semanaDe } from "../src/lib/sedeNotas.js";
 import { estrelasDaEquipe, prontosPraPromocao, promover, proximoNivel, destaqueDaSemana, opinioesDosGerentes } from "../src/lib/sedeEquipe.js";
 import { caixasDoDia, destinosDoArquivo, momentoDaAgenda, novidadeRecente, textoDaTV } from "../src/lib/sedeAgenda.js";
@@ -491,5 +492,30 @@ describe("Sede — nota por setor (etapa D)", () => {
   it("semana e seta", () => {
     expect(semanaDe("2026-11-01")).toBe("2026-10-26");
     expect(comparaSemana([{ setor: "comercial", semana: "2026-10-19", nota: 6 }], "comercial", "2026-10-26", 7).seta).toBe("↑");
+  });
+});
+
+describe("Nota de compra pelo PDF (DANFE)", () => {
+  const I = (t, x, y, h = 6) => ({ t, x, y, w: t.length * 3, h });
+  const pag = {
+    itens: [
+      I("RECEBEMOS DE LOJA X LTDA OS PRODUTOS CONSTANTES DA NOTA", 30, 30), I("DANFE", 250, 70), I("3524 1012 3456 7800 0190 5500 1000 0012 3410 0000 1234", 400, 80),
+      I("DATA DA EMISSAO", 300, 130), I("15/10/2024", 300, 140),
+      I("CALCULO DO IMPOSTO", 30, 210), I("VALOR TOTAL DOS PRODUTOS", 30, 220), I("90,00", 30, 230), I("VALOR TOTAL DA NOTA", 200, 220), I("90,00", 200, 230),
+      I("DADOS DOS PRODUTOS / SERVICOS", 30, 300), I("CODIGO", 30, 310), I("DESCRICAO", 80, 310), I("QUANT", 350, 310), I("VALOR", 385, 310), I("UNIT", 385, 317), I("VALOR", 420, 310), I("TOTAL", 420, 317),
+      I("7891234567895", 30, 330), I("COPO 500ML", 80, 330), I("6,0000", 350, 330), I("15,0000", 385, 330), I("90,00", 420, 330),
+    ],
+  };
+  it("chave dá CNPJ, UF, número e série; tabela dá os itens", () => {
+    expect(partesDaChave("35241012345678000190550010000012341000001234")).toMatchObject({ uf: "SP", cnpj: "12345678000190", numero: "1234", serie: "1" });
+    const n = interpretarDanfe([pag]);
+    expect(n.emitente).toMatchObject({ cnpj: "12345678000190", nome: "LOJA X LTDA", uf: "SP" });
+    expect(n.emissao).toBe("2024-10-15");
+    expect(n.itens[0]).toMatchObject({ ean: "7891234567895", qtd: 6, vUn: 15, vProd: 90, descricao: "COPO 500ML" });
+    expect(n.totais.vNF).toBe(90);
+  });
+  it("PDF sem texto ou que não é DANFE", () => {
+    expect(interpretarDanfe([{ itens: [] }]).erro).toContain("imagem");
+    expect(interpretarDanfe([{ itens: [I("Boleto", 1, 1)] }]).erro).toContain("não parece");
   });
 });

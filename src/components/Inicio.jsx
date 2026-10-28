@@ -35,6 +35,7 @@ import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
 import { contarMarcas, publicarMarcas } from "../lib/marcas.js";
+import { adiarAviso } from "../lib/avisosAcoes.js";
 import { publicarSede } from "../lib/sedeDados.js";
 import { irParaAba } from "../lib/navegar.js";
 import { BRL } from "../lib/format.js";
@@ -343,17 +344,27 @@ export default function Inicio({ onIrPara, onToast }) {
     const pausas = pausasDeRampa(lembretes);
     return new Set(linhas.filter((l) => pausaAtiva(pausas.get(l.r.id), l.est, hoje)).map((l) => l.r.id));
   }, [lembretes, linhas, hoje]);
-  const pausadaRampa = (p) => p.grupo !== "resolver" && rampasPausadas.has(p.ir?.pedido?.rampaId);
+  // …e TODOS os avisos do mesmo anúncio (produto × canal) — Ads, diagnóstico, preço,
+  // anunciar — somem junto (e saem das bolinhas do menu): você escolheu não olhar agora.
+  const anunciosPausados = useMemo(
+    () => new Set(linhas.filter((l) => rampasPausadas.has(l.r.id)).map((l) => `${String(l.produto?.nome || "").toLowerCase()}|${l.canal?.nome || ""}`)),
+    [linhas, rampasPausadas]
+  );
+  const nomesCanaisTodos = (dados.canais || []).map((c) => c.nome);
+  const pausadaRampa = (p) => {
+    if (p.grupo === "resolver" || p.tarefa) return false;
+    if (rampasPausadas.has(p.ir?.pedido?.rampaId)) return true;
+    if (!anunciosPausados.size) return false;
+    const k = produtoDoAviso(p, nomesCanaisTodos);
+    return !!k && anunciosPausados.has(`${k.nome.toLowerCase()}|${k.canal || ""}`);
+  };
   const pendencias = todasPendencias.filter((p) => !pausadaRampa(p) && !(podeAdiar(p) && adiadoAte.get(p.id) > hoje));
   const adiados = todasPendencias.filter((p) => !pausadaRampa(p) && podeAdiar(p) && adiadoAte.get(p.id) > hoje);
   const [verAdiados, setVerAdiados] = useState(false);
   async function adiar30(p) {
     if (!lembretesOk) return onToast?.("Falta rodar o supabase/schema_v40.sql no Supabase");
-    const d = new Date(`${hoje}T12:00:00`);
-    d.setDate(d.getDate() + 30);
-    const { error } = await supabase.from("lembretes").upsert({ loja_id: lojaId || null, chave: `inicio|${p.id}`, adiado_ate: d.toISOString().slice(0, 10), tipo: "adiar30" }, { onConflict: "loja_id,chave" });
+    const { error } = await adiarAviso(lojaId, p.id, hoje);
     if (error) return onToast?.(`Não foi possível adiar: ${error.message}`);
-    window.dispatchEvent(new Event("ohra:lembretes"));
     onToast?.(`Ok — “${p.titulo}” volta em 30 dias (se ainda valer)`);
   }
   async function voltarAviso(p) {

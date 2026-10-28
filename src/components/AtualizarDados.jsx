@@ -22,9 +22,9 @@ export default function AtualizarDados({ onToast }) {
     <>
       <CentralImportacao esc={esc} ped={ped} linhas={linhas} linhasAds={cres.linhasAds} cres={cres} hoje={hoje} onToast={onToast} />
       <div className="panel">
-        <h3>Nota de compra (XML) — revenda</h3>
+        <h3>Nota de compra (XML ou PDF) — revenda</h3>
         <p className="hint" style={{ marginBottom: 8 }}>
-          Comprou mercadoria pronta pra revender? Suba o XML da nota: entra no estoque, atualiza o custo médio e lança as parcelas no Caixa.
+          Comprou mercadoria pronta pra revender? Suba o XML da nota (ou o PDF/DANFE, se não tiver o XML): entra no estoque, atualiza o custo médio e lança as parcelas no Caixa.
         </p>
         <button type="button" className="btn" onClick={() => abrirEstoque("notas")}>
           📄 Importar nota de compra →
