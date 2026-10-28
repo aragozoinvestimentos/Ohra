@@ -10,12 +10,13 @@
 // Quem usa: components/Sede.jsx (dados, eventos e painel).
 import { SALAS_SEDE } from "./sede.js";
 import { CENA, ORDEM_GRUPOS, P, desenharPessoa, desenharPug, montarCena, noChao, tom, visuais } from "./sedeCena.js";
+import { agoraDaSede, caixasDoDia, destinosDoArquivo, festaComBolo, momentoDaAgenda, nomeDoArquivo, textoDaTV } from "./sedeAgenda.js";
 
 export const TAMANHO_SEDE = { largura: CENA.largura, altura: CENA.altura };
 const VEL = 2.3; // unidades do chão por segundo
 const POSE_SENTADO = new Set(["sentado"]);
 
-export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}, reduzir = false, onSala, onConversa, onZoom }) {
+export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}, reduzir = false, onSala, onConversa, onZoom, onMomento, onAta }) {
   const ctx = canvas.getContext("2d");
   const FECHADAS = salas.fechadas || {};
   const nomeSala = (k) => salas.nomes?.[k] || SALAS_SEDE.find((s) => s.k === k)?.nome || k;
@@ -27,11 +28,12 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
   // ================= cena (refeita quando a luz dos monitores muda) =================
   let telas = {};
   let epoca = personagens.epoca || null;
+  let momentoCena = null; // "9h" = TV ligada com o gráfico (reunião)
   let cena = null;
   let grupos = {};
   const compilar = (paths) => paths.map((p) => ({ ...p, p2: new Path2D(p.d), dash: p.dash ? p.dash.split(" ").map(Number) : null }));
   function refazerCena() {
-    cena = montarCena({ fechadas: FECHADAS, impressoras, revenda, telas, epoca });
+    cena = montarCena({ fechadas: FECHADAS, impressoras, revenda, telas, epoca, momento: momentoCena });
     grupos = Object.fromEntries(ORDEM_GRUPOS.map((g) => [g, []]));
     for (const it of cena.itens) {
       it.c = compilar(it.paths);
@@ -125,7 +127,7 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
     const chave = `${p.id}|${pose.sentado ? "s" : "e"}|${pose.passo || 0}|${pose.costas ? 1 : 0}|${pose.est}|${pose.carrega || ""}|${pose.xicara ? 1 : 0}|${pose.piscando ? 1 : 0}|${pose.apagado ? 1 : 0}`;
     let s = sprites.get(chave);
     if (!s) {
-      const d = desenharPessoa(p.look, { ...pose, letra: !p.dono && LETRA });
+      const d = desenharPessoa(p.look, { ...pose, letra: !p.dono && !p.visita && LETRA });
       s = { c: compilar(d.paths), topo: d.topo, peito: d.peito };
       sprites.set(chave, s);
       if (sprites.size > 600) sprites.delete(sprites.keys().next().value);
@@ -150,6 +152,11 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
     if (personagens.ocultos?.has(id) || (id === "ivo" && !impressoras) || (FECHADAS[p.sala])) p.oculto = true;
     if (id === "rui" && !revenda) p.apagado = true;
     PESSOAS.push(p);
+  }
+  // carteiro (visita da coleta das 16h): só aparece na coleta
+  {
+    const ent = cena.pontos.entrada;
+    PESSOAS.push({ id: "carteiro", nome: "Carteiro", look: { ...LOOK.ze, cor: "#f2c14e", bone: "#2f5d8a", camisa: undefined }, casa: { x: ent[0], y: ent[1] }, x: ent[0], y: ent[1], sala: "recepcao", est: "parado", cam: [], alvo: null, t: 1e9, passo: 0, fase: 0, costas: false, fala: null, falaT: 0, aviso: null, carrega: null, xicara: false, pisca: 3, piscando: 0, oculto: true, visita: true });
   }
   const porId = (id) => PESSOAS.find((p) => p.id === id);
   const CEO1 = porId("ceo1"), CEO2 = porId("ceo2"), CONS = porId("consultor"), ZE = porId("ze"), DUDA = porId("duda"), IVO = porId("ivo"), LEO = porId("leo"), BIA = porId("bia");
@@ -223,9 +230,13 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
   const voltar = (p) => ir(p, [p.casa.x, p.casa.y], () => { p.est = p.casa.s ? "sentado" : "trabalhando"; p.t = 8 + Math.random() * 14; p.xicara = false; p.carrega = null; });
 
   // ---------- rotinas (só visual; a agenda fixa do dia vem na etapa B) ----------
-  let pilha = 3, liveLigada = false;
+  let pilha = 0, liveLigada = false;
   function proximaTarefa(p) {
     const dado = Math.random();
+    // em reunião / almoço / festa / live: a agenda manda (aplicarAgenda)
+    if (p.visita) { p.t = 1e9; return; }
+    if (p.agenda && p.roteiro?.length) { falar(p, p.roteiro.shift(), 4.2, true); p.t = 5; return; }
+    if (p.agenda) { p.t = 6; if (p.agenda === "reuniao" && Math.random() < 0.18) falar(p, sorteio(["Concordo", "Boa!", "Anotado 📝", "Faz sentido", "Vou ver isso"]), 2.2); return; }
     // quem ainda não começou (Rui sem revenda) fica na mesa dele
     if (p.apagado) { p.est = p.casa.s ? "sentado" : "trabalhando"; p.t = 30; return; }
     const copa = () => ir(p, sorteio(cena.pontos.copa), () => { p.est = "parado"; p.t = 5 + Math.random() * 4; p.xicara = true; if (Math.random() < 0.4) falar(p, "☕", 2); p.depois2 = () => voltar(p); });
@@ -253,9 +264,9 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
     }
     if (p === IVO) { ir(p, sorteio(cena.pontos.impressoras), () => { p.est = "trabalhando"; p.t = 5 + Math.random() * 6; if (p.aviso && Math.random() < 0.4) falar(p, "🔧 manutenção!", 2.5); }); return; }
     if (p === DUDA) {
-      if (dado < 0.5) { ir(p, cena.pontos.estoque, () => { p.carrega = "#c8955c"; p.est = "parado"; p.t = 1; p.depois2 = () => ir(p, cena.pontos.expedicao, () => { p.carrega = null; p.est = "trabalhando"; p.t = 5; }); }); return; }
+      if (pilha >= alvoPilha() || dado < 0.3) { ir(p, cena.pontos.estoque, () => { p.carrega = "#c8955c"; p.est = "parado"; p.t = 1; p.depois2 = () => ir(p, cena.pontos.expedicao, () => { p.carrega = null; p.est = "trabalhando"; p.t = 5; }); }); return; }
       // leva caixa pro pallet da coleta (vai empilhando; o carteiro esvazia)
-      ir(p, cena.pontos.expedicao, () => { p.carrega = "#c8955c"; p.est = "parado"; p.t = 1; p.depois2 = () => ir(p, cena.pontos.pallet, () => { p.carrega = null; pilha = pilha >= 8 ? 2 : pilha + 1; p.est = "parado"; p.t = 2; p.depois2 = () => voltar(p); }); });
+      ir(p, cena.pontos.expedicao, () => { p.carrega = "#c8955c"; p.est = "parado"; p.t = 1; p.depois2 = () => ir(p, cena.pontos.pallet, () => { p.carrega = null; pilha = Math.min(8, pilha + 1); p.est = "parado"; p.t = 2; p.depois2 = () => voltar(p); }); });
       return;
     }
     if (p === ZE) {
@@ -263,6 +274,15 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
       p.est = "sentado";
       p.t = 8 + Math.random() * 10;
       return;
+    }
+    // gerente vê aviso vermelho no setor dele → chama quem cuida
+    if ((p === BIA || p.id === "celia" || p.id === "teo") && dado < 0.35 && (p.chamouEm || 0) < perf - 90000) {
+      const urg = PESSOAS.find((q) => q !== p && q.sala === p.sala && q.aviso === "r" && !q.oculto && !q.agenda && q.est !== "andando");
+      if (urg) {
+        p.chamouEm = perf;
+        ir(p, naFrenteDe(urg), () => { p.est = "parado"; p.t = 4; falar(p, `${urg.nome}, isso é urgente — vem ver`, 3, true); setTimeout(() => falar(urg, "Já vou resolver!", 2.5, true), 1500); p.depois2 = () => voltar(p); });
+        return;
+      }
     }
     if (p.aviso && dado < 0.28 && DONOS.length) {
       const dono = sorteio(DONOS);
@@ -317,7 +337,7 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
   // conversa entre setores: quem cuida do assunto vai até quem precisa saber
   let conversas = [], tempoConversa = 25;
   function iniciarConversa() {
-    const ok = conversas.filter((c) => { const a = porId(c.de), b = porId(c.para); return a && b && a !== b && !a.oculto && !b.oculto && a.est !== "andando" && a.est !== "live" && b.est !== "live"; });
+    const ok = conversas.filter((c) => { const a = porId(c.de), b = porId(c.para); return a && b && a !== b && !a.oculto && !b.oculto && !a.agenda && !b.agenda && a.est !== "andando" && a.est !== "live" && b.est !== "live"; });
     if (!ok.length) return;
     const c = sorteio(ok);
     const Aq = porId(c.de), B = porId(c.para);
@@ -331,6 +351,124 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
       onConversa?.(c);
       Aq.depois2 = () => voltar(Aq);
     });
+  }
+
+
+  // ================= agenda viva (etapa B, 28/10/2026) =================
+  // O dia do escritório pelo relógio de São Paulo (sedeAgenda.js): Bom dia às 9h,
+  // reunião da semana, fechamento, café, almoço em turnos, treinamento, coleta e festa.
+  let momento = null, momentoChave = "", coletaFeita = "", festaConfete = 0, bolo = null, pilhaIni = false;
+  let info = { bom: null, top3: [], metaPct: 0, novidade: null, recorde: null, nOntem: 0 };
+  /** Caixas que já deviam estar no pallet a esta hora (enche das 9h às 16h; a coleta esvazia). */
+  function alvoPilha() {
+    const a = agoraDaSede();
+    if (coletaFeita === a.data || a.minutos >= 16 * 60 + 20 || a.dow === 0 || a.dow === 6) return 0;
+    const frac = Math.max(0, Math.min(1, (a.minutos - 9 * 60) / (7 * 60)));
+    return Math.ceil(caixasDoDia(info.nOntem) * frac);
+  }
+  function juntar(p, alvo, { sentar = false, tag = "agenda", chegou } = {}) {
+    if (!p || p.oculto || p.visita || !alvo) return;
+    if (p.agenda === "live" && tag !== "live") return;
+    p.agenda = tag;
+    p.depois2 = null;
+    p.xicara = false;
+    p.carrega = null;
+    if (!p.casaOrig) p.casaOrig = p.casa;
+    p.casa = { x: alvo[0], y: alvo[1], s: sentar };
+    ir(p, alvo, () => { p.est = sentar ? "sentado" : "parado"; p.t = 3 + Math.random() * 3; chegou?.(p); });
+  }
+  function soltar(p) {
+    if (!p.agenda) return;
+    p.agenda = null;
+    p.roteiro = null;
+    if (p.casaOrig) { p.casa = p.casaOrig; p.casaOrig = null; }
+    if (p.foraAlmoco) { p.foraAlmoco = false; p.oculto = false; const e = cena.pontos.entrada; p.x = e[0]; p.y = e[1]; falar(p, "Voltei! 😋", 2); }
+    voltar(p);
+  }
+  const livres = () => PESSOAS.filter((p) => !p.oculto && !p.visita && !p.agenda);
+  function reuniao(m) {
+    const quem = (m.quem || []).map(porId).filter((p) => p && !p.oculto && p.agenda !== "live" && !p.apagado);
+    const apresenta = m.k === "fechamento" ? BIA : CONS;
+    const tv = textoDaTV({ momento: m, agora: agoraDaSede(), bom: info.bom, top3: info.top3, novidade: info.novidade, recorde: info.recorde });
+    const cadeiras = [...cena.pontos.reuniao];
+    const emPe = cena.pontos.reuniao.map(([x]) => [x, 8.9]);
+    for (const p of quem) {
+      if (p === apresenta) {
+        juntar(p, cena.pontos.tv, { tag: "reuniao", chegou: (q) => { q.roteiro = [m.k === "bomdia" ? "Bom dia, equipe! ☀️" : `${m.titulo} 📋`, ...tv.linhas.map((l) => l.slice(0, 60))]; q.t = 1; } });
+        continue;
+      }
+      const lugar = cadeiras.shift();
+      if (lugar) juntar(p, lugar, { sentar: true, tag: "reuniao" });
+      else juntar(p, emPe.shift() || pontoNaSala("reuniao"), { tag: "reuniao" });
+    }
+  }
+  function aplicarAgenda() {
+    const a = agoraDaSede();
+    const m = momentoDaAgenda(a, { novidade: info.novidade });
+    const chave = m ? `${a.data}|${m.k}|${m.turno || ""}` : `${a.data}|-`;
+    atualizarTV(m, a);
+    if (chave === momentoChave) return;
+    for (const p of PESSOAS) if (p.agenda && p.agenda !== "live" && p.agenda !== "coleta") soltar(p);
+    if (bolo) { const i = presentes.indexOf(bolo); if (i >= 0) presentes.splice(i, 1); bolo = null; }
+    momentoChave = chave;
+    momento = m;
+    const tvLigada = m && ["bomdia", "treinamento", "semana", "fechamento"].includes(m.k) ? "9h" : null;
+    if (tvLigada !== momentoCena) { momentoCena = tvLigada; refazerCena(); }
+    if (!m) return;
+    onMomento?.(m);
+    if (m.sala === "reuniao") { reuniao(m); return; }
+    if (m.k === "cafe") {
+      const l = livres().filter((p) => !p.dono || Math.random() < 0.5).sort(() => Math.random() - 0.5).slice(0, 5);
+      l.forEach((p, i) => juntar(p, cena.pontos.copa[i % cena.pontos.copa.length], { tag: "cafe", chegou: (q) => { q.xicara = true; if (Math.random() < 0.5) falar(q, sorteio(["☕", "Que cheiro bom", "Pausa merecida"]), 2.2); } }));
+      return;
+    }
+    if (m.k === "almoco") {
+      for (const p of (m.quem || []).map(porId)) juntar(p, cena.pontos.entrada, { tag: "almoco", chegou: (q) => { q.oculto = true; q.foraAlmoco = true; } });
+      return;
+    }
+    if (m.k === "coleta") { coleta(a); return; }
+    if (m.k === "festa") { festa(); return; }
+  }
+  function coleta(a) {
+    const C = porId("carteiro");
+    if (!C) return;
+    const n = pilha;
+    if (DUDA && !DUDA.oculto) juntar(DUDA, [cena.pontos.pallet[0] - 1.2, cena.pontos.pallet[1] - 0.6], { tag: "coleta", chegou: (q) => falar(q, n ? `Tudo pronto: ${n} caixa${n === 1 ? "" : "s"} 📦` : "Hoje não tem caixa", 3, true) });
+    const e = cena.pontos.entrada;
+    Object.assign(C, { x: e[0], y: e[1], oculto: false, agenda: "coleta", carrega: null });
+    ir(C, [cena.pontos.pallet[0] + 0.6, cena.pontos.pallet[1] + 1.4], () => {
+      C.est = "parado";
+      falar(C, "Coleta! Boa tarde 👋", 3, true);
+      C.t = 4;
+      C.depois2 = () => {
+        pilha = 0;
+        coletaFeita = a.data;
+        C.carrega = n ? "#c8955c" : null;
+        ir(C, e, () => { C.oculto = true; C.agenda = null; C.carrega = null; C.t = 1e9; });
+        if (DUDA?.agenda === "coleta") soltar(DUDA);
+      };
+    });
+  }
+  function festa() {
+    const comBolo = festaComBolo({ metaPct: info.metaPct, recordePct: info.recorde?.frac });
+    const l = livres();
+    l.forEach((p, i) => {
+      let alvo = null;
+      for (let t = 0; t < 20 && !alvo; t++) {
+        const x = 22 + Math.floor(Math.random() * 16) + 0.5, y = 12.5 + Math.floor(Math.random() * 4);
+        if (cena.livre(x, y)) alvo = [x, y];
+      }
+      juntar(p, alvo, { tag: "festa", chegou: (q) => { if (i < 3 || Math.random() < 0.25) falar(q, q.dono ? (comBolo ? "Que mês! 🎉" : "Fechamos o mês! 👏") : sorteio(["🎉", "Uhuu!", "Bora pro próximo!", "👏👏"]), 3); } });
+    });
+    pugsPraDiretoria();
+    if (comBolo) { bolo = { x: 30, y: 14.4, bolo: true }; presentes.push(bolo); }
+  }
+  function atualizarTV(m, a) {
+    const t = textoDaTV({ momento: m, agora: a, bom: info.bom, top3: info.top3, novidade: info.novidade, recorde: info.recorde });
+    const esc = (x) => String(x).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+    const html = `<b>${esc(t.titulo)}</b>${t.linhas.slice(0, 5).map((l) => `<span>${esc(l)}</span>`).join("")}${t.ata ? "<em>ver ata ›</em>" : ""}`;
+    if (tvEl.innerHTML !== html) tvEl.innerHTML = html;
+    tvEl.classList.toggle("clicavel", !!t.ata);
   }
 
   // ================= HTML por cima (placas, nomes, falas, quadros) =================
@@ -356,6 +494,7 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
   if (personagens.logoUrl) { const img = document.createElement("img"); img.src = personagens.logoUrl; img.alt = ""; logoEl.querySelector("span").replaceWith(img); }
   fixos.push({ e: logoEl, pt: cena.decor.logo.pt, skew: -26.57, max: 9 });
   const tvEl = el("sede-quadro-txt sede-tv");
+  tvEl.addEventListener("click", (e) => { if (!tvEl.classList.contains("clicavel")) return; e.stopPropagation(); onAta?.(); });
   fixos.push({ e: tvEl, pt: cena.decor.tv.pt, skew: 26.57, max: 9 });
   const destaqueEl = el("sede-quadro-txt sede-destaque", "DESTAQUE DA SEMANA");
   fixos.push({ e: destaqueEl, pt: cena.decor.destaque.pt, skew: -26.57, max: 9 });
@@ -408,7 +547,7 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
         pm.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -50%) scale(${Math.min(k * 0.75, 1.2).toFixed(3)})`;
       } else if (pm) pm.style.display = "none";
       let le = letrasEl.get(p.id);
-      if (zoomAqui && LETRA && !p.bicho && !p.dono && !p.oculto && !p.apagado && !p.costas) {
+      if (zoomAqui && LETRA && !p.bicho && !p.dono && !p.visita && !p.oculto && !p.apagado && !p.costas) {
         if (!le) { le = el("sede-letra", LETRA); letrasEl.set(p.id, le); }
         const [X, Y0] = P(p.x, p.y);
         const [x, y] = naTela(X - 3.6, Y0 + (p.est === "sentado" ? -10 : 0) - 22.5);
@@ -550,6 +689,14 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
   }
   function desenharPresente(g) {
     const [X, Y] = P(g.x, g.y);
+    if (g.bolo) {
+      ctx.fillStyle = "#7a4a2a"; ctx.fillRect(X - 9, Y - 12, 18, 9);
+      ctx.fillStyle = "#fbf3e6"; ctx.fillRect(X - 9, Y - 14, 18, 3);
+      ctx.fillStyle = "#e05a7a"; for (let i = 0; i < 4; i++) ctx.fillRect(X - 7 + i * 4.5, Y - 9, 2, 2);
+      ctx.fillStyle = "#4fb0e8"; ctx.fillRect(X - 0.8, Y - 20, 1.6, 6);
+      ctx.fillStyle = Math.floor(perf / 200) % 2 ? "#ffd25a" : "#f29a3a"; ctx.fillRect(X - 1.2, Y - 23, 2.4, 3);
+      return;
+    }
     const b = Math.floor(perf / 300) % 2;
     ctx.fillStyle = "#e05a7a";
     ctx.fillRect(X - 7, Y - 14 - b, 14, 11);
@@ -561,6 +708,7 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
   function conferirHora() {
     const h = Number(new Intl.DateTimeFormat("pt-BR", { hour: "numeric", hour12: false, timeZone: "America/Sao_Paulo" }).format(new Date())) % 24;
     noite = h >= 20 || h < 6;
+    if (cena) aplicarAgenda();
   }
   function frame(t) {
     const dt = Math.min(0.05, ultimo ? (t - ultimo) / 1000 : 0);
@@ -578,6 +726,7 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
     for (const g of BICHOS) atualizarBicho(g, dt);
     tempoConversa -= dt;
     if (tempoConversa <= 0) { tempoConversa = 35 + Math.random() * 30; iniciarConversa(); }
+    if (bolo) { festaConfete -= dt; if (festaConfete <= 0) { festaConfete = 7; soltarConfete(P(30, 14.4, 34), 45); } }
     for (let i = confete.length - 1; i >= 0; i--) { const c = confete[i]; c.x += c.vx * dt; c.y += c.vy * dt; c.vy += 40 * dt; c.v -= dt; if (c.v <= 0) confete.splice(i, 1); }
     desenhar();
     if (rodando) raf = requestAnimationFrame(frame);
@@ -606,18 +755,38 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
       pugsPraDiretoria();
       setTimeout(() => { soltarConfete(P(6.6, 9.4, 20)); presentes.splice(presentes.indexOf(g), 1); }, 4500);
     },
-    pedidos(info) {
-      if (!ZE || ZE.oculto) return;
+    pedidos(info) { EVENTOS.arquivo({ relatorio: "pedidos", n: info?.n }); },
+    // Zé entrega o arquivo importado SÓ no setor que usa ele (sedeAgenda.destinosDoArquivo)
+    arquivo(info) {
+      if (!ZE || ZE.oculto || ZE.agenda) return;
+      const nome = nomeDoArquivo(info?.relatorio);
+      const quem = destinosDoArquivo(info?.relatorio).map(porId).filter((q) => q && !q.oculto && !q.foraAlmoco);
       ZE.depois2 = null;
       ZE.carrega = "papel";
-      falar(ZE, info?.n ? `${info.n} pedidos chegaram!` : "Chegaram pedidos!", 3, true);
-      // Zé entrega só no setor que usa o arquivo (pedidos: Comercial, Financeiro e Operação)
-      ir(ZE, cena.pontos.correio, () => ir(ZE, naFrenteDe(porId("celia") || ZE), () => { falar(ZE, "📨 Comercial", 2.5, true); ir(ZE, naFrenteDe(BIA || ZE), () => { falar(ZE, "📨 Financeiro", 2.5, true); ir(ZE, cena.pontos.expedicao, () => { falar(ZE, `📨 pra você, ${DUDA?.nome || "Duda"}`, 2.5, true); ZE.carrega = null; voltar(ZE); }); }); }));
+      falar(ZE, nome === "pedidos" ? (info?.n ? `${info.n} pedidos chegaram!` : "Chegaram pedidos!") : `Chegou: ${nome} 📬`, 3, true);
+      const entregar = (i) => {
+        const q = quem[i];
+        if (!q) { ZE.carrega = null; voltar(ZE); return; }
+        ir(ZE, q === DUDA ? cena.pontos.expedicao : naFrenteDe(q), () => { falar(ZE, `📨 ${nome} pra você, ${q.nome}`, 2.5, true); setTimeout(() => falar(q, "Valeu, Zé!", 2, true), 1200); entregar(i + 1); });
+      };
+      ir(ZE, cena.pontos.correio, () => entregar(0));
     },
     meta() { soltarConfete(P(5, 6, 30), 90); soltarConfete(P(9, 6, 30), 90); falar(CEO1, "BATEMOS! 🎉", 4, true); falar(CEO2, "Uhuuu! 💕", 4, true); pugsPraDiretoria(); },
     ads(info) { falar(LEO, info?.nome ? `Ads no ar: ${String(info.nome).slice(0, 20)} 📣` : "Ads no ar! 📣", 3, true); },
-    live() { liveLigada = true; aoVivoEl.classList.add("on"); if (CEO2 && !FECHADAS.live) { CEO2.depois2 = null; ir(CEO2, cena.pontos.live, () => { CEO2.est = "live"; CEO2.t = 40; falar(CEO2, "Oi, gente! 💕", 4, true); }); } },
-    liveFim() { liveLigada = false; aoVivoEl.classList.remove("on"); if (CEO2?.est === "live") { CEO2.t = 0; falar(CEO2, "Obrigada, gente! 💕", 3, true); } },
+    live() {
+      liveLigada = true;
+      aoVivoEl.classList.add("on");
+      if (FECHADAS.live) return;
+      juntar(CEO2, cena.pontos.live, { tag: "live", chegou: (q) => { q.est = "live"; falar(q, "Oi, gente! 💕", 4, true); } });
+      juntar(porId("celia"), pontoNaSala("live"), { tag: "live", chegou: (q) => falar(q, "Separando os produtos da live", 3) });
+      juntar(porId("kai"), pontoNaSala("live"), { tag: "live", chegou: (q) => falar(q, "Câmera ok 🎥", 3) });
+    },
+    liveFim() {
+      liveLigada = false;
+      aoVivoEl.classList.remove("on");
+      if (CEO2?.agenda === "live") falar(CEO2, "Obrigada, gente! 💕", 3, true);
+      for (const p of PESSOAS) if (p.agenda === "live") soltar(p);
+    },
     pago() { falar(BIA, "Pago! ✅", 2.5, true); },
   };
   const FUNCAO = { ceo1: "CEO", ceo2: "CEO", consultor: "Gerente Geral", bia: "Gerente financeira", lia: "Analista Shopee", kai: "Analista TikTok", celia: "Gerente comercial", rafa: "Preços", nina: "Anúncios e Rampa", leo: "Ads", teo: "Gerente de operação", ivo: "Técnico de impressão", duda: "Expedição e estoque", rui: "Analista de revenda", ze: "Estagiário" };
@@ -670,7 +839,9 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
   iniciar();
   return {
     ativo(sim) { if (sim) iniciar(); else parar(); },
-    dados({ luz: l = {}, porPessoa = {}, live = false, pendentes: pend = 0, cheiasNovas = {}, conversasNovas = [], recorde = null, epoca: ep = null }) {
+    dados({ luz: l = {}, porPessoa = {}, live = false, pendentes: pend = 0, cheiasNovas = {}, conversasNovas = [], recorde = null, epoca: ep = null, agenda = {} }) {
+      info = { bom: agenda.bom || null, top3: agenda.top3 || [], metaPct: agenda.metaPct || 0, novidade: agenda.novidade || null, recorde, nOntem: agenda.bom?.pedidos?.n || 0 };
+      if (!pilhaIni && info.bom) { pilhaIni = true; pilha = Math.max(0, alvoPilha() - 1); }
       luz = l;
       cheias = cheiasNovas;
       conversas = conversasNovas;
@@ -686,18 +857,19 @@ export function criarSede({ canvas, camada, personagens, salas = {}, partes = {}
       }
       if (JSON.stringify(novasTelas) !== JSON.stringify(telas) || ep !== epoca) { telas = novasTelas; epoca = ep; refazerCena(); }
       recordeEl.innerHTML = recorde?.valor ? `Recorde ${recorde.valor} · ${recorde.mes}<br>este mês: ${recorde.pct}` : "Recorde: no 1º mês fechado";
-      tvEl.innerHTML = "Reunião do Bom dia às 9h<br><small>agenda da equipe — em breve</small>";
+      aplicarAgenda();
       if (live !== liveLigada) (live ? EVENTOS.live : EVENTOS.liveFim)();
       if (!rodando) desenhar();
     },
-    evento(tipo, info) { EVENTOS[tipo]?.(info); if (!rodando) desenhar(); },
+    evento(tipo, inf) { EVENTOS[tipo]?.(inf); if (!rodando) desenhar(); },
+    momento: () => momento,
     zoom,
     sala: () => zoomSala,
     /** (fx, fy) = posição do clique em fração do canvas (0–1). */
     quemEsta(fx, fy) {
       const q = emCima(fx, fy);
       if (q?.bicho) return { id: q.id, nome: q.nome, funcao: q.funcao, bicho: true };
-      if (q) return { id: q.id, nome: q.nome, funcao: FUNCAO[q.id], sala: q.sala, est: q.est, aviso: q.aviso, dono: q.dono, consultor: q === CONS, apagado: q.apagado };
+      if (q) return { id: q.id, nome: q.nome, funcao: FUNCAO[q.id] || (q.visita ? "visita da coleta" : ""), sala: q.sala, est: q.agenda ? q.agenda : q.est, aviso: q.aviso, dono: q.dono, consultor: q === CONS, apagado: q.apagado, visita: q.visita };
       const sx = cam.x + fx * cam.w, sy = cam.y + fy * cam.h;
       const [x, y] = noChao(sx, sy);
       const s = cena.salaEm(x, y);

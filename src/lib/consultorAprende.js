@@ -245,6 +245,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-28", texto: "A Sede tem agenda: às 9h faço a reunião do Bom dia na TV com os gerentes (ontem + as 3 coisas que mais valem dinheiro), segunda às 10h a reunião da semana, dia 1 o fechamento com a Bia, café, almoço em turnos, coleta às 16h e festa no último dia do mês. Clique na TV pra ver a ata." },
   { data: "2026-10-27", texto: "Sede nova em perspectiva: Diretoria só com os CEOs, sala própria do Gerente Geral (eu), Reunião, Live, Financeiro (Bia, Lia na Shopee, Kai no TikTok), Comercial, Operação (Téo, Ivo nas impressoras, Duda na expedição, Rui na revenda) e Recepção (Zé, copa e o pallet da coleta). Clique numa sala pra entrar nela." },
   { data: "2026-10-26", texto: "Caixa em carteiras: Conta da loja (banco — vendas físicas e orgânicas caem direto nela) e uma por marketplace. Na Shopee separo Liberado × A liberar × A caminho pelo Extrato do Meu Saldo (Atualizar dados); o saque vira transferência pra Conta da loja e não conta como venda nem gasto." },
   { data: "2026-10-26", texto: "O que vai pro Caixa pelas vendas importadas agora é o repasse de verdade da plataforma (pago − comissão − taxa fixa), conferido com a Minha Renda da Shopee. O imposto % do canal só desconta do lucro. Caixa mostra “A receber das plataformas” e Atualizar dados tem a conferência com a Minha Renda." },

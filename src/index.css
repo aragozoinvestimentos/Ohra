@@ -2754,7 +2754,21 @@ td.vendas-opcao { padding-left: 26px; }
 .sede-logo span, .sede-logo img { width: 14px; height: 14px; border-radius: 50%; background: #d2622b; color: #fff; font: 800 9px/14px Manrope, sans-serif; text-align: center; object-fit: cover; }
 .sede-logo b { font: 800 8px Manrope, sans-serif; color: #3a2f26; }
 .sede-quadro-txt { pointer-events: none; font: 800 3.6px/4.8px Manrope, sans-serif; text-align: center; white-space: nowrap; }
-.sede-tv { color: #e9f1f7; } .sede-tv small { font-size: 3px; opacity: .8; }
+.sede-tv { color: #e9f1f7; width: 84px; } .sede-tv small { font-size: 3px; opacity: .8; }
+.sede-tv b, .sede-tv span, .sede-tv em { display: block; overflow: hidden; text-overflow: ellipsis; }
+.sede-tv span { font-weight: 600; font-size: 2.7px; line-height: 3.6px; text-align: left; padding: 0 3px; }
+.sede-tv em { font-style: normal; font-size: 3px; color: #ffd25a; }
+.sede-tv.clicavel { pointer-events: auto; cursor: pointer; }
+.sede-agenda { margin: 6px 0 10px; }
+.sede-agenda-item { display: flex; gap: 6px; align-items: baseline; font-size: 12.5px; padding: 2px 0; color: var(--ink-soft); }
+.sede-agenda-item span { width: 12px; color: var(--ink-faint); }
+.sede-agenda-item.feito { color: var(--ink-faint); }
+.sede-agenda-item.agora { color: var(--ink); font-weight: 700; }
+.sede-agenda-item.agora span { color: var(--accent); }
+.sede-ata { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: rgba(127,127,127,.05); font-size: 12.5px; }
+.sede-ata ul, .sede-ata ol { margin: 4px 0 6px 18px; padding: 0; }
+.sede-ata-tit { font-weight: 800; margin-bottom: 2px; }
+.sede-ata-sub { font-weight: 700; margin-top: 4px; }
 .sede-destaque { color: #3a2f26; }
 .sede-aovivo { pointer-events: none; font: 800 5px Manrope, sans-serif; color: #fff; background: #6b5d63; border-radius: 2px; padding: 0 3px; opacity: .7; }
 .sede-aovivo.on { background: #e0453a; opacity: 1; }

@@ -455,7 +455,7 @@ export default function Inicio({ onIrPara, onToast }) {
     [reais.carregando, reais.importacoes, pedidosValidos, linhasAds, adsP.periodos, kpisSede.aPagar, hoje]
   );
   useEffect(() => {
-    if (!carregando) publicarSede({ pendencias, kpis: { ...kpisSede, bomDia: bom } });
+    if (!carregando) publicarSede({ pendencias, kpis: { ...kpisSede, bomDia: bom, top3: top3.map((p) => (typeof p.titulo === "string" ? p.titulo : "")).filter(Boolean) } });
   });
 
   // --- 4 · Seus produtos (últimos 7 dias) ---

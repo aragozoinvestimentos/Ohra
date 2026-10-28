@@ -19,6 +19,8 @@ import { IDEIAS_MAX, ideiasDaEquipe } from "../lib/consultorIdeias.js";
 import { useRelatorios } from "../hooks/useRelatorios.js";
 import ConsultorPainel from "./ConsultorPainel.jsx";
 import { criarSede, TAMANHO_SEDE } from "../lib/sedeMotor.js";
+import { agendaDoDia, agoraDaSede, ataDoBomDia, nomeDoArquivo, novidadeRecente } from "../lib/sedeAgenda.js";
+import { NOVIDADES_CONSULTOR } from "../lib/consultorAprende.js";
 import { periodoLigado } from "../lib/ads.js";
 import { hojeSP } from "../lib/datas.js";
 import { configCalendario, infoSazonal } from "../lib/calendario.js";
@@ -33,7 +35,7 @@ import Estado from "./Estado.jsx";
 // realtime das tabelas (produto novo, pedidos, live, Ads, conta paga, meta).
 // Único dado gravado: os nomes dos personagens (preferencias_loja `sede:personagens`).
 const ESTADO = { resolver: "resolver", rotina: "atencao", oportunidade: "oportunidade" };
-const FAZENDO = { sentado: "trabalhando na mesa", trabalhando: "trabalhando", andando: "andando pela empresa", parado: "conversando", live: "fazendo live", fora: "foi pra casa" };
+const FAZENDO = { sentado: "trabalhando na mesa", trabalhando: "trabalhando", andando: "andando pela empresa", parado: "conversando", live: "na live", fora: "foi pra casa", reuniao: "em reunião", cafe: "no café", almoco: "almoçando", festa: "na festa do fechamento", coleta: "na coleta", agenda: "na agenda" };
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const agoraHora = () => new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date());
 const saudacao = () => {
@@ -136,6 +138,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   const chaveMotor = `${ehOhra(nomeLoja) ? "ohra" : "outra"}|${partes.impressoras}|${partes.revenda}|${ELENCO.map((e) => nomes[e.id]).join(",")}|${[...ocultos].sort().join(",")}|${Object.keys(fechadas).sort().join(",")}|${Object.values(nomesSalas).join(",")}|${nomeLoja}|${loja?.icone_url || ""}`;
   const [zoomSala, setZoomSala] = useState(null);
   const aoConversar = useRef(null);
+  const aoMomento = useRef(null);
   useEffect(() => {
     if (!canvasRef.current || !camadaRef.current) return undefined;
     const reduzir = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -146,6 +149,11 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
       salas: { fechadas, nomes: nomesSalas },
       partes,
       onConversa: (c) => aoConversar.current?.(c),
+      onMomento: (mo) => aoMomento.current?.(mo),
+      onAta: () => {
+        setSel({ sala: "reuniao" });
+        setPainelTela(true);
+      },
       onZoom: setZoomSala,
       reduzir,
       onSala: (k) => {
@@ -183,8 +191,10 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     const fechados = Object.entries(porMes).filter(([m]) => m < mesAtual).sort((a, b) => b[1] - a[1]);
     if (!fechados.length) return null;
     const [m, v] = fechados[0];
-    return { valor: BRL(v), mes: `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`, pct: `${Math.round(((porMes[mesAtual] || 0) / v) * 100)}%` };
+    return { valor: BRL(v), mes: `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`, pct: `${Math.round(((porMes[mesAtual] || 0) / v) * 100)}%`, frac: (porMes[mesAtual] || 0) / v };
   }, [cres?.pedidosValidos, hoje]);
+  // agenda viva: novidade do consultor dos últimos 7 dias vira treinamento às 14h
+  const novidade = useMemo(() => novidadeRecente(NOVIDADES_CONSULTOR, hoje), [hoje]);
   // decoração da época: árvore de Natal em dezembro ou com produto de Natal na temporada
   const epoca = useMemo(() => {
     if (hoje.slice(5, 7) === "12") return "natal";
@@ -197,14 +207,15 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     return natal ? "natal" : null;
   }, [cat.produtos, calLoja, hoje]);
   useEffect(() => {
-    motor.current?.dados({ luz: av.luz, porPessoa: av.porPessoa, live, pendentes: nConsultor, cheiasNovas, conversasNovas: propostas, recorde, epoca });
+    motor.current?.dados({ luz: av.luz, porPessoa: av.porPessoa, live, pendentes: nConsultor, cheiasNovas, conversasNovas: propostas, recorde, epoca, agenda: { bom: sede.kpis?.bomDia || null, top3: sede.kpis?.top3 || [], metaPct: sede.kpis?.metaPct || 0, novidade } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [av, live, chaveMotor, nConsultor, cheiasNovas, recorde, epoca, JSON.stringify(propostas.map((p) => p.chave))]);
+  }, [av, live, chaveMotor, nConsultor, cheiasNovas, recorde, epoca, novidade, sede.kpis, JSON.stringify(propostas.map((p) => p.chave))]);
 
   // ---------- "Acontecendo agora" e reações ao vivo ----------
   const [feed, setFeed] = useState(() => [{ hora: agoraHora(), txt: `👋 ${nomes.ceo1} e ${nomes.ceo2} chegaram na Sede` }]);
   const noFeed = (txt) => setFeed((f) => [{ hora: agoraHora(), txt }, ...f].slice(0, 8));
   useEffect(() => {
+    aoMomento.current = (mo) => noFeed(`🕘 ${mo.titulo}`);
     aoConversar.current = (c) => noFeed(`💬 ${nomes[c.de] || c.de} → ${nomes[c.para] || c.para}: “${c.fala}” — “${c.resposta}”`);
   });
   const visto = useRef({});
@@ -233,6 +244,20 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
     reagir("pedidos", { n: nPedidos - antes }, `📦 ${nPedidos - antes} pedido${nPedidos - antes === 1 ? "" : "s"} importado${nPedidos - antes === 1 ? "" : "s"}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nPedidos, ped.carregando]);
+  // arquivo importado (Desempenho, Ads, GMV, extrato…) → Zé entrega só pra quem usa
+  const ultImport = useMemo(() => {
+    const l = (ped.importacoes || []).filter((i) => i.ok && !String(i.relatorio || "").startsWith("pedidos"));
+    return l.length ? l.reduce((a, b) => (String(a.criado_em) > String(b.criado_em) ? a : b)) : null;
+  }, [ped.importacoes]);
+  useEffect(() => {
+    if (ped.carregando) return;
+    const id = ultImport?.id || null;
+    const antes = visto.current.importacao;
+    visto.current.importacao = id;
+    if (antes === undefined || !id || id === antes) return;
+    reagir("arquivo", { relatorio: ultImport.relatorio }, `📬 Arquivo importado: ${nomeDoArquivo(ultImport.relatorio)}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ultImport, ped.carregando]);
   // live começando / acabando
   useEffect(() => {
     if (carregandoLives) return;
@@ -627,7 +652,7 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
           ) : sel.pessoa ? (
             <PainelPessoa q={sel.pessoa} nomes={nomes} av={av} pendencias={sede.pendencias} abrir={abrir} />
           ) : (
-            <PainelSala k={sel.sala} nome={nomesSalas[sel.sala]} fechada={fechadas[sel.sala]} quem={fechadas[sel.sala] ? null : quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} estoque={estoque.linhas} />
+            <PainelSala ata={ataDoBomDia({ bom: sede.kpis?.bomDia, top3: sede.kpis?.top3 || [], data: hoje })} nomes={nomes} novidade={novidade} k={sel.sala} nome={nomesSalas[sel.sala]} fechada={fechadas[sel.sala]} quem={fechadas[sel.sala] ? null : quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} estoque={estoque.linhas} />
           )}
           <div className="hint" style={{ marginTop: 10 }}>
             Clique nas placas, nas salas e nas pessoas. A Sede só mostra — pra mudar algo, use o botão que leva pra tela certa.
@@ -660,7 +685,7 @@ function ListaAvisos({ avisos, abrir }) {
   );
 }
 
-function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque }) {
+function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque, ata, nomes, novidade }) {
   const s = SALAS_SEDE.find((x) => x.k === k);
   if (!s) return null;
   if (fechada)
@@ -681,7 +706,7 @@ function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque }
       <h3>{nome || s.nome}</h3>
       {quem && <div className="sede-quem">{quem}</div>}
       {k === "operacao" && (estoque || []).length > 0 && <ResumoEstoque linhas={estoque || []} />}
-      {k === "reuniao" && <div className="sede-ok">A agenda da equipe (reunião do Bom dia às 9h, reunião da semana, fechamento do mês) chega na próxima etapa da Sede.</div>}
+      {k === "reuniao" && <AgendaReuniao ata={ata} nomes={nomes} novidade={novidade} />}
       <ListaAvisos avisos={avisos} abrir={abrir} />
       {k === "diretoria" && <div className="hint">Na Diretoria ficam os avisos urgentes de todas as salas — só vocês decidem.</div>}
       {s.aba && (
@@ -690,6 +715,51 @@ function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque }
         </button>
       )}
     </>
+  );
+}
+
+// Sala de reunião: a agenda de hoje (relógio de São Paulo) e a ata do Bom dia (montada na hora).
+function AgendaReuniao({ ata, nomes, novidade }) {
+  const agora = agoraDaSede();
+  const lista = agendaDoDia(agora, { novidade });
+  const depoisDas9 = agora.minutos >= 9 * 60 + 20 && agora.dow !== 0 && agora.dow !== 6;
+  return (
+    <div className="sede-agenda">
+      <div className="sede-agenda-lista">
+        {lista.length ? (
+          lista.map((a) => (
+            <div key={a.hora + a.titulo} className={`sede-agenda-item ${a.estado}`}>
+              <span>{a.estado === "feito" ? "✓" : a.estado === "agora" ? "●" : "○"}</span>
+              <b>{a.hora}</b> {a.titulo}
+            </div>
+          ))
+        ) : (
+          <div className="hint">Fim de semana: a equipe descansa. Reunião do Bom dia na segunda às 9h.</div>
+        )}
+      </div>
+      {depoisDas9 && ata && (
+        <div className="sede-ata">
+          <div className="sede-ata-tit">📝 {ata.titulo}</div>
+          <div className="hint">Presentes: {ata.presentes.map((id) => nomes?.[id] || id).join(", ")}</div>
+          <ul>
+            {ata.ontem.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+          {ata.prioridades.length > 0 && (
+            <>
+              <div className="sede-ata-sub">As que mais valem dinheiro hoje</div>
+              <ol>
+                {ata.prioridades.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ol>
+            </>
+          )}
+          <div className="hint">Montada com os números de agora (os mesmos do ☀️ Bom dia do Início). Um dia sozinho não decide nada.</div>
+        </div>
+      )}
+    </div>
   );
 }
 

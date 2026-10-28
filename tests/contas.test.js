@@ -1,3 +1,4 @@
+import { caixasDoDia, destinosDoArquivo, momentoDaAgenda, novidadeRecente, textoDaTV } from "../src/lib/sedeAgenda.js";
 // Testes das contas principais do app (24/10/2026, pedido do Gustavo: "é
 // sempre bom garantir a funcionalidade das coisas"). Rodam com `npm test`
 // antes de cada envio. Casos reais anotados no CLAUDE.md.
@@ -403,5 +404,34 @@ describe("Sede nova em perspectiva (27/10/2026)", () => {
     expect(c.passa(3, 12, 3, 11)).toBe(false);
     expect(c.passa(7, 12, 7, 11)).toBe(true);
     expect(c.placas).toHaveLength(8);
+  });
+});
+
+describe("Sede — agenda viva (etapa B)", () => {
+  const ag = (data, hm) => {
+    const [h, m] = hm.split(":").map(Number);
+    return { data, h, m, dow: new Date(`${data}T12:00:00Z`).getUTCDay(), minutos: h * 60 + m };
+  };
+  it("momentos do dia pelo relógio de São Paulo", () => {
+    expect(momentoDaAgenda(ag("2026-10-28", "09:05")).k).toBe("bomdia");
+    expect(momentoDaAgenda(ag("2026-10-26", "10:10")).k).toBe("semana"); // segunda
+    expect(momentoDaAgenda(ag("2026-12-01", "10:10")).k).toBe("fechamento"); // dia 1 (terça)
+    expect(momentoDaAgenda(ag("2026-10-28", "12:40")).turno).toBe("b");
+    expect(momentoDaAgenda(ag("2026-10-28", "14:05"))).toBeNull();
+    expect(momentoDaAgenda(ag("2026-10-28", "14:05"), { novidade: { data: "2026-10-27" } }).k).toBe("treinamento");
+    expect(momentoDaAgenda(ag("2026-10-28", "16:10")).k).toBe("coleta");
+    expect(momentoDaAgenda(ag("2026-10-31", "17:30")).k).toBe("festa"); // sábado, último dia
+    expect(momentoDaAgenda(ag("2026-10-31", "09:05"))).toBeNull();
+  });
+  it("pallet, arquivos e TV", () => {
+    expect(caixasDoDia(11)).toBe(3);
+    expect(caixasDoDia(100)).toBe(8);
+    expect(destinosDoArquivo("pedidos:olist")).toEqual(["celia", "bia", "duda"]);
+    expect(destinosDoArquivo("shopee:ads")).toEqual(["leo"]);
+    expect(textoDaTV({ momento: null, agora: ag("2026-10-28", "08:00") }).ata).toBe(false);
+    expect(textoDaTV({ momento: null, agora: ag("2026-10-28", "11:00") }).titulo).toBe("Reunião de hoje às 9h ✓");
+    const tv = textoDaTV({ momento: { k: "bomdia" }, agora: ag("2026-10-28", "09:05"), bom: { ontem: "2026-10-27", pedidos: null, faltando: [] }, top3: ["A"] });
+    expect(tv.linhas[0]).toContain("aguardando arquivo");
+    expect(novidadeRecente([{ data: "2026-10-10" }], "2026-10-28")).toBeNull();
   });
 });
