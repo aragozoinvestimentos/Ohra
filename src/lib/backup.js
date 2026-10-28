@@ -22,7 +22,7 @@ export const TABELAS_BACKUP = [
   "afiliado_config", "afiliados", "afiliado_registros",
   "lembretes", "tarefas", "preferencias_loja",
   "pedidos_itens", "importacoes", "skus_ignorados", "avaliacoes_produto",
-  "lives", "live_eventos", "acoes_comerciais", "consultor_registros",
+  "lives", "live_eventos", "acoes_comerciais", "consultor_registros", "sede_notas",
   "fornecedores", "fornecedor_itens", "compras_revenda", "compras_revenda_itens", "estoque_movimentos",
   "extrato_carteira",
 ];

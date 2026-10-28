@@ -23,6 +23,9 @@ import { agendaDoDia, agoraDaSede, ataDoBomDia, nomeDoArquivo, novidadeRecente }
 import { NOVIDADES_CONSULTOR } from "../lib/consultorAprende.js";
 import { FORA_DA_ESCADA, adiarPromocao, destaqueDaSemana, estrelasDaEquipe, nivelDe, nomeDoNivel, opinioesDosGerentes, prontosPraPromocao, promover, proximoNivel, rankingDoPeriodo } from "../lib/sedeEquipe.js";
 import { periodoPadrao } from "../lib/relatorios.js";
+import { SETORES_NOTA, comparaSemana, notaTexto, notasDaSemana } from "../lib/sedeNotas.js";
+import { gravarNotasDaSemana } from "../lib/sedeNotasAcoes.js";
+import { useSedeNotas } from "../hooks/useSedeNotas.js";
 import { periodoLigado } from "../lib/ads.js";
 import { hojeSP } from "../lib/datas.js";
 import { configCalendario, infoSazonal } from "../lib/calendario.js";
@@ -126,6 +129,25 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
   // ---------- equipe: estrelas, níveis, promoções (etapa C) ----------
   const [equipe, setEquipe] = usePreferencia("sede:equipe", {});
   const reagirRef = useRef(null);
+  // ---------- nota por setor (etapa D, v68): ao vivo + histórico semanal ----------
+  const notasH = useSedeNotas();
+  const notas = useMemo(
+    () => notasDaSemana({ hoje, lancamentos, saldoCaixa: sede.kpis?.caixa ?? null, bom: sede.kpis?.bomDia || null, porSala: av.porSala, pedidos: cres?.pedidosValidos || [], linhasAds: cres?.linhasAds, cheias: cheiasNovas, estoqueRepor: sede.kpis?.estoque ? sede.kpis.estoque.repor || [] : null }),
+    [hoje, lancamentos, sede.kpis, av.porSala, cres?.pedidosValidos, cres?.linhasAds, cheiasNovas]
+  );
+  const notaDe = (k) => {
+    const n = notas.setores[k];
+    return n ? { ...n, ...comparaSemana(notasH.historico, k, notas.semana, n.nota) } : null;
+  };
+  const notaGravada = useRef(0);
+  useEffect(() => {
+    if (!maduro || !lojaId || !sede.pronto || carregandoCaixa || notasH.carregando || !notasH.disponivel) return;
+    const atual = Object.fromEntries((notasH.historico || []).filter((h) => h.semana === notas.semana).map((h) => [h.setor, Number(h.nota)]));
+    const mudou = Object.entries(notas.setores).some(([k, x]) => x.nota != null && (atual[k] == null || Math.abs(atual[k] - x.nota) >= 0.05));
+    if (!mudou || Date.now() - notaGravada.current < 10 * 60000) return;
+    notaGravada.current = Date.now();
+    gravarNotasDaSemana(lojaId, notas.semana, notas.setores);
+  }, [maduro, lojaId, sede.pronto, carregandoCaixa, notasH, notas]);
   const est = useMemo(() => estrelasDaEquipe(cons.registros), [cons.registros]);
   const destaque = useMemo(() => {
     const d = destaqueDaSemana(est, hoje);
@@ -674,7 +696,9 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
                 ata: ataDoBomDia({ bom: sede.kpis?.bomDia, top3: sede.kpis?.top3 || [], data: hoje }),
                 novidade,
                 pauta: sede.kpis?.top3 || [],
-                opinioes: opinioesDosGerentes(av.porSala),
+                opinioes: opinioesDosGerentes(av.porSala, Object.fromEntries(SETORES_NOTA.map((x) => [x.k, notas.setores[x.k]?.nota ?? null]))),
+                notas: SETORES_NOTA.map((x) => ({ ...x, ...notaDe(x.k) })),
+                semNotasSql: !notasH.disponivel,
                 ideias,
                 decidir: consultorias.length + propostas.length + ideias.length,
                 prontos,
@@ -689,6 +713,8 @@ export default function Sede({ onIrPara, onToast, ativo = true, tela = null, onS
                 depois: (x) => setEquipe(adiarPromocao(equipe, x.id, hoje)),
               }}
               nomes={nomes}
+              nota={notaDe(sel.sala)}
+              semNotasSql={!notasH.disponivel}
               k={sel.sala} nome={nomesSalas[sel.sala]} fechada={fechadas[sel.sala]} quem={fechadas[sel.sala] ? null : quemNaSala(sel.sala)} avisos={av.porSala[sel.sala] || []} abrir={abrir} onIrPara={onIrPara} estoque={estoque.linhas} />
           )}
           <div className="hint" style={{ marginTop: 10 }}>
@@ -722,7 +748,7 @@ function ListaAvisos({ avisos, abrir }) {
   );
 }
 
-function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque, reuniao, nomes }) {
+function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque, reuniao, nomes, nota, semNotasSql }) {
   const s = SALAS_SEDE.find((x) => x.k === k);
   if (!s) return null;
   if (fechada)
@@ -743,6 +769,7 @@ function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque, 
       <h3>{nome || s.nome}</h3>
       {quem && <div className="sede-quem">{quem}</div>}
       {k === "operacao" && (estoque || []).length > 0 && <ResumoEstoque linhas={estoque || []} />}
+      {nota && <NotaSetor n={nota} semSql={semNotasSql} />}
       {k === "reuniao" && <SalaReuniao r={reuniao} nomes={nomes} />}
       <ListaAvisos avisos={avisos} abrir={abrir} />
       {k === "diretoria" && <div className="hint">Na Diretoria ficam os avisos urgentes de todas as salas — só vocês decidem.</div>}
@@ -752,6 +779,33 @@ function PainelSala({ k, nome, fechada, quem, avisos, abrir, onIrPara, estoque, 
         </button>
       )}
     </>
+  );
+}
+
+// Nota da semana do setor (etapa D): a nota e de onde ela vem — "sem falso 100%".
+function NotaSetor({ n, semSql }) {
+  return (
+    <div className="sede-nota">
+      <div className="sede-nota-topo">
+        <span className="sede-nota-num">{notaTexto(n.nota)}</span>
+        <span>
+          nota da semana
+          {n.seta && (
+            <span className={`sede-seta ${n.seta === "↑" ? "sobe" : n.seta === "↓" ? "desce" : ""}`}>
+              {" "}
+              · {n.seta} {notaTexto(n.anterior)} na semana passada
+            </span>
+          )}
+        </span>
+      </div>
+      {n.partes.map((p) => (
+        <div key={p.k} className="sede-nota-parte">
+          <span>{p.nota == null ? "—" : notaTexto(p.nota)}</span>
+          <b>{p.nome}</b> <small>({Math.round(p.peso * 100)}%)</small> — {p.texto}
+        </div>
+      ))}
+      {semSql && <div className="hint">Rode o SQL v68 pra guardar a nota de cada semana.</div>}
+    </div>
   );
 }
 
@@ -786,9 +840,25 @@ function SalaReuniao({ r, nomes }) {
         <div className="sede-ata-sub">Opinião dos gerentes</div>
         {r.opinioes.map((o) => (
           <div key={o.id} className={`sede-opiniao ${o.grupo || "ok"}`}>
-            <b>{nomes[o.id]}</b> “{o.texto}”
+            <b>{nomes[o.id]}</b>
+            {o.nota != null && <span className="sede-nota-mini">nota {notaTexto(o.nota)}</span>} “{o.texto}”
           </div>
         ))}
+      </div>
+      <div className="sede-reuniao-bloco">
+        <div className="sede-ata-sub">Nota dos setores — esta semana</div>
+        {r.notas.map((n) => (
+          <div key={n.k} className="sede-nota-linha">
+            <b>{notaTexto(n.nota)}</b> {n.nome}
+            {n.seta && (
+              <span className={`sede-seta ${n.seta === "↑" ? "sobe" : n.seta === "↓" ? "desce" : ""}`}>
+                {" "}
+                {n.seta} {notaTexto(n.anterior)} na semana passada
+              </span>
+            )}
+          </div>
+        ))}
+        {r.semNotasSql && <div className="hint">Rode o SQL v68 pra guardar a nota de cada semana (a seta ↑↓ compara com a semana passada).</div>}
       </div>
       {r.ideias.length > 0 && (
         <div className="sede-reuniao-bloco">

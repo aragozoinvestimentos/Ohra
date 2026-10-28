@@ -2792,3 +2792,15 @@ td.vendas-opcao { padding-left: 26px; }
 .sede-promocao { padding: 8px 10px; margin: 8px 0; border-radius: 10px; background: var(--st-oportunidade-soft); }
 .sede-cartao-equipe { margin: 6px 0 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px; font-size: 12.5px; }
 .sede-destaque-tag { color: var(--accent); font-weight: 700; }
+.sede-nota { margin: 6px 0 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; font-size: 12.5px; }
+.sede-nota-topo { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; color: var(--ink-soft); }
+.sede-nota-num { font-size: 22px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sede-nota-parte { color: var(--ink-soft); padding: 1px 0; }
+.sede-nota-parte span { display: inline-block; width: 28px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sede-nota-parte small { color: var(--ink-faint); }
+.sede-nota-linha { padding: 2px 0; }
+.sede-nota-linha b, .sede-nota-mini { font-variant-numeric: tabular-nums; }
+.sede-nota-mini { font-size: 11px; color: var(--ink-faint); margin-right: 4px; }
+.sede-seta { color: var(--ink-faint); }
+.sede-seta.sobe { color: var(--st-oportunidade); }
+.sede-seta.desce { color: var(--st-resolver); }

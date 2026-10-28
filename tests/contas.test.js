@@ -1,3 +1,4 @@
+import { comparaSemana, notasDaSemana, semanaDe } from "../src/lib/sedeNotas.js";
 import { estrelasDaEquipe, prontosPraPromocao, promover, proximoNivel, destaqueDaSemana, opinioesDosGerentes } from "../src/lib/sedeEquipe.js";
 import { caixasDoDia, destinosDoArquivo, momentoDaAgenda, novidadeRecente, textoDaTV } from "../src/lib/sedeAgenda.js";
 // Testes das contas principais do app (24/10/2026, pedido do Gustavo: "é
@@ -470,5 +471,25 @@ describe("Sede — equipe (etapa C)", () => {
     const op = opinioesDosGerentes({ financeiro: [{ grupo: "resolver", titulo: "2 contas atrasadas" }], comercial: [], operacao: [] });
     expect(op[0].texto).toContain("Antes de tudo");
     expect(op[1].texto).toContain("✓");
+  });
+});
+
+describe("Sede — nota por setor (etapa D)", () => {
+  it("Financeiro sem falso 100%: contas em dia mas 90% do bolso", () => {
+    const lanc = [
+      { tipo: "saida", valor: 90, data_prevista: "2026-10-10", data_realizada: "2026-10-10", pago_com: "bolso", categoria: "filamento" },
+      { tipo: "saida", valor: 10, data_prevista: "2026-10-12", data_realizada: "2026-10-12", pago_com: "loja", categoria: "embalagem" },
+    ];
+    const n = notasDaSemana({ hoje: "2026-10-28", lancamentos: lanc, saldoCaixa: 500, bom: { faltando: [] }, porSala: {}, pedidos: [], linhasAds: [], cheias: {}, estoqueRepor: null });
+    const f = n.setores.financeiro;
+    expect(f.partes.find((p) => p.k === "contas").nota).toBe(10);
+    expect(f.partes.find((p) => p.k === "sePaga").nota).toBe(1);
+    expect(f.nota).toBeLessThan(8);
+    expect(n.setores.operacao.partes.find((p) => p.k === "estoque").nota).toBeNull();
+    expect(n.semana).toBe("2026-10-26");
+  });
+  it("semana e seta", () => {
+    expect(semanaDe("2026-11-01")).toBe("2026-10-26");
+    expect(comparaSemana([{ setor: "comercial", semana: "2026-10-19", nota: 6 }], "comercial", "2026-10-26", 7).seta).toBe("↑");
   });
 });

@@ -245,6 +245,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-28", texto: "Cada setor (Financeiro, Comercial, Operação) tem uma nota da semana de 0 a 10, sempre mostrando de onde vem — contas em dia mas pagas do seu bolso não dão 10. A seta compara com a semana passada (precisa do SQL v68)." },
   { data: "2026-10-28", texto: "A equipe ganha estrelas com o que vocês aprovam (★ +1) e com o que dá certo (★ +3); quem junta o bastante fica pronto pra promoção — sempre aprovada por vocês na Sala de reunião, que também mostra a pauta, a opinião dos gerentes e o ranking do mês." },
   { data: "2026-10-28", texto: "A Sede tem agenda: às 9h faço a reunião do Bom dia na TV com os gerentes (ontem + as 3 coisas que mais valem dinheiro), segunda às 10h a reunião da semana, dia 1 o fechamento com a Bia, café, almoço em turnos, coleta às 16h e festa no último dia do mês. Clique na TV pra ver a ata." },
   { data: "2026-10-27", texto: "Sede nova em perspectiva: Diretoria só com os CEOs, sala própria do Gerente Geral (eu), Reunião, Live, Financeiro (Bia, Lia na Shopee, Kai no TikTok), Comercial, Operação (Téo, Ivo nas impressoras, Duda na expedição, Rui na revenda) e Recepção (Zé, copa e o pallet da coleta). Clique numa sala pra entrar nela." },
