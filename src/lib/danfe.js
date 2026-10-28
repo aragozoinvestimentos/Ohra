@@ -156,23 +156,31 @@ function itensDaPagina(itens, avisos) {
         vST: 0,
         vICMS: numBr(v.vICMS) || 0,
         pICMS: (aliqs[0] || 0) / 100,
+        cfop: soDigitos(v.cfop) || null,
+        cst: String(v.cst || "").trim() || null,
       });
-    } else if (out.length && v.descricao && Object.keys(v).length === 1) {
-      out[out.length - 1].descricao += ` ${v.descricao}`; // descrição que quebrou de linha
+    } else if (out.length) {
+      // linha embaixo do item: código de barras, nº da FCI ou a descrição que quebrou
+      const ult = out[out.length - 1];
+      const linha = l.itens.map((i) => i.t.trim()).join(" ");
+      const barras = /C[OÓ]D\.?\s*(DE\s*)?BARRAS\s*:?\s*(\d{8,14})|\b(?:GTIN|EAN)\s*:?\s*(\d{8,14})/i.exec(linha);
+      if (barras) ult.ean = ult.ean || eanValido(barras[2] || barras[3]); // "Cód. Barras: 7900083000665"
+      else if (/CONTROLE\s*FCI|^\*?\s*FCI\b/.test(norm(linha))) ult.fci = linha.replace(/^\*/, "").trim(); // FCI não é descrição
+      else if (v.descricao && Object.keys(v).length === 1) ult.descricao += ` ${v.descricao}`; // descrição que quebrou de linha
     }
   }
   return out;
 }
 
 const TOTAIS = [
-  ["vProd", /^(VALOR|V\.) ?TOTAL (DOS )?PRODUTOS/],
+  ["vProd", /^((VALOR|V\.) ?)?TOTAL (DOS )?PRODUTOS/],
   ["vFrete", /^(VALOR|V\.) ?DO FRETE|^(VALOR|V\.) ?FRETE/],
   ["vSeg", /^(VALOR|V\.) ?DO SEGURO|^(VALOR|V\.) ?SEGURO/],
   ["vDesc", /^DESCONTO|^(VALOR|V\.) ?(DO )?DESCONTO/],
   ["vOutro", /OUTRAS DESP/],
   ["vIPI", /^(VALOR|V\.) ?(TOTAL )?(DO )?IPI/],
   ["vST", /^(VALOR|V\.) ?(DO )?ICMS (SUBST|ST)/],
-  ["vNF", /^(VALOR|V\.) ?TOTAL DA NOTA|^(VALOR|V\.) ?TOTAL NOTA/],
+  ["vNF", /^((VALOR|V\.) ?)?TOTAL (DA )?NOTA/],
 ];
 
 /**

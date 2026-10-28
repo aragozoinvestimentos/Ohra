@@ -504,6 +504,8 @@ describe("Nota de compra pelo PDF (DANFE)", () => {
       I("CALCULO DO IMPOSTO", 30, 210), I("VALOR TOTAL DOS PRODUTOS", 30, 220), I("90,00", 30, 230), I("VALOR TOTAL DA NOTA", 200, 220), I("90,00", 200, 230),
       I("DADOS DOS PRODUTOS / SERVICOS", 30, 300), I("CODIGO", 30, 310), I("DESCRICAO", 80, 310), I("QUANT", 350, 310), I("VALOR", 385, 310), I("UNIT", 385, 317), I("VALOR", 420, 310), I("TOTAL", 420, 317),
       I("7891234567895", 30, 330), I("COPO 500ML", 80, 330), I("6,0000", 350, 330), I("15,0000", 385, 330), I("90,00", 420, 330),
+      I("2561", 30, 345), I("CANETA RR2200", 80, 345), I("12", 350, 345), I("10,50", 385, 345), I("126,00", 420, 345),
+      I("*N. CONTROLE FCI: 67E62219", 58, 352), I("Cód. Barras: 7900083000665", 58, 359),
     ],
   };
   it("chave dá CNPJ, UF, número e série; tabela dá os itens", () => {
@@ -513,6 +515,8 @@ describe("Nota de compra pelo PDF (DANFE)", () => {
     expect(n.emissao).toBe("2024-10-15");
     expect(n.itens[0]).toMatchObject({ ean: "7891234567895", qtd: 6, vUn: 15, vProd: 90, descricao: "COPO 500ML" });
     expect(n.totais.vNF).toBe(90);
+    // nota real (28/10/2026): EAN na linha "Cód. Barras" embaixo do item, FCI fora da descrição
+    expect(n.itens[1]).toMatchObject({ codigo: "2561", ean: "7900083000665", descricao: "CANETA RR2200", qtd: 12, vProd: 126 });
   });
   it("PDF sem texto ou que não é DANFE", () => {
     expect(interpretarDanfe([{ itens: [] }]).erro).toContain("imagem");
