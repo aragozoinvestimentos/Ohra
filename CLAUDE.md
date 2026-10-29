@@ -14,6 +14,7 @@ PWA de precificação/produção pra produtos impressos em 3D (Gustavo vende via
 - **O consultor da Sede sempre evolui** (pedido do Gustavo, 24/10/2026): toda tela, ajuste ou regra nova que fizermos também ensina o consultor — entrada nova em `NOVIDADES_CONSULTOR` (src/lib/consultorAprende.js) e, quando fizer sentido, pergunta nova em `responderPergunta`, consultoria em `sugerirConsultorias` e conversa em `CONVERSAS` (src/lib/consultor.js).
 - **Tabela nova = entra no backup**: toda tabela criada num `schema_vN.sql` vai pra `TABELAS_BACKUP` (src/lib/backup.js) — senão o dado dela fica fora do backup.
 - Gustavo prefere discutir/alinhar antes de mudanças maiores ("me retorne antes de alterar qualquer coisa") — pra ajustes pequenos e bem definidos pode implementar direto.
+- **Pacote/relatório da Sede (consultor) que o Gustavo trouxer** (29/10/2026): analisar e responder; bug pequeno e óbvio pode corrigir direto, mas QUALQUER mudança grande no app (regra nova, tela nova, mudança de conta/comportamento) só depois de consultar ele — propor e esperar o ok.
 
 ## Tabelas principais (Supabase)
 
