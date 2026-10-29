@@ -2831,3 +2831,9 @@ td.vendas-opcao { padding-left: 26px; }
 .hoje-acao { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 13px; padding-left: 4px; }
 .hoje-area { font-size: 10.5px; font-weight: 800; color: var(--ink-soft); background: var(--surface-2); border-radius: 6px; padding: 2px 7px; min-width: 62px; text-align: center; }
 .hoje-txt { flex: 1 1 260px; min-width: 0; }
+
+/* Início reorganizado (28/10/2026): Seus dados numa linha; 7 dias no cartão do produto */
+.inicio-dados-linha { padding: 8px 12px; }
+.inicio-dados-linha .inicio-dados-chips { align-items: center; }
+.inicio-dados-rot { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
+.inicio-cartao-7d { font-variant-numeric: tabular-nums; }

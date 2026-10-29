@@ -2,7 +2,7 @@ import { useMemo, useState, useSyncExternalStore } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { assinarSede, lerSede } from "../lib/sedeDados.js";
 import { chaveDoDestino } from "../lib/marcas.js";
-import { agruparPorProduto } from "../lib/inicio.js";
+import { produtoDoAviso } from "../lib/inicio.js";
 import { adiarAviso } from "../lib/avisosAcoes.js";
 import { irParaAba } from "../lib/navegar.js";
 import { abrirAnuncio, abrirProduto } from "../lib/anuncios.js";
@@ -33,8 +33,8 @@ export default function VenderHoje({ dados, linhas, linhasAds, onToast }) {
   const { lojaId } = useLoja();
   const sede = useSyncExternalStore(assinarSede, lerSede, lerSede);
   const [filtro, setFiltro] = useState("todos");
-  const canais = dados?.canais || [];
-  const nomesCanais = canais.map((c) => c.nome);
+  const canais = useMemo(() => dados?.canais || [], [dados?.canais]);
+  const nomesCanais = useMemo(() => canais.map((c) => c.nome), [canais]);
   const canalDoNome = (n) => canais.find((c) => c.nome === n) || null;
   const avisos = useMemo(() => (sede.pendencias || []).filter((p) => !p.tarefa && /^(crescimento:|promocoes)/.test(chaveDoDestino(p.ir) || "")), [sede.pendencias]);
   const itensNome = useMemo(() => {
@@ -44,7 +44,41 @@ export default function VenderHoje({ dados, linhas, linhasAds, onToast }) {
     for (const g of dados?.gruposAnuncio || []) m.set(String(g.nome).toLowerCase(), `g:${g.id}`);
     return m;
   }, [dados?.produtos, dados?.kits, dados?.gruposAnuncio]);
-  const { produtos: cartoes, loja } = agruparPorProduto(avisos, nomesCanais);
+  // Agrupa por anúncio (item × canal): "<Nome>: …" (como o Início) ou título que começa com
+  // o nome de um item cadastrado ("Chaveiro — Kit 3 pode entrar na campanha (Shopee)").
+  const { cartoes, loja } = useMemo(() => {
+    const nomes = [...itensNome.keys()].sort((a, b) => b.length - a.length);
+    const porChave = new Map();
+    const soltos = [];
+    for (const p of avisos) {
+      let k = produtoDoAviso(p, nomesCanais);
+      if (!k) {
+        const t = String(p.titulo || "").toLowerCase();
+        const nome = nomes.find((n) => t.startsWith(n) && /^($|[\s:—–(-])/.test(t.slice(n.length)));
+        if (nome) {
+          const mc = /\(([^)]+)\)/.exec(p.titulo || "");
+          const c = mc && nomesCanais.includes(mc[1]) ? mc[1] : nomesCanais.find((n) => String(p.texto || "").startsWith(`${n} · `)) || null;
+          k = { nome: (dados?.produtos || []).concat(dados?.kits || [], dados?.gruposAnuncio || []).find((x) => String(x.nome).toLowerCase() === nome)?.nome || nome, canal: c, anuncio: false };
+        }
+      }
+      if (!k) {
+        soltos.push(p);
+        continue;
+      }
+      const chave = `${k.nome.toLowerCase()}|${k.canal || ""}`;
+      let g = porChave.get(chave);
+      if (!g) porChave.set(chave, (g = { id: `hoje|${chave}`, nome: k.nome, anuncio: k.anuncio, canal: k.canal, itens: [] }));
+      g.itens.push({ ...p, _canal: k.canal });
+    }
+    const ORD = { resolver: 0, rotina: 1, oportunidade: 2 };
+    const lista = [...porChave.values()].map((g) => {
+      g.itens.sort((a, b) => (ORD[a.grupo] ?? 3) - (ORD[b.grupo] ?? 3));
+      g.grupo = g.itens[0].grupo;
+      return g;
+    });
+    lista.sort((a, b) => (ORD[a.grupo] ?? 3) - (ORD[b.grupo] ?? 3) || b.itens.length - a.itens.length);
+    return { cartoes: lista, loja: soltos };
+  }, [avisos, itensNome, nomesCanais, dados?.produtos, dados?.kits, dados?.gruposAnuncio]);
   const visiveis = cartoes.filter((g) => filtro === "todos" || (filtro === "res" ? g.grupo === "resolver" : filtro === "opo" ? g.grupo === "oportunidade" : g.grupo !== "oportunidade"));
   const nRes = cartoes.filter((g) => g.grupo === "resolver").length;
   const nOpo = cartoes.filter((g) => g.grupo === "oportunidade").length;

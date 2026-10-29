@@ -362,6 +362,7 @@ export default function Inicio({ onIrPara, onToast }) {
   const pendencias = todasPendencias.filter((p) => !pausadaRampa(p) && !(podeAdiar(p) && adiadoAte.get(p.id) > hoje));
   const adiados = todasPendencias.filter((p) => !pausadaRampa(p) && podeAdiar(p) && adiadoAte.get(p.id) > hoje);
   const [verAdiados, setVerAdiados] = useState(false);
+  const [verSemAviso, setVerSemAviso] = useState(false);
   async function adiar30(p) {
     if (!lembretesOk) return onToast?.("Falta rodar o supabase/schema_v40.sql no Supabase");
     const { error } = await adiarAviso(lojaId, p.id, hoje);
@@ -471,8 +472,11 @@ export default function Inicio({ onIrPara, onToast }) {
   });
 
   // --- 4 · Seus produtos (últimos 7 dias) ---
-  const semana = useMemo(() => produtosDaSemana(pedidosValidos, hoje, 6), [pedidosValidos, hoje]);
-  const cartaoDoNome = new Map(cartoes.map((g) => [g.nome.toLowerCase(), g]));
+  const semana = useMemo(() => produtosDaSemana(pedidosValidos, hoje, 500), [pedidosValidos, hoje]);
+  // Início reorganizado (28/10/2026, prévia): os números de 7 dias entram no cartão do produto
+  // com aviso; "Seus produtos" fica só com os que estão SEM aviso (recolhido) — cada coisa num lugar.
+  const semanaDoNome = new Map(semana.map((x) => [String(x.nome).toLowerCase(), x]));
+  const semAviso = semana.filter((x) => !cartoes.some((g) => g.nome.toLowerCase() === String(x.nome).toLowerCase()));
   const itemDoNome = (nome) => {
     const n = String(nome || "").toLowerCase();
     const p = (produtos || []).find((x) => String(x.nome).toLowerCase() === n);
@@ -553,6 +557,14 @@ export default function Inicio({ onIrPara, onToast }) {
           {g.canais.map((c) => (canalDoNome(c) ? <CanalTag key={c} canal={canalDoNome(c)} /> : null))}
           <Estado tipo={tipoG}>{rotG}</Estado>
           {g.itens.length > 1 && <span className="muted-cel">{g.itens.length} avisos</span>}
+          {(() => {
+            const x = semanaDoNome.get(g.nome.toLowerCase());
+            return x ? (
+              <span className="muted-cel inicio-cartao-7d">
+                7 dias: {x.vendas} {x.vendas === 1 ? "venda" : "vendas"} · {BRL(x.lucro)} <span className={x.vendas > x.vendasAntes ? "pos-forte" : x.vendas < x.vendasAntes ? "neg-forte" : ""}>(antes {x.vendasAntes})</span>
+              </span>
+            ) : null;
+          })()}
           {itemId && canalCartao ? (
             <button type="button" className="btn btn-mini inicio-cartao-abrir" onClick={() => abrirAnuncio(itemId, canalCartao.id, abaDoAviso(g.itens[0]))}>
               Abrir no Painel do anúncio →
@@ -652,16 +664,9 @@ export default function Inicio({ onIrPara, onToast }) {
 
       {/* 2 · Seus dados */}
       {situacao.length > 0 && (
-        <div className="panel inicio-dados">
-          <h3 className="section-title">
-            <span>
-              Seus dados <span className="h3-contagem">o app só acerta com os arquivos em dia</span>
-            </span>
-            <button type="button" className="btn btn-sm primary" style={{ marginLeft: "auto" }} onClick={() => onIrPara?.("importar")}>
-              Atualizar dados
-            </button>
-          </h3>
+        <div className="panel inicio-dados inicio-dados-linha">
           <div className="inicio-dados-chips">
+            <b className="inicio-dados-rot">Seus dados</b>
             {situacao.map((d) => (
               <span key={d.chave} className={`inicio-dado st-${d.estado === "ok" ? "oportunidade" : "atencao"}`}>
                 <Bolinha tipo={d.estado === "ok" ? "oportunidade" : "atencao"} /> <b>{d.rotulo}</b> {d.texto}
@@ -675,6 +680,9 @@ export default function Inicio({ onIrPara, onToast }) {
                 </button>
               )}
             </span>
+            <button type="button" className="btn btn-sm primary" style={{ marginLeft: "auto" }} onClick={() => onIrPara?.("importar")}>
+              Atualizar dados
+            </button>
           </div>
           {avisosDados.length > 0 && (
             <ul className="inicio-dados-avisos">
@@ -693,7 +701,7 @@ export default function Inicio({ onIrPara, onToast }) {
         <div className="panel inicio-top3">
           <h3 className="section-title">
             <span>
-              As {top3.length === 1 ? "coisa" : `${top3.length} coisas`} que mais valem dinheiro hoje <span className="h3-contagem">pelo quanto valem em R$ — o resto está embaixo</span>
+              Hoje — {top3.length === 1 ? "a coisa" : `as ${top3.length}`} que mais {top3.length === 1 ? "vale" : "valem"} dinheiro <span className="h3-contagem">resolva primeiro · o resto está embaixo, por anúncio</span>
             </span>
           </h3>
           <div className="inicio-top3-grade">
@@ -766,7 +774,7 @@ export default function Inicio({ onIrPara, onToast }) {
           <>
             {cartoesVis.length > 0 && (
               <>
-                <div className="inicio-sec">Produtos</div>
+                <div className="inicio-sec">Por anúncio</div>
                 {cartoesVis.map(cartaoProduto)}
                 {escondidos > 0 && (
                   <button type="button" className="link-btn inicio-ver-todos" onClick={() => setVerTodos(true)}>
@@ -859,52 +867,48 @@ export default function Inicio({ onIrPara, onToast }) {
         )}
       </div>
 
-      {/* 4 · Seus produtos */}
-      <div className="panel">
-        <h3 className="section-title">
-          <span>
-            Seus produtos <span className="h3-contagem">últimos 7 dias × os 7 antes · pelos pedidos importados</span>
-          </span>
-          <button type="button" className="link-btn" style={{ marginLeft: "auto" }} onClick={() => onIrPara?.("anuncios")}>
-            ver todos em Anúncios →
-          </button>
-        </h3>
-        {!semana.length ? (
-          <div className="empty">Sem vendas nos últimos 14 dias nos pedidos importados.</div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th className="num">Vendas</th>
-                  <th className="num">Lucro</th>
-                  <th className="num">vs antes</th>
-                  <th>Situação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {semana.map((x) => {
-                  const g = cartaoDoNome.get(String(x.nome).toLowerCase());
-                  const dif = x.vendas - x.vendasAntes;
-                  const est = g ? estadoPendencia(g.itens[0]) : null;
-                  return (
-                    <tr key={x.chave} className="linha-clicavel" onClick={() => abrirProduto(x.itemId)}>
-                      <td>
-                        <b>{x.nome}</b> {x.canais.map((c) => <CanalTag key={c.id} canal={c} />)}
-                      </td>
-                      <td className="num">{x.vendas}</td>
-                      <td className={`num${x.lucro < 0 ? " neg" : ""}`}>{x.vendas ? BRL(x.lucro) : "—"}</td>
-                      <td className={`num${dif > 0 ? " pos-forte" : dif < 0 ? " neg-forte" : ""}`}>{dif > 0 ? `↑ ${dif}` : dif < 0 ? `↓ ${-dif}` : "="}</td>
-                      <td>{g ? <Estado tipo={est || "info"}>{semPrefixo(g.itens[0])}</Estado> : <span className="muted-cel">✓ sem aviso</span>}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* 4 · Seus produtos sem aviso (os com aviso já estão nos cartões, com os números de 7 dias) */}
+      {semAviso.length > 0 && (
+        <div className="panel">
+          <h3 className="section-title">
+            <button type="button" className={`variacoes-toggle${verSemAviso ? " aberto" : ""}`} onClick={() => setVerSemAviso((v) => !v)} aria-expanded={verSemAviso}>
+              <span className="seta">▸</span> Seus produtos sem aviso ({semAviso.length}) <span className="h3-contagem">últimos 7 dias × os 7 antes</span>
+            </button>
+            <button type="button" className="link-btn" style={{ marginLeft: "auto" }} onClick={() => onIrPara?.("anuncios")}>
+              ver todos em Anúncios →
+            </button>
+          </h3>
+          {verSemAviso && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produto</th>
+                    <th className="num">Vendas</th>
+                    <th className="num">Lucro</th>
+                    <th className="num">vs antes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {semAviso.map((x) => {
+                    const dif = x.vendas - x.vendasAntes;
+                    return (
+                      <tr key={x.chave} className="linha-clicavel" onClick={() => abrirProduto(x.itemId)}>
+                        <td>
+                          <b>{x.nome}</b> {x.canais.map((c) => <CanalTag key={c.id} canal={c} />)}
+                        </td>
+                        <td className="num">{x.vendas}</td>
+                        <td className={`num${x.lucro < 0 ? " neg" : ""}`}>{x.vendas ? BRL(x.lucro) : "—"}</td>
+                        <td className={`num${dif > 0 ? " pos-forte" : dif < 0 ? " neg-forte" : ""}`}>{dif > 0 ? `↑ ${dif}` : dif < 0 ? `↓ ${-dif}` : "="}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {dialogTarefa && <TarefaDialog tarefa={dialogTarefa.tarefa || null} itens={itens} lojaId={lojaId} onToast={onToast} onClose={() => setDialogTarefa(null)} />}
       {excluir && (

@@ -49,7 +49,7 @@ export default function ParteArtesanal({ valor, materiais, onChange, embutido = 
             catalogo={catalogo}
             itens={base.itens || []}
             onChange={(itens) => mudar("itens", itens)}
-            rotuloVazio='Nenhum consumível cadastrado — cadastre cera, pavio, cimento, jarrinha… em Produção → Insumos → Materiais, tipo "Consumível". Ou use um item avulso abaixo.'
+            rotuloVazio='Nenhum consumível cadastrado — cadastre cera, pavio, cimento, jarrinha… em Estoque e compras → Materiais, tipo "Consumível". Ou use um item avulso abaixo.'
           />
           {avulsos.map((av, i) => (
             <div className="seletor-linha" key={i}>

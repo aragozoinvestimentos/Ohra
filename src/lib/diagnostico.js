@@ -268,7 +268,7 @@ export function diagnosticoDoAnuncio({ l, d, ref, cfg, sazonal = null, v7 = 0, v
         evidencia: [`${vendas30} vendas em 30 dias`, `margem ${pct(marg)} no preço de agora (desejada ${pct(num(cfg.margemDesejada))})`],
         impacto: `Subir R$ 1 de lucro por venda daria ≈ ${brl(vendas30)} a mais por mês nesse ritmo.`,
         acao: "Revise custo e preço, e ofereça kit pra subir o valor do pedido.",
-        como: ["Confira o custo (filamento mais barato? Produção → Insumos)", "Veja se o preço salvo ainda está certo (Preços salvos)", "Kit 2/kit 3 no 2º Por quantidade"],
+        como: ["Confira o custo (filamento mais barato? Estoque e compras → Materiais)", "Veja se o preço salvo ainda está certo (Preços salvos)", "Kit 2/kit 3 no 2º Por quantidade"],
         ir: irPreco,
         rotulo: "Ver preço",
         reavaliar: "30 dias",
