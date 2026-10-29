@@ -10,20 +10,17 @@
 // isso que usamos pra estimar o prejuízo em R$ — não simplesmente "perdeu
 // tudo" pro cálculo de custo, só pra contagem de peças perdidas.
 
-// Taxa de falha inicial (conservadora, igual ao padrão já usado no campo
-// "Média de falhas" de Custo de Produção) e o "peso" dela em número
-// equivalente de registros reais — evita que a taxa pule pra 0% ou 100%
-// só com 1 ou 2 registros; ela vai perdendo peso conforme registros de
-// verdade entram, até ficar guiada quase inteiramente pelos dados reais.
-export const TAXA_FALHA_PRIOR_PCT = 12.5;
-export const TAXA_FALHA_PRIOR_PESO = 15;
+// Taxa de falha = a REAL dos registros (29/10/2026, pedido do Gustavo: "começa
+// do zero"): sem registro = 0%, depois falhas ÷ impressões registradas. Antes
+// partia de 12,5% com peso de 15 registros (blend); os registros não mudaram.
+export const TAXA_FALHA_PRIOR_PCT = 0;
+export const TAXA_FALHA_PRIOR_PESO = 0;
 
-// Blend bayesiano simples: começa perto do "chute" conservador e desliza
-// pra taxa real conforme o histórico cresce.
 export function calcTaxaFalhaAtual(registros, { priorPct = TAXA_FALHA_PRIOR_PCT, priorPeso = TAXA_FALHA_PRIOR_PESO } = {}) {
   const total = registros.length;
   const falhas = registros.filter((r) => r.status === "falha").length;
-  const taxa = (((priorPct / 100) * priorPeso) + falhas) / (priorPeso + total);
+  const base = priorPeso + total;
+  const taxa = base > 0 ? ((priorPct / 100) * priorPeso + falhas) / base : 0;
   return { taxa, total, falhas };
 }
 

@@ -283,7 +283,7 @@ export default function RegistroImpressoes({ onToast }) {
     <>
     <Kpis
       itens={[
-        { label: "Taxa de falha atual", valor: PCT(taxaFalha.taxa), tom: "destaque", sub: "começa em 12,5% e se ajusta com os registros" },
+        { label: "Taxa de falha atual", valor: PCT(taxaFalha.taxa), tom: "destaque", sub: `${taxaFalha.falhas} falha${taxaFalha.falhas === 1 ? "" : "s"} em ${taxaFalha.total} impress${taxaFalha.total === 1 ? "ão" : "ões"} registrada${taxaFalha.total === 1 ? "" : "s"}` },
         { label: "Impressões registradas", valor: taxaFalha.total, sub: `${taxaFalha.falhas} ${taxaFalha.falhas === 1 ? "falha" : "falhas"}` },
         { label: "Prejuízo médio por falha", valor: prejuizoMedioPorFalha != null ? BRL(prejuizoMedioPorFalha) : "—", tom: prejuizoMedioPorFalha != null ? "bad" : undefined, sub: prejuizoMedioPorFalha != null ? "custo perdido por impressão que falhou" : "sem falhas registradas ainda" },
         { label: "Avanço médio até falhar", valor: taxaFalha.falhas > 0 ? PCT(fracaoMediaFalha) : "—", sub: taxaFalha.falhas > 0 ? "quanto a impressão anda antes de dar errado" : "sem falhas registradas ainda" },
@@ -294,7 +294,7 @@ export default function RegistroImpressoes({ onToast }) {
         <div className="panel">
           <h3 className="section-title">
             Registrar impressão
-            <Ajuda texto='Registre cada impressão depois que ela termina, deu certo ou não. Isso vai construindo um histórico real de taxa de falha — a taxa começa numa estimativa conservadora (12,5%) e vai se ajustando sozinha conforme os registros entram. Se a impressão falhou, informe em que % ela parou: uma falha aos 90% desperdiça muito mais material/tempo que uma aos 10%, e é essa % que estima o prejuízo real, não o custo total sempre.' />
+            <Ajuda texto='Registre cada impressão depois que ela termina, deu certo ou não. Isso vai construindo um histórico real de taxa de falha — a taxa é a real: falhas ÷ impressões registradas (começa em 0%). Se a impressão falhou, informe em que % ela parou: uma falha aos 90% desperdiça muito mais material/tempo que uma aos 10%, e é essa % que estima o prejuízo real, não o custo total sempre.' />
           </h3>
 
           <div className="field">

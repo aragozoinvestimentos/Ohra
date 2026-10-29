@@ -655,3 +655,11 @@ describe("afiliados: comissão própria, teste de 15 dias e avisos (29/10/2026)"
     expect(av[0].texto).not.toMatch(/preço/);
   });
 });
+
+describe("taxa de falha começa do zero (29/10/2026)", () => {
+  it("sem registro 0%; depois falhas ÷ impressões", async () => {
+    const { calcTaxaFalhaAtual } = await import("../src/lib/registroImpressao.js");
+    expect(calcTaxaFalhaAtual([]).taxa).toBe(0);
+    expect(calcTaxaFalhaAtual([{ status: "ok" }, { status: "ok" }, { status: "falha" }, { status: "ok" }]).taxa).toBe(0.25);
+  });
+});
