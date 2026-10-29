@@ -111,9 +111,10 @@ export function responderPergunta(pergunta, ctx) {
   // 0) revenda: estoque / repor / limite do MEI (v66)
   if (/estoque|repor|mercadoria/.test(t)) {
     const e = kpis?.estoque;
-    if (!e) return { entendeu: true, texto: "Ainda não há produto de revenda com estoque — o estoque começa na 1ª nota de compra (XML) importada em Estoque e compras.", numeros: null };
-    const rep = e.repor.length ? ` Pra repor: ${e.repor.map((r) => `${r.nome} (${r.texto})`).join("; ")}.` : " Nada pra repor agora.";
-    return { entendeu: true, texto: `Estoque de revenda: ${e.itens} ${e.itens === 1 ? "produto" : "produtos"}, ${BRL(e.valor)} parados pelo custo médio.${rep}`, numeros: { estoque: e.valor } };
+    if (!e) return { entendeu: true, texto: "Ainda não há produto com estoque — a revenda começa na 1ª nota de compra importada e o fabricado quando você marca “tenho estoque pronto” em Estoque e compras.", numeros: null };
+    const rep = e.repor.length ? ` Pra repor/imprimir: ${e.repor.map((r) => `${r.nome} (${r.texto})`).join("; ")}.` : " Nada pra repor agora.";
+    const env = e.aEnviar > 0 ? ` ${e.aEnviar} un. pagas ainda não enviadas (saem do estoque quando o pedido virar Enviado).` : "";
+    return { entendeu: true, texto: `Estoque: ${e.itens} ${e.itens === 1 ? "produto" : "produtos"}, ${BRL(e.valor)} na prateleira pelo custo.${rep}${env}`, numeros: { estoque: e.valor } };
   }
   if (/\bmei\b|limite de faturamento/.test(t)) {
     const l = kpis?.limiteMei;

@@ -452,6 +452,7 @@ export default function Inicio({ onIrPara, onToast }) {
           valor: estoqueRev.linhas.reduce((t, l) => t + (l.est.semControle ? 0 : l.valor), 0),
           itens: estoqueRev.linhas.filter((l) => !l.est.semControle).length,
           repor: estoqueRev.linhas.filter((l) => ["repor", "zerado", "negativo"].includes(l.sit.tipo)).map((l) => ({ nome: l.produto.nome, texto: l.sit.texto })),
+          aEnviar: estoqueRev.linhas.reduce((t, l) => t + (l.est.reservado || 0), 0),
         }
       : null,
     limiteMei: limMei,

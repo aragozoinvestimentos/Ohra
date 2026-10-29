@@ -245,6 +245,9 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-29", texto: "Estoque: o produto só sai do estoque quando o pedido vira ENVIADO na Olist; pago e ainda não enviado fica em “a enviar” (continua na prateleira). Também controlo o estoque dos fabricados que você marcar “tenho estoque pronto” — cada impressão com sucesso pergunta se vai pro estoque." },
+  { data: "2026-10-29", texto: "Dinheiro → Resultado junta o Resumo do mês, as vendas por produto e o Payoff. A tabela do faturamento ao lucro ficou com 8 linhas e o relatório do mês tem 2 folhas: quanto sobrou e por quê, depois canal, os 5 que mais deram lucro e as contas fixas. Devoluções aparecem à parte." },
+  { data: "2026-10-29", texto: "Vender mais abre no Hoje: um cartão por anúncio juntando o que a Rampa, o Ads, os Afiliados e o cupom pedem. A Análise filtra por Fabricado ou Revenda, as Regras mostram o valor atual no título e Materiais/Embalagens foram pra Estoque e compras." },
   { data: "2026-10-28", texto: "Nota de compra: o produto novo já sai com SKU sugerido (a referência do fabricante, ex. RR2200), EAN, NCM, CFOP e se tem ICMS-ST/monofásico; antes de criar, mostro o produto parecido que você já tem. O que falta (peso, preço) fica em Estoque → Completar cadastro." },
   { data: "2026-10-28", texto: "Dinheiro → Fiscal: no MEI acompanho o limite do ano; no Simples calculo a alíquota efetiva pelos 12 meses e o DAS do mês separando o que tem ST e monofásico (pagam menos). É estimativa — confira com o contador." },
   { data: "2026-10-28", texto: "Resumo do mês ganhou a tabela “Do faturamento ao lucro”: faturamento cheio, descontos, taxas, impostos, custo, Ads, contas fixas e o lucro líquido — por mês, 3 meses, ano ou desde o início, com PDF e CSV." },
