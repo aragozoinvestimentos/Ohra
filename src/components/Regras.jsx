@@ -16,6 +16,7 @@ import { RegrasPortoes } from "./Crescimento.jsx";
 import CuponsAtivos from "./CuponsAtivos.jsx";
 import ImpostosLoja from "./ImpostosLoja.jsx";
 import Ajuda from "./Ajuda.jsx";
+import { ERPS, erpDaLoja } from "../lib/erp.js";
 
 // Configuração → Regras (remap 21/10/2026): as regras da loja que ficavam
 // espalhadas (metas de preço, calendário, escada, portões da rampa, Ads,
@@ -55,6 +56,7 @@ function resumos(cfg) {
   const es = { ...ESTOQUE_PADRAO, ...(cfg.estoque || {}) };
   const at = configAtacado(cfg);
   return {
+    erp: erpDaLoja(cfg).nome,
     impostos: reg.regime === "mei" ? `MEI${reg.dasMensal ? ` · DAS ${reais(reg.dasMensal)}/mês` : ""}` : reg.regime === "simples" ? `Simples · revenda Anexo ${cs.anexoRevenda} · fabricado Anexo ${cs.anexoFabricado}` : "escolha o regime",
     metas: `margem desejada ${pc(m.margemDesejada)} · mínima ${pc(m.margemMin)}${Number(m.lucroMinimo) > 0 ? ` · lucro mín. ${reais(m.lucroMinimo)}` : ""}`,
     calendario: `${datas} datas ligadas · ${camp === CAMPANHAS.length ? "todas as campanhas" : `${camp} de ${CAMPANHAS.length} campanhas`}`,
@@ -84,6 +86,16 @@ export default function Regras({ onToast }) {
         <b>Regras da loja {loja?.nome || ""}</b>
         Cada seção vale pro app inteiro desta loja. As telas continuam com o atalho pras regras delas — é a mesma configuração.
       </div>
+      <Secao titulo="Sistema de pedidos (ERP)" resumo={rs.erp} onde="Atualizar dados (de onde vêm os pedidos), Início e Bom dia" ajuda="O sistema que junta os pedidos de todos os marketplaces desta loja. O Atualizar dados mostra o arquivo desse sistema. Cada loja escolhe o seu.">
+        <div className="regras-erp">
+          {ERPS.map((e) => (
+            <label key={e.id} style={{ display: "block", margin: "4px 0" }}>
+              <input type="radio" name="erp" checked={erpDaLoja(cfg).id === e.id} onChange={() => salvarChave({ erp: e.id }, `Sistema de pedidos: ${e.nome}`)} /> {e.nome}
+              {!e.pronto && <span className="muted-cel"> — leitura do arquivo em preparação</span>}
+            </label>
+          ))}
+        </div>
+      </Secao>
       <Secao titulo="Impostos da loja (MEI ou Simples)" resumo={rs.impostos} aberta={!cfg.impostos?.regime} onde="preço e lucro de todo o app · limite do MEI no Início" ajuda="MEI: nenhum imposto por venda, DAS fixo por mês e limite de faturamento por ano (3D + revenda juntos). Simples: por enquanto o imposto (%) de cada canal.">
         <ImpostosLoja onToast={onToast} />
       </Secao>

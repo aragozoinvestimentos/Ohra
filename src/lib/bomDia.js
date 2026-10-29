@@ -26,14 +26,14 @@ const ultimoAte = (lista, teste, ateDe = (i) => i.periodo_ate) =>
  * → { ontem, faltando: [{chave, texto}], pedidos: {n, vendas, lucro, mediaVendas, mediaLucro} | null,
  *     ads: {gasto, orcamento} | null, contas: {hoje, atrasadas, total} }
  */
-export function bomDia({ importacoes = [], pedidos = [], linhasAds = null, periodosAds = [], aPagar = null, hoje }) {
+export function bomDia({ importacoes = [], pedidos = [], linhasAds = null, periodosAds = [], aPagar = null, hoje, erp = "Olist" }) {
   const ontem = somarDias(hoje, -1);
   const faltando = [];
   // pedidos (Olist) cobrindo ontem
   // pedidos: o envio cobre até a véspera do dia em que subiu (dia sem venda não falta)
   const ateP = ultimoAte(importacoes, (r) => r.startsWith("pedidos:"), ateDoEnvioPedidos);
-  const pedidosOk = !!ateP && ateP >= ontem;
-  if (!pedidosOk) faltando.push({ chave: "pedidos", texto: ateP ? `pedidos da Olist (último até ${ateP.slice(8, 10)}/${ateP.slice(5, 7)})` : "pedidos da Olist" });
+  const pedidosOk = !erp || (!!ateP && ateP >= ontem);
+  if (!pedidosOk) faltando.push({ chave: "pedidos", texto: ateP ? `pedidos da ${erp} (último até ${ateP.slice(8, 10)}/${ateP.slice(5, 7)})` : `pedidos da ${erp}` });
   // CSV do Ads de ontem (só com Ads ligado)
   const ligados = (periodosAds || []).filter((p) => periodoLigado(p, hoje));
   const ateA = ultimoAte(importacoes, (r) => r === "shopee:ads");

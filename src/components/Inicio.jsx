@@ -10,6 +10,7 @@ import { pausaAtiva, pausasDeRampa } from "../lib/pausaRampa.js";
 import { infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
 import { dataSP } from "../lib/datas.js";
 import { supabase } from "../lib/supabaseClient.js";
+import { erpDaLoja } from "../lib/erp.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { vendeuSemAvaliacao } from "../lib/semanasAuto.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
@@ -344,8 +345,8 @@ export default function Inicio({ onIrPara, onToast }) {
   const revisarME = precisaRevisarME(dados.cfgLoja);
   const limMei = useMemo(() => (regime.regime === "mei" ? limiteMei({ pedidos: pedidosValidos || [], limite: regime.limiteAnual, hoje }) : null), [regime.regime, regime.limiteAnual, pedidosValidos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, revisarME, hoje }),
-    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, revisarME, hoje]
+    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: erpDaLoja(dados.cfgLoja).id === "nenhum" && impCentral ? { ...impCentral, plataformas: [] } : impCentral, saldoDeAds, cupomRuins, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, revisarME, hoje }),
+    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, dados.cfgLoja, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, revisarME, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.
@@ -403,7 +404,7 @@ export default function Inicio({ onIrPara, onToast }) {
 
   // --- 2 · Seus dados ---
   const temAdsLigado = [...(linhasAds?.linhas || []), ...(linhasAds?.lojaLinha ? [linhasAds.lojaLinha] : [])].some((l) => l.av?.ativo);
-  const situacao = useMemo(() => situacaoDados({ importacoes: impCentral, avaliacoesPend, temAdsLigado, hoje }), [impCentral, avaliacoesPend, temAdsLigado, hoje]);
+  const situacao = useMemo(() => situacaoDados({ importacoes: impCentral, avaliacoesPend, temAdsLigado, hoje, erp: erpDaLoja(dados.cfgLoja).id === "nenhum" ? null : erpDaLoja(dados.cfgLoja).nome }), [impCentral, avaliacoesPend, temAdsLigado, hoje, dados.cfgLoja]);
   const avisosDados = pendencias.filter(ehAvisoDeDados);
 
   // --- 3 · Pra fazer: por produto, Loja e Minhas tarefas ---
@@ -481,8 +482,8 @@ export default function Inicio({ onIrPara, onToast }) {
   };
   // ☀️ Bom dia: ontem, depois de conferir os arquivos (também vai pro consultor da Sede)
   const bom = useMemo(
-    () => (reais.carregando ? null : bomDia({ importacoes: reais.importacoes, pedidos: pedidosValidos, linhasAds, periodosAds: adsP.periodos, aPagar: kpisSede.aPagar, hoje })),
-    [reais.carregando, reais.importacoes, pedidosValidos, linhasAds, adsP.periodos, kpisSede.aPagar, hoje]
+    () => (reais.carregando ? null : bomDia({ importacoes: reais.importacoes, pedidos: pedidosValidos, linhasAds, periodosAds: adsP.periodos, aPagar: kpisSede.aPagar, hoje, erp: erpDaLoja(dados.cfgLoja).id === "nenhum" ? null : erpDaLoja(dados.cfgLoja).nome })),
+    [reais.carregando, reais.importacoes, pedidosValidos, linhasAds, adsP.periodos, kpisSede.aPagar, hoje, dados.cfgLoja]
   );
   useEffect(() => {
     if (!carregando) publicarSede({ pendencias, kpis: { ...kpisSede, bomDia: bom, top3: top3.map((p) => (typeof p.titulo === "string" ? p.titulo : "")).filter(Boolean) } });

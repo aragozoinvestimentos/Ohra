@@ -25,6 +25,7 @@ import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import AvaliacoesBloco from "./AvaliacoesBloco.jsx";
 import Estado from "./Estado.jsx";
+import { erpDaLoja } from "../lib/erp.js";
 import { vendasPeloComeco } from "../lib/vinculoSku.js";
 import { gravarPreferencia, lerPreferencia, usePreferencia } from "../hooks/usePreferencia.js";
 
@@ -54,7 +55,8 @@ async function lerPlanilha(arquivo) {
 }
 
 export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, hoje, onToast }) {
-  const { lojaId } = useLoja();
+  const { lojaId, lojas } = useLoja();
+  const erp = erpDaLoja((lojas || []).find((l) => l.id === lojaId)?.config_escada);
   const { itens, canais, produtos, kits, precos, cfgDoProduto, gruposAnuncio: grupos = [] } = esc;
   const [resultado, setResultado] = useState({}); // relatorio → { t, txt }
   const [pend, setPend] = useState(null); // envio da Olist esperando resposta: { passo "plataforma"|"skus", porPlat, grupos, desconhecidos, pendentes, resolvidos, periodo, arquivo }
@@ -832,7 +834,20 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         <div className="kpi"><div className="l">Lançado no caixa</div><div className="v">{BRL(totRec)}</div><div className="s">entregues + vendas físicas · a receber {BRL(totArec)} (fora do saldo)</div></div>
       </div>
 
-      {cartaoOlist}
+      {erp.id === "olist" && cartaoOlist}
+      {erp.id === "upseller" && (
+        <div className="panel">
+          <h3>
+            Pedidos (UpSeller) <span className="dir">um arquivo com todas as plataformas</span>
+          </h3>
+          <div className="alerta alerta-neutro">
+            <b>A leitura do arquivo da UpSeller ainda está sendo preparada.</b> Exporte em UpSeller → Pedidos → Pedidos Históricos (período, plataformas e status “Todos”) → <b>Exportar</b> e mande o arquivo pro Claude: com ele o app passa a ler os pedidos aqui, igual à Olist. Enquanto isso, a Venda física continua funcionando.
+          </div>
+        </div>
+      )}
+      {erp.id === "nenhum" && (
+        <div className="alerta alerta-neutro">Esta loja não usa sistema de pedidos — só a venda física abaixo. Dá pra trocar em Configuração → Regras → Sistema de pedidos (ERP).</div>
+      )}
       {peloComeco.length > 0 && (
         <div className="panel">
           <h3>

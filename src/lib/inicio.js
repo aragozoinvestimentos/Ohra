@@ -799,7 +799,7 @@ export function agruparPorProduto(avisos, nomesCanais, ehProduto = () => true) {
 }
 
 /** Situação das importações (bloco "Seus dados"): [{ chave, rotulo, texto, estado: ok|atencao|info }]. */
-export function situacaoDados({ importacoes, avaliacoesPend = [], temAdsLigado = false, hoje }) {
+export function situacaoDados({ importacoes, avaliacoesPend = [], temAdsLigado = false, hoje, erp = "Olist" }) {
   if (!importacoes?.disponivel) return [];
   const dias = (rel) => {
     const u = [...(importacoes.lista || [])].filter((i) => i.ok && (typeof rel === "string" ? i.relatorio === rel : rel(i.relatorio))).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0];
@@ -810,7 +810,7 @@ export function situacaoDados({ importacoes, avaliacoesPend = [], temAdsLigado =
   const quando = (d) => (d == null ? "nunca enviado" : d === 0 ? "hoje" : d === 1 ? "ontem" : `há ${d} dias`);
   const out = [];
   const dp = dias((r) => String(r).startsWith("pedidos:"));
-  out.push({ chave: "pedidos", rotulo: "Pedidos (Olist)", texto: quando(dp), estado: dp == null || dp > 7 ? "atencao" : "ok" });
+  if (erp) out.push({ chave: "pedidos", rotulo: `Pedidos (${erp})`, texto: quando(dp), estado: dp == null || dp > 7 ? "atencao" : "ok" });
   if ((importacoes.plataformas || []).some((p) => p.id === "shopee")) {
     const dd = dias("shopee:desempenho");
     out.push({ chave: "desempenho", rotulo: "Desempenho Shopee", texto: quando(dd), estado: dd == null || dd > 7 ? "atencao" : "ok" });
