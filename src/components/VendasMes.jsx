@@ -13,7 +13,9 @@ import { juntarMeses, mesesDoPeriodo, saldoReserva, vendasDoMes } from "../lib/v
 import { useVendasReais } from "../hooks/useVendasReais.js";
 import { gastoAdsNaJanela, regrasAds, tetoDaLoja } from "../lib/ads.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
-import { hojeISO, mesDe, rotuloMes } from "../lib/fluxoCaixa.js";
+import { hojeISO, mesDe, rotuloMes, saldoRealizado } from "../lib/fluxoCaixa.js";
+import { ehTransferencia } from "../lib/carteiras.js";
+import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
 import { BRL, PCT } from "../lib/format.js";
 import { irParaAba } from "../lib/navegar.js";
 import Kpis from "./Kpis.jsx";
@@ -105,6 +107,10 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
     return final;
   }, [v.linhas, itens, grupoAberto]);
   const res = useMemo(() => saldoReserva(reserva.registros), [reserva.registros]);
+  // Caixa da loja hoje (a mesma conta do "Saldo atual" do Caixa, visão Geral) → quanto fica livre.
+  const { lancamentos: lancCaixa } = useLancamentosCaixa();
+  const caixaHoje = useMemo(() => saldoRealizado((lancCaixa || []).filter((l) => !ehTransferencia(l)), hoje), [lancCaixa, hoje]);
+  const livreHoje = caixaHoje - res.saldo;
   const jaSeparado = res.porMes.get(mes) || 0;
   const falta = Math.max(0, Math.round((v.total.repor - jaSeparado) * 100) / 100);
   const t = v.total;
@@ -275,6 +281,11 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
             <div className="reserva-saldo">
               <small>Saldo da reserva</small>
               <b>{BRL(res.saldo)}</b>
+            </div>
+            <div className="reserva-saldo">
+              <small>Caixa da loja hoje</small>
+              <b>{BRL(caixaHoje)}</b>
+              <small className={livreHoje < 0 ? "neg" : undefined}>livre {BRL(livreHoje)}</small>
             </div>
             <div className="reserva-mes">
               <small>{rotuloMes(mes)}</small>
@@ -642,6 +653,10 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
             <label>Valor (R$)</label>
             <input type="number" step="0.01" min="0" autoFocus value={separar} onChange={(e) => setSeparar(e.target.value)} />
           </div>
+          <p className="hint" style={{ marginBottom: 0 }}>
+            Caixa da loja hoje {BRL(caixaHoje)} · reserva depois de separar {BRL(res.saldo + (Number(String(separar).replace(",", ".")) || 0))} · fica livre <b className={livreHoje - (Number(String(separar).replace(",", ".")) || 0) < 0 ? "neg" : undefined}>{BRL(livreHoje - (Number(String(separar).replace(",", ".")) || 0))}</b>
+            {livreHoje - (Number(String(separar).replace(",", ".")) || 0) < 0 ? " — a reserva passaria do dinheiro que está no caixa hoje" : ""}
+          </p>
         </EditarDialog>
       )}
       {usar && (

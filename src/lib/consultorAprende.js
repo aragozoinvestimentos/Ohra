@@ -245,6 +245,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-29", texto: "Reserva de produção: agora mostro ao lado o caixa da loja hoje e quanto fica livre. Separar na reserva não tira dinheiro da conta — só marca a parte que é pra repor a produção." },
   { data: "2026-10-29", texto: "Afiliados, parte 2: cada anúncio pode ter um % próprio (substitui o da loja, não soma); mostro quanto o afiliado ganha por venda, o máximo seguro de cada anúncio e o mínimo da Shopee (4%). Cada comissão vira um teste de 15 dias: se ninguém se afiliou, sugiro subir 1 ponto — só se ainda deixar metade do lucro. Afiliado nunca me faz sugerir mudar preço, mas prejuízo com afiliado aparece no Início. Pergunte “quais aguentam 5%?” ou “comissão máxima do <produto>”." },
   { data: "2026-10-29", texto: "Ads: o 1º dia que quase não gastou (menos de 30% do orçamento) não conta nos 3 dias, e no 3º dia eu só peço pra conferir à noite — a ordem de pausar e revisar vem com o dia fechado." },
   { data: "2026-10-29", texto: "Afiliados: agora é UMA comissão pra loja inteira (a da Shopee). Eu sugiro o % em que os produtos que mais vendem deixam pelo menos metade do lucro pra você — pelo preço de agora e com o cupom ativo —, mostro o teto e tenho um simulador. Dá pra montar proposta pra um afiliado específico, e o Leo acompanha se o afiliado dá lucro." },

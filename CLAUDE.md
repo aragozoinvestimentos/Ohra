@@ -527,6 +527,7 @@ Plano fechado com o Gustavo (vídeo "Ads não é milagre, é método", @luanalve
 - **Início reorganizado**: "Seus dados" numa linha; "Hoje — as 3 que mais valem dinheiro"; seção "Por anúncio" com os números de 7 dias no cartão ("7 dias: N vendas · R$ (antes M)"); "Seus produtos" virou "Seus produtos sem aviso (N)" recolhido (os com aviso já estão nos cartões).
 - **Análise**: filtro Origem (Todos/Fabricado/Revenda, `origemDaLinha` em pedidos.js; kit misto = fabricado) em Curva ABC, XYZ e Evolução — só aparece com produto de revenda.
 - **Regras**: todas as seções recolhidas com o valor atual no título (`resumos` em Regras.jsx); Metas de preço e Calendário também viraram seções.
+- **Reserva de produção mostra o caixa** (Dinheiro → Resultado → Por produto): ao lado do "Saldo da reserva" aparece "Caixa da loja hoje R$X · livre R$Y" (`saldoRealizado` sem transferências, a mesma do Saldo atual do Caixa, menos a reserva) e a janela "Separar" mostra quanto fica livre depois (aviso se a reserva passar do caixa). Separar continua NÃO sendo saída — decisão do Gustavo: sem separar por carteira.
 - **Insumos** (Materiais, Embalagens) saíram de Produção e foram pra Estoque e compras (mesma aba `insumos`).
 - **"Virou ME: revisar"**: salvar Impostos de MEI → Simples grava `impostos.revisarME` → aviso no Início (`me|revisar`) + lista `REVISAR_ME` na aba Fiscal (anexos, imposto dos marketplaces, tirar DAS MEI, faturamento 12 meses) até "Pronto, revisei".
 
