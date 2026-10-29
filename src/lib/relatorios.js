@@ -4,7 +4,7 @@
 // pedidos importados (somaPedidos), Ads (adsNaJanela/adsNoPeriodo), contas
 // fixas (despesasFixasDoMes). PDF pelo próprio navegador ("salvar como PDF")
 // e CSV das tabelas (abre no Excel). Nada aqui grava dado.
-import { adsNoPeriodo, despesasFixasDoMes, mesAnterior, somaPedidos } from "./resumoLoja.js";
+import { adsNoPeriodo, cascataDoPeriodo, despesasFixasDoMes, mesAnterior, somaPedidos } from "./resumoLoja.js";
 import { adsNaJanela, pausasDoPeriodo, periodoLigado } from "./ads.js";
 import { BRL } from "./format.js";
 
@@ -65,18 +65,6 @@ function porProdutoPai(pedidos, de, ate, nomeDe) {
   }
   return [...m.values()];
 }
-function quebraDoDinheiro(pedidos, de, ate) {
-  let vendas = 0, taxas = 0, repor = 0;
-  for (const p of pedidos || []) {
-    if (!p.valido) continue;
-    const d = String(p.data).slice(0, 10);
-    if (d < de || d > ate) continue;
-    vendas += num(p.pago);
-    taxas += Math.max(0, num(p.taxas ?? num(p.pago) - num(p.recebe)));
-    repor += num(p.custo);
-  }
-  return { vendas, taxas, repor };
-}
 const linhasDeAds = (linhasAds) => [...(linhasAds?.linhas || []), ...(linhasAds?.lojaLinha ? [linhasAds.lojaLinha] : [])];
 
 /** Produtos e kits com preço salvo sem venda há ≥ dias (ou que nunca venderam). */
@@ -109,61 +97,103 @@ export function produtosParados({ pedidos, produtos = [], kits = [], precos = []
 // ---------- modelos ----------
 // Relatório = { titulo, subtitulo, blocos: [{ tipo: "kpis", itens: [{rotulo, valor, sub}] } | { tipo: "tabela", titulo, colunas, linhas } | { tipo: "texto", titulo?, linhas }] }
 export function relatorioFechamento(ctx, mes) {
-  const { pedidos, linhasAds, lancamentos, hoje, nomeDe } = ctx;
+  const { hoje } = ctx;
   const de = `${mes}-01`, ate = fimDoMes(mes) < hoje ? fimDoMes(mes) : hoje;
-  const ma = mesAnterior(mes), deA = `${ma}-01`, ateA = fimDoMes(ma);
-  const p = somaPedidos(pedidos, de, ate), pA = somaPedidos(pedidos, deA, ateA);
-  const ads = adsNoPeriodo(linhasAds, de, ate), adsA = adsNoPeriodo(linhasAds, deA, ateA);
-  const fixas = despesasFixasDoMes(lancamentos, mes), fixasA = despesasFixasDoMes(lancamentos, ma);
-  const liq = p.lucro - ads - fixas.total, liqA = pA.lucro - adsA - fixasA.total;
-  const q = quebraDoDinheiro(pedidos, de, ate);
-  const v = (a, b) => (variacao(a, b) == null ? "" : `${variacao(a, b) >= 0 ? "+" : ""}${pct(variacao(a, b))} vs ${MESES[Number(ma.slice(5, 7)) - 1]}`);
-  const cem = q.vendas > 0 ? (x) => BRL((x / q.vendas) * 100) : () => "—";
-  const porCanal = new Map();
-  for (const x of pedidos || []) {
-    if (!x.valido) continue;
-    const d = String(x.data).slice(0, 10);
-    if (d < de || d > ate) continue;
-    const k = x.canal?.nome || (x.origem === "fisico" || x.plataforma === "fisico" ? "Venda física" : x.plataforma || "—");
-    const g = porCanal.get(k) || { pedidos: new Set(), vendas: 0, lucro: 0 };
-    g.pedidos.add(x.pedido);
-    g.vendas += num(x.pago);
-    g.lucro += num(x.lucro);
-    porCanal.set(k, g);
+  const ma = mesAnterior(mes);
+  return relatorioDoPeriodo(ctx, { de, ate, titulo: `Fechamento de ${nomeDoMes(mes)}`, aberto: ate < fimDoMes(mes), deA: `${ma}-01`, ateA: fimDoMes(ma), rotA: MESES[Number(ma.slice(5, 7)) - 1] });
+}
+
+/**
+ * Relatório do faturamento ao lucro (28/10/2026, aprovado pela prévia): DUAS folhas.
+ * Folha 1 = quanto sobrou e por quê (3 números grandes, a conta × período anterior, de
+ * cada R$ 100, o que mudou — só fatos). Folha 2 = por canal, os 5 que mais deram lucro
+ * e as contas fixas. Conta ÚNICA: cascataDoPeriodo (a mesma tabela do Resumo do mês).
+ */
+export function relatorioDoPeriodo(ctx, { de, ate, titulo, aberto = false, deA, ateA, rotA = "antes" }) {
+  const { pedidos, linhasAds, lancamentos = [], nomeDe = () => null } = ctx;
+  const c = cascataDoPeriodo({ pedidos, linhasAds, lancamentos, de, ate });
+  const a = cascataDoPeriodo({ pedidos, linhasAds, lancamentos, de: deA, ate: ateA });
+  const t = c.total, ta = a.total;
+  const p100 = (v, base = t.pago) => (base > 0 ? `${Math.round((v / base) * 100)}%` : "—");
+  const mud = (x, y) => {
+    const v = variacao(x, y);
+    return v == null ? "—" : `${v >= 0 ? "+" : ""}${Math.round(v * 100)}%`;
+  };
+  const r = (v) => BRL(v).replace("R$", "").trim();
+  const margem = t.pago > 0 ? t.liquido / t.pago : null;
+  const margemA = ta.pago > 0 ? ta.liquido / ta.pago : null;
+  const linhaConta = (rot, k, cls, menos) => ({ c: [rot, r(t[k]), p100(menos ? t[k] : t[k]), ta.pago > 0 ? r(ta[k]) : "—", ta.pago > 0 ? mud(t[k], ta[k]) : "—"], cls });
+  // o que mudou: só fatos
+  const fatos = [];
+  if (ta.pago > 0) fatos.push(`Faturou ${BRL(Math.abs(t.pago - ta.pago))} ${t.pago >= ta.pago ? "a mais" : "a menos"} que em ${rotA} (${mud(t.pago, ta.pago)}).`);
+  const prods = porProdutoPai(pedidos, de, ate, nomeDe);
+  const prodsA = new Map(porProdutoPai(pedidos, deA, ateA, nomeDe).map((g) => [g.nome, g]));
+  if (ta.pago > 0 && prods.length) {
+    const dif = prods.map((g) => ({ nome: g.nome, d: g.vendas - (prodsA.get(g.nome)?.vendas || 0) })).sort((x, y) => Math.abs(y.d) - Math.abs(x.d))[0];
+    if (dif && Math.abs(dif.d) >= 1) fatos.push(`Quem mais mudou: ${dif.nome} (${dif.d >= 0 ? "+" : "−"}${BRL(Math.abs(dif.d))} de faturamento).`);
   }
-  const top = porProdutoPai(pedidos, de, ate, nomeDe).sort((a, b) => b.lucro - a.lucro).slice(0, 10);
+  if (t.ads > 0) fatos.push(`Ads: ${BRL(t.ads)} (${p100(t.ads)} do faturado${ta.pago > 0 ? `; em ${rotA} ${p100(ta.ads, ta.pago)}` : ""}).`);
+  if (t.bruto > 0) fatos.push(`Descontos (promo, cupom, rampa): ${BRL(t.descontos)} — ${p100(t.descontos, t.bruto)} do preço cheio${ta.bruto > 0 ? ` (${rotA}: ${p100(ta.descontos, ta.bruto)})` : ""}.`);
+  if (t.devolvido > 0) fatos.push(`Devoluções: ${t.nDevolvidos} pedido${t.nDevolvidos === 1 ? "" : "s"}, ${BRL(t.devolvido)} — já fora do faturado.`);
+  if (t.semCusto > 0) fatos.push(`${t.semCusto} item(ns) sem produto ligado (SKU não cadastrado): entram no faturado, sem custo.`);
+  // contas fixas de cada mês do período
+  const fixas = new Map();
+  for (let m = de.slice(0, 7); m <= ate.slice(0, 7); m = mesSeguinte(m)) for (const x of despesasFixasDoMes(lancamentos, m).itens) fixas.set(x.descricao, (fixas.get(x.descricao) || 0) + num(x.valor));
+  const top = prods.sort((x, y) => y.lucro - x.lucro).slice(0, 5);
   return {
-    titulo: `Fechamento de ${nomeDoMes(mes)}`,
-    subtitulo: `${dm(de)} a ${dm(ate)}${ate < fimDoMes(mes) ? " (mês ainda aberto)" : ""} · pedidos importados, custo e taxas de hoje`,
+    titulo,
+    subtitulo: `${dm(de)} a ${dm(ate)}${aberto ? " (ainda aberto)" : ""} · ${t.nPedidos} pedidos importados · custo e taxas de hoje`,
     blocos: [
       {
-        tipo: "kpis",
+        tipo: "grandes",
         itens: [
-          { rotulo: "Faturamento", valor: BRL(p.vendas), sub: `${p.pedidos ?? "—"} pedidos · ${v(p.vendas, pA.vendas)}` },
-          { rotulo: "Lucro antes do Ads", valor: BRL(p.lucro), sub: v(p.lucro, pA.lucro) },
-          { rotulo: "Ads", valor: BRL(ads), sub: v(ads, adsA) },
-          { rotulo: "Contas fixas", valor: fixas.itens.length ? BRL(fixas.total) : "—", sub: fixas.itens.length ? `${fixas.itens.length} conta${fixas.itens.length === 1 ? "" : "s"}` : "nenhuma conta fixa no Caixa" },
-          { rotulo: "Lucro líquido", valor: fixas.itens.length ? BRL(liq) : "—", sub: fixas.itens.length && fixasA.itens.length ? v(liq, liqA) : "" },
+          { rotulo: "Faturou", valor: BRL(t.pago), sub: `${t.nPedidos} pedidos${ta.pago > 0 ? ` · ${mud(t.pago, ta.pago)} vs ${rotA}` : ""}` },
+          { rotulo: "Sobrou pra você", valor: BRL(t.liquido), sub: `depois de tudo${ta.pago > 0 ? ` · ${mud(t.liquido, ta.liquido)}` : ""}` },
+          { rotulo: "Margem final", valor: margem == null ? "—" : `${Math.round(margem * 100)}%`, sub: margemA == null ? "" : `${rotA}: ${Math.round(margemA * 100)}%` },
         ],
       },
       {
         tipo: "tabela",
-        titulo: "Pra onde foi cada R$ 100 vendidos",
-        colunas: ["Parte", "Valor no mês", "De cada R$ 100"],
+        titulo: "1 · A conta do período",
+        colunas: ["Conta", "Valor (R$)", "% do faturado", rotA.charAt(0).toUpperCase() + rotA.slice(1), "Mudou"],
         linhas: [
-          ["Taxas dos marketplaces", BRL(q.taxas), cem(q.taxas)],
-          ["Repor o produto (custo)", BRL(q.repor), cem(q.repor)],
-          ["Ads", BRL(ads), cem(ads)],
-          ["Contas fixas", BRL(fixas.total), cem(fixas.total)],
-          ["Sobrou (lucro líquido)", BRL(liq), cem(liq)],
+          linhaConta("Faturado", "pago", "tot"),
+          linhaConta("− Plataformas (comissão + taxa fixa)", "taxas"),
+          linhaConta("− Impostos", "imposto"),
+          linhaConta("− Custo dos produtos", "custo"),
+          linhaConta("= Lucro bruto", "lucroBruto", "tot"),
+          linhaConta("− Ads", "ads"),
+          linhaConta("− Contas fixas", "fixas"),
+          linhaConta("= Sobrou pra você", "liquido", "forte"),
         ],
       },
-      { tipo: "tabela", titulo: "Por canal", colunas: ["Canal", "Pedidos", "Vendas", "Lucro antes do Ads"], linhas: [...porCanal].sort((a, b) => b[1].vendas - a[1].vendas).map(([k, g]) => [k, String(g.pedidos.size), BRL(g.vendas), BRL(g.lucro)]) },
-      { tipo: "tabela", titulo: "Top 10 produtos (lucro)", colunas: ["Produto", "Un.", "Vendas", "Lucro", "Margem"], linhas: top.map((g) => [g.nome, String(g.unidades), BRL(g.vendas), BRL(g.lucro), pct(g.vendas > 0 ? g.lucro / g.vendas : null)]) },
-      { tipo: "tabela", titulo: "Contas fixas do mês", colunas: ["Conta", "Valor"], linhas: fixas.itens.map((x) => [x.descricao, BRL(x.valor)]) },
+      {
+        tipo: "barra",
+        titulo: "2 · De cada R$ 100 que entraram",
+        partes: t.pago > 0
+          ? [
+              { rot: "plataformas", v: (100 * t.taxas) / t.pago, cor: "#8a7f75" },
+              { rot: "impostos", v: (100 * t.imposto) / t.pago, cor: "#a69a8d" },
+              { rot: "custo", v: (100 * t.custo) / t.pago, cor: "#5c6f7d" },
+              { rot: "Ads", v: (100 * t.ads) / t.pago, cor: "#b98a2c" },
+              { rot: "fixas", v: (100 * (t.fixas || 0)) / t.pago, cor: "#7a6a9a" },
+              { rot: "sobrou", v: (100 * Math.max(0, t.liquido)) / t.pago, cor: "#c25a26" },
+            ]
+          : [],
+      },
+      { tipo: "lista", titulo: "3 · O que mudou", linhas: fatos.length ? fatos : ["Sem período anterior pra comparar."] },
+      { tipo: "quebra" },
+      { tipo: "tabela", titulo: "4 · Por canal", colunas: ["Canal", "Pedidos", "Faturado", "Lucro bruto", "Ads", "Depois do Ads", "Margem"], linhas: c.canais.map((k) => [k.nome, String(k.nPedidos), r(k.pago), r(k.lucroBruto), r(k.ads), r(k.depoisAds), p100(k.depoisAds, k.pago)]) },
+      { tipo: "tabela", titulo: "5 · Os 5 que mais deram lucro", colunas: ["Produto", "Vendas (un.)", "Faturado", "Lucro", "Margem"], linhas: top.map((g) => [g.nome, String(g.unidades), r(g.vendas), r(g.lucro), pct(g.vendas > 0 ? g.lucro / g.vendas : null)]) },
+      { tipo: "tabela", titulo: "6 · Contas fixas", colunas: ["Conta", "Valor (R$)"], linhas: fixas.size ? [...[...fixas].sort((x, y) => y[1] - x[1]).map(([k, v]) => [k, r(v)]), { c: ["Total", r(t.fixas || 0)], cls: "tot" }] : [] },
+      { tipo: "texto", linhas: ["Valores em R$. Custo e taxas são os de hoje. O dinheiro que entrou de verdade está no Caixa. Contas fixas = as recorrentes de saída do Caixa (sem Ads, filamento e mercadoria, que já estão nas outras linhas)."] },
     ],
   };
 }
+const mesSeguinte = (m) => {
+  const [a, mm] = m.split("-").map(Number);
+  return mm === 12 ? `${a + 1}-01` : `${a}-${String(mm + 1).padStart(2, "0")}`;
+};
 
 // Situação do Ads HOJE (pelos períodos do app): ligado / pausado / encerrado.
 function situacaoHoje(periodos, hoje) {
@@ -345,8 +375,16 @@ export function htmlDoRelatorio(rel, nomeLoja) {
   const blocos = rel.blocos
     .map((b) => {
       if (b.tipo === "kpis") return `<div class="kpis">${b.itens.map((i) => `<div class="kpi"><span>${esc(i.rotulo)}</span><b>${esc(i.valor)}</b><small>${esc(i.sub || "")}</small></div>`).join("")}</div>`;
-      if (b.tipo === "texto") return `${b.titulo ? `<h2>${esc(b.titulo)}</h2>` : ""}${b.linhas.map((l) => `<p>${esc(l)}</p>`).join("")}`;
-      return `<h2>${esc(b.titulo)}</h2>${b.linhas.length ? `<table><thead><tr>${b.colunas.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${b.linhas.map((l) => `<tr>${l.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : `<p class="vazio">nada no período</p>`}`;
+      if (b.tipo === "grandes") return `<div class="grandes">${b.itens.map((i) => `<div class="g"><span>${esc(i.rotulo)}</span><b>${esc(i.valor)}</b><small>${esc(i.sub || "")}</small></div>`).join("")}</div>`;
+      if (b.tipo === "texto") return `${b.titulo ? `<h2>${esc(b.titulo)}</h2>` : ""}${b.linhas.map((l) => `<p class="nota">${esc(l)}</p>`).join("")}`;
+      if (b.tipo === "lista") return `<h2>${esc(b.titulo)}</h2><ul>${b.linhas.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>`;
+      if (b.tipo === "quebra") return `<div class="quebra"></div>`;
+      if (b.tipo === "barra") {
+        const ps = (b.partes || []).filter((x) => x.v >= 0.5);
+        return `<h2>${esc(b.titulo)}</h2>${ps.length ? `<div class="barra">${ps.map((x) => `<span style="flex:${x.v.toFixed(2)};background:${x.cor}">${x.v >= 7 ? `${Math.round(x.v)} ${esc(x.rot)}` : Math.round(x.v)}</span>`).join("")}</div><p class="leg">${ps.map((x) => `<i style="background:${x.cor}"></i>${esc(x.rot)} ${Math.round(x.v)}`).join(" · ")}</p>` : `<p class="vazio">nada no período</p>`}`;
+      }
+      const cel = (l) => (Array.isArray(l) ? { c: l } : l);
+      return `<h2>${esc(b.titulo)}</h2>${b.linhas.length ? `<table><thead><tr>${b.colunas.map((c, i) => `<th${i ? ' class="n"' : ""}>${esc(c)}</th>`).join("")}</tr></thead><tbody>${b.linhas.map((l) => `<tr${cel(l).cls ? ` class="${cel(l).cls}"` : ""}>${cel(l).c.map((c, i) => `<td${i ? ' class="n"' : ""}>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : `<p class="vazio">nada no período</p>`}`;
     })
     .join("");
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(rel.titulo)} — ${esc(nomeLoja)}</title><style>
@@ -359,6 +397,14 @@ h2{font-size:13px;margin:16px 0 6px;border-bottom:1px solid #ddd;padding-bottom:
 .kpi{border:1px solid #ddd;border-radius:8px;padding:6px 8px}.kpi span{display:block;font-size:10px;color:#777;text-transform:uppercase;letter-spacing:.05em}
 .kpi b{font-size:16px;display:block}.kpi small{color:#666}
 table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #eee;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f6f3ee;font-size:11px}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}tr.tot td{font-weight:800;background:#f6f3ee}tr.forte td{font-weight:800;font-size:13px;background:#fbe7dc;color:#9c4317}
+.grandes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:4px 0 6px}.g{border:1px solid #ddd;border-radius:10px;padding:10px 12px}
+.g span{display:block;font-size:10px;color:#777;text-transform:uppercase;letter-spacing:.06em;font-weight:800}.g b{display:block;font-size:22px;font-variant-numeric:tabular-nums}.g small{color:#666}
+.barra{display:flex;height:26px;border-radius:6px;overflow:hidden;font-size:10px;font-weight:700;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.barra span{display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap}
+.leg{color:#555;font-size:11px;margin:5px 0 0}.leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ul{margin:0;padding-left:18px}li{margin:2px 0}.nota{color:#777;font-size:11px}
+.quebra{break-after:page;page-break-after:always;height:0}
 .vazio{color:#999}footer{margin-top:18px;color:#999;font-size:10px}
 @page{margin:14mm}</style></head><body>
 <header><small>Margem Real · ${esc(nomeLoja)}</small><h1>${esc(rel.titulo)}</h1><p>${esc(rel.subtitulo)}</p></header>${blocos}
@@ -384,11 +430,15 @@ export function csvDoRelatorio(rel) {
   const cel = (c) => `"${String(c ?? "").replace(/"/g, '""')}"`;
   const l = [cel(rel.titulo), cel(rel.subtitulo), ""];
   for (const b of rel.blocos) {
-    if (b.tipo === "kpis") {
+    if (b.tipo === "kpis" || b.tipo === "grandes") {
       for (const i of b.itens) l.push([i.rotulo, i.valor, i.sub || ""].map(cel).join(";"));
       l.push("");
     } else if (b.tipo === "tabela") {
-      l.push(cel(b.titulo), b.colunas.map(cel).join(";"), ...b.linhas.map((x) => x.map(cel).join(";")), "");
+      l.push(cel(b.titulo), b.colunas.map(cel).join(";"), ...b.linhas.map((x) => (Array.isArray(x) ? x : x.c).map(cel).join(";")), "");
+    } else if (b.tipo === "lista") {
+      l.push(cel(b.titulo), ...b.linhas.map(cel), "");
+    } else if (b.tipo === "barra") {
+      l.push(cel(b.titulo), ...(b.partes || []).map((x) => [x.rot, `${Math.round(x.v)}`].map(cel).join(";")), "");
     }
   }
   return l.join("\r\n");

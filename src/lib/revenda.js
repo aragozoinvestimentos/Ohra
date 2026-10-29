@@ -24,9 +24,12 @@ const soDigitos = (s) => String(s || "").replace(/\D/g, "");
 
 export const COMPRAS_NA_MEDIA_REVENDA = 3;
 export const ESTOQUE_PADRAO = { prazo: 7, folga: 3 };
+// Fabricado com estoque pronto: "prazo" = dias pra imprimir de novo; repõe pra cobrir 14 dias.
+export const ESTOQUE_PADRAO_FAB = { prazo: 2, folga: 2, cobrir: 14 };
+export const temEstoquePronto = (p) => p?.origem !== "revenda" && p?.estoque_cfg?.pronto === true;
 export const DIAS_RITMO = 30; // ritmo de vendas pelos últimos 30 dias (desde o início do estoque, se for mais novo)
 export const DIAS_PARADO = 30;
-export const COBRIR_DIAS = 30; // sugestão de compra cobre o prazo + 30 dias
+export const COBRIR_PADRAO = 30; // sugestão de compra cobre o prazo + 30 dias
 export const ALIQUOTA_INTERNA_PADRAO = 0.18;
 
 // ---------- Leitura da NF-e (XML) ----------
@@ -215,21 +218,24 @@ export const ehRevenda = (p) => p?.origem === "revenda";
 
 // ---------- Vendas por produto (dos pedidos importados) ----------
 /**
- * Pedidos válidos (enriquecer) → Map produto_id → [{ data, unidades, pedido }]
+ * Pedidos válidos (enriquecer) → Map produto_id → [{ data, unidades, pedido, saiu }]
  * explodindo variação (× quantidade) e kit (× peças daquele produto).
+ * saiu = pedido Enviado/Entregue (ou venda física): só esses tiram do estoque físico.
  */
 export function vendasPorProduto(pedidos, itens, soProdutos = null) {
   const porId = new Map((itens || []).map((i) => [i.id, i]));
   const out = new Map();
+  let saiu = true;
   const add = (pid, data, u, pedido) => {
     if (!pid || !(u > 0) || (soProdutos && !soProdutos.has(pid))) return;
     if (!out.has(pid)) out.set(pid, []);
-    out.get(pid).push({ data, unidades: u, pedido });
+    out.get(pid).push({ data, unidades: u, pedido, saiu });
   };
   for (const l of pedidos || []) {
     if (!l.valido || !l.id_item) continue;
     const q = num(l.q ?? l.quantidade) || 1;
     const data = String(l.data || "").slice(0, 10);
+    saiu = l.saiu !== false; // sem a marca (dados antigos/testes) = saiu
     const id = l.id_item;
     if (id.startsWith("p:")) add(id.slice(2), data, q, l.pedido);
     else if (id.startsWith("v:")) {
@@ -247,17 +253,23 @@ export function vendasPorProduto(pedidos, itens, soProdutos = null) {
 /**
  * @param movimentos estoque_movimentos do produto (entrada/ajuste/inventario, quantidade ±)
  * @param vendas     [{ data, unidades }] do produto (vendasPorProduto)
- * → { inicio, saldo, entradas, ajustes, vendido, porDia, duraDias, ultimaVenda, negativoEm, semEstoque }
+ * saldo = o que está FÍSICO na loja (entradas + ajustes − pedidos Enviados/Entregues);
+ * reservado = pagos e ainda não enviados; disponivel = saldo − reservado (o que dá pra vender).
+ * O ritmo (porDia) conta TODAS as vendas válidas — é a procura, enviada ou não.
+ * → { inicio, saldo, reservado, disponivel, entradas, ajustes, vendido, porDia, duraDias, ultimaVenda, negativoEm }
  */
 export function estoqueDoProduto({ movimentos = [], vendas = [], hoje }) {
   const movs = [...movimentos].sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.criado_em || "").localeCompare(String(b.criado_em || "")));
-  if (!movs.length) return { inicio: null, saldo: 0, entradas: 0, ajustes: 0, vendido: 0, porDia: 0, duraDias: null, ultimaVenda: null, negativoEm: null, semControle: true };
+  if (!movs.length) return { inicio: null, saldo: 0, reservado: 0, disponivel: 0, entradas: 0, ajustes: 0, vendido: 0, porDia: 0, duraDias: null, ultimaVenda: null, negativoEm: null, semControle: true };
   const inicio = String(movs[0].data).slice(0, 10);
-  const vds = (vendas || []).filter((v) => v.data >= inicio);
-  const entradas = movs.filter((m) => m.tipo === "entrada").reduce((s, m) => s + num(m.quantidade), 0);
-  const ajustes = movs.filter((m) => m.tipo !== "entrada").reduce((s, m) => s + num(m.quantidade), 0);
+  const todas = (vendas || []).filter((v) => v.data >= inicio);
+  const vds = todas.filter((v) => v.saiu !== false);
+  const reservado = todas.filter((v) => v.saiu === false).reduce((s, v) => s + num(v.unidades), 0);
+  const entradas = movs.filter((m) => m.tipo === "entrada" || m.tipo === "producao").reduce((s, m) => s + num(m.quantidade), 0);
+  const ajustes = movs.filter((m) => m.tipo !== "entrada" && m.tipo !== "producao").reduce((s, m) => s + num(m.quantidade), 0);
   const vendido = vds.reduce((s, v) => s + num(v.unidades), 0);
   const saldo = entradas + ajustes - vendido;
+  const disponivel = saldo - reservado;
   // linha do tempo: dia em que ficou negativo (pela ordem dos dias; no mesmo dia, entra antes de sair)
   const eventos = [...movs.map((m) => ({ data: String(m.data).slice(0, 10), q: num(m.quantidade), ordem: 0 })), ...vds.map((v) => ({ data: v.data, q: -num(v.unidades), ordem: 1 }))].sort((a, b) => a.data.localeCompare(b.data) || a.ordem - b.ordem);
   let s = 0;
@@ -270,23 +282,29 @@ export function estoqueDoProduto({ movimentos = [], vendas = [], hoje }) {
   // ritmo: vendas dos últimos 30 dias (ou desde o início, no mínimo 7 dias de base)
   const desde = [somarDias(hoje, -(DIAS_RITMO - 1)), inicio].sort()[1];
   const dias = Math.max(7, diasEntre(desde, hoje) + 1);
-  const recentes = vds.filter((v) => v.data >= desde && v.data <= hoje).reduce((t, v) => t + num(v.unidades), 0);
+  const recentes = todas.filter((v) => v.data >= desde && v.data <= hoje).reduce((t, v) => t + num(v.unidades), 0);
   const porDia = recentes / dias;
-  const ultimaVenda = vds.map((v) => v.data).sort().pop() || null;
-  return { inicio, saldo, entradas, ajustes, vendido, porDia, duraDias: porDia > 0 ? Math.max(0, saldo) / porDia : null, ultimaVenda, negativoEm: saldo < 0 ? negativoEm : null };
+  const ultimaVenda = todas.map((v) => v.data).sort().pop() || null;
+  return { inicio, saldo, reservado, disponivel, entradas, ajustes, vendido, porDia, duraDias: porDia > 0 ? Math.max(0, disponivel) / porDia : null, ultimaVenda, negativoEm: saldo < 0 ? negativoEm : null };
 }
 
 /** → { tipo: 'negativo'|'zerado'|'repor'|'parado'|'ok'|'sem-controle', texto, comprar } */
 export function situacaoEstoque(est, cfg, hoje) {
-  const prazo = num(cfg?.prazo) > 0 ? num(cfg.prazo) : ESTOQUE_PADRAO.prazo;
-  const folga = num(cfg?.folga) >= 0 && cfg?.folga !== "" && cfg?.folga != null ? num(cfg.folga) : ESTOQUE_PADRAO.folga;
-  if (!est || est.semControle) return { tipo: "sem-controle", texto: "sem nota importada", comprar: 0, prazo, folga };
-  const comprar = est.porDia > 0 ? Math.max(0, Math.ceil(est.porDia * (prazo + COBRIR_DIAS) - Math.max(0, est.saldo))) : 0;
+  const fab = !!cfg?.fabricado;
+  const pad = fab ? ESTOQUE_PADRAO_FAB : ESTOQUE_PADRAO;
+  const prazo = num(cfg?.prazo) > 0 ? num(cfg.prazo) : pad.prazo;
+  const folga = num(cfg?.folga) >= 0 && cfg?.folga !== "" && cfg?.folga != null ? num(cfg.folga) : pad.folga;
+  const COBRIR_DIAS = fab ? ESTOQUE_PADRAO_FAB.cobrir : COBRIR_PADRAO;
+  const verbo = fab ? "imprima" : "compre";
+  if (!est || est.semControle) return { tipo: "sem-controle", texto: fab ? "sem estoque inicial" : "sem nota importada", comprar: 0, prazo, folga };
+  const disp = est.disponivel ?? est.saldo;
+  const comprar = est.porDia > 0 ? Math.max(0, Math.ceil(est.porDia * (prazo + COBRIR_DIAS) - Math.max(0, disp))) : 0;
   if (est.saldo < 0) return { tipo: "negativo", texto: `negativo (${fmtQ(est.saldo)}) — falta importar nota ou contar`, comprar, prazo, folga };
-  if (est.saldo === 0) return { tipo: "zerado", texto: est.porDia > 0 ? `acabou — compre ~${comprar} un` : "acabou", comprar, prazo, folga };
+  if (disp < 0) return { tipo: "negativo", texto: `vendeu mais do que tem (${fmtQ(disp)} com os pedidos a enviar) — falta repor ou contar`, comprar, prazo, folga };
+  if (disp === 0) return { tipo: "zerado", texto: est.porDia > 0 ? `acabou — ${verbo} ~${comprar} un` : "acabou", comprar, prazo, folga };
   if (est.duraDias != null && est.duraDias < prazo + folga) {
     const d = Math.floor(est.duraDias);
-    return { tipo: "repor", texto: `repor — acaba em ~${d} dia${d === 1 ? "" : "s"}, o fornecedor leva ${prazo}; compre ~${comprar} un`, comprar, prazo, folga, dura: d };
+    return { tipo: "repor", texto: fab ? `imprimir — acaba em ~${d} dia${d === 1 ? "" : "s"}; imprima ~${comprar} un` : `repor — acaba em ~${d} dia${d === 1 ? "" : "s"}, o fornecedor leva ${prazo}; compre ~${comprar} un`, comprar, prazo, folga, dura: d };
   }
   const semVenda = est.ultimaVenda ? diasEntre(est.ultimaVenda, hoje) : est.inicio ? diasEntre(est.inicio, hoje) : 0;
   if (semVenda >= DIAS_PARADO) return { tipo: "parado", texto: `parado há ${semVenda} dias`, comprar: 0, prazo, folga, dias: semVenda };
@@ -302,6 +320,7 @@ export function extratoEstoque({ movimentos = [], vendas = [], inicio }) {
   const porDia = new Map();
   for (const v of vendas || []) {
     if (inicio && v.data < inicio) continue;
+    if (v.saiu === false) continue; // reservado (ainda não enviado) não mexe no físico
     const x = porDia.get(v.data) || { data: v.data, tipo: "venda", q: 0, pedidos: new Set(), ordem: 1 };
     x.q -= num(v.unidades);
     if (v.pedido) x.pedidos.add(v.pedido);

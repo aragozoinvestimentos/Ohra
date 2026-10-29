@@ -12,6 +12,7 @@ export const SQL_REVENDA = "Rode o supabase/schema_v66.sql no Supabase pra usar 
 const ehFaltaTabela = (e) => !!e && /fornecedor|compras_revenda|estoque_movimentos|origem|compra_revenda_id|schema cache|does not exist/i.test(e.message || "");
 const erro = (e) => ({ message: ehFaltaTabela(e) ? SQL_REVENDA : e?.message || "erro" });
 const cent = (v) => Math.round((Number(v) || 0) * 100) / 100;
+export const SQL_PRODUCAO = "Rode o supabase/schema_v70.sql no Supabase pra ligar a entrada no estoque à impressão (gravei como entrada comum)";
 export const SQL_FISCAL = "Rode o supabase/schema_v69.sql no Supabase pra guardar NCM, CFOP, ST e monofásico";
 const ehFaltaFiscal = (e) => !!e && /ncm|cest|cfop|unidade_com|origem_mercadoria|monofasico|fiscal|cst/i.test(e.message || "");
 const CAMPOS_FISCAIS = ["ncm", "cest", "unidade_com", "origem_mercadoria", "monofasico", "fiscal", "imposto_st"];
@@ -237,8 +238,47 @@ export async function excluirFornecedor(id) {
 }
 
 /** Campos de revenda do produto (prazo/folga do estoque). */
-export async function salvarEstoqueCfg(produtoId, cfg) {
-  const { error } = await supabase.from("produtos_cadastro").update({ estoque_cfg: cfg }).eq("id", produtoId);
+export async function salvarEstoqueCfg(produtoId, cfg, anterior = null) {
+  // mantém o que já estava no jsonb (ex.: pronto) e troca só o que veio
+  const { error } = await supabase.from("produtos_cadastro").update({ estoque_cfg: { ...(anterior || {}), ...cfg } }).eq("id", produtoId);
   recarregarCatalogo();
   return { error: error ? erro(error) : null };
+}
+
+// ---------- Estoque de FABRICADOS (v70, 28/10/2026) ----------
+/**
+ * Liga/desliga "tenho estoque pronto" num produto fabricado. Ligar com `inicial` > 0
+ * grava o estoque de partida (inventário "estoque inicial") — o controle começa aí.
+ */
+export async function marcarEstoquePronto({ lojaId, produto, pronto, inicial = 0, data }) {
+  if (!supabase) return { error: { message: "sem banco" } };
+  const { error } = await supabase.from("produtos_cadastro").update({ estoque_cfg: { ...(produto.estoque_cfg || {}), pronto: !!pronto } }).eq("id", produto.id);
+  if (error) return { error: erro(error) };
+  if (pronto && Number(inicial) >= 0) {
+    const e2 = await supabase.from("estoque_movimentos").insert({ loja_id: lojaId || null, produto_id: produto.id, data, tipo: "inventario", quantidade: Number(inicial) || 0, motivo: "estoque inicial" });
+    if (e2.error) return { error: erro(e2.error) };
+  }
+  recarregarCatalogo();
+  recarregarRevenda();
+  return { error: null };
+}
+
+/**
+ * Impressão com sucesso → entrada no estoque (tipo 'producao', ligada ao registro).
+ * itens = [{ produtoId, quantidade }] (kit impresso junto = uma linha por peça).
+ * Sem o v70 grava como 'entrada' comum e avisa.
+ */
+export async function entradaDeProducao({ lojaId, registroId, itens, data, nome }) {
+  if (!supabase) return { error: { message: "sem banco" } };
+  const linhas = (itens || []).filter((i) => i.produtoId && Number(i.quantidade) > 0);
+  if (!linhas.length) return { error: null };
+  const montar = (v70) => linhas.map((i) => ({ loja_id: lojaId || null, produto_id: i.produtoId, data, tipo: v70 ? "producao" : "entrada", quantidade: Number(i.quantidade), motivo: `impressão${nome ? ` — ${nome}` : ""}`, ...(v70 ? { registro_id: registroId || null } : {}) }));
+  let r = await supabase.from("estoque_movimentos").insert(montar(true));
+  let aviso = null;
+  if (r.error && /registro_id|producao|tipo_chk|check constraint/i.test(r.error.message || "")) {
+    r = await supabase.from("estoque_movimentos").insert(montar(false));
+    aviso = SQL_PRODUCAO;
+  }
+  recarregarRevenda();
+  return { error: r.error ? erro(r.error) : null, aviso };
 }

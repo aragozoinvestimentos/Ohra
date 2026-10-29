@@ -16,6 +16,9 @@ import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import Kpis from "./Kpis.jsx";
 import { usePreferencia } from "../hooks/usePreferencia.js";
+import { entradaDeProducao } from "../lib/revendaAcoes.js";
+import { temEstoquePronto } from "../lib/revenda.js";
+import { hojeSP } from "../lib/datas.js";
 
 const TETO_STORAGE_KEY = "ohra:registro-impressao:teto-prejuizo";
 const TETO_PADRAO = 50;
@@ -42,6 +45,9 @@ export default function RegistroImpressoes({ onToast }) {
   const [salvando, setSalvando] = useState(false);
   const [excluirAlvo, setExcluirAlvo] = useState(null);
   const [produtoSimuladorId, setProdutoSimuladorId] = useState("");
+  // Estoque de fabricados (v70): impressão com sucesso de produto marcado "tenho estoque
+  // pronto" pergunta "Pôr no estoque?" — já preenchido, editável, nunca trava.
+  const [pergunta, setPergunta] = useState(null);
   // Teto de prejuízo por lote: salvo no banco (preferencias_loja, v59) — igual em todo aparelho.
   const [tetoReais, setTetoReais] = usePreferencia("impressao:teto-prejuizo", TETO_PADRAO, { legado: () => {
     try {
@@ -181,7 +187,7 @@ export default function RegistroImpressoes({ onToast }) {
     }
 
     setSalvando(true);
-    const { error } = await supabase.from("registros_impressao").insert({
+    const { data: criado, error } = await supabase.from("registros_impressao").insert({
       loja_id: lojaId || null,
       produto_id: produtoSelecionado?.id || null,
       produto_nome: nome,
@@ -191,11 +197,21 @@ export default function RegistroImpressoes({ onToast }) {
       falha_pct: form.status === "falha" ? Number(form.falhaPct) : null,
       custo_lote_estimado: custoLotePreview,
       observacao: form.observacao.trim() || null,
-    });
+    }).select("id").single();
     setSalvando(false);
     if (error) {
       onToast?.("Não foi possível registrar agora — tente de novo");
       return;
+    }
+    if (form.status === "sucesso") {
+      // peças que entram no estoque: o produto, ou as peças do kit impresso junto
+      const pecas = produtoSelecionado
+        ? [{ produto: produtoSelecionado, quantidade }]
+        : kitSelecionado
+          ? kitProdutos.filter((kp) => kp.kit_id === kitSelecionado.id).map((kp) => ({ produto: produtos.find((p) => p.id === kp.produto_id), quantidade: quantidade * (Number(kp.quantidade) || 1) }))
+          : [];
+      const itens = pecas.filter((x) => temEstoquePronto(x.produto)).map((x) => ({ produtoId: x.produto.id, nome: x.produto.nome, quantidade: String(x.quantidade) }));
+      if (itens.length) setPergunta({ registroId: criado?.id || null, nome, itens });
     }
     setForm((prev) => ({ ...VAZIO_FORM, produtoId: prev.produtoId }));
     onToast?.("Impressão registrada");
@@ -376,6 +392,41 @@ export default function RegistroImpressoes({ onToast }) {
           <button className="btn primary" style={{ marginTop: 10, width: "100%" }} disabled={salvando} onClick={registrar}>
             {salvando ? "Registrando…" : "Registrar impressão"}
           </button>
+          {pergunta && (
+            <div className="alerta alerta-good" style={{ marginTop: 10 }}>
+              <b>Pôr no estoque de prontos?</b>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                {pergunta.itens.map((it, i) => (
+                  <label key={it.produtoId} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ flex: "1 1 160px" }}>{it.nome} — peças boas</span>
+                    <input
+                      inputMode="numeric"
+                      style={{ width: 90 }}
+                      value={it.quantidade}
+                      onChange={(e) => setPergunta((p) => ({ ...p, itens: p.itens.map((x, j) => (j === i ? { ...x, quantidade: e.target.value } : x)) }))}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                <button
+                  type="button"
+                  className="btn primary btn-mini"
+                  onClick={async () => {
+                    const r = await entradaDeProducao({ lojaId, registroId: pergunta.registroId, nome: pergunta.nome, data: hojeSP(), itens: pergunta.itens.map((x) => ({ produtoId: x.produtoId, quantidade: Number(String(x.quantidade).replace(",", ".")) || 0 })) });
+                    onToast?.(r.error ? r.error.message : r.aviso || "No estoque ✓");
+                    if (!r.error) setPergunta(null);
+                  }}
+                >
+                  Pôr no estoque
+                </button>
+                <button type="button" className="btn btn-mini" onClick={() => setPergunta(null)}>
+                  Não, foi pra encomenda
+                </button>
+              </div>
+              <p className="hint" style={{ margin: "6px 0 0" }}>Se fechar sem responder, nada trava: dá pra lançar depois em Estoque e compras (± Ajustar).</p>
+            </div>
+          )}
         </div>
 
         <div className="panel">

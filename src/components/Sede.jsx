@@ -971,7 +971,7 @@ function ResumoEstoque({ linhas }) {
   if (!linhas.length) return <div className="sede-ok">Fornecedor ou nota já cadastrados — os produtos de revenda aparecem aqui com o estoque.</div>;
   return (
     <div className="sede-ok">
-      {linhas.length} {linhas.length === 1 ? "produto" : "produtos"} de revenda · {BRL(valor)} em estoque
+      {linhas.length} {linhas.length === 1 ? "produto" : "produtos"} com estoque · {BRL(valor)} em estoque
       {repor ? ` · ${repor} pra repor` : ""}
       {parados ? ` · ${parados} parado${parados > 1 ? "s" : ""}` : ""}
       {!comControle.length ? " · o estoque começa na 1ª nota importada" : ""}

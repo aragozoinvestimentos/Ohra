@@ -221,29 +221,39 @@ const mesesEntre = (de, ate) => {
   }
   return out;
 };
+// Enxuta (28/10/2026, aprovada pela prévia): 8 linhas, faturamento cheio/descontos e
+// devoluções viram uma linha pequena embaixo do Faturado (bruto, descontos, devolvido).
 export const LINHAS_CASCATA = [
-  { k: "bruto", rot: "Faturamento cheio (preço × quantidade)" },
-  { k: "descontos", rot: "− Descontos (promo, cupom, rampa)", menos: true },
-  { k: "pago", rot: "= Faturado (o que o cliente pagou)", total: true },
-  { k: "taxas", rot: "− Taxas das plataformas", menos: true },
+  { k: "pago", rot: "Faturado", total: true },
+  { k: "taxas", rot: "− Plataformas (comissão + taxa fixa)", menos: true },
   { k: "imposto", rot: "− Impostos", menos: true },
-  { k: "custo", rot: "− Custo dos produtos (repor)", menos: true },
+  { k: "custo", rot: "− Custo dos produtos", menos: true },
   { k: "lucroBruto", rot: "= Lucro bruto", total: true },
   { k: "ads", rot: "− Ads", menos: true },
-  { k: "depoisAds", rot: "= Lucro depois do Ads", total: true },
   { k: "fixas", rot: "− Contas fixas", menos: true },
-  { k: "liquido", rot: "= Lucro líquido", total: true, forte: true },
+  { k: "liquido", rot: "= Sobrou pra você (lucro líquido)", total: true, forte: true },
 ];
 export function cascataDoPeriodo({ pedidos = [], linhasAds, lancamentos = [], de, ate }) {
-  const vazio = () => ({ bruto: 0, descontos: 0, pago: 0, taxas: 0, imposto: 0, custo: 0, lucroBruto: 0, ads: 0, depoisAds: 0, fixas: null, liquido: null, pedidos: new Set(), semCusto: 0 });
+  const vazio = () => ({ bruto: 0, descontos: 0, pago: 0, taxas: 0, imposto: 0, custo: 0, lucroBruto: 0, ads: 0, depoisAds: 0, fixas: null, liquido: null, pedidos: new Set(), semCusto: 0, devolvido: 0, devolvidos: new Set() });
   const total = vazio();
   const porCanal = new Map();
   for (const p of pedidos) {
-    if (!p.valido) continue;
     const d = String(p.data).slice(0, 10);
     if (d < de || d > ate) continue;
     const kc = p.canal?.id || "fisico";
     const c = porCanal.get(kc) || { ...vazio(), canal: p.canal || null, nome: p.canal?.nome || "Venda física" };
+    // Devolução (como na DRE da Onicanal): pedido que voltou — já fica FORA do faturado
+    // (não é válido); aparece à parte pra você ver quanto voltou no período.
+    if (!p.valido) {
+      if (/devolv/i.test(String(p.situacao || ""))) {
+        for (const x of [total, c]) {
+          x.devolvido += num(p.pago);
+          x.devolvidos.add(p.pedido);
+        }
+        porCanal.set(kc, c);
+      }
+      continue;
+    }
     for (const x of [total, c]) {
       const pago = num(p.pago);
       const bruto = Math.max(pago, num(p.bruto) || pago);
@@ -274,9 +284,10 @@ export function cascataDoPeriodo({ pedidos = [], linhasAds, lancamentos = [], de
       x.fixas = mesesEntre(de, ate).reduce((s, m) => s + despesasFixasDoMes(lancamentos, m).total, 0);
       x.liquido = x.depoisAds - x.fixas;
     }
-    for (const k of ["bruto", "descontos", "pago", "taxas", "imposto", "custo", "lucroBruto", "ads", "depoisAds", "fixas", "liquido"]) if (x[k] != null) x[k] = Math.round(x[k] * 100) / 100;
+    for (const k of ["bruto", "descontos", "pago", "taxas", "imposto", "custo", "lucroBruto", "ads", "depoisAds", "fixas", "liquido", "devolvido"]) if (x[k] != null) x[k] = Math.round(x[k] * 100) / 100;
     x.nPedidos = x.pedidos.size;
+    x.nDevolvidos = x.devolvidos.size;
     return x;
   };
-  return { total: fechar(total, true), canais: [...porCanal.values()].map((c) => fechar(c, false)).sort((a, b) => b.pago - a.pago) };
+  return { total: fechar(total, true), canais: [...porCanal.values()].filter((c) => c.pedidos.size > 0).map((c) => fechar(c, false)).sort((a, b) => b.pago - a.pago) };
 }

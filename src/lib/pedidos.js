@@ -50,6 +50,10 @@ export const ehEntregue = (sit) => /entregue/i.test(String(sit || "")) && !ehCan
 // dados de envio. Não conta como venda; vai pra Análise → Carrinhos abandonados.
 export const ehNaoPago = (sit) => /dados incompletos|aguardando pagamento|pagamento pendente/i.test(String(sit || ""));
 export const ehValido = (p) => !ehCancelado(p.situacao) && !ehNaoPago(p.situacao);
+// Saiu da loja (28/10/2026, pedido do Gustavo): "Enviado" (já despachado) ou "Entregue" —
+// é aí que o produto sai do ESTOQUE. Pago e ainda não enviado ("Pronto para envio",
+// "Faturado"…) fica RESERVADO (continua na prateleira). Venda física sai na hora.
+export const ehSaiu = (sit) => /enviado|entregue/i.test(String(sit || "")) && !ehCancelado(sit) && !/n[ãa]o enviado/i.test(String(sit || ""));
 
 // ---------- Leitura do "Pedidos de venda" da Olist ----------
 const COLS = {
@@ -201,7 +205,7 @@ export function enriquecer(pedidos, { itens, canais, cfgDoProduto, itemNoCanal =
       recebe = (pago / q) * (1 - t.comissaoPct) * q - t.taxaFixa * q;
       imposto = pago * (num(canal.imposto_pct) + num(canal.custos_fixos_pct));
     }
-    return { ...p, id_item: id, item, grupo, canal, q, pago, bruto: valorBruto(p), lucro, recebe, imposto, taxas: pago - recebe + imposto, custo, valido: ehValido(p), naoPago: ehNaoPago(p.situacao), entregue: ehEntregue(p.situacao), skuExato };
+    return { ...p, id_item: id, item, grupo, canal, q, pago, bruto: valorBruto(p), lucro, recebe, imposto, taxas: pago - recebe + imposto, custo, valido: ehValido(p), naoPago: ehNaoPago(p.situacao), entregue: ehEntregue(p.situacao), saiu: p.origem === "fisico" || ehSaiu(p.situacao), skuExato };
   });
 }
 

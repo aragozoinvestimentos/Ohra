@@ -109,7 +109,7 @@ export function montarPendencias({
       grupo: "rotina",
       ordem: 3,
       tom: "warn",
-      titulo: `${l.produto.nome}: ${t === "negativo" ? "estoque negativo" : t === "zerado" ? "estoque acabou" : "repor o estoque"}`,
+      titulo: `${l.produto.nome}: ${t === "negativo" ? "estoque negativo" : t === "zerado" ? "estoque acabou" : l.fabricado ? "imprimir pro estoque" : "repor o estoque"}`,
       texto: l.sit.texto,
       valor: t === "negativo" ? 0 : Math.round((l.est.porDia || 0) * 7 * (Number(l.produto.custo_producao) || 0) * 0.5),
       ir: { aba: "estoque", pedido: { sub: t === "negativo" ? "inventario" : "estoque" } },

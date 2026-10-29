@@ -13,11 +13,13 @@ import { BRL } from "../lib/format.js";
 import { ALIQUOTA_INTERNA_PADRAO, compraDeForaDoEstado, custoDosItens, diferencasInventario, palpiteFator, ehRevenda, extratoEstoque, ligarItem, lerNfe, fiscalDoItem, produtosParecidos, sugerirSku } from "../lib/revenda.js";
 import { usePedidos } from "../hooks/usePedidos.js";
 import { abrirProduto } from "../lib/anuncios.js";
-import { ajustarEstoque, camposFiscais, excluirFornecedor, excluirMovimento, excluirNota, gravarInventario, gravarNota, salvarEstoqueCfg, salvarFornecedor, SQL_REVENDA } from "../lib/revendaAcoes.js";
+import { ajustarEstoque, marcarEstoquePronto, camposFiscais, excluirFornecedor, excluirMovimento, excluirNota, gravarInventario, gravarNota, salvarEstoqueCfg, salvarFornecedor, SQL_REVENDA } from "../lib/revendaAcoes.js";
 
-// Operação → Estoque e compras (REVENDA, schema v66, 24/10/2026). O estoque de cada
-// produto de revenda começa na 1ª nota importada (XML), sai sozinho pelos pedidos
-// importados da Olist e só tem ajuste à mão nas exceções e no inventário.
+// Operação → Estoque e compras (REVENDA, schema v66, 24/10/2026; FABRICADOS v70, 28/10/2026).
+// O estoque de cada produto de revenda começa na 1ª nota importada (XML); o fabricado
+// marcado "tenho estoque pronto" começa no estoque inicial e recebe as impressões.
+// Sai sozinho pelos pedidos importados da Olist quando o pedido vira ENVIADO/Entregue
+// (pago e ainda não enviado = "a enviar") e só tem ajuste à mão nas exceções e no inventário.
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—");
 const dmy = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "—");
 const fq = (q) => (Number.isInteger(q) ? String(q) : Number(q).toFixed(1).replace(".", ","));
@@ -59,26 +61,100 @@ export default function EstoqueCompras({ onToast }) {
 // ---------------------------------------------------------------- Estoque
 function Estoque({ est, onToast }) {
   const { lojaId } = useLoja();
-  const { linhas, hoje } = est;
+  const { linhas: todas, hoje } = est;
+  const { produtos } = useRankingData();
+  const [filtro, setFiltro] = useState("todos");
   const [aberto, setAberto] = useState(null);
   const [ajuste, setAjuste] = useState(null);
   const [cfgEdit, setCfgEdit] = useState(null);
   const [apagar, setApagar] = useState(null);
+  const [novoFab, setNovoFab] = useState(null);
+  const [parar, setParar] = useState(null);
+  const temFab = todas.some((l) => l.fabricado);
+  const temRev = todas.some((l) => !l.fabricado);
+  const linhas = todas.filter((l) => filtro === "todos" || (filtro === "fab" ? l.fabricado : !l.fabricado));
   const controladas = linhas.filter((l) => !l.est.semControle);
   const valor = controladas.reduce((s, l) => s + l.valor, 0);
   const unidades = controladas.reduce((s, l) => s + Math.max(0, l.est.saldo), 0);
+  const aEnviar = controladas.reduce((s, l) => s + (l.est.reservado || 0), 0);
   const repor = linhas.filter((l) => ["repor", "zerado", "negativo"].includes(l.sit.tipo));
   const parados = linhas.filter((l) => l.sit.tipo === "parado");
   const custoDia = controladas.reduce((s, l) => s + l.est.porDia * l.custo, 0);
   const giro = custoDia > 0 ? Math.round(valor / custoDia) : null;
+  const marcados = new Set(todas.map((l) => l.produto.id));
+  const fabricaveis = (produtos || []).filter((p) => p.origem !== "revenda" && !marcados.has(p.id)).sort((a, b) => a.nome.localeCompare(b.nome));
+  const botaoFab = (
+    <button type="button" className="btn btn-mini" onClick={() => setNovoFab({ produtoId: "", inicial: "", data: hoje })}>
+      + Controlar estoque de um fabricado
+    </button>
+  );
+  const dialogos = (
+    <>
+      {novoFab && (
+        <EditarDialog
+          titulo="Controlar o estoque de um produto fabricado"
+          salvarLabel="Começar a controlar"
+          onCancelar={() => setNovoFab(null)}
+          onSalvar={async () => {
+            const p = (produtos || []).find((x) => x.id === novoFab.produtoId);
+            if (!p) return onToast?.("Escolha o produto");
+            const r = await marcarEstoquePronto({ lojaId, produto: p, pronto: true, inicial: num(novoFab.inicial), data: novoFab.data });
+            onToast?.(r.error ? r.error.message : `${p.nome}: estoque controlado a partir de ${dm(novoFab.data)}`);
+            if (!r.error) setNovoFab(null);
+          }}
+        >
+          <div className="grid-auto">
+            <label>
+              Produto
+              <select value={novoFab.produtoId} onChange={(e) => setNovoFab({ ...novoFab, produtoId: e.target.value })}>
+                <option value="">— escolha —</option>
+                {fabricaveis.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                    {p.sku ? ` (${p.sku})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Quantos prontos você tem hoje
+              <input inputMode="numeric" value={novoFab.inicial} placeholder="0" onChange={(e) => setNovoFab({ ...novoFab, inicial: e.target.value })} />
+            </label>
+            <label>
+              A partir de
+              <input type="date" value={novoFab.data} onChange={(e) => setNovoFab({ ...novoFab, data: e.target.value })} />
+            </label>
+          </div>
+          <p className="hint">
+            Só os produtos que você deixa prontos (os sob pedido ficam de fora). Daqui pra frente: cada impressão com sucesso pergunta "Pôr no estoque?" (Produção → Registro de impressões) e cada pedido ENVIADO na Olist tira do estoque sozinho. Kit vendido tira as peças dele.
+          </p>
+        </EditarDialog>
+      )}
+      {parar && (
+        <ConfirmDialog
+          titulo={`Parar de controlar o estoque de ${parar.nome}?`}
+          mensagem="O histórico fica guardado. O produto some da lista de estoque e as impressões dele deixam de perguntar. Dá pra voltar a controlar depois."
+          confirmarLabel="Parar de controlar"
+          onCancel={() => setParar(null)}
+          onConfirm={async () => {
+            const r = await marcarEstoquePronto({ lojaId, produto: parar, pronto: false });
+            onToast?.(r.error ? r.error.message : "Pronto — não controla mais");
+            setParar(null);
+          }}
+        />
+      )}
+    </>
+  );
 
-  if (!linhas.length)
+  if (!todas.length)
     return (
       <div className="panel">
         <h3>Estoque</h3>
         <div className="empty">
-          Nenhum produto de revenda ainda. Comece em <b>Notas de compra → Importar nota (XML)</b>: cada item da nota vira (ou se liga a) um produto de revenda, e o estoque começa ali. Também dá pra marcar um produto como "Revenda" em Cadastro de produtos.
+          Nenhum produto com estoque ainda. <b>Revenda:</b> comece em Notas de compra → Importar nota (XML ou PDF) — cada item vira (ou se liga a) um produto de revenda. <b>Fabricados:</b> marque os que você deixa prontos.
+          <div style={{ marginTop: 8 }}>{botaoFab}</div>
         </div>
+        {dialogos}
       </div>
     );
 
@@ -94,19 +170,36 @@ function Estoque({ est, onToast }) {
       />
       <CompletarCadastro linhas={linhas} />
       <div className="panel">
-        <h3>Produtos de revenda</h3>
+        <h3>Estoque</h3>
+        <div className="toolbar" style={{ gap: 8 }}>
+          {temFab && temRev && (
+            <div className="subabas">
+              {[
+                ["todos", "Todos"],
+                ["rev", "Revenda"],
+                ["fab", "Fabricados"],
+              ].map(([k, r]) => (
+                <button key={k} type="button" className={`btn${filtro === k ? " primary" : ""}`} onClick={() => setFiltro(k)}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          )}
+          {botaoFab}
+        </div>
         <p className="hint">
-          Entra pela nota (XML) e sai pelos pedidos importados da Olist — pago baixa, cancelado/devolvido volta. Atualizado até o último arquivo de pedidos que você subiu.
+          Entra pela nota (revenda) ou pela impressão (fabricado) e sai quando o pedido importado da Olist vira <b>Enviado</b> — pago e ainda não enviado aparece em "a enviar" (continua na prateleira). Cancelado/devolvido não tira. {aEnviar > 0 ? `Agora: ${fq(aEnviar)} un a enviar.` : ""}
         </p>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Produto</th>
-                <th>Em estoque</th>
+                <th>Na prateleira</th>
+                <th>A enviar</th>
                 <th>Vende/dia</th>
                 <th>Dura</th>
-                <th>Prazo forn.</th>
+                <th>Prazo</th>
                 <th>Custo médio</th>
                 <th>Valor</th>
                 <th>Situação</th>
@@ -114,7 +207,7 @@ function Estoque({ est, onToast }) {
             </thead>
             <tbody>
               {linhas.map((l) => (
-                <LinhaEstoque key={l.produto.id} l={l} aberto={aberto === l.produto.id} onClick={() => setAberto(aberto === l.produto.id ? null : l.produto.id)} onAjustar={() => setAjuste({ produto: l.produto, qtd: "", sinal: "-", motivo: "Perda / quebra", data: hoje })} onCfg={() => setCfgEdit({ produto: l.produto, prazo: String(l.sit.prazo), folga: String(l.sit.folga) })} onApagar={setApagar} />
+                <LinhaEstoque key={l.produto.id} l={l} aberto={aberto === l.produto.id} onClick={() => setAberto(aberto === l.produto.id ? null : l.produto.id)} onAjustar={() => setAjuste({ produto: l.produto, qtd: "", sinal: "-", motivo: "Perda / quebra", data: hoje })} onCfg={() => setCfgEdit({ produto: l.produto, fabricado: l.fabricado, prazo: String(l.sit.prazo), folga: String(l.sit.folga) })} onApagar={setApagar} onParar={() => setParar(l.produto)} />
               ))}
             </tbody>
           </table>
@@ -161,19 +254,20 @@ function Estoque({ est, onToast }) {
           </div>
         </EditarDialog>
       )}
+      {dialogos}
       {cfgEdit && (
         <EditarDialog
-          titulo={`Quando avisar pra repor — ${cfgEdit.produto.nome}`}
+          titulo={`Quando avisar pra ${cfgEdit.fabricado ? "imprimir" : "repor"} — ${cfgEdit.produto.nome}`}
           onCancelar={() => setCfgEdit(null)}
           onSalvar={async () => {
-            const r = await salvarEstoqueCfg(cfgEdit.produto.id, { prazo: num(cfgEdit.prazo) || null, folga: cfgEdit.folga === "" ? null : num(cfgEdit.folga) });
+            const r = await salvarEstoqueCfg(cfgEdit.produto.id, { prazo: num(cfgEdit.prazo) || null, folga: cfgEdit.folga === "" ? null : num(cfgEdit.folga) }, cfgEdit.produto.estoque_cfg);
             onToast?.(r.error ? r.error.message : "Salvo");
             if (!r.error) setCfgEdit(null);
           }}
         >
           <div className="grid-auto">
             <label>
-              Prazo do fornecedor (dias)
+              {cfgEdit.fabricado ? "Dias pra imprimir de novo" : "Prazo do fornecedor (dias)"}
               <input inputMode="numeric" value={cfgEdit.prazo} onChange={(e) => setCfgEdit({ ...cfgEdit, prazo: e.target.value })} />
             </label>
             <label>
@@ -181,7 +275,7 @@ function Estoque({ est, onToast }) {
               <input inputMode="numeric" value={cfgEdit.folga} onChange={(e) => setCfgEdit({ ...cfgEdit, folga: e.target.value })} />
             </label>
           </div>
-          <p className="hint">Avisa "repor" quando o estoque durar menos que prazo + folga. Sugestão de compra = o que cobre o prazo + 30 dias de venda.</p>
+          <p className="hint">{cfgEdit.fabricado ? 'Avisa "imprimir" quando o estoque durar menos que dias + folga. Sugestão = o que cobre os dias + 14 dias de venda.' : 'Avisa "repor" quando o estoque durar menos que prazo + folga. Sugestão de compra = o que cobre o prazo + 30 dias de venda.'}</p>
         </EditarDialog>
       )}
       {apagar && (
@@ -202,7 +296,7 @@ function Estoque({ est, onToast }) {
   );
 }
 
-function LinhaEstoque({ l, aberto, onClick, onAjustar, onCfg, onApagar }) {
+function LinhaEstoque({ l, aberto, onClick, onAjustar, onCfg, onApagar, onParar }) {
   const { produto: p, est: e, sit } = l;
   const extrato = useMemo(() => (aberto ? extratoEstoque({ movimentos: l.movimentos, vendas: l.vendas, inicio: e.inicio }) : []), [aberto, l.movimentos, l.vendas, e.inicio]);
   return (
@@ -210,33 +304,44 @@ function LinhaEstoque({ l, aberto, onClick, onAjustar, onCfg, onApagar }) {
       <tr className="linha-clicavel" onClick={onClick} style={{ cursor: "pointer" }}>
         <td>
           <b>{p.nome}</b>
-          <div className="muted-cel">{[p.sku, l.fornecedor?.nome].filter(Boolean).join(" · ")}</div>
+          <div className="muted-cel">{[l.fabricado ? "fabricado" : "revenda", p.sku, l.fornecedor?.nome].filter(Boolean).join(" · ")}</div>
         </td>
         <td>{e.semControle ? "—" : `${fq(e.saldo)} un`}</td>
+        <td>{e.reservado ? `${fq(e.reservado)} un` : "—"}</td>
         <td>{e.porDia ? e.porDia.toFixed(1).replace(".", ",") : "0"}</td>
         <td>{e.duraDias != null ? `~${Math.floor(e.duraDias)} dias` : "—"}</td>
-        <td>{sit.prazo} dias</td>
+        <td>{sit.prazo} {sit.prazo === 1 ? "dia" : "dias"}</td>
         <td>{BRL(l.custo)}</td>
         <td>{e.semControle ? "—" : BRL(l.valor)}</td>
         <td>{sit.tipo === "ok" ? <span className="muted-cel">✓ ok</span> : <Estado tipo={TOM[sit.tipo] || "info"}>{sit.texto}</Estado>}</td>
       </tr>
       {aberto && (
         <tr className="linha-detalhe">
-          <td colSpan={8}>
+          <td colSpan={9}>
             <div className="detalhe-cel">
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <b>Movimentos{e.inicio ? ` desde ${dmy(e.inicio)} (1ª nota)` : ""}</b>
+                <b>Movimentos{e.inicio ? ` desde ${dmy(e.inicio)}${l.fabricado ? "" : " (1ª nota)"}` : ""}</b>
                 <button type="button" className="btn btn-mini" onClick={onAjustar}>
                   ± Ajustar (perda, brinde, amostra…)
                 </button>
                 <button type="button" className="btn btn-mini" onClick={onCfg}>
-                  Quando avisar pra repor
+                  {l.fabricado ? "Quando avisar pra imprimir" : "Quando avisar pra repor"}
                 </button>
+                {l.fabricado && (
+                  <button type="button" className="link-btn" onClick={onParar}>
+                    parar de controlar
+                  </button>
+                )}
               </div>
+              {e.reservado > 0 && (
+                <p className="muted-cel">
+                  {fq(e.reservado)} un pagas e ainda não enviadas (a enviar) — saem do estoque quando o pedido virar Enviado no próximo arquivo da Olist. Disponível pra vender: {fq(e.disponivel)} un.
+                </p>
+              )}
               {e.negativoEm && (
                 <div className="alerta alerta-bad">
                   <b>! Estoque ficou negativo em {dm(e.negativoEm)}</b>
-                  Vendeu mais do que tinha entrado — normalmente é nota ainda não importada ou contagem errada. Importe a nota que falta ou faça o inventário. O app não bloqueia a venda (o pedido já aconteceu), só avisa.
+                  Saiu mais do que tinha entrado — normalmente é {l.fabricado ? "impressão que não foi posta no estoque" : "nota ainda não importada"} ou contagem errada. {l.fabricado ? "Registre a entrada (± Ajustar) ou faça o inventário." : "Importe a nota que falta ou faça o inventário."} O app não bloqueia a venda (o pedido já aconteceu), só avisa.
                 </div>
               )}
               {extrato.length ? (
@@ -255,12 +360,12 @@ function LinhaEstoque({ l, aberto, onClick, onAjustar, onCfg, onApagar }) {
                     {extrato.map((x, i) => (
                       <tr key={x.id || `${x.data}-${i}`}>
                         <td>{dm(x.data)}</td>
-                        <td>{x.tipo === "entrada" ? "Entrada — compra" : x.tipo === "venda" ? "Venda" : x.tipo === "inventario" ? "Inventário" : "Ajuste"}</td>
-                        <td>{x.tipo === "venda" ? `${x.pedidos} pedido${x.pedidos === 1 ? "" : "s"} importado${x.pedidos === 1 ? "" : "s"}` : x.motivo || "—"}</td>
+                        <td>{x.tipo === "entrada" ? (x.compraId ? "Entrada — compra" : "Entrada") : x.tipo === "producao" ? "Entrada — impressão" : x.tipo === "venda" ? "Saída — enviado" : x.tipo === "inventario" ? "Inventário" : "Ajuste"}</td>
+                        <td>{x.tipo === "venda" ? `${x.pedidos} pedido${x.pedidos === 1 ? "" : "s"} enviado${x.pedidos === 1 ? "" : "s"}` : x.motivo || "—"}</td>
                         <td style={{ color: x.q > 0 ? "var(--good)" : undefined, fontWeight: x.q > 0 ? 700 : undefined }}>{x.q > 0 ? `+${fq(x.q)}` : fq(x.q)}</td>
                         <td style={{ color: x.saldo < 0 ? "var(--bad)" : undefined }}>{fq(x.saldo)}</td>
                         <td>
-                          {(x.tipo === "ajuste" || x.tipo === "inventario") && (
+                          {(x.tipo === "ajuste" || x.tipo === "inventario" || x.tipo === "producao" || (x.tipo === "entrada" && !x.compraId)) && (
                             <button type="button" className="link-btn" onClick={() => onApagar(x)} title="Apagar este ajuste">
                               ×
                             </button>
@@ -271,7 +376,7 @@ function LinhaEstoque({ l, aberto, onClick, onAjustar, onCfg, onApagar }) {
                   </tbody>
                 </table>
               ) : (
-                <p className="muted-cel">Sem movimentos — importe uma nota de compra com este produto.</p>
+                <p className="muted-cel">{l.fabricado ? "Sem movimentos — registre uma impressão ou faça o inventário." : "Sem movimentos — importe uma nota de compra com este produto."}</p>
               )}
             </div>
           </td>

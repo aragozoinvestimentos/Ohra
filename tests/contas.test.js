@@ -177,7 +177,7 @@ describe("relatórios do consultor", async () => {
     const lancamentos = [{ recorrencia: "mensal", tipo: "saida", categoria: "aluguel", valor: 15, data_prevista: "2026-01-05" }];
     const r = relatorioFechamento({ pedidos, linhasAds: null, lancamentos, hoje: "2026-10-24", nomeDe: () => "A" }, "2026-09");
     const kpi = (rot) => r.blocos[0].itens.find((i) => i.rotulo === rot).valor.replace(/\s/g, " ");
-    expect(kpi("Lucro líquido")).toBe("R$ 25,00");
+    expect(kpi("Sobrou pra você")).toBe("R$ 25,00");
   });
 });
 
@@ -579,5 +579,25 @@ describe("Do faturamento ao lucro (cascata)", () => {
     const lancamentos = [{ tipo: "saida", recorrencia: "mensal", categoria: "taxas", descricao: "DAS MEI", valor: 80, data_prevista: "2026-01-20" }];
     const c = cascataDoPeriodo({ pedidos, linhasAds: { linhas: [] }, lancamentos, de: "2026-10-01", ate: "2026-10-31" }).total;
     expect(c).toMatchObject({ bruto: 100, descontos: 10, pago: 90, taxas: 20, custo: 30, lucroBruto: 40, ads: 0, depoisAds: 40, fixas: 80, liquido: -40 });
+  });
+});
+
+describe("estoque: sai no Enviado (28/10/2026)", () => {
+  it("pago e não enviado fica a enviar; enviado tira do físico", async () => {
+    const { vendasPorProduto, estoqueDoProduto } = await import("../src/lib/revenda.js");
+    const { ehSaiu } = await import("../src/lib/pedidos.js");
+    expect(ehSaiu("Enviado")).toBe(true);
+    expect(ehSaiu("Entregue")).toBe(true);
+    expect(ehSaiu("Pronto para envio")).toBe(false);
+    expect(ehSaiu("Cancelado")).toBe(false);
+    const pedidos = [
+      { valido: true, id_item: "p:a", q: 2, data: "2026-10-20", pedido: "1", saiu: true },
+      { valido: true, id_item: "p:a", q: 3, data: "2026-10-21", pedido: "2", saiu: false },
+    ];
+    const v = vendasPorProduto(pedidos, [], null).get("a");
+    const e = estoqueDoProduto({ movimentos: [{ tipo: "entrada", quantidade: 10, data: "2026-10-01" }, { tipo: "producao", quantidade: 4, data: "2026-10-02" }], vendas: v, hoje: "2026-10-22" });
+    expect(e.saldo).toBe(12);
+    expect(e.reservado).toBe(3);
+    expect(e.disponivel).toBe(9);
   });
 });
