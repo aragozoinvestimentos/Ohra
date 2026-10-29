@@ -11,6 +11,9 @@ import { configOrganicoDoItem } from "../lib/embalagemCanal.js";
 import { gruposPorItem } from "../lib/anunciosGrupo.js";
 import { adsNaJanela } from "../lib/ads.js";
 import { hojeSP } from "../lib/datas.js";
+import { ehRevenda } from "../lib/revenda.js";
+import { abrirEstoque } from "../lib/estoqueNav.js";
+import { useRevenda } from "../hooks/useRevenda.js";
 import { BRL, PCT } from "../lib/format.js";
 import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
@@ -44,7 +47,7 @@ function lerSel() {
 }
 
 /** Passos do cadastro e o que falta (só leitura — o editor é o de Cadastros). */
-function passosDoCadastro({ it, prod, kit, esc, produtoEmbalagens, kitEmbalagens, impressoras, cal, canaisCom }) {
+function passosDoCadastro({ it, prod, kit, esc, produtoEmbalagens, kitEmbalagens, impressoras, cal, canaisCom, notasDoProduto = 0 }) {
   if (!it) return [];
   const ehKit = it.id.startsWith("k:");
   const ok = (b) => !!b;
@@ -73,14 +76,24 @@ function passosDoCadastro({ it, prod, kit, esc, produtoEmbalagens, kitEmbalagens
       falta: [!it.sku && "SKU", !(num(prod?.peso_g) > 0) && "peso"].filter(Boolean).join(", ") || null,
       editar: "cadastro",
     },
-    {
+    ehRevenda(prod)
+      ? {
+          // Revenda = comprado pronto: o custo é o de compra (média das notas ou digitado), sem detalhamento de produção.
+          k: "producao",
+          rot: "Custo de compra",
+          ok: notasDoProduto > 0 || num(it.custoProducao) > 0,
+          res: notasDoProduto > 0 ? `${BRL(it.custoProducao)} por unidade · média de ${notasDoProduto} ${notasDoProduto === 1 ? "nota" : "notas"} de compra` : num(it.custoProducao) > 0 ? `custo digitado (${BRL(it.custoProducao)}) — importe a nota de compra pra ficar exato` : "sem custo de compra",
+          falta: notasDoProduto > 0 || num(it.custoProducao) > 0 ? null : "custo de compra (ou a nota)",
+          editar: "notas",
+        }
+      : {
       k: "producao",
       rot: "Produção e custo",
       ok: temProd,
       res: temProd ? [imp?.nome || "impressora padrão", prod.material_nome || prod.producao_detalhe?.materialNome || "filamento", `chapa de ${Math.max(1, num(prod.pecas_por_impressao) || 1)}`, `fabricação ${BRL(it.custoProducao)}`].join(" · ") : `custo digitado à mão (${BRL(it.custoProducao)}) — sem detalhamento`,
       falta: !temProd ? "detalhamento do custo" : null,
       editar: "custo",
-    },
+        },
     {
       k: "embalagem",
       rot: "Embalagem",
@@ -99,6 +112,7 @@ export default function PaginaProduto({ onToast, onEditar }) {
   const esc = useEscada();
   const cres = useCrescimento();
   const cat = useCatalogo();
+  const rev = useRevenda();
   const hoje = hojeSP();
   const [itemId, setItemId] = useState(lerSel);
   const [aba, setAba] = useState("visao");
@@ -141,8 +155,9 @@ export default function PaginaProduto({ onToast, onEditar }) {
   const prod = ehKit ? null : esc.produtos.find((p) => p.id === it.id.slice(2)) || null;
   const kit = ehKit ? (esc.kits || []).find((k) => k.id === it.id.slice(2)) || null : null;
   const cal = configCalendario(esc.cfgLoja);
+  const notasDoProduto = prod ? new Set(rev.comprasItens.filter((x) => x.produto_id === prod.id).map((x) => x.compra_id)).size : 0;
   const canaisCom = esc.canais.filter((c) => meus.some((l) => l.canal.id === c.id));
-  const passos = passosDoCadastro({ it, prod, kit, esc, produtoEmbalagens: esc.produtoEmbalagens, kitEmbalagens: cat.kitEmbalagens, impressoras: cat.impressoras || [], cal, canaisCom });
+  const passos = passosDoCadastro({ it, prod, kit, esc, produtoEmbalagens: esc.produtoEmbalagens, kitEmbalagens: cat.kitEmbalagens, impressoras: cat.impressoras || [], cal, canaisCom, notasDoProduto });
   const completos = passos.filter((p) => p.ok).length;
   // Vendas = TODAS as do item (anúncio próprio + por anúncio com vários itens): o item é
   // um só, o anúncio é só por onde vendeu. Ads fica no nível do anúncio — o do próprio
@@ -168,6 +183,7 @@ export default function PaginaProduto({ onToast, onEditar }) {
   const editarCadastro = () => onEditar?.(ehKit ? "kit" : "produto", it.id.slice(2));
   const fazer = (p) => {
     if (p.editar === "cadastro") return editarCadastro();
+    if (p.editar === "notas") return abrirEstoque("notas");
     if (p.editar === "custo") return prod ? irParaAba("producao", { produtoId: prod.id }) : editarCadastro();
     if (p.editar === "quantidade" || p.editar === "ficha") {
       pedirPasso(p.editar, it.id, canaisCom[0]?.id || null);
@@ -198,7 +214,7 @@ export default function PaginaProduto({ onToast, onEditar }) {
         </div>
         <div className="pa-botoes">
           <button type="button" className="btn btn-mini primary" onClick={editarCadastro}>✎ Editar cadastro</button>
-          {prod && (
+          {prod && !ehRevenda(prod) && (
             <button type="button" className="btn btn-mini" onClick={() => irParaAba("producao", { produtoId: prod.id })}>
               Simular custo
             </button>
@@ -320,7 +336,7 @@ export default function PaginaProduto({ onToast, onEditar }) {
                   {p.falta && <Estado tipo="atencao">{`falta: ${p.falta}`}</Estado>}
                 </div>
                 <button type="button" className="btn btn-mini" onClick={() => fazer(p)}>
-                  {p.editar === "lancar" ? "+ Lançar em um canal" : p.editar === "quantidade" ? "Por quantidade" : p.editar === "ficha" ? "Ficha do anúncio" : p.editar === "custo" ? "Calcular custo" : "✎ Editar"}
+                  {p.editar === "lancar" ? "+ Lançar em um canal" : p.editar === "quantidade" ? "Por quantidade" : p.editar === "ficha" ? "Ficha do anúncio" : p.editar === "custo" ? "Calcular custo" : p.editar === "notas" ? "Notas de compra" : "✎ Editar"}
                 </button>
               </div>
             ))}
