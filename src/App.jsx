@@ -169,18 +169,18 @@ const MENU = [
         key: "m-dinheiro",
         label: "Dinheiro",
         icone: "caixa",
-        sub: "Resumo do mês, caixa, contas, vendas, payoff, metas, retorno por item e fiscal",
+        sub: "Resultado do mês, caixa, contas, fiscal, metas e retorno por item",
         abas: [
-          { tab: "resumoMes", label: "Resumo do mês" },
-          SEP,
-          { tab: "caixa", s: "caixa", label: "Caixa", ordem: "1" },
-          { tab: "caixa", s: "contas", label: "Contas fixas e parcelas", ordem: "2" },
-          { tab: "caixa", s: "vendas", label: "Vendas do mês", ordem: "3" },
-          { tab: "caixa", s: "payoff", label: "Payoff", ordem: "4" },
+          // Resultado (28/10/2026) = Resumo do mês + Vendas do mês + Payoff (3 vistas, VistasResultado)
+          { tab: "resumoMes", label: "Resultado", tambemSub: [["caixa", "vendas"], ["caixa", "payoff"]] },
+          { tab: "caixa", s: "caixa", label: "Caixa" },
+          { tab: "caixa", s: "contas", label: "Contas fixas e parcelas" },
+          { tab: "fiscal", label: "Fiscal" },
+          { tab: "caixa", s: "vendas", label: "Vendas do mês", oculta: true },
+          { tab: "caixa", s: "payoff", label: "Payoff", oculta: true },
           SEP,
           { tab: "metas", label: "Metas" },
           { tab: "ranking", label: "Ranking por retorno" },
-          { tab: "fiscal", label: "Fiscal" },
         ],
       },
       {
@@ -478,7 +478,7 @@ export default function App() {
   const tituloAtual = tab === "tutorial" ? TUTORIAL.label : menuAtual?.label;
   const subtituloAtual = tab === "tutorial" ? TUTORIAL.sub : menuAtual?.sub;
   const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub, analise: analiseSub, live: liveSub, insumos: insumosSub, estoque: estoqueSub };
-  const abaAtiva = (a) => (a.tab === tab && (!a.s || a.s === subDaAba[a.tab])) || (a.tambem && a.tambem === tab);
+  const abaAtiva = (a) => (a.tab === tab && (!a.s || a.s === subDaAba[a.tab])) || (a.tambem && a.tambem === tab) || (a.tambemSub || []).some(([t, s]) => t === tab && subDaAba[t] === s);
   // Vai pra uma sub-aba do cabeçalho: troca a aba e a sub-aba dela.
   function irParaEntrada(a) {
     setVoltaSede(false);

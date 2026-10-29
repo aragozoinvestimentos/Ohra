@@ -6,8 +6,8 @@ import { hojeSP } from "../lib/datas.js";
 import { BRL, PCT } from "../lib/format.js";
 import CanalTag from "./CanalTag.jsx";
 import Kpis from "./Kpis.jsx";
-import Ajuda from "./Ajuda.jsx";
 import CascataLucro from "./CascataLucro.jsx";
+import VistasResultado from "./VistasResultado.jsx";
 
 // Dinheiro → Resumo do mês (remap 21/10/2026, do vídeo "Consolidador
 // financeiro"): o mês em blocos — pra onde foi cada real que o cliente pagou.
@@ -80,19 +80,12 @@ export default function ResumoMes() {
 
   const { t, ads } = r;
   const descontos = Math.max(0, t.bruto - t.pago);
-  const taxas = Math.max(0, t.taxas);
   const sobra = t.lucro - ads;
-  const base = t.pago || 1;
-  const partes = [
-    { k: "taxas", rot: "Taxas e imposto", v: taxas, cor: "#c46a3a" },
-    { k: "repor", rot: "Repor a produção", v: t.custo, cor: "#7a9cc6" },
-    { k: "ads", rot: "Ads", v: ads, cor: "#b48ad3" },
-    { k: "lucro", rot: sobra >= 0 ? "Sobrou (lucro)" : "Faltou (prejuízo)", v: Math.max(0, sobra), cor: "#2e8b57" },
-  ];
   const [a, m] = mes.split("-").map(Number);
 
   return (
     <div>
+      <VistasResultado atual="mes" />
       <div className="toolbar">
         <button type="button" className="btn btn-mini" onClick={() => setMes(mudarMes(mes, -1))}>‹</button>
         <b>
@@ -104,41 +97,12 @@ export default function ResumoMes() {
       <Kpis
         itens={[
           { label: "Pedidos · unidades", valor: `${t.pedidos.size} · ${t.un}` },
-          { label: "Faturamento (cliente pagou)", valor: BRL(t.pago), sub: descontos > 0 ? `antes dos descontos ${BRL(t.bruto)}` : null },
-          { label: "Taxas e imposto", valor: BRL(taxas), sub: t.pago > 0 ? `${PCT(taxas / t.pago)} do faturamento` : null },
-          { label: "Repor a produção", valor: BRL(t.custo), sub: "material, máquina, energia, embalagem" },
+          { label: "Faturado (cliente pagou)", valor: BRL(t.pago), sub: descontos > 0 ? `descontos ${BRL(descontos)} (promo, cupom)` : null },
           { label: "Ads", valor: BRL(ads), sub: "mesma conta do teto" },
+          { label: sobra >= 0 ? "Lucro depois do Ads" : "Prejuízo depois do Ads", valor: BRL(sobra), tom: sobra > 0 ? "good" : sobra < 0 ? "bad" : undefined, sub: t.pago > 0 ? `${PCT(sobra / t.pago)} do faturado · antes das contas fixas` : null },
         ]}
       />
-      <Kpis
-        itens={[
-          { label: "Descontos que você deu", valor: BRL(descontos), sub: "promo/cupom do vendedor nos pedidos" },
-          { label: "Você recebe (repasse)", valor: BRL(t.recebe), sub: "já sem as taxas" },
-          { label: "Lucro antes do Ads", valor: BRL(t.lucro) },
-          { label: sobra >= 0 ? "Sobrou (lucro depois do Ads)" : "Prejuízo depois do Ads", valor: BRL(sobra), tom: sobra > 0 ? "good" : sobra < 0 ? "bad" : undefined, sub: t.pago > 0 ? `${PCT(sobra / t.pago)} do faturamento` : null },
-        ]}
-      />
-      {t.pago > 0 ? (
-        <div className="panel">
-          <h3>
-            Pra onde foi cada R$ 100 que o cliente pagou
-            <Ajuda texto="Do que o cliente pagou (já com os descontos), quanto ficou com o marketplace (taxas e imposto), quanto é pra repor a produção (custo de hoje), quanto foi pro Ads e quanto sobrou. É estimativa com custo e taxas de HOJE; o dinheiro que caiu de verdade está no Caixa." />
-          </h3>
-          <div className="pa-corpo">
-            <div className="rm-barra">
-              {partes
-                .filter((p) => p.v > 0)
-                .map((p) => (
-                  <span key={p.k} style={{ flex: p.v, background: p.cor }} title={`${p.rot}: ${BRL(p.v)}`}>
-                    {p.v / base >= 0.06 ? `${p.rot} ${Math.round((p.v / base) * 100)}` : ""}
-                  </span>
-                ))}
-            </div>
-            {sobra < 0 && <p className="muted-cel">Os custos passaram do que entrou: faltaram {BRL(-sobra)}.</p>}
-            {t.semCusto > 0 && <p className="muted-cel">{t.semCusto} item(ns) sem produto ligado (SKU não cadastrado) ficaram fora do custo e do lucro.</p>}
-          </div>
-        </div>
-      ) : (
+      {!(t.pago > 0) && (
         <div className="panel">
           <div className="empty">Sem pedidos importados neste mês — envie o arquivo da Olist em Atualizar dados.</div>
         </div>

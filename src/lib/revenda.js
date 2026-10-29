@@ -351,6 +351,15 @@ export function diferencasInventario(linhas) {
 // Os valores (limite, DAS) mudam por lei: ficam editáveis, sem número fixo no app.
 export const LIMITE_MEI_PADRAO = 81000;
 export const AVISO_LIMITE = 0.8;
+// Lista do "Revisar ao virar ME" (28/10/2026): aparece no Início e na aba Fiscal quando o
+// regime muda de MEI pra Simples, até você marcar "Pronto, revisei".
+export const REVISAR_ME = [
+  "Confirmar os anexos: revenda = Anexo I (comércio), o que você fabrica = Anexo II (com CNAE de fabricação) — Regras → Impostos",
+  "Imposto dos marketplaces: usar a alíquota média do mês (botão na aba Fiscal)",
+  "Tirar a conta fixa \"DAS MEI\" do Caixa (o DAS do Simples varia com o faturamento)",
+  "Conferir o faturamento dos últimos 12 meses (Regras → Impostos, se a loja vendia antes de importar pedidos)",
+];
+export const precisaRevisarME = (cfgLoja) => cfgLoja?.impostos?.regime === "simples" && cfgLoja?.impostos?.revisarME === true;
 export function regimeDaLoja(cfgLoja) {
   const i = cfgLoja?.impostos || {};
   return {

@@ -93,6 +93,7 @@ export function montarPendencias({
   cupomRuins = [], // [{ item, canal, lucro, estado }] cupom ativo da loja deixando anúncio no prejuízo/abaixo (cupomLoja.js)
   diagnosticos = [], // [{ l (montarAnuncios), d (lib/diagnostico.js) }] — só atenção/oportunidade
   vendasSemana = () => 0, // (itemId, canalId) → unidades por semana (pedidos de 4 semanas) — pro valor em R$ do aviso
+  revisarME = false, // regime mudou de MEI pra Simples e ainda não foi revisado
   estoque = [], // useEstoque().linhas (revenda, v66) — repor / zerado / negativo
   limiteMei = null, // lib/revenda.js limiteMei() — só com regime MEI
   hoje = "",
@@ -127,6 +128,17 @@ export function montarPendencias({
       titulo: `Completar o cadastro de ${incompletos.length} ${incompletos.length === 1 ? "produto" : "produtos"} de revenda`,
       texto: incompletos.slice(0, 3).map((l) => `${l.produto.nome} (falta ${l.faltas.join(", ")})`).join(" · ") + (incompletos.length > 3 ? ` · +${incompletos.length - 3}` : ""),
       ir: { aba: "estoque", pedido: { sub: "estoque" } },
+      rotulo: "Ver a lista",
+    });
+  if (revisarME)
+    add({
+      id: "me|revisar",
+      grupo: "rotina",
+      ordem: 3,
+      tom: "warn",
+      titulo: "Virou ME: revisar os impostos da loja",
+      texto: "anexos, imposto dos marketplaces, conta fixa do DAS MEI e faturamento de 12 meses — lista na aba Fiscal",
+      ir: { aba: "fiscal", pedido: null },
       rotulo: "Ver a lista",
     });
   if (limiteMei?.atencao)

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BRL } from "../lib/format.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
-import { agruparPorItem, compradosJuntos, concentracao, curvaABC, curvaXYZ, ESTOQUE_PADRAO, MIN_PEDIDOS_CESTA, projecaoMes, ultimasSemanas, PLATAFORMAS, somarDias } from "../lib/pedidos.js";
+import { agruparPorItem, compradosJuntos, origemDaLinha, concentracao, curvaABC, curvaXYZ, ESTOQUE_PADRAO, MIN_PEDIDOS_CESTA, projecaoMes, ultimasSemanas, PLATAFORMAS, somarDias } from "../lib/pedidos.js";
 import { infoSazonal, quandoVendeDe } from "../lib/calendario.js";
 import { irParaAba } from "../lib/navegar.js";
 import { trocarSubAba } from "../lib/subAbas.js";
@@ -108,17 +108,21 @@ const Mini = ({ v }) => {
 export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToast, parte = "abc" }) {
   const { lojaId, lojas, atualizar } = useLoja();
   const loja = lojas.find((l) => l.id === lojaId) || null;
-  const [f, setF] = useState(() => ({ periodo: "30", plat: "", crit: "lucro", pai: false, busca: "" }));
+  const [f, setF] = useState(() => ({ periodo: "30", plat: "", origem: "", crit: "lucro", pai: false, busca: "" }));
   const [regrasDlg, setRegrasDlg] = useState(null);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const mes = hoje.slice(0, 7);
   const numMes = useNumerosDoMes(lojaId, mes);
   const regras = useMemo(() => ({ ...ESTOQUE_PADRAO, ...(loja?.config_escada?.estoque || {}) }), [loja]);
 
+  // Origem (28/10/2026): Todos / Fabricado / Revenda, além da plataforma — a curva é refeita dentro do filtro.
+  const produtosPorId = useMemo(() => new Map((esc.produtos || []).map((p) => [p.id, p])), [esc.produtos]);
+  const temRevenda = (esc.produtos || []).some((p) => p.origem === "revenda");
+  const daOrigem = useCallback((l) => !f.origem || origemDaLinha(l, produtosPorId) === f.origem, [f.origem, produtosPorId]);
   const filtradas = useMemo(() => {
     const de = f.periodo === "mes" ? `${mes}-01` : f.periodo === "tudo" ? "0000" : somarDias(hoje, -Number(f.periodo) + 1);
-    return linhas.filter((l) => l.data >= de && l.data <= hoje && (!f.plat || (l.origem === "fisico" ? "fisico" : l.plataforma) === f.plat));
-  }, [linhas, f.periodo, f.plat, hoje, mes]);
+    return linhas.filter((l) => l.data >= de && l.data <= hoje && (!f.plat || (l.origem === "fisico" ? "fisico" : l.plataforma) === f.plat) && daOrigem(l));
+  }, [linhas, f.periodo, f.plat, hoje, mes, daOrigem]);
   const grupos = useMemo(() => agruparPorItem(filtradas, { itens: esc.itens, porPai: f.pai }), [filtradas, esc.itens, f.pai]);
   const abc = useMemo(() => curvaABC(grupos, { crit: f.crit, produtos: esc.produtos }), [grupos, f.crit, esc.produtos]);
   const ls = abc.linhas;
@@ -141,7 +145,7 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
   const calendario = cres.calendario;
   const xyz = useMemo(() => {
     const daPlat = (l) => !f.plat || (l.origem === "fisico" ? "fisico" : l.plataforma) === f.plat;
-    const doFiltro = linhas.filter((l) => l.data >= semanas[0] && daPlat(l));
+    const doFiltro = linhas.filter((l) => l.data >= semanas[0] && daPlat(l) && daOrigem(l));
     const g = agruparPorItem(doFiltro, { itens: esc.itens, porPai: false });
     const abcP = curvaABC(g, { crit: "lucro", produtos: esc.produtos }); // A/B/C até hoje (com a semana em andamento)
     const mapa = new Map(abcP.linhas.map((l) => [l.chave, l.classe]));
@@ -159,7 +163,7 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
       g.filter((x) => x.item),
       { semanas, abcPorChave: mapa, produtos: esc.produtos, farmConfig, regras, sazonalDe, semanaAtual, diasAtual, primeiraVenda }
     );
-  }, [linhas, semanas, semanaAtual, diasAtual, f.plat, esc.itens, esc.produtos, calendario, hoje, farmConfig, regras]);
+  }, [linhas, semanas, semanaAtual, diasAtual, f.plat, daOrigem, esc.itens, esc.produtos, calendario, hoje, farmConfig, regras]);
 
   const cesta = useMemo(() => compradosJuntos(filtradas, { itens: esc.itens }), [filtradas, esc.itens]);
   const pedidosMulti = useMemo(() => {
@@ -234,6 +238,16 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
               ))}
             </select>
           </div>
+          {temRevenda && (
+            <div className="field">
+            <label>Origem</label>
+            <select value={f.origem} onChange={set("origem")}>
+              <option value="">Todos</option>
+              <option value="fabricado">Fabricado</option>
+              <option value="revenda">Revenda</option>
+            </select>
+            </div>
+          )}
           <div className="field">
             <label>
               Acumular por <Ajuda texto="Lucro (recomendado): o que sobra de verdade, já sem taxas e custo de hoje. Lucro por hora de impressora: bom pra decidir o que imprimir quando a farm está cheia." />
@@ -411,6 +425,16 @@ export default function AnaliseABC({ esc, cres, linhas, hoje, farmConfig, onToas
               ))}
             </select>
           </div>
+          {temRevenda && (
+            <div className="field">
+            <label>Origem</label>
+            <select value={f.origem} onChange={set("origem")}>
+              <option value="">Todos</option>
+              <option value="fabricado">Fabricado</option>
+              <option value="revenda">Revenda</option>
+            </select>
+            </div>
+          )}
         </div>
       </div>
       <div className="panel">

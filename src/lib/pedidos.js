@@ -50,6 +50,13 @@ export const ehEntregue = (sit) => /entregue/i.test(String(sit || "")) && !ehCan
 // dados de envio. Não conta como venda; vai pra Análise → Carrinhos abandonados.
 export const ehNaoPago = (sit) => /dados incompletos|aguardando pagamento|pagamento pendente/i.test(String(sit || ""));
 export const ehValido = (p) => !ehCancelado(p.situacao) && !ehNaoPago(p.situacao);
+// Origem da venda (28/10/2026, filtro da Análise): "revenda" se o produto (ou o pai da
+// variação) é de revenda; kit e tudo o mais = "fabricado" (kit misto conta como fabricado).
+export function origemDaLinha(l, produtosPorId) {
+  const id = String(l?.id_item || "");
+  const pid = l?.item?.produtoId || (id.startsWith("p:") ? id.slice(2) : null);
+  return pid && produtosPorId?.get(pid)?.origem === "revenda" ? "revenda" : "fabricado";
+}
 // Saiu da loja (28/10/2026, pedido do Gustavo): "Enviado" (já despachado) ou "Entregue" —
 // é aí que o produto sai do ESTOQUE. Pago e ainda não enviado ("Pronto para envio",
 // "Faturado"…) fica RESERVADO (continua na prateleira). Venda física sai na hora.

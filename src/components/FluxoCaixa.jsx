@@ -32,6 +32,7 @@ import CompraMaterialDialog from "./CompraMaterialDialog.jsx";
 import { dividirParcelas, linhasParceladas } from "../lib/comprasMaterial.js";
 import Estado from "./Estado.jsx";
 import VendasMes from "./VendasMes.jsx";
+import VistasResultado from "./VistasResultado.jsx";
 import { recarregarReserva, useReservaProducao } from "../hooks/useReservaProducao.js";
 import { saldoReserva } from "../lib/vendasMes.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
@@ -627,6 +628,7 @@ export default function FluxoCaixa({ onToast }) {
         </button>
       </TopbarAcoes>
 
+      {(sub === "vendas" || sub === "payoff") && <VistasResultado atual={sub} />}
       <div className="caixa-cabecalho">
         {sub !== "contas" && sub !== "payoff" && (sub !== "vendas" || periodoVendas === "mes") && seletorMes}
         {sub === "vendas" && (

@@ -5,7 +5,7 @@ import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useRevenda } from "../hooks/useRevenda.js";
 import { supabase } from "../lib/supabaseClient.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
-import { limiteMei, regimeDaLoja } from "../lib/revenda.js";
+import { REVISAR_ME, limiteMei, precisaRevisarME, regimeDaLoja } from "../lib/revenda.js";
 import { ANEXOS, LIMITE_SIMPLES, NOME_TIPO, SUBLIMITE_ICMS, aliquotaEfetiva, dasDoMes, faixaDe } from "../lib/simples.js";
 import { abrirProduto } from "../lib/anuncios.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -27,7 +27,7 @@ const mudarMes = (mes, n) => {
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—");
 
 export default function Fiscal({ onToast }) {
-  const { lojas, lojaId } = useLoja();
+  const { lojas, lojaId, atualizar } = useLoja();
   const cfgBruto = (lojas || []).find((l) => l.id === lojaId)?.config_escada;
   const cfgLoja = useMemo(() => cfgBruto || {}, [cfgBruto]);
   const reg = regimeDaLoja(cfgLoja);
@@ -84,8 +84,34 @@ export default function Fiscal({ onToast }) {
   const media = das?.efetivaMedia;
   const canaisDiferem = media != null && imposto.some((v) => Math.abs(v - media) > 0.001);
 
+  const revisei = async () => {
+    const loja = (lojas || []).find((l) => l.id === lojaId);
+    if (!loja) return;
+    const r = await atualizar(loja.id, { configEscada: { ...cfgLoja, impostos: { ...(cfgLoja.impostos || {}), revisarME: false } } });
+    onToast?.(r.ok ? "Revisão marcada como feita" : `Não foi possível salvar: ${r.error}`);
+  };
+
   return (
     <>
+      {precisaRevisarME(cfgLoja) && (
+        <div className="alerta alerta-warn">
+          <b>Virou ME: revise os impostos da loja</b>
+          <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
+            {REVISAR_ME.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+          <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn btn-mini" onClick={() => irParaAba("regras")}>
+              Abrir Regras → Impostos
+            </button>
+            <button type="button" className="btn primary btn-mini" onClick={revisei}>
+              Pronto, revisei
+            </button>
+          </span>
+          <span className="muted-cel">Confirme com o contador.</span>
+        </div>
+      )}
       {seletor}
       {reg.regime === "mei" && lim && (
         <Kpis

@@ -44,6 +44,9 @@ export default function ImpostosLoja({ onToast }) {
   const salvar = async () => {
     if (!loja) return;
     const impostos = { regime: f.regime || null, limiteAnual: num(f.limiteAnual) || LIMITE_MEI_PADRAO, dasMensal: num(f.dasMensal) || null, anexoRevenda: f.anexoRevenda || "I", anexoFabricado: f.anexoFabricado || "II", rbt12Manual: num(f.rbt12Manual) || null };
+    // Virou ME (MEI → Simples): o app pede uma revisão (Início + aba Fiscal) até "Pronto, revisei".
+    if (reg.regime === "mei" && impostos.regime === "simples") impostos.revisarME = true;
+    else if (impostos.regime === "simples" && cfg.impostos?.revisarME) impostos.revisarME = true;
     const r = await atualizar(loja.id, { configEscada: { ...cfg, impostos } });
     onToast?.(r.ok ? "Impostos da loja salvos" : `Não foi possível salvar: ${r.error}`);
     if (r.ok) setForm(null);

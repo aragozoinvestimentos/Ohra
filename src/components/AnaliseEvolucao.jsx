@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { BRL } from "../lib/format.js";
-import { agruparPorItem, evolucaoSemanal, inicioSemana, metricas, porDiaDaSemana, precoVsVendas, ultimasSemanas, PLATAFORMAS, somarDias } from "../lib/pedidos.js";
+import { agruparPorItem, evolucaoSemanal, origemDaLinha, inicioSemana, metricas, porDiaDaSemana, precoVsVendas, ultimasSemanas, PLATAFORMAS, somarDias } from "../lib/pedidos.js";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { useLembrado } from "../hooks/useLembrado.js";
@@ -32,15 +32,17 @@ const Variacao = ({ v }) => {
 };
 
 export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
-  const [f, setF] = useState({ periodo: "30", plat: "" });
+  const [f, setF] = useState({ periodo: "30", plat: "", origem: "" });
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const plats = [...new Set(linhas.map((l) => (l.origem === "fisico" ? "fisico" : l.plataforma)).filter(Boolean))];
-  const daPlat = (l) => !f.plat || (l.origem === "fisico" ? "fisico" : l.plataforma) === f.plat;
+  const produtosPorId = useMemo(() => new Map((esc.produtos || []).map((p) => [p.id, p])), [esc.produtos]);
+  const temRevenda = (esc.produtos || []).some((p) => p.origem === "revenda");
+  const daPlat = (l) => (!f.plat || (l.origem === "fisico" ? "fisico" : l.plataforma) === f.plat) && (!f.origem || origemDaLinha(l, produtosPorId) === f.origem);
   const n = f.periodo === "mes" ? Number(hoje.slice(8, 10)) : Number(f.periodo);
   const de = somarDias(hoje, -n + 1);
   const deAnt = somarDias(de, -n);
-  const atual = useMemo(() => linhas.filter((l) => l.data >= de && l.data <= hoje && daPlat(l)), [linhas, de, hoje, f.plat]); // eslint-disable-line react-hooks/exhaustive-deps
-  const antes = useMemo(() => linhas.filter((l) => l.data >= deAnt && l.data < de && daPlat(l)), [linhas, deAnt, de, f.plat]); // eslint-disable-line react-hooks/exhaustive-deps
+  const atual = useMemo(() => linhas.filter((l) => l.data >= de && l.data <= hoje && daPlat(l)), [linhas, de, hoje, f.plat, f.origem]); // eslint-disable-line react-hooks/exhaustive-deps
+  const antes = useMemo(() => linhas.filter((l) => l.data >= deAnt && l.data < de && daPlat(l)), [linhas, deAnt, de, f.plat, f.origem]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Preço alvo (salvo) do item no canal: separa o desconto de preço (promo/rampa/campanha) do cupom.
   const precoAlvoDe = useMemo(() => {
@@ -79,7 +81,7 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
         return { ...e, agoraQ: ls.reduce((t, l) => t + l.q, 0), agoraLucro: ls.reduce((t, l) => t + (l.lucro || 0), 0) };
       })
       .sort((x, y) => y.v.reduce((t, n) => t + n, 0) + y.agoraQ - (x.v.reduce((t, n) => t + n, 0) + x.agoraQ));
-  }, [linhas, semanas, esc.itens, f.plat, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [linhas, semanas, esc.itens, f.plat, f.origem, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
   // Ranking da tabela (21/10/2026, pedido do Gustavo): padrão = quem mais lucrou
   // na última semana fechada; empate → lucro das 8 semanas → esta semana.
   const [ordem, setOrdem] = useLembrado("ohra:analise:evo-ordem", "fechada");
@@ -123,6 +125,16 @@ export default function AnaliseEvolucao({ esc, cres, linhas, hoje }) {
               ))}
             </select>
           </div>
+          {temRevenda && (
+            <div className="field">
+            <label>Origem</label>
+            <select value={f.origem} onChange={set("origem")}>
+              <option value="">Todos</option>
+              <option value="fabricado">Fabricado</option>
+              <option value="revenda">Revenda</option>
+            </select>
+            </div>
+          )}
           <div className="faint" style={{ alignSelf: "end", paddingBottom: 8 }}>
             {dm(de)} a {dm(hoje)} · comparado com {dm(deAnt)} a {dm(somarDias(de, -1))}
           </div>

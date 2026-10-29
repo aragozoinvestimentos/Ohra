@@ -48,7 +48,7 @@ import { LinhaTarefa, TarefaDialog } from "./Tarefas.jsx";
 import { useTarefas } from "../hooks/useTarefas.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { useEstoque } from "../hooks/useEstoque.js";
-import { limiteMei, regimeDaLoja } from "../lib/revenda.js";
+import { limiteMei, precisaRevisarME, regimeDaLoja } from "../lib/revenda.js";
 import { saldoAds } from "../lib/saldoAds.js";
 import { concluidasRecentes, repartirTarefas } from "../lib/tarefas.js";
 import { abrirTarefa, concluirTarefa, desfazerConclusao, excluirTarefa, rotuloLink } from "../lib/tarefasAcoes.js";
@@ -328,10 +328,11 @@ export default function Inicio({ onIrPara, onToast }) {
   // Revenda (v66): estoque a repor/negativo e o limite do MEI
   const estoqueRev = useEstoque();
   const regime = regimeDaLoja(dados.cfgLoja);
+  const revisarME = precisaRevisarME(dados.cfgLoja);
   const limMei = useMemo(() => (regime.regime === "mei" ? limiteMei({ pedidos: pedidosValidos || [], limite: regime.limiteAnual, hoje }) : null), [regime.regime, regime.limiteAnual, pedidosValidos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, hoje }),
-    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, hoje]
+    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, revisarME, hoje }),
+    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, revisarME, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.
