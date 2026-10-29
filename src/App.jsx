@@ -141,6 +141,7 @@ const MENU = [
         icone: "crescimento",
         sub: "Rampa de preço, Ads, afiliados, promoções e atacado",
         abas: [
+          { tab: "crescimento", s: "hoje", label: "Hoje" },
           { tab: "crescimento", s: "rampa", label: "Rampa de preço" },
           { tab: "crescimento", s: "ads", label: "Ads" },
           { tab: "crescimento", s: "afiliados", label: "Afiliados" },
@@ -579,7 +580,7 @@ export default function App() {
                   <button key={`${a.tab}:${a.s || ""}`} type="button" data-tab={a.tab} data-sub={a.s} className={abaAtiva(a) ? "ativo" : ""} aria-current={abaAtiva(a) ? "page" : undefined} onClick={() => irParaEntrada(a)}>
                     {a.ordem && <span className="topbar-abas-ordem">{a.tab === "canal" ? a.ordem : `${a.ordem} ·`}</span>}
                     {a.label}
-                    <Marcas filtro={(k) => k === (a.s ? `${a.tab}:${a.s}` : a.tab)} />
+                    <Marcas filtro={(k) => (a.tab === "crescimento" && a.s === "hoje" ? /^(crescimento:|promocoes$)/.test(k) : k === (a.s ? `${a.tab}:${a.s}` : a.tab))} />
                   </button>
                 ),
               )}
