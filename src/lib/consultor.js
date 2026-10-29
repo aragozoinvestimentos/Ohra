@@ -454,8 +454,11 @@ export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, u
       l.push(`- ${c.dados?.titulo}${c.dados?.credito ? ` (💡 ${c.dados.credito})` : ""}`, `  o que vi${em ? ` (números de ${dm(em)}, quando aprovou)` : ""}: ${c.dados?.viu}`);
       if (atuais) {
         const agora = atuais.find((x) => x.chave === c.chave);
-        if (agora && agora.viu !== c.dados?.viu) l.push(`  hoje (${dm(hoje)}): ${agora.titulo} — ${agora.viu}`);
-        else if (!agora && !/\|\d{4}-\d{2}$/.test(c.chave)) l.push(`  hoje (${dm(hoje)}): não aparece mais — o que gerou essa sugestão sumiu`);
+        // Ideias guardam o "o que vi" em `porque` (29/10/2026: saía "— undefined").
+        const viuAgora = agora ? agora.viu ?? agora.porque : null;
+        if (agora && viuAgora && viuAgora !== c.dados?.viu) l.push(`  hoje (${dm(hoje)}): ${viuAgora}`);
+        else if (agora) l.push(`  hoje (${dm(hoje)}): continua igual`);
+        else if (!agora && !/\|\d{4}-\d{2}$/.test(c.chave)) l.push(`  hoje (${dm(hoje)}): não aparece mais — ${String(c.chave).startsWith("lancar|") ? "o nº 1 ficou abaixo de 50% do lucro (não quer dizer que um produto novo foi lançado)" : "o que gerou essa sugestão sumiu"}`);
       }
       l.push(`  por que agora: ${c.dados?.porque}`, `  o que a análise deve responder: ${c.dados?.responderia}`);
     }

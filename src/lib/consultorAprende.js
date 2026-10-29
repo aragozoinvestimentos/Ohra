@@ -179,6 +179,9 @@ export function resultadosParaGravar(registros, atuais, hoje) {
   const out = [];
   for (const r of registros || []) {
     if (r.tipo !== "consultoria" || !r.dados?.acompanhar?.desde) continue;
+    // "Lançar produto novo" some quando o nº 1 cai abaixo de 50% do lucro — isso não
+    // quer dizer que um produto novo foi lançado (29/10/2026): não vira "resolveu" sozinho.
+    if (String(r.chave).startsWith("lancar|")) continue;
     const desde = r.dados.acompanhar.desde;
     const dias = diasEntre(desde, hoje);
     if (dias < 2) continue;
@@ -221,7 +224,7 @@ export function linhasAprendizado(registros) {
   const r = resumoAprendizado(registros);
   const l = [];
   if (r.respostas) l.push(`Respostas validadas: ${r.respostas} (${r.ensinadas} começaram como opinião sua) · usadas ${r.usos}×`);
-  if (r.opinioes) l.push(`Opiniões suas esperando validação: ${r.opinioes}`);
+  if (r.opinioes) l.push(`Opiniões suas ainda sem a validação do Claude guardada: ${r.opinioes} (as que já foram levadas não se repetem aqui — guarde a validação na aba Aprendi)`);
   for (const p of r.placar) l.push(`- 💡 ideias de ${p.de}: ${p.total} · aprovadas ${p.sim} · deram certo ${p.resolveu}`);
   for (const a of r.assuntos.slice(0, 12)) l.push(`- ${a.rotulo}: aprovou ${a.sim} · adiou ${a.depois} · nunca ${a.nunca}${a.resolveu + a.continuou ? ` · resolveu ${a.resolveu}/${a.resolveu + a.continuou}` : ""}`);
   return l;
@@ -245,6 +248,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-29", texto: "No pacote pro Claude: as ideias da equipe mostram o número de hoje (antes saía \"undefined\"), e \"lançar produto novo\" não conta mais como resolvido só porque o nº 1 caiu abaixo de 50% do lucro." },
   { data: "2026-10-29", texto: "Reserva de produção: agora mostro ao lado o caixa da loja hoje e quanto fica livre. Separar na reserva não tira dinheiro da conta — só marca a parte que é pra repor a produção." },
   { data: "2026-10-29", texto: "Afiliados, parte 2: cada anúncio pode ter um % próprio (substitui o da loja, não soma); mostro quanto o afiliado ganha por venda, o máximo seguro de cada anúncio e o mínimo da Shopee (4%). Cada comissão vira um teste de 15 dias: se ninguém se afiliou, sugiro subir 1 ponto — só se ainda deixar metade do lucro. Afiliado nunca me faz sugerir mudar preço, mas prejuízo com afiliado aparece no Início. Pergunte “quais aguentam 5%?” ou “comissão máxima do <produto>”." },
   { data: "2026-10-29", texto: "Ads: o 1º dia que quase não gastou (menos de 30% do orçamento) não conta nos 3 dias, e no 3º dia eu só peço pra conferir à noite — a ordem de pausar e revisar vem com o dia fechado." },
