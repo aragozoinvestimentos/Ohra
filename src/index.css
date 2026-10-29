@@ -2837,3 +2837,10 @@ td.vendas-opcao { padding-left: 26px; }
 .inicio-dados-linha .inicio-dados-chips { align-items: center; }
 .inicio-dados-rot { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
 .inicio-cartao-7d { font-variant-numeric: tabular-nums; }
+
+/* Afiliados → Comissão da loja (29/10/2026) */
+.af-sim { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 0; }
+.af-sim input[type="range"] { flex: 1 1 200px; max-width: 360px; accent-color: var(--accent); }
+.af-sim-v { font-size: 20px; font-variant-numeric: tabular-nums; min-width: 48px; }
+.af-sim-res { flex: 1 1 100%; color: var(--ink-soft); font-size: 13px; }
+.af-sim-res b { color: var(--ink); }

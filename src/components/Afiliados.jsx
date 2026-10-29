@@ -1,11 +1,8 @@
 import GraficoOrigem from "./GraficoOrigem.jsx";
-import { alertaPreco, rotuloEstrategia } from "../lib/estrategia.js";
-import { Fragment, useMemo, useState } from "react";
-import { irParaAba } from "../lib/navegar.js";
+import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
-import { BRL, PCT } from "../lib/format.js";
-import { normalizarTexto } from "../lib/texto.js";
+import { BRL } from "../lib/format.js";
 import { gruposDoSeletor, itemTipoDoId } from "../lib/variacoes.js";
 import {
   DIAS_SEM_DIVULGAR,
@@ -13,23 +10,20 @@ import {
   comissaoMaxima,
   custoAmostra,
   idPrefixado,
-  padraoDoCanal,
   resumoParceiro,
   statusEfetivo,
   sugestoesAfiliado,
   periodosDeAdsDaLoja,
   vendasPorOrigemReais,
 } from "../lib/afiliados.js";
-import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
-import Estado from "./Estado.jsx";
-import { estadoSituacaoAfiliado, estadoSugestaoAfiliado } from "../lib/estados.js";
-import { AgoraRampa } from "./RampaAgora.jsx";
+import { estadoSugestaoAfiliado } from "../lib/estados.js";
 import TopbarAcoes from "./TopbarAcoes.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import BuscaItem from "./BuscaItem.jsx";
+import ComissaoLoja from "./ComissaoLoja.jsx";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -37,66 +31,25 @@ const num = (v) => {
 };
 const pct = (f) => `${Math.round(num(f) * 100)}%`;
 const dataBR = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—");
-const TIPO_ROTULO = { produto: "produto", variacao: "variação", kit: "kit" };
 const msgV35 = (e) => (/afiliado|schema cache|does not exist/.test(e?.message || "") ? "Falta rodar o supabase/schema_v35.sql no Supabase" : `Não foi possível salvar: ${e?.message}`);
 
-export default function Afiliados({ dados, af, regras, linhasAf, mapaAf, semana, hoje, onToast, pedidos, linhasAds }) {
+export default function Afiliados({ dados, af, regras, linhasAf, mapaAf, hoje, onToast, pedidos, linhasAds }) {
   const { lojaId } = useLoja();
   const { itens, canais } = dados;
-  const { config, parceiros, registros, disponivel, carregando } = af;
-  const [filtro, setFiltro] = useState("todos");
-  const [busca, setBusca] = useState("");
-  const [editItem, setEditItem] = useState(null); // linha de comissão
-  const [selAf, setSelAf] = useState(null); // linha com o detalhe aberto
+  const { config, parceiros, registros, disponivel } = af;
   const [parceiroForm, setParceiroForm] = useState(null); // { parceiro } | { inicial }
   const [excluir, setExcluir] = useState(null);
-  const [salvando, setSalvando] = useState(false);
 
+  // Comissão da LOJA (29/10/2026): as sugestões de item (ativar/usar/subir/descer) saíram — ficam
+  // só as dos parceiros (amostra, marcar divulgou).
   const sugestoes = useMemo(
-    () => sugestoesAfiliado({ linhas: linhasAf, parceiros, afRegistros: registros, regras, itens, hoje }),
+    () => sugestoesAfiliado({ linhas: linhasAf, parceiros, afRegistros: registros, regras, itens, hoje }).filter((sg) => /^(divulgou|amostra)\|/.test(sg.chave)),
     [linhasAf, parceiros, registros, regras, itens, hoje]
   );
   const origem = useMemo(
     () => vendasPorOrigemReais({ pedidos, periodos: periodosDeAdsDaLoja(linhasAds), afRegistros: registros, hoje }),
     [registros, pedidos, linhasAds, hoje]
   );
-
-  const ativos = linhasAf.filter((l) => l.conf.ativo);
-  const termos = normalizarTexto(busca).split(" ").filter(Boolean);
-  const tabela = linhasAf.filter((l) => {
-    if (filtro === "ativos" && !l.conf.ativo) return false;
-    if (["fazer", "oport", "sem"].includes(filtro) && secaoAf(l) !== filtro) return false;
-    if (termos.length) {
-      const t = normalizarTexto(`${l.item.nome} ${l.item.sku || ""} ${l.canal.nome}`);
-      if (!termos.every((x) => t.includes(x))) return false;
-    }
-    return true;
-  });
-
-  // --- gravações ---
-  async function salvarItem(l, { ativo, comissao }, msg) {
-    const row = l.conf.row;
-    const campos = { ativo, comissao: comissao == null ? null : comissao, atualizado_em: new Date().toISOString() };
-    const { error } = row
-      ? await supabase.from("afiliado_config").update(campos).eq("id", row.id)
-      : await supabase.from("afiliado_config").insert({ ...campos, loja_id: lojaId || null, canal_id: l.canal.id, item_tipo: l.tipo, item_id: l.id });
-    if (error) {
-      onToast?.(msgV35(error));
-      return false;
-    }
-    if (msg) onToast?.(msg);
-    return true;
-  }
-
-  async function salvarPadrao(canal, { ativo, comissao }) {
-    const { row } = padraoDoCanal(config, canal.id);
-    const campos = { ativo, comissao, atualizado_em: new Date().toISOString() };
-    const { error } = row
-      ? await supabase.from("afiliado_config").update(campos).eq("id", row.id)
-      : await supabase.from("afiliado_config").insert({ ...campos, loja_id: lojaId || null, canal_id: canal.id, item_tipo: null, item_id: null });
-    if (error) return onToast?.(msgV35(error));
-    onToast?.(ativo ? `${canal.nome}: campanha aberta com ${pct(comissao)}` : `${canal.nome}: campanha aberta desligada`);
-  }
 
   async function mudarStatus(p, status) {
     const campos = { status, status_desde: hoje };
@@ -115,9 +68,6 @@ export default function Afiliados({ dados, af, regras, linhasAf, mapaAf, semana,
   }
 
   async function acaoSugestao(a) {
-    if (a.tipo === "usar") return salvarItem(a.linha, { ativo: true, comissao: a.comissao }, `${a.linha.item.nome}: comissão ${pct(a.comissao)} neste item`);
-    if (a.tipo === "desativar") return salvarItem(a.linha, { ativo: false, comissao: a.linha.conf.row?.comissao ?? null }, `${a.linha.item.nome} saiu da campanha`);
-    if (a.tipo === "ativar") return salvarItem(a.linha, { ativo: true, comissao: null }, `${a.linha.item.nome} na campanha com ${pct(a.linha.conf.padrao)} — ative também no painel de afiliados do canal`);
     if (a.tipo === "divulgou") return mudarStatus(a.parceiro, "divulgou");
     if (a.tipo === "amostra")
       return setParceiroForm({
@@ -141,12 +91,6 @@ export default function Afiliados({ dados, af, regras, linhasAf, mapaAf, semana,
       </div>
     );
 
-  const canaisPadrao = canais.map((c) => ({ canal: c, ...padraoDoCanal(config, c.id) }));
-  const comPadrao = canaisPadrao.filter((c) => c.comissao);
-  const excecoes = ativos.filter((l) => l.conf.fonte === "propria");
-  const s = semana;
-  const pctAds = s.adsReceita > 0 ? s.adsGasto / s.adsReceita : null;
-
   // custo por venda (últimas semanas do gráfico)
   const tot = origem.reduce((a, w) => ({ af: a.af + w.afiliado, com: a.com + w.comissao, ads: a.ads + w.ads, gasto: a.gasto + w.adsGasto }), { af: 0, com: 0, ads: 0, gasto: 0 });
 
@@ -158,252 +102,7 @@ export default function Afiliados({ dados, af, regras, linhasAf, mapaAf, semana,
         </button>
       </TopbarAcoes>
 
-      <Kpis
-        itens={[
-          {
-            label: "Itens com afiliado",
-            valor: String(ativos.length),
-            sub: comPadrao.length ? comPadrao.map((c) => `${c.canal.nome} · campanha aberta ${pct(c.comissao)}`).join(" · ") : "nenhuma campanha aberta configurada",
-          },
-          {
-            label: "Vendas via afiliado",
-            valor: s.temRegistro ? String(s.vendasAf) : "—",
-            sub: s.temRegistro ? (s.total > 0 ? `${PCT(s.vendasAf / s.total)} das vendas da semana (${s.total})` : "na semana") : "sem vendas via afiliado registradas",
-          },
-          {
-            label: "Comissão paga",
-            valor: s.temRegistro ? BRL(s.comissao) : "—",
-            sub: s.temRegistro
-              ? `${s.receitaAf > 0 ? `${PCT(s.comissao / s.receitaAf)} da receita via afiliado` : "—"}${pctAds != null ? ` · Ads: ${PCT(pctAds)}` : ""}`
-              : "na semana",
-          },
-          {
-            label: "Lucro após comissão",
-            valor: s.temRegistro ? BRL(s.lucroAf) : "—",
-            sub: s.temRegistro ? `das ${s.vendasAf} vendas via afiliado` : "—",
-            tom: s.temRegistro && s.lucroAf < 0 ? "bad" : undefined,
-          },
-        ]}
-      />
-
-      <div className="panel">
-        <h3 className="section-title">
-          <span>
-            Comissão por item
-            <Ajuda texto="Sua margem vem primeiro: afiliado só entra com o que sobra. Recomendada = o menor entre (1) o % que ainda deixa a sua margem desejada inteira, (2) metade do lucro ÷ preço — parte das vendas via afiliado o cliente faria de qualquer jeito, e nelas a comissão só tira do lucro — e (3) a máxima. Máxima = maior % que ainda deixa o lucro mínimo da loja (margem mínima ou lucro mínimo em R$); acima dela é prejuízo pro seu mínimo. Sem recomendada = não há espaço acima da sua margem neste preço: não precisa ativar. Tudo com o custo e as taxas de hoje; a comissão é sobre o preço e sai do seu lucro. Produto em rampa abaixo do alvo usa o preço do degrau e fica como “não usar ainda”: com lucro perto do 0 a 0 não sobra pra comissão. Clique na comissão atual pra ativar, desativar ou dar um % próprio ao item." />
-          </span>
-          <span className="h3-contagem">quanto dá pra pagar sem passar do lucro mínimo</span>
-        </h3>
-        <div className="toolbar">
-          <input type="text" placeholder="Buscar item ou canal…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-          <div className="filtros-lista" role="group" aria-label="Filtrar a lista">
-            {[
-              ["todos", "Todos", linhasAf.length],
-              ["fazer", "Pra fazer", linhasAf.filter((l) => secaoAf(l) === "fazer").length],
-              ["oport", "Oportunidade", linhasAf.filter((l) => secaoAf(l) === "oport").length],
-              ["ativos", "Com afiliado", ativos.length],
-              ["sem", "Sem espaço", linhasAf.filter((l) => secaoAf(l) === "sem").length],
-            ]
-              .filter(([k, , n]) => k === "todos" || n > 0)
-              .map(([k, label, n]) => (
-                <button key={k} type="button" className={`filtro-btn${filtro === k ? " ativo" : ""}${k === "oport" ? " filtro-subir" : ""}`} onClick={() => setFiltro(k)}>
-                  {label} <span className="filtro-n">{n}</span>
-                </button>
-              ))}
-          </div>
-          <span className="toolbar-info">
-            {tabela.length} de {linhasAf.length}
-          </span>
-        </div>
-        {carregando ? (
-          <div className="empty">Carregando…</div>
-        ) : !linhasAf.length ? (
-          <div className="empty">Nenhum item com preço salvo ainda. Salve preços em Precificação por Canal.</div>
-        ) : !tabela.length ? (
-          <div className="empty">Nada neste filtro.</div>
-        ) : (
-          <div className="table-wrap lista-rampa lista-afiliado">
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Canal</th>
-                  <th className="num">Preço</th>
-                  <th className="num">Recomendada</th>
-                  <th className="centro">Comissão atual</th>
-                  <th>O que fazer</th>
-                </tr>
-              </thead>
-              <tbody>
-                {SECOES_AF.map(([sec, tituloSec]) => {
-                  const doSec = tabela.filter((l) => secaoAf(l) === sec);
-                  if (!doSec.length) return null;
-                  return (
-                    <Fragment key={sec}>
-                      <tr className={`secao-lista secao-${sec === "oport" ? "subir" : sec}`}>
-                        <td colSpan={6}>
-                          {sec === "oport" ? "↑ " : sec === "fazer" ? "! " : ""}
-                          {tituloSec} <span className="filtro-n">{doSec.length}</span>
-                        </td>
-                      </tr>
-                {doSec.map((l) => (
-                  <Fragment key={l.chave}>
-                  <tr className={`linha-clicavel${selAf === l.chave ? " linha-atual" : ""}`} onClick={() => setSelAf((x) => (x === l.chave ? null : l.chave))}>
-                    <td>
-                      <b>{l.item.nome}</b>
-                      <div className="sub-linha">
-                        {TIPO_ROTULO[l.tipo]}
-                        {l.tipo === "kit" && l.item.pecas ? ` · ${l.item.pecas} peças` : ""}
-                      </div>
-                    </td>
-                    <td>
-                      <CanalTag canal={l.canal} />
-                    </td>
-                    <td className="num">{BRL(l.preco)}</td>
-                    <td className="num">
-                      {l.naoUsar ? (
-                        "—"
-                      ) : l.recomendada != null ? (
-                        <>
-                          <b>{pct(l.recomendada)}</b> <span className="sub-num-inline">{BRL(l.recomendada * l.preco)}/venda</span>
-                        </>
-                      ) : (
-                        <span className="muted-cel">—</span>
-                      )}
-                    </td>
-                    <td className="centro">
-                      {l.conf.ativo ? (
-                        <span className="badge neutro">
-                          {pct(l.conf.comissao)} · {l.conf.fonte === "propria" ? "do item" : "padrão"}
-                        </span>
-                      ) : (
-                        <span className="muted-cel">—</span>
-                      )}
-                    </td>
-                    <td className="o-que-fazer">
-                      <div className="oqf">
-                        <Situacao l={l} compacto />
-                        {(() => {
-                          const a = acaoAf(l);
-                          return a.botao ? (
-                            <button
-                              type="button"
-                              className={`btn btn-mini ${a.verde ? "btn-verde" : "primary"}`}
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                if (a.usar != null) salvarItem(l, { ativo: true, comissao: a.usar }, `${l.item.nome}: comissão ${pct(a.usar)} neste item`);
-                                else setEditItem(l);
-                              }}
-                            >
-                              {a.botao}
-                            </button>
-                          ) : null;
-                        })()}
-                      </div>
-                    </td>
-                  </tr>
-                  {selAf === l.chave && (
-                    <tr className="linha-detalhe">
-                      <td colSpan={6}>
-                        <div className="detalhe-cel">
-                          <div className="detalhe-cel-topo">
-                            <b>{l.item.nome}</b> <CanalTag canal={l.canal} />
-                            <button type="button" className="del" title="Fechar" onClick={() => setSelAf(null)}>
-                              ×
-                            </button>
-                          </div>
-                          {(() => {
-                            const a = acaoAf(l);
-                            const tipo = estadoSituacaoAfiliado(l) || "info";
-                            const ROT = { resolver: "Resolver agora", atencao: "Atenção", oportunidade: "Oportunidade — mais vendas", decisao: "Decisão sua em andamento", info: "Nada a fazer agora" };
-                            return (
-                              <AgoraRampa
-                                acao={{ tipo, rotulo: ROT[tipo], titulo: a.titulo, porque: textoSituacao(l), acao: a.botao ? "x" : null, botao: a.botao, depois: a.depois }}
-                                proxima={l.conf.ativo ? { texto: "vendas via afiliado: pendente (ainda não vêm nos arquivos)" } : null}
-                                onAcao={() => (a.usar != null ? salvarItem(l, { ativo: true, comissao: a.usar }, `${l.item.nome}: comissão ${pct(a.usar)} neste item`) : setEditItem(l))}
-                              />
-                            );
-                          })()}
-                          <div className="detalhe-cel-grade">
-                            <div className="kv-cel">
-                              <small>Lucro sem afiliado</small>
-                              <b>{BRL(l.lucro)}</b>
-                              <span>{l.rampa ? (l.emRampa ? `em rampa: vendendo ${BRL(l.preco)}` : "rampa no alvo") : "no preço salvo, custo e taxas de hoje"}</span>
-                            </div>
-                            <div className="kv-cel">
-                              <small>Lucro com afiliado</small>
-                              <b className={l.alertaCom?.tipo && !l.alertaCom.discreto ? "neg" : ""}>{l.lucroCom != null ? BRL(l.lucroCom) : "—"}</b>
-                              <span>{l.conf.ativo ? `com ${pct(l.conf.comissao)} de comissão` : "comissão não ativada"}</span>
-                            </div>
-                            <div className="kv-cel">
-                              <small>Recomendada</small>
-                              <b>{!l.naoUsar && l.recomendada != null ? pct(l.recomendada) : "—"}</b>
-                              <span>deixa sua margem desejada inteira</span>
-                            </div>
-                            <div className="kv-cel">
-                              <small>Máxima</small>
-                              <b>{l.max >= 0.01 ? pct(l.max) : "sem folga"}</b>
-                              <span>acima disso fica abaixo do mínimo ({BRL(l.lucroMin)})</span>
-                            </div>
-                          </div>
-                          <div className="detalhe-cel-avisos">
-                            <div className="aviso-cel">
-                              <b>Situação:</b> {textoSituacao(l)}
-                              {rotuloEstrategia(l.estrategia) && !l.emRampa ? ` Estratégia do preço: ${rotuloEstrategia(l.estrategia)}.` : ""}
-                            </div>
-                          </div>
-                          <div className="detalhe-cel-acoes">
-                            <Situacao l={l} soAcao onUsar={(c) => salvarItem(l, { ativo: true, comissao: c }, `${l.item.nome}: comissão ${pct(c)} neste item`)} />
-                            {l.conf.ativo ? (
-                              <button type="button" className="btn btn-mini" onClick={() => setEditItem(l)}>
-                                ✎ Mudar % / desativar
-                              </button>
-                            ) : (
-                              !l.naoUsar && (
-                                <button type="button" className="btn btn-mini" onClick={() => setEditItem(l)}>
-                                  + Ativar comissão
-                                </button>
-                              )
-                            )}
-                            <button type="button" className="link-btn" onClick={() => irParaAba("historico", { busca: l.item.nome })}>
-                              ver em Produtos precificados
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  </Fragment>
-                ))}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="panel">
-        <h3 className="section-title">
-          <span>
-            Configuração da comissão
-            <Ajuda texto="Campanha aberta = a comissão que qualquer afiliado do canal recebe pelos itens que você ativar. Item com % próprio (exceção) usa o dele no lugar do padrão. Configure o mesmo % no painel de afiliados do canal — aqui é só o acompanhamento." />
-          </span>
-        </h3>
-        <div className="cfg-afiliado">
-          {canaisPadrao.map((c) => (
-            <PadraoCanal key={`${c.canal.id}-${c.row?.atualizado_em || ""}`} item={c} onSalvar={(v) => salvarPadrao(c.canal, v)} />
-          ))}
-        </div>
-        <div className="sub-linha" style={{ marginTop: 8 }}>
-          Exceções por item: <b>{excecoes.length}</b>
-          {excecoes.length ? ` — ${excecoes.map((l) => `${l.item.nome} (${l.canal.nome}): ${pct(l.conf.comissao)}`).join(" · ")}` : " — nenhuma"}
-        </div>
-        <p className="hint" style={{ marginBottom: 0 }}>
-          Dica: o marketplace desconta a comissão do repasse — não lance no Fluxo de Caixa, o repasse já chega líquido.
-        </p>
-      </div>
+      <ComissaoLoja dados={dados} linhasAf={linhasAf} config={config} pedidos={pedidos} registros={registros} mapaAf={mapaAf} lojaId={lojaId} hoje={hoje} onToast={onToast} />
 
       <div className="panel">
         <h3 className="section-title">
@@ -559,7 +258,7 @@ export default function Afiliados({ dados, af, regras, linhasAf, mapaAf, semana,
           <span className="h3-contagem">{sugestoes.length || "nenhuma agora"}</span>
         </h3>
         {!sugestoes.length ? (
-          <div className="empty">Tudo em ordem. Configure a campanha aberta acima pra começar a ver o que dá pra ativar.</div>
+          <div className="empty">Nada com os parceiros agora.</div>
         ) : (
           <ul className="sug-af">
             {sugestoes.map((sg) => (
@@ -580,19 +279,6 @@ export default function Afiliados({ dados, af, regras, linhasAf, mapaAf, semana,
         )}
       </div>
 
-      {editItem && (
-        <ItemComissaoDialog
-          l={editItem}
-          salvando={salvando}
-          onCancelar={() => setEditItem(null)}
-          onSalvar={async (v) => {
-            setSalvando(true);
-            const ok = await salvarItem(editItem, v, v.ativo ? `${editItem.item.nome}: ${v.comissao != null ? pct(v.comissao) : `padrão (${pct(editItem.conf.padrao)})`} em ${editItem.canal.nome}` : `${editItem.item.nome} saiu da campanha`);
-            setSalvando(false);
-            if (ok) setEditItem(null);
-          }}
-        />
-      )}
       {parceiroForm && (
         <ParceiroDialog
           parceiro={parceiroForm.parceiro || null}
@@ -620,190 +306,6 @@ export default function Afiliados({ dados, af, regras, linhasAf, mapaAf, semana,
   );
 }
 
-// Explicação da situação (detalhe da linha).
-// Lista em seções (out/2026, mesmo padrão da Rampa e do Ads) — a situação vem de lib/afiliados.js.
-const SECOES_AF = [
-  ["fazer", "Pra fazer agora"],
-  ["oport", "Oportunidade"],
-  ["acomp", "Acompanhando"],
-  ["sem", "Sem espaço pra comissão"],
-];
-function secaoAf(l) {
-  if (l.situacao === "acima" || l.situacao === "alta") return "fazer";
-  if (l.situacao === "pode") return "oport";
-  if (l.situacao === "sem" || l.situacao === "apertado" || !l.situacao) return l.conf.ativo ? "fazer" : "sem";
-  return "acomp";
-}
-/** Ação da linha/cartão: { titulo, botao, usar (% pra gravar direto) | null = abre o diálogo, verde, depois } */
-function acaoAf(l) {
-  const alvo = l.recomendada ?? (l.situacao === "acima" && l.max >= 0.01 ? l.max : null);
-  const DEPOIS = "Depois: configure o mesmo % no painel de afiliados do canal — aqui é só o acompanhamento.";
-  if (l.situacao === "acima" || l.situacao === "alta")
-    return alvo
-      ? { titulo: l.situacao === "acima" ? "Comissão acima da máxima" : "Comissão come sua margem", botao: `Usar ${pct(alvo)}`, usar: alvo, depois: DEPOIS }
-      : { titulo: "Comissão acima da máxima — tire da campanha", botao: "Mudar / desativar", usar: null, depois: DEPOIS };
-  if (l.situacao === "pode") return { titulo: `Pode ativar até ${pct(l.recomendada)}`, botao: "Ativar…", usar: null, verde: true, depois: DEPOIS };
-  if ((l.situacao === "sem" || l.situacao === "apertado" || !l.situacao) && l.conf.ativo) return { titulo: "Sem espaço pra comissão — tire da campanha", botao: "Mudar / desativar", usar: null, depois: DEPOIS };
-  if (l.situacao === "ok") return { titulo: "Comissão dentro da recomendada", botao: null };
-  if (l.situacao === "rampa") return { titulo: "Em rampa / crescimento: não usar ainda", botao: null };
-  if (l.situacao === "atracao") return { titulo: "Atração: só se quiser", botao: null };
-  return { titulo: "Sem espaço pra comissão neste preço", botao: null };
-}
-
-function textoSituacao(l) {
-  const alvo = l.recomendada ?? (l.situacao === "acima" && l.max >= 0.01 ? l.max : null);
-  switch (l.situacao) {
-    case "acima":
-      return `A comissão de ${pct(l.conf.comissao)} deixa o lucro abaixo do mínimo. ${alvo ? `Use ${pct(alvo)} só neste item` : "Tire da campanha"}.`;
-    case "alta":
-      return `Com ${pct(l.conf.comissao)} você ainda lucra acima do mínimo, mas abaixo da sua margem desejada. A recomendada (${pct(alvo)}) deixa sua margem inteira.`;
-    case "rampa":
-      return "Lucro baixo de propósito (crescimento, rampa ou peça em rampa): sem espaço pra comissão por enquanto.";
-    case "atracao":
-      return "Avulso marcado como atração: o lucro vem do kit. Dá pra ativar, mas o app não sugere.";
-    case "ok":
-      return "Comissão dentro da recomendada.";
-    case "pode":
-      return `Cabe comissão até ${pct(l.recomendada)} sem tirar da sua margem desejada.`;
-    case "apertado":
-      return "Há folga só até o lucro mínimo, nada acima da sua margem desejada — afiliado só se houver espaço.";
-    default:
-      return "Sem folga pra comissão neste preço.";
-  }
-}
-
-// compacto = só a etiqueta (linha da tabela); soAcao = só o botão "usar X%".
-function Situacao({ l, onUsar, compacto = false, soAcao = false }) {
-  // % pra onde levar a comissão quando ela está alta demais.
-  const alvo = l.recomendada ?? (l.situacao === "acima" && l.max >= 0.01 ? l.max : null);
-  if (soAcao)
-    return (l.situacao === "acima" || l.situacao === "alta") && alvo ? (
-      <button type="button" className="btn btn-mini primary" onClick={() => onUsar(alvo)}>
-        Usar {pct(alvo)} só neste item
-      </button>
-    ) : null;
-  const tipo = estadoSituacaoAfiliado(l);
-  if (compacto && (l.situacao === "acima" || l.situacao === "alta"))
-    return <Estado tipo={tipo}>{l.situacao === "acima" ? "acima da máxima" : "come sua margem"}</Estado>;
-  if (l.situacao === "acima" || l.situacao === "alta")
-    return (
-      <div className="sit-af">
-        <Estado tipo={tipo}>{l.situacao === "acima" ? "acima da máxima" : "come sua margem"}</Estado>
-        {alvo ? (
-          <button type="button" className="link-btn" onClick={() => onUsar(alvo)}>
-            usar {pct(alvo)} só neste item
-          </button>
-        ) : (
-          <span className="sub-num">tire da campanha</span>
-        )}
-      </div>
-    );
-  if (l.situacao === "rampa")
-    return (
-      <Estado tipo="decisao" icone={null} title="Estratégia do preço em crescimento (escolhida, rampa ou peça em rampa): lucro baixo de propósito, sem espaço pra comissão">
-        {l.emRampa || l.estrategia?.origem === "rampa" ? "em rampa" : l.estrategia?.origem === "kit-em-rampa" ? "peça em rampa" : "em crescimento"}: não usar ainda
-      </Estado>
-    );
-  if (l.situacao === "atracao")
-    return (
-      <Estado tipo="decisao" icone={null} title="Avulso marcado como atração: o lucro vem do kit. Dá pra ativar, mas o app não sugere">
-        atração: só se quiser
-      </Estado>
-    );
-  if (l.situacao === "ok") return <span className="muted-cel">✓ ok</span>;
-  if (l.situacao === "pode") return <Estado tipo="oportunidade">{`pode ativar até ${pct(l.recomendada)}`}</Estado>;
-  if (l.situacao === "apertado")
-    return (
-      <Estado tipo="info" icone={null} title="Há folga até o lucro mínimo, mas nada acima da sua margem desejada — afiliado só se houver espaço">
-        sem espaço acima da sua margem
-      </Estado>
-    );
-  return (
-    <Estado tipo="info" icone={null}>
-      sem folga pra comissão
-    </Estado>
-  );
-}
-
-function PadraoCanal({ item, onSalvar }) {
-  const { canal, row } = item;
-  const [ativo, setAtivo] = useState(!!row?.ativo);
-  const [valor, setValor] = useState(row?.comissao != null ? String(Math.round(num(row.comissao) * 1000) / 10).replace(".", ",") : "");
-  const mudou = ativo !== !!row?.ativo || (ativo && Math.abs(num(valor) / 100 - num(row?.comissao)) > 1e-6);
-  return (
-    <div className="cfg-af-linha">
-      <CanalTag canal={canal} />
-      <label className="check-inline">
-        <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} /> campanha aberta
-      </label>
-      {ativo ? (
-        <span className="cfg-af-pct">
-          <input type="text" inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="12" /> %
-        </span>
-      ) : (
-        <span className="muted-cel">sem afiliado</span>
-      )}
-      {mudou && (
-        <button
-          type="button"
-          className="btn btn-mini primary"
-          onClick={() => {
-            if (ativo && !(num(valor) > 0 && num(valor) < 100)) return;
-            onSalvar({ ativo, comissao: ativo ? num(valor) / 100 : row?.comissao ?? null });
-          }}
-          disabled={ativo && !(num(valor) > 0 && num(valor) < 100)}
-        >
-          Salvar
-        </button>
-      )}
-      {ativo && !mudou && <span className="muted-cel">vale pra todos os itens ativados</span>}
-    </div>
-  );
-}
-
-function ItemComissaoDialog({ l, salvando, onCancelar, onSalvar }) {
-  const [ativo, setAtivo] = useState(l.conf.ativo || !l.conf.row);
-  const propria = l.conf.row?.comissao;
-  const [valor, setValor] = useState(propria != null ? String(Math.round(num(propria) * 1000) / 10).replace(".", ",") : "");
-  const c = valor !== "" ? num(valor) / 100 : l.conf.padrao;
-  const lucroCom = c != null && l.lucro != null ? l.lucro - c * l.preco : null;
-  const invalido = ativo && (valor !== "" ? !(num(valor) > 0 && num(valor) < 100) : !l.conf.padrao);
-  return (
-    <EditarDialog
-      titulo={`Comissão — ${l.item.nome}`}
-      salvando={salvando}
-      onCancelar={onCancelar}
-      salvarLabel="Salvar"
-      classe="modal-box-md"
-      onSalvar={() => !invalido && onSalvar({ ativo, comissao: valor === "" ? null : num(valor) / 100 })}
-    >
-      <p className="hint" style={{ marginTop: 0 }}>
-        <CanalTag canal={l.canal} /> · vendendo {BRL(l.preco)} · lucro {BRL(l.lucro)} · mínimo {BRL(l.lucroMin)} · recomendada <b>{l.recomendada != null ? pct(l.recomendada) : "—"}</b> · máxima <b>{l.max >= 0.01 ? pct(l.max) : "sem folga"}</b>
-        {l.emRampa ? " · em rampa abaixo do alvo (o ideal é esperar chegar no alvo)" : ""}
-      </p>
-      <label className="check-inline">
-        <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} /> Item na campanha de afiliados
-      </label>
-      {ativo && (
-        <div className="field" style={{ maxWidth: 260, marginTop: 10 }}>
-          <label>Comissão própria (%)</label>
-          <input type="text" inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder={l.conf.padrao ? `padrão ${Math.round(l.conf.padrao * 100)}` : "sem padrão no canal"} />
-        </div>
-      )}
-      {ativo && !l.conf.padrao && valor === "" && <p className="hint neg">Este canal não tem campanha aberta — informe um % próprio ou configure a campanha aberta.</p>}
-      {ativo && lucroCom != null && (() => {
-        const al = alertaPreco({ lucro: lucroCom, preco: l.preco, lucroMinimo: l.lucroMin, estrategia: l.estrategia });
-        return (
-          <p className={`hint${al.tipo && !al.discreto ? " neg" : ""}`}>
-            Com {pct(c)}: lucro {BRL(lucroCom)} por venda via afiliado
-            {al.tipo === "prejuizo" ? " — prejuízo" : al.tipo === "abaixo-minimo" ? " — abaixo do mínimo (loja/produto)" : al.silenciado ? ` — abaixo do mínimo, mas o item está como ${rotuloEstrategia(l.estrategia) || "estratégia"}` : ""}.
-          </p>
-        );
-      })()}
-    </EditarDialog>
-  );
-}
-
 function ParceiroDialog({ parceiro, inicial, itens, canais, mapaAf, hoje, lojaId, onToast, onClose }) {
   const base = parceiro || {};
   const [f, setF] = useState(() => ({
@@ -819,7 +321,6 @@ function ParceiroDialog({ parceiro, inicial, itens, canais, mapaAf, hoje, lojaId
     amostra_frete: base.amostra_frete != null ? String(base.amostra_frete).replace(".", ",") : "",
     observacao: base.observacao || "",
   }));
-  const [salvando, setSalvando] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
   const grupos = useMemo(() => gruposDoSeletor(itens), [itens]);
   const tipo = f.amostra_item ? itemTipoDoId(f.amostra_item) : null;

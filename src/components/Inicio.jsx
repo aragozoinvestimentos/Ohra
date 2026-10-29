@@ -27,7 +27,8 @@ import { avisosDesgaste } from "../lib/farm.js";
 import { avisosManutencao } from "../lib/manutencao.js";
 import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
-import { sugestoesAfiliado } from "../lib/afiliados.js";
+import { padraoDoCanal, sugestoesAfiliado } from "../lib/afiliados.js";
+import { avisosComissaoLoja, linhasDaLoja, resultadoAfiliados, vendasPorItemCanal } from "../lib/comissaoLoja.js";
 import { agruparPorProduto, ehAvisoDeDados, montarPendencias, notaDoAviso, produtoDoAviso, situacaoDados } from "../lib/inicio.js";
 import { produtosParados } from "../lib/relatorios.js";
 import { comoEstaALoja, produtosDaSemana, variacao } from "../lib/resumoLoja.js";
@@ -281,14 +282,19 @@ export default function Inicio({ onIrPara, onToast }) {
   const atracao = useMemo(() => precosAlerta.filter((a) => a.al.tipo === "abaixo-minimo" && pareceAtracaoDe(a.item, a.canal, a.al)), [precosAlerta, pareceAtracaoDe]);
 
   // --- Afiliados (só com campanha configurada) ---
-  const afAtivo = af.config.length > 0;
+  // Comissão da LOJA (29/10/2026): as sugestões de item saíram; dos afiliados ficam as dos
+  // parceiros + os avisos da comissão da loja (prejuízo, mais vendidos abaixo do mínimo, dá pra subir).
   const afSugestoes = useMemo(
-    () =>
-      afAtivo
-        ? sugestoesAfiliado({ linhas: linhasAf, parceiros: af.parceiros, afRegistros: af.registros, regras, itens, hoje }).filter((s) => s.chave !== "pode-mais")
-        : [],
-    [afAtivo, linhasAf, af.parceiros, af.registros, regras, itens, hoje]
+    () => sugestoesAfiliado({ linhas: linhasAf, parceiros: af.parceiros, afRegistros: af.registros, regras, itens, hoje }).filter((s) => /^(divulgou|amostra)\|/.test(s.chave)),
+    [linhasAf, af.parceiros, af.registros, regras, itens, hoje]
   );
+  const afLoja = useMemo(() => {
+    const canalAf = (dados.canais || []).find((c) => c.tipo === "shopee");
+    if (!canalAf) return [];
+    const linhasL = linhasDaLoja({ linhasAf, canalId: canalAf.id, faixasCupom: cuponsAtivos(dados.cfgLoja, canalAf.id), vendas: vendasPorItemCanal(pedidosValidos, hoje) });
+    const lucroPorVenda = (r) => linhasAf.find((l) => l.chave === `${r.item_tipo}|${r.item_id}|${r.canal_id}`)?.lucro ?? 0;
+    return avisosComissaoLoja({ linhas: linhasL, canal: canalAf, comissao: padraoDoCanal(af.config, canalAf.id).comissao, resultado: resultadoAfiliados(af.registros, { hoje, lucroPorVenda }) });
+  }, [dados.canais, dados.cfgLoja, linhasAf, pedidosValidos, af.config, af.registros, hoje]);
 
   // --- Pra fazer + status ---
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
@@ -331,8 +337,8 @@ export default function Inicio({ onIrPara, onToast }) {
   const revisarME = precisaRevisarME(dados.cfgLoja);
   const limMei = useMemo(() => (regime.regime === "mei" ? limiteMei({ pedidos: pedidosValidos || [], limite: regime.limiteAnual, hoje }) : null), [regime.regime, regime.limiteAnual, pedidosValidos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, revisarME, hoje }),
-    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, revisarME, hoje]
+    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: impCentral, saldoDeAds, cupomRuins, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, revisarME, hoje }),
+    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, revisarME, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.
@@ -456,6 +462,8 @@ export default function Inicio({ onIrPara, onToast }) {
         }
       : null,
     limiteMei: limMei,
+    // afiliados (comissão da loja, 29/10/2026) pro consultor
+    afiliados: afLoja.map((p) => p.titulo),
     // contas a pagar (atrasadas + próximos 7 dias) pro consultor da Sede
     aPagar: caixa
       ? [...(caixa.atrasados || []), ...(caixa.proximos || [])]

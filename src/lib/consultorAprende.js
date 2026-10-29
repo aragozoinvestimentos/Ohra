@@ -245,6 +245,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-29", texto: "Afiliados: agora é UMA comissão pra loja inteira (a da Shopee). Eu sugiro o % em que os produtos que mais vendem deixam pelo menos metade do lucro pra você — pelo preço de agora e com o cupom ativo —, mostro o teto e tenho um simulador. Dá pra montar proposta pra um afiliado específico, e o Leo acompanha se o afiliado dá lucro." },
   { data: "2026-10-29", texto: "Estoque: o produto só sai do estoque quando o pedido vira ENVIADO na Olist; pago e ainda não enviado fica em “a enviar” (continua na prateleira). Também controlo o estoque dos fabricados que você marcar “tenho estoque pronto” — cada impressão com sucesso pergunta se vai pro estoque." },
   { data: "2026-10-29", texto: "Dinheiro → Resultado junta o Resumo do mês, as vendas por produto e o Payoff. A tabela do faturamento ao lucro ficou com 8 linhas e o relatório do mês tem 2 folhas: quanto sobrou e por quê, depois canal, os 5 que mais deram lucro e as contas fixas. Devoluções aparecem à parte." },
   { data: "2026-10-29", texto: "Vender mais abre no Hoje: um cartão por anúncio juntando o que a Rampa, o Ads, os Afiliados e o cupom pedem. A Análise filtra por Fabricado ou Revenda, as Regras mostram o valor atual no título e Materiais/Embalagens foram pra Estoque e compras." },

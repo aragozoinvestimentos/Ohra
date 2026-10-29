@@ -33,7 +33,7 @@ export const ELENCO = [
   { id: "celia", funcao: "Gerente comercial", nome: "Célia", sala: "comercial" },
   { id: "rafa", funcao: "Preços", nome: "Rafa", sala: "comercial" },
   { id: "nina", funcao: "Anúncios e Rampa", nome: "Nina", sala: "comercial" },
-  { id: "leo", funcao: "Ads", nome: "Leo", sala: "comercial" },
+  { id: "leo", funcao: "Ads e Afiliados", nome: "Leo", sala: "comercial" },
   { id: "teo", funcao: "Gerente de operação", nome: "Téo", sala: "operacao" },
   { id: "ivo", funcao: "Técnico de impressão", nome: "Ivo", sala: "operacao" },
   { id: "duda", funcao: "Expedição e estoque", nome: "Duda", sala: "operacao" },

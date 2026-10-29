@@ -601,3 +601,20 @@ describe("estoque: sai no Enviado (28/10/2026)", () => {
     expect(e.disponivel).toBe(9);
   });
 });
+
+describe("comissão da loja pra afiliados (29/10/2026)", () => {
+  it("sugerida = metade do lucro dos mais vendidos; teto = lucro mínimo", async () => {
+    const { comComissao, sugestaoComissaoLoja, maisVendidos, simularComissaoLoja } = await import("../src/lib/comissaoLoja.js");
+    const L = (chave, base, lucro, lucroMin, vendas) => ({ chave, item: { nome: chave }, base, lucro, lucroMin, vendas, preco: base });
+    const linhas = [L("a", 30, 9, 2, 50), L("b", 10, 2.4, 2, 40), L("c", 40, 12, 2, 1)];
+    expect([...maisVendidos(linhas)].sort()).toEqual(["a", "b"]); // 80% das vendas
+    expect(comComissao(linhas[0], 0.1)).toMatchObject({ comissao: 3, lucroCom: 6, situacao: "ok" });
+    const s = sugestaoComissaoLoja(linhas);
+    // b: 2,40 − 10×p ≥ 1,20 → p ≤ 12%; a: 9 − 30p ≥ 4,5 → p ≤ 15% → 12%, mas o teto (4%) manda
+    expect(s.sugerida).toBe(4);
+    // teto: b: 2,40 − 10p ≥ 2 → p ≤ 4% ... a: 9 − 30p ≥ 2 → 23% → 4%
+    expect(s.teto).toBe(4);
+    const sim = simularComissaoLoja(linhas, 0.11);
+    expect(sim.abaixo).toBe(1); // b fica com 1,30 < 2
+  });
+});

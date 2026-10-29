@@ -116,6 +116,10 @@ export function responderPergunta(pergunta, ctx) {
     const env = e.aEnviar > 0 ? ` ${e.aEnviar} un. pagas ainda não enviadas (saem do estoque quando o pedido virar Enviado).` : "";
     return { entendeu: true, texto: `Estoque: ${e.itens} ${e.itens === 1 ? "produto" : "produtos"}, ${BRL(e.valor)} na prateleira pelo custo.${rep}${env}`, numeros: { estoque: e.valor } };
   }
+  if (/afiliad/.test(t)) {
+    const a = kpis?.afiliados;
+    return { entendeu: true, texto: a?.length ? `Afiliados: ${a.join(" · ")}. O simulador da comissão da loja está em Vender mais → Afiliados.` : "Afiliados sem nada pra fazer agora. A comissão sugerida (o afiliado fica com no máximo metade do lucro, pelo preço de agora) e o simulador estão em Vender mais → Afiliados; o resultado aparece quando sair a 1ª venda por afiliado.", numeros: null };
+  }
   if (/\bmei\b|limite de faturamento/.test(t)) {
     const l = kpis?.limiteMei;
     if (!l) return { entendeu: true, texto: "O regime da loja não está como MEI — escolha em Configuração → Regras → Impostos da loja.", numeros: null };

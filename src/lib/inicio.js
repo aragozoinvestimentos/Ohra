@@ -79,7 +79,8 @@ export function montarPendencias({
   rampas = [], // linhas do Crescimento ({ r, produto, canal, est })
   anunciosAtualizar = [], // [{ item, canal, x }] linhasAnunciar: mudou e já marcado feito antes
   promosAcima = [], // [{ item, canal, x }] desconto acima do que a plataforma aceita (limitePromo.js)
-  afSugestoes = [], // sugestoesAfiliado: "pode|…" e "amostra|…"
+  afSugestoes = [], // sugestoesAfiliado: só as dos parceiros ("amostra|…", "divulgou|…")
+  afLoja = [], // comissão da loja (comissaoLoja.js → avisosComissaoLoja), já no formato de pendência
   atracao = [], // [{ item, canal }] pareceAtracaoDe
   tarefas = [], // tarefas manuais (schema v42)
   ads = null, // useCrescimento().linhasAds (lib/ads.js) — só períodos ligados + teto da loja
@@ -645,6 +646,7 @@ export function montarPendencias({
       rotulo: "Abrir Afiliados",
     });
   }
+  for (const p of afLoja) add(p);
   for (const { item, canal } of atracao)
     add({
       id: `atracao|${item.id}|${canal.id}`,
