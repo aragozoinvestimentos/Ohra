@@ -389,6 +389,10 @@ export function montarPendencias({
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|pausa-longa`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: Ads pausado há ${av.pausado?.desde ? Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${av.pausado.desde}T12:00:00`)) / 86400000) : 21} dias`, texto: `${l.canal.nome} · a Shopee começa a perder o aprendizado — despause ou encerre o período`, ir: irL, rotulo: "Abrir Ads" });
       continue;
     }
+    if (av.chave === "dia3-noite") {
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|dia3-noite`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: dia 3 do Ads sem venda — confira hoje à noite`, texto: `${l.canal.nome} · se até umas 22h não vender, pause e revise o anúncio`, ir: irL, rotulo: "Abrir Ads" });
+      continue;
+    }
     if (av.chave === "conferir-dia3") {
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|conferir`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()} do Ads`, texto: `${l.canal.nome} · pra saber se já vendeu (sem venda em 3 dias = parar e arrumar o anúncio)`, ir: { aba: "importar" }, rotulo: "Abrir importação" });
       continue;

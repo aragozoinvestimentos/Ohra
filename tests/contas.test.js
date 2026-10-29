@@ -13,7 +13,7 @@ import { resultadoNoPreco, resolverTaxasNoPreco } from "../src/lib/calc.js";
 import { calcularAnuncio, calcularEscada, configEscada, lucroNoPreco, precoPorMarkup, r5090perto, r90perto, r90up } from "../src/lib/escada.js";
 import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
 import { quebraLucro } from "../src/lib/precoAgora.js";
-import { degrauAnterior, passoDaEscada, tetoPorFaixas } from "../src/lib/ads.js";
+import { avaliarAds, degrauAnterior, passoDaEscada, primeiroDiaFraco, tetoPorFaixas } from "../src/lib/ads.js";
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
 import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
 import { ateDoEnvioPedidos } from "../src/lib/pedidos.js";
@@ -616,5 +616,42 @@ describe("comissão da loja pra afiliados (29/10/2026)", () => {
     expect(s.teto).toBe(4);
     const sim = simularComissaoLoja(linhas, 0.11);
     expect(sim.abaixo).toBe(1); // b fica com 1,30 < 2
+  });
+});
+
+describe("Ads — dia 3 só com o dia fechado e 1º dia fraco fora (29/10/2026)", () => {
+  // Árvore de Natal: período começou 27/10, R$ 10/dia; 27/10 gastou R$ 1 (quase não divulgou).
+  const per = (parcial) => ({ id: "a", item_tipo: "produto", item_id: "x", canal_id: "c", inicio: "2026-10-27", orcamento_diario: 10, meta_roas: 3, ajustes: [], parcial });
+  const parcial = { ate: "2026-10-29", gasto: 21, cliques: 60, vendas: 0, historico: [{ ate: "2026-10-27", gasto: 1, cliques: 2, vendas: 0 }, { ate: "2026-10-28", gasto: 11, cliques: 30, vendas: 0 }] };
+  it("1º dia com menos de 30% do orçamento não conta", () => {
+    expect(primeiroDiaFraco(per(parcial), 10)).toBe(true);
+    expect(primeiroDiaFraco(per({ ...parcial, historico: [{ ate: "2026-10-27", gasto: 6 }] }), 10)).toBe(false);
+  });
+  it("no 3º dia (aberto) só pede pra conferir à noite; sem pausar por cliques", () => {
+    // 1º dia fraco → conta de 28/10: 28, 29, 30 → em 30/10 o 3º dia ainda está aberto
+    const av = avaliarAds({ preco: 30, lucro: 10, periodos: [per(parcial)], hoje: "2026-10-30" });
+    expect(av.chave).toBe("dia3-noite");
+    const av2 = avaliarAds({ preco: 30, lucro: 10, periodos: [per(parcial)], hoje: "2026-10-29" });
+    expect(["pausar-revisar", "sem-venda-dia3"]).not.toContain(av2.chave);
+  });
+});
+
+describe("afiliados: comissão própria, teste de 15 dias e avisos (29/10/2026)", () => {
+  it("própria substitui a da loja, teste só sugere subir com resposta 'ninguém' e dentro do seguro", async () => {
+    const { simularComissaoLoja, estadoTeste, maxSeguroDoItem, avisosComissaoLoja } = await import("../src/lib/comissaoLoja.js");
+    const L = (chave, base, lucro, propria = null) => ({ chave, tipo: "produto", id: chave, item: { nome: chave }, base, preco: base, lucro, lucroMin: 2, vendas: 1, propria });
+    const a = L("a", 30, 9);
+    const b = L("b", 10, 2.4, 0.02); // própria 2%: 2,40 − 0,20 = 2,20
+    const sim = simularComissaoLoja([a, b], 0.1);
+    expect(sim.linhas.find((l) => l.chave === "b").comissao).toBe(0.2); // não soma os 10% da loja
+    expect(maxSeguroDoItem(a)).toBe(15);
+    expect(estadoTeste({ pct: 0.04, inicio: "2026-10-01" }, "2026-10-10", 15).estado).toBe("andamento");
+    expect(estadoTeste({ pct: 0.04, inicio: "2026-10-01" }, "2026-10-16", 15).estado).toBe("avaliar");
+    expect(estadoTeste({ pct: 0.04, inicio: "2026-10-01", resposta: "nao" }, "2026-10-16", 15)).toMatchObject({ estado: "subir", proximo: 5 });
+    expect(estadoTeste({ pct: 0.15, inicio: "2026-10-01", resposta: "nao" }, "2026-10-16", 15).estado).toBe("maximo");
+    // aviso: com 20% da loja, "a" (9 − 6 = 3 < 4,5) leva mais da metade → Atenção; nada de preço
+    const av = avisosComissaoLoja({ linhas: [a], canal: { id: "c", nome: "Shopee" }, comissao: 0.2, hoje: "2026-10-29" });
+    expect(av.map((x) => x.grupo)).toEqual(["rotina"]);
+    expect(av[0].texto).not.toMatch(/preço/);
   });
 });

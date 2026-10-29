@@ -42,6 +42,7 @@ export const REGRAS_ADS = {
   aumento: 0.2, // 1º degrau da escada de aumento (retorno 1,2–2×)
   aumentoMax: 0.3, // retorno ≥ 2× → +30% no máximo (sem +50%/dobrar)
   diaConferencia: 3, // dia 3: sem venda via Ads = parar e arrumar o anúncio
+  diaFracoPct: 0.3, // 1º dia com gasto < 30% do orçamento não conta nos 3 dias
   pausaLembrarDias: 3, // pausado pra revisar há 3 dias → lembrar de despausar
   prejuizoRetorno: 0.5, // ROAS < metade do equilíbrio a partir do dia 3 = Ads no prejuízo (decisão imediata)
   prejuizoGastoMin: 15, // …com pelo menos R$ 15 gastos (ou 1,5 dia de orçamento)
@@ -231,6 +232,16 @@ export function ultimaRevisao(periodo) {
 // andamento (parcial + historico), interpolando gasto/cliques entre o envio
 // de antes e o de depois; vendas = as do envio de antes (venda no meio conta
 // como depois — nunca gera aviso falso de "sem venda").
+// O 1º dia do período gastou menos de `diaFracoPct` (30%) do orçamento? Só dá
+// pra saber com um envio do CSV que termina NO 1º dia (o acumulado dele = o dia).
+export function primeiroDiaFraco(periodo, orcamento, regras = REGRAS_ADS) {
+  const par = periodo?.parcial;
+  if (!par || !(orcamento > 0)) return false;
+  const d1 = String(periodo.inicio).slice(0, 10);
+  const p = [...(Array.isArray(par.historico) ? par.historico : []), par].find((h) => h?.ate && String(h.ate).slice(0, 10) === d1);
+  return !!p && num(p.gasto) < orcamento * num(regras.diaFracoPct ?? 0.3);
+}
+
 export function acumuladoAntesDe(periodo, data) {
   const par = periodo?.parcial;
   const zero = { gasto: 0, cliques: 0, vendas: 0 };
@@ -600,7 +611,11 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const a00 = andamentoValido(ativo, ss);
     // Dias RODANDO (sem as pausas) e números desde a última volta/revisão.
     const rev = ultimaRevisao(ativo);
-    const refVolta = rev?.data || ativo.inicio;
+    // 1º dia fraco (29/10/2026, Árvore de Natal: o Ads quase não divulgou no
+    // 1º dia e ele contou como um dos 3): gastou < 30% do orçamento → a conta
+    // dos 3 dias começa no dia seguinte.
+    const fraco = !rev && primeiroDiaFraco(ativo, orcamento, regras);
+    const refVolta = rev?.data || (fraco ? somarDiasIso(ativo.inicio, 1) : ativo.inicio);
     const diasRodando = diasEntre(ativo.inicio, hoje) - pz.diasPausados;
     const diasDesdeVolta = diasEntre(refVolta, hoje);
     // Alertas de 3 dias (sem venda / prejuízo forte) só na 1ª semana do
@@ -619,6 +634,10 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const quandoRev = rev ? ` desde ${rev.tipo === "volta" ? "que voltou" : "a revisão"} (${dm(rev.data)})` : "";
     // Tem número cobrindo os 3 dias? (andamento até ≥ ref + 2, ou semana registrada depois)
     const temDado = (a00 && a00.ate >= somarDiasIso(refVolta, dia3 - 1)) || semanasNoPeriodo(ss, ativo).some((x) => x.data > somarDiasIso(refVolta, dia3 - 1));
+    // 3º dia ainda em aberto (29/10/2026): o dia só fecha à meia-noite — sem
+    // venda, avisa pra conferir à noite; a ordem de pausar só vem com o dia fechado.
+    if (primeiraSemana && diasDesdeVolta === dia3 - 1 && vendasDesdeVolta === 0 && desde.gasto > 0)
+      return sitA("dia3-noite", "atencao", `Dia ${dia3}${quandoRev}: confira hoje à noite`, `Ainda sem venda via Ads${fraco ? ` (o 1º dia, ${dm(ativo.inicio)}, quase não divulgou e não conta)` : ""}. O dia só fecha à meia-noite: se até umas 22h não vender, pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"}. Amanhã, com o CSV de hoje, o app confirma.`, { numeros });
     if (primeiraSemana && diasDesdeVolta >= dia3 && vendasDesdeVolta === 0) {
       if (temDado)
         return sitA("sem-venda-dia3", "resolver", `${diasDesdeVolta} dias pagando Ads sem venda${quandoRev} — pare e arrume o anúncio`, `O Ads só traz gente até o anúncio; se em ${diasDesdeVolta} dias ninguém comprou, mais dinheiro não resolve. Pause e revise ${anuncio?.porOnde || "a capa, o título, o preço e a descrição"} antes de gastar mais.`, { numeros, semVenda: { dias: diasDesdeVolta, gasto: desde.gasto, cliques: desde.cliques, podeEsperar: true, desdeRevisao: !!rev } });
@@ -674,7 +693,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     const a0 = andamentoValido(ativo, ss);
     // Cliques sem venda: depois de uma volta/revisão, só os cliques novos e só
     // a partir do 3º dia.
-    if (desde.vendas === 0 && desde.cliques >= regras.cliquesSemVenda && (!rev || diasDesdeVolta >= dia3))
+    if (desde.vendas === 0 && desde.cliques >= regras.cliquesSemVenda && (diasDesdeVolta >= dia3 || (!rev && !primeiraSemana)))
       return sitA("pausar-revisar", "resolver", "Pausar e revisar o anúncio", `${desde.cliques} cliques pagos${quandoRev} e nenhuma venda: o Ads está trazendo gente, mas a página não convence. Pause e revise ${anuncio?.porOnde || "foto, descrição, medidas e preço"} antes de gastar mais.`, { numeros });
     // Espera de 7 dias: o último dia já decide (à noite). A de 3 dias do
     // Alavancar continua inteira.

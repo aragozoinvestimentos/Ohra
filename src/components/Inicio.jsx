@@ -27,8 +27,8 @@ import { avisosDesgaste } from "../lib/farm.js";
 import { avisosManutencao } from "../lib/manutencao.js";
 import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
-import { padraoDoCanal, sugestoesAfiliado } from "../lib/afiliados.js";
-import { avisosComissaoLoja, linhasDaLoja, resultadoAfiliados, vendasPorItemCanal } from "../lib/comissaoLoja.js";
+import { custoAmostra, padraoDoCanal, sugestoesAfiliado } from "../lib/afiliados.js";
+import { avisosComissaoLoja, linhasDaLoja, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
 import { agruparPorProduto, ehAvisoDeDados, montarPendencias, notaDoAviso, produtoDoAviso, situacaoDados } from "../lib/inicio.js";
 import { produtosParados } from "../lib/relatorios.js";
 import { comoEstaALoja, produtosDaSemana, variacao } from "../lib/resumoLoja.js";
@@ -288,13 +288,20 @@ export default function Inicio({ onIrPara, onToast }) {
     () => sugestoesAfiliado({ linhas: linhasAf, parceiros: af.parceiros, afRegistros: af.registros, regras, itens, hoje }).filter((s) => /^(divulgou|amostra)\|/.test(s.chave)),
     [linhasAf, af.parceiros, af.registros, regras, itens, hoje]
   );
-  const afLoja = useMemo(() => {
+  const [afTestes] = usePreferencia("afiliados:testes", {});
+  const afLojaTudo = useMemo(() => {
     const canalAf = (dados.canais || []).find((c) => c.tipo === "shopee");
-    if (!canalAf) return [];
-    const linhasL = linhasDaLoja({ linhasAf, canalId: canalAf.id, faixasCupom: cuponsAtivos(dados.cfgLoja, canalAf.id), vendas: vendasPorItemCanal(pedidosValidos, hoje) });
+    if (!canalAf) return { avisos: [], info: null };
+    const linhasL = linhasDaLoja({ linhasAf, canalId: canalAf.id, faixasCupom: cuponsAtivos(dados.cfgLoja, canalAf.id), vendas: vendasPorItemCanal(pedidosValidos, hoje), config: af.config });
     const lucroPorVenda = (r) => linhasAf.find((l) => l.chave === `${r.item_tipo}|${r.item_id}|${r.canal_id}`)?.lucro ?? 0;
-    return avisosComissaoLoja({ linhas: linhasL, canal: canalAf, comissao: padraoDoCanal(af.config, canalAf.id).comissao, resultado: resultadoAfiliados(af.registros, { hoje, lucroPorVenda }) });
-  }, [dados.canais, dados.cfgLoja, linhasAf, pedidosValidos, af.config, af.registros, hoje]);
+    const comissao = padraoDoCanal(af.config, canalAf.id).comissao;
+    const resultado = resultadoAfiliados(af.registros, { hoje, lucroPorVenda });
+    const sug = sugestaoComissaoLoja(linhasL);
+    const amostras = (af.parceiros || []).filter((pa) => pa.amostra_item_id).reduce((t, pa) => t + custoAmostra(pa, itens), 0);
+    const info = { canal: canalAf.nome, comissao, sugerida: sug.sugerida, teto: sug.teto, minimo: minimoAfiliado(dados.cfgLoja), resultado, amostras, linhas: linhasL.map((l) => ({ nome: l.item.nome, max: maxSeguroDoItem(l), propria: l.propria })) };
+    return { avisos: avisosComissaoLoja({ linhas: linhasL, canal: canalAf, comissao, resultado, testes: afTestes, hoje }), info };
+  }, [dados.canais, dados.cfgLoja, linhasAf, pedidosValidos, af.config, af.registros, af.parceiros, itens, afTestes, hoje]);
+  const afLoja = afLojaTudo.avisos;
 
   // --- Pra fazer + status ---
   // Venda direta (Orgânico): preço velho ou custo subiu → "vale revisar o preço?"
@@ -464,6 +471,7 @@ export default function Inicio({ onIrPara, onToast }) {
     limiteMei: limMei,
     // afiliados (comissão da loja, 29/10/2026) pro consultor
     afiliados: afLoja.map((p) => p.titulo),
+    afiliadosInfo: afLojaTudo.info,
     // contas a pagar (atrasadas + próximos 7 dias) pro consultor da Sede
     aPagar: caixa
       ? [...(caixa.atrasados || []), ...(caixa.proximos || [])]

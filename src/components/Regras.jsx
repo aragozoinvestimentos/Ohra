@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MINIMO_AFILIADO, minimoAfiliado } from "../lib/comissaoLoja.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { regrasDaLoja } from "../lib/rampa.js";
 import { regrasAds } from "../lib/ads.js";
@@ -62,6 +63,7 @@ function resumos(cfg) {
     rampa: `passo ${pc(rr.passo)} · ${rr.semVendaDias} dias sem venda · lucro fica ≥ ${pc(rr.lucroFica)}`,
     ads: `aumento ${pc(ra.aumento)} · máx. ${pc(ra.aumentoMax)}`,
     estoque: `AX ${es.AX} · AY ${es.AY} · BX ${es.BX} dias + folga ${es.folgaFila}`,
+    afiliados: `mínimo da Shopee ${pc(minimoAfiliado(cfg))} · afiliado leva no máx. metade do lucro`,
     atacado: at.faixas.map((f) => `${f.min}+ ${String(f.mult).replace(".", ",")}×`).join(" · "),
   };
 }
@@ -102,6 +104,9 @@ export default function Regras({ onToast }) {
       </Secao>
       <Secao titulo="Ads" resumo={rs.ads} onde="Vender mais → Ads (o teto por faixas fica no KPI Teto de Ads → ver tabela)">
         <RegraAds cfg={cfg} onSalvar={(aumento) => salvarChave({ ads: { ...(cfg.ads || {}), aumento } }, "Regras do Ads salvas pra loja")} />
+      </Secao>
+      <Secao titulo="Afiliados" resumo={rs.afiliados} onde="Vender mais → Afiliados" ajuda="Comissão mínima que a plataforma aceita (a Shopee: 4% na maioria das categorias — confira no painel quando for configurar). Produto que não aguenta esse mínimo com metade do lucro aparece como “não compensa”.">
+        <RegraAfiliados cfg={cfg} onSalvar={(afiliados) => salvarChave({ afiliados }, "Regra de afiliados salva")} />
       </Secao>
       <Secao titulo="Estoque sugerido" resumo={rs.estoque} onde="Análise → Curva XYZ" ajuda="Dias de cobertura por classe (AX, AY, BX) + folga da fila de impressão; o resto fica sob pedido. Só sugestão — o app não controla estoque.">
         <RegraEstoque cfg={cfg} onSalvar={(estoque) => salvarChave({ estoque }, "Regras do estoque salvas")} />
@@ -144,6 +149,24 @@ function RegraAds({ cfg, onSalvar }) {
         <button type="button" className="btn primary" onClick={() => onSalvar(num(v) / 100)}>Salvar</button>
       </div>
       <p className="muted-cel">Retorno ≥ 2× sobe até {Math.round(ra.aumentoMax * 100)}%. Abaixo do equilíbrio volta 1 degrau no orçamento. Decisão 1× por semana.</p>
+    </div>
+  );
+}
+
+function RegraAfiliados({ cfg, onSalvar }) {
+  const [v, setV] = useState(String(Math.round(minimoAfiliado(cfg) * 1000) / 10).replace(".", ","));
+  return (
+    <div className="grid-auto">
+      <div className="field">
+        <label>Comissão mínima da plataforma (%)</label>
+        <input type="number" min="0" step="0.5" value={v.replace(",", ".")} onChange={(e) => setV(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>&nbsp;</label>
+        <button type="button" className="btn primary" onClick={() => onSalvar({ ...(cfg.afiliados || {}), minimo: num(v) / 100 || MINIMO_AFILIADO })}>
+          Salvar
+        </button>
+      </div>
     </div>
   );
 }

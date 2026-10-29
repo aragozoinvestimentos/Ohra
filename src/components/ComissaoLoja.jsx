@@ -1,25 +1,31 @@
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
+import { useAcoesComerciais } from "../hooks/useAcoesComerciais.js";
+import { registrarAcao } from "../lib/acoesComerciaisAcoes.js";
 import { cuponsAtivos } from "../lib/cupomLoja.js";
 import { padraoDoCanal } from "../lib/afiliados.js";
-import { FRACAO_AFILIADO, PCT_MAX_SIM, linhasDaLoja, maisVendidos, resultadoAfiliados, resumoProposta, simularComissaoLoja, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
+import { DIAS_TESTE, FRACAO_AFILIADO, PCT_MAX_SIM, estadoTeste, linhasDaLoja, maisVendidos, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, resumoProposta, simularComissaoLoja, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
 import { BRL } from "../lib/format.js";
 import { canalDireto } from "../lib/canais.js";
+import { irParaAba } from "../lib/navegar.js";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import Estado from "./Estado.jsx";
 
-// Vender mais → Afiliados → Comissão da loja (29/10/2026, aprovado pela prévia): UM % pra loja
-// inteira (o que se põe na Shopee em "afiliados do vendedor"), a sugestão pela regra "o afiliado
-// fica com no máximo metade do lucro" (preço de agora + pior caso com o cupom ativo), o
-// simulador, a proposta pra um afiliado específico e o resultado. Conta ÚNICA em lib/comissaoLoja.js.
+// Vender mais → Afiliados → Comissão (29/10/2026): UM % pra loja inteira (o que se põe na Shopee
+// em "afiliados do vendedor") + exceção por anúncio (a comissão própria SUBSTITUI a da loja,
+// nunca soma). Regra: o afiliado fica com no máximo metade do lucro (preço de agora + pior caso
+// com o cupom ativo); mínimo da Shopee 4% (Regras). Teste de 15 dias por comissão. Afiliado só
+// mexe em comissão — nunca em preço. Conta ÚNICA em lib/comissaoLoja.js.
 const pctTxt = (p) => `${Math.round(p * 100)}%`;
+const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 const SIT = {
-  ok: [null, "✓ ok"],
-  "menos-metade": ["info", "fica com menos da metade"],
-  abaixo: ["atencao", "abaixo do mínimo"],
+  ok: [null, "✓ apto"],
+  "menos-metade": ["atencao", "leva mais da metade"],
+  abaixo: ["resolver", "não compensa"],
   prejuizo: ["resolver", "prejuízo"],
+  insuficiente: ["info", "dados insuficientes"],
 };
 
 export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registros, mapaAf, lojaId, hoje, onToast }) {
@@ -28,14 +34,37 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
   const canal = canais.find((c) => c.id === canalId) || null;
   const vendas = useMemo(() => vendasPorItemCanal(pedidos, hoje), [pedidos, hoje]);
   const faixas = useMemo(() => cuponsAtivos(dados.cfgLoja, canalId), [dados.cfgLoja, canalId]);
-  const linhas = useMemo(() => linhasDaLoja({ linhasAf, canalId, faixasCupom: faixas, vendas }), [linhasAf, canalId, faixas, vendas]);
+  const linhas = useMemo(() => linhasDaLoja({ linhasAf, canalId, faixasCupom: faixas, vendas, config }), [linhasAf, canalId, faixas, vendas, config]);
   const top = useMemo(() => maisVendidos(linhas), [linhas]);
   const sug = useMemo(() => sugestaoComissaoLoja(linhas), [linhas]);
+  const minimo = minimoAfiliado(dados.cfgLoja);
+  const minPct = Math.round(minimo * 100);
   const padrao = padraoDoCanal(config, canalId);
-  const naShopee = padrao?.ativo !== false && padrao?.comissao ? padrao.comissao : null;
-  const [pct, setPct] = useState(() => Math.round((naShopee || 0.11) * 100));
+  const naShopee = padrao?.comissao || null;
+  const [pct, setPct] = useState(() => Math.round((naShopee || minimo) * 100));
   const sim = useMemo(() => simularComissaoLoja(linhas, pct / 100), [linhas, pct]);
   const [registrar, setRegistrar] = useState(false);
+  const [editItem, setEditItem] = useState(null); // { chave, valor }
+  const [testes, setTestes] = usePreferencia("afiliados:testes", {});
+
+  // Cada comissão registrada abre um teste de 15 dias e entra no histórico (acoes_comerciais).
+  function abrirTeste(chave, valor, antes, item) {
+    const t = { ...(testes || {}) };
+    if (valor != null) t[chave] = { pct: valor, inicio: hoje };
+    else delete t[chave];
+    setTestes(t);
+    registrarAcao({
+      lojaId,
+      itemTipo: item?.tipo || null,
+      itemId: item?.id || null,
+      canalId: canal.id,
+      tipo: "afiliado",
+      data: hoje,
+      antes: antes != null ? pctTxt(antes) : "sem afiliado",
+      depois: valor != null ? pctTxt(valor) : "desligado",
+      observacao: item ? `comissão própria — ${item.item.nome}` : "comissão da loja",
+    });
+  }
 
   async function salvarNaShopee(valor) {
     if (!canal) return;
@@ -44,19 +73,45 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
       ? await supabase.from("afiliado_config").update(campos).eq("id", padrao.row.id)
       : await supabase.from("afiliado_config").insert({ ...campos, loja_id: lojaId || null, canal_id: canal.id, item_tipo: null, item_id: null });
     if (error) return onToast?.(`Não foi possível salvar: ${error.message}`);
+    abrirTeste(`loja|${canal.id}`, valor, naShopee, null);
     setRegistrar(false);
-    onToast?.(valor != null ? `${canal.nome}: comissão da loja ${pctTxt(valor)} registrada (ponha o mesmo % no painel da Shopee)` : `${canal.nome}: comissão da loja desligada`);
+    onToast?.(valor != null ? `${canal.nome}: comissão da loja ${pctTxt(valor)} registrada — teste até ${dm(somar(hoje, DIAS_TESTE))}` : `${canal.nome}: comissão da loja desligada`);
+  }
+
+  async function salvarPropria(l, valor) {
+    let error;
+    if (valor == null) {
+      if (l.propriaRow) ({ error } = await supabase.from("afiliado_config").delete().eq("id", l.propriaRow.id));
+    } else {
+      const campos = { ativo: true, comissao: valor, atualizado_em: new Date().toISOString() };
+      const row = (config || []).find((r) => r.canal_id === canal.id && r.item_tipo === l.tipo && r.item_id === l.id);
+      ({ error } = row ? await supabase.from("afiliado_config").update(campos).eq("id", row.id) : await supabase.from("afiliado_config").insert({ ...campos, loja_id: lojaId || null, canal_id: canal.id, item_tipo: l.tipo, item_id: l.id }));
+    }
+    if (error) return onToast?.(`Não foi possível salvar: ${error.message}`);
+    abrirTeste(`item|${l.tipo}|${l.id}|${canal.id}`, valor, l.propria, l);
+    setEditItem(null);
+    onToast?.(valor != null ? `${l.item.nome}: ${pctTxt(valor)} só neste anúncio (ponha o mesmo na Shopee)` : `${l.item.nome}: volta pra comissão da loja`);
+  }
+
+  function responderTeste(chave, resposta) {
+    const t = { ...(testes || {}) };
+    if (!t[chave]) return;
+    t[chave] = { ...t[chave], resposta, em: hoje };
+    setTestes(t);
   }
 
   if (!canal) return <div className="panel"><div className="empty">Nenhum marketplace cadastrado.</div></div>;
+
+  const inicial = sug.sugerida ? (sug.sugerida >= minPct ? minPct : null) : null;
+  const naoAguenta = sug.decide > 0 && sug.sugerida != null && sug.sugerida < minPct;
 
   return (
     <>
       <div className="panel">
         <h3 className="section-title">
           <span>
-            Comissão da loja
-            <Ajuda texto={`É o % que você põe na Shopee em "afiliados do vendedor": vale pra qualquer produto da loja. Regra: o afiliado fica com no máximo metade do lucro da venda (${pctTxt(FRACAO_AFILIADO)}), pelo PREÇO DE AGORA (o degrau da rampa) e no pior caso com o seu cupom ativo. A comissão é calculada sobre o que o cliente paga pelo produto, sem frete e sem o cupom; a taxa da Shopee continua por cima. Sugerida = os produtos que somam 80% das vendas (90 dias) ficam com pelo menos metade do lucro. Teto = acima disso algum deles fica abaixo do seu lucro mínimo.`} />
+            Comissão
+            <Ajuda texto={`O % que você põe na Shopee em "afiliados do vendedor" vale pra loja toda; num anúncio você pode pôr um % próprio, que SUBSTITUI o da loja (não soma). Regra: o afiliado fica com no máximo metade do lucro (${pctTxt(FRACAO_AFILIADO)}), pelo PREÇO DE AGORA e no pior caso com o cupom ativo: a comissão sobre o preço sem o cupom e o seu lucro com o cupom. Mínimo da Shopee: ${minPct}% (Regras). Afiliado só mexe em comissão — o app nunca sugere mudar preço por causa dele.`} />
           </span>
           {canais.length > 1 && (
             <select value={canalId} onChange={(e) => setCanalId(e.target.value)} aria-label="Canal">
@@ -71,19 +126,25 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
         <Kpis
           itens={[
             { label: "Comissão sugerida", valor: sug.sugerida ? `${sug.sugerida}%` : "—", sub: !sug.sugerida ? "sem lucro pra dividir nos que mais vendem" : linhas.some((l) => l.vendas > 0) ? "os que mais vendem (90 dias) ficam com ≥ metade do lucro" : "sem vendas importadas: todos os produtos contam" },
+            { label: "Começar com", valor: inicial ? `${inicial}%` : "—", sub: inicial ? `o mínimo da Shopee; dá pra subir 1 ponto por teste até ${sug.sugerida}%` : naoAguenta ? `os que mais vendem não aguentam o mínimo de ${minPct}%` : "—", tom: naoAguenta ? "warn" : undefined },
             { label: "Teto", valor: sug.teto ? `${sug.teto}%` : "—", sub: "acima disso algum dos que mais vendem fica abaixo do lucro mínimo" },
             {
               label: `Na ${canal.nome} hoje`,
               valor: naShopee ? pctTxt(naShopee) : "—",
-              sub: naShopee ? (sug.sugerida && naShopee * 100 > sug.teto ? "⚠ acima do teto" : sug.sugerida && naShopee * 100 > sug.sugerida ? "acima da sugerida" : "dentro da sugerida") : "ainda não registrada",
+              sub: naShopee ? (sug.teto && naShopee * 100 > sug.teto ? "⚠ acima do teto" : sug.sugerida && naShopee * 100 > sug.sugerida ? "acima da sugerida" : "dentro da sugerida") : "ainda não registrada",
               tom: naShopee && sug.teto && naShopee * 100 > sug.teto ? "warn" : undefined,
             },
           ]}
         />
+        {naoAguenta && (
+          <div className="alerta alerta-warn">
+            <b>Não compensa oferecer afiliado na loja toda agora:</b> com o mínimo de {minPct}% os produtos que mais vendem ficam com menos da metade do lucro. Se quiser, use afiliado só nos anúncios que aguentam ("% deste anúncio" na tabela).
+          </div>
+        )}
         <div className="toolbar" style={{ gap: 8 }}>
           {registrar ? (
             <>
-              <span>Registrar a comissão que está na {canal.nome}:</span>
+              <span>Registrar a comissão da loja que está na {canal.nome}:</span>
               <button type="button" className="btn btn-mini primary" onClick={() => salvarNaShopee(pct / 100)}>
                 {pct}% (o do simulador)
               </button>
@@ -115,8 +176,14 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
             </button>
           )}
           <span className="af-sim-res">
-            <b>{sim.ok}</b> ok · <b>{sim.menosMetade}</b> com menos da metade · <b>{sim.abaixo}</b> abaixo do mínimo · <b>{sim.prejuizo}</b> no prejuízo ·{" "}
-            {!sug.sugerida ? "" : pct <= sug.sugerida ? "✓ dentro da sugerida" : pct <= sug.teto ? "acima da sugerida, abaixo do teto" : "⚠ acima do teto"}
+            <b>{sim.ok}</b> aptos · <b>{sim.menosMetade}</b> afiliado leva mais da metade · <b>{sim.abaixo + sim.prejuizo}</b> não compensam
+            {sim.insuficiente ? (
+              <>
+                {" "}
+                · <b>{sim.insuficiente}</b> sem dados
+              </>
+            ) : null}{" "}
+            · {pct < minPct ? `⚠ abaixo do mínimo da Shopee (${minPct}%)` : !sug.sugerida ? "" : pct <= sug.sugerida ? "✓ dentro da sugerida" : pct <= sug.teto ? "acima da sugerida, abaixo do teto" : "⚠ acima do teto"}
           </span>
         </div>
         {!linhas.length ? (
@@ -131,13 +198,16 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
                   <th className="num">Vendas 90d</th>
                   <th className="num">Lucro sem afiliado</th>
                   <th className="num">Comissão</th>
-                  <th className="num">Lucro com afiliado</th>
+                  <th className="num">Afiliado ganha</th>
+                  <th className="num">Você fica</th>
+                  <th className="num">Máx. seguro</th>
                   <th>Situação</th>
                 </tr>
               </thead>
               <tbody>
                 {sim.linhas.map((l) => {
                   const [tipo, rot] = SIT[l.situacao];
+                  const ed = editItem?.chave === l.chave;
                   return (
                     <tr key={l.chave}>
                       <td>
@@ -148,9 +218,41 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
                       </td>
                       <td className="num">{BRL(l.preco)}</td>
                       <td className="num">{l.vendas || "—"}</td>
-                      <td className="num">{BRL(l.lucro)}</td>
+                      <td className="num">{l.insuficiente ? "—" : BRL(l.lucro)}</td>
+                      <td className="num">
+                        {ed ? (
+                          <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                            <input type="number" min="1" max="60" value={editItem.valor} onChange={(e) => setEditItem({ ...editItem, valor: e.target.value })} style={{ width: 56 }} aria-label="% deste anúncio" />
+                            <button type="button" className="btn btn-mini primary" onClick={() => Number(editItem.valor) > 0 && salvarPropria(l, Number(editItem.valor) / 100)}>
+                              ok
+                            </button>
+                            <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => setEditItem(null)}>
+                              ×
+                            </button>
+                          </span>
+                        ) : (
+                          <>
+                            {pctTxt(l.em)}
+                            <div className="sub-linha">
+                              {l.propria != null ? (
+                                <>
+                                  só neste anúncio ·{" "}
+                                  <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => salvarPropria(l, null)}>
+                                    voltar ao da loja
+                                  </button>
+                                </>
+                              ) : (
+                                <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => setEditItem({ chave: l.chave, valor: String(l.maxSeguro >= minPct ? minPct : l.maxSeguro || minPct) })}>
+                                  % deste anúncio
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </td>
                       <td className="num">{BRL(l.comissao)}</td>
-                      <td className={`num${l.lucroCom < 0 ? " neg" : ""}`}>{BRL(l.lucroCom)}</td>
+                      <td className={`num${l.lucroCom < 0 ? " neg" : ""}`}>{l.insuficiente ? "—" : BRL(l.lucroCom)}</td>
+                      <td className="num">{l.insuficiente ? "—" : l.maxSeguro >= minPct ? `${l.maxSeguro}%` : <span className="muted-cel">não aguenta {minPct}%</span>}</td>
                       <td>{tipo ? <Estado tipo={tipo}>{rot}</Estado> : <span className="muted-cel">{rot}</span>}</td>
                     </tr>
                   );
@@ -160,12 +262,116 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
           </div>
         )}
         <p className="hint" style={{ marginBottom: 0 }}>
-          Lista informativa: a comissão vale pra loja toda, então não há o que resolver produto por produto — se os vermelhos crescerem, baixe o %. O marketplace desconta a comissão do repasse: não lance no Fluxo de Caixa.
+          A comissão sai do lucro — o preço não muda por causa de afiliado. Anúncio que não aguenta: ponha um % próprio menor nele (se a Shopee deixar) ou deixe a comissão da loja mais baixa. O marketplace desconta a comissão do repasse: não lance no Fluxo de Caixa.
         </p>
       </div>
+      <AcompanhamentoAfiliados testes={testes} linhas={linhas} canal={canal} comissaoLoja={naShopee} sugerida={sug.sugerida} hoje={hoje} onResponder={responderTeste} />
       <PropostaAfiliado linhas={linhas} canal={canal} lojaId={lojaId} hoje={hoje} onToast={onToast} />
       <ResultadoAfiliados registros={registros} mapaAf={mapaAf} hoje={hoje} />
     </>
+  );
+}
+
+function somar(iso, n) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Acompanhamento: um teste de 15 dias por comissão registrada (loja e própria de anúncio) +
+// o histórico das mudanças (acoes_comerciais, tipo "afiliado").
+function AcompanhamentoAfiliados({ testes, linhas, canal, comissaoLoja, sugerida, hoje, onResponder }) {
+  const { acoes } = useAcoesComerciais();
+  const hist = (acoes || []).filter((a) => a.tipo === "afiliado" && a.canal_id === canal.id).sort((a, b) => String(b.data).localeCompare(String(a.data)) || String(b.criado_em || "").localeCompare(String(a.criado_em || "")));
+  const nomeItem = (id) => linhas.find((l) => l.id === id)?.item.nome;
+  const lista = Object.entries(testes || {})
+    .filter(([k]) => k.endsWith(`|${canal.id}`))
+    .map(([k, t]) => {
+      const ehLoja = k.startsWith("loja|");
+      const l = ehLoja ? null : linhas.find((x) => `item|${x.tipo}|${x.id}|${canal.id}` === k);
+      const atual = ehLoja ? comissaoLoja : l?.propria;
+      if (!atual || Math.round(atual * 100) !== Math.round(Number(t.pct) * 100)) return null;
+      return { k, t, nome: ehLoja ? "Comissão da loja" : l?.item.nome || "anúncio", e: estadoTeste(t, hoje, ehLoja ? sugerida : maxSeguroDoItem(l)) };
+    })
+    .filter(Boolean);
+  const ROT = {
+    andamento: (e) => <span className="muted-cel">em teste · confere em {dm(e.avaliarEm)}</span>,
+    avaliar: () => <Estado tipo="atencao">⚠ avaliar</Estado>,
+    subir: (e) => <Estado tipo="oportunidade">↑ testar {e.proximo}%</Estado>,
+    maximo: () => <span className="muted-cel">já no máximo seguro — manter</span>,
+    ok: () => <Estado tipo="oportunidade">✓ teve afiliado — manter e acompanhar</Estado>,
+  };
+  if (!lista.length && !hist.length) return null;
+  return (
+    <div className="panel">
+      <h3 className="section-title">
+        <span>
+          Acompanhamento
+          <Ajuda texto={`Cada comissão registrada vira um teste de ${DIAS_TESTE} dias. No fim, confira no painel da Shopee (Afiliados) se alguém se afiliou ou vendeu: se ninguém, o app sugere subir 1 ponto — só se ainda couber na regra da metade do lucro. Ele nunca sugere subir só porque os dias passaram. Mudou na Shopee? Registre aqui e o teste recomeça.`} />
+        </span>
+      </h3>
+      {lista.length > 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Comissão</th>
+                <th className="num">%</th>
+                <th>Desde</th>
+                <th>Situação</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {lista.map(({ k, t, nome, e }) => (
+                <tr key={k}>
+                  <td>{nome}</td>
+                  <td className="num">{pctTxt(Number(t.pct))}</td>
+                  <td>
+                    {dm(t.inicio)} · {e.dias} dia{e.dias === 1 ? "" : "s"}
+                  </td>
+                  <td>{ROT[e.estado](e)}</td>
+                  <td>
+                    {(e.estado === "avaliar" || e.estado === "andamento") && (
+                      <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+                        <button type="button" className="btn btn-mini" onClick={() => onResponder(k, "nao")}>
+                          Ninguém se afiliou/vendeu
+                        </button>
+                        <button type="button" className="btn btn-mini" onClick={() => onResponder(k, "sim")}>
+                          Teve afiliado ou venda
+                        </button>
+                      </span>
+                    )}
+                    {e.estado === "subir" && <span className="muted-cel">suba na Shopee e registre o % novo aqui</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {hist.length > 0 && (
+        <>
+          <h3>Histórico</h3>
+          <ul className="inicio-mini">
+            {hist.slice(0, 12).map((a) => (
+              <li key={a.id}>
+                <span>
+                  {dm(String(a.data))} · {a.item_id ? nomeItem(a.item_id) || "anúncio" : "loja toda"}: {a.valor_antes} → <b>{a.valor_depois}</b>
+                  {a.conclusao ? ` · ${a.conclusao}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="hint" style={{ marginBottom: 0 }}>
+            O que mudou depois de cada ajuste não é só da comissão — preço, Ads e época também mexem nas vendas.{" "}
+            <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => irParaAba("anuncios")}>
+              ver nos anúncios
+            </button>
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 

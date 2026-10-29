@@ -30,6 +30,7 @@ export const TIPOS_ACAO = [
   { k: "cupom", rot: "Criei / mudei cupom" },
   { k: "variacao", rot: "Adicionei variação" },
   { k: "kit", rot: "Criei kit" },
+  { k: "afiliado", rot: "Mudei a comissão de afiliado" },
   { k: "outro", rot: "Outra ação" },
 ];
 export const rotuloTipo = (k) => TIPOS_ACAO.find((t) => t.k === k)?.rot || k;

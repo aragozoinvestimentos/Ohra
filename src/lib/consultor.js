@@ -116,9 +116,28 @@ export function responderPergunta(pergunta, ctx) {
     const env = e.aEnviar > 0 ? ` ${e.aEnviar} un. pagas ainda não enviadas (saem do estoque quando o pedido virar Enviado).` : "";
     return { entendeu: true, texto: `Estoque: ${e.itens} ${e.itens === 1 ? "produto" : "produtos"}, ${BRL(e.valor)} na prateleira pelo custo.${rep}${env}`, numeros: { estoque: e.valor } };
   }
-  if (/afiliad/.test(t)) {
+  if (/afiliad|comiss[aã]o/.test(t)) {
     const a = kpis?.afiliados;
-    return { entendeu: true, texto: a?.length ? `Afiliados: ${a.join(" · ")}. O simulador da comissão da loja está em Vender mais → Afiliados.` : "Afiliados sem nada pra fazer agora. A comissão sugerida (o afiliado fica com no máximo metade do lucro, pelo preço de agora) e o simulador estão em Vender mais → Afiliados; o resultado aparece quando sair a 1ª venda por afiliado.", numeros: null };
+    const i = kpis?.afiliadosInfo;
+    const pc = (x) => `${Math.round((Number(x) || 0) * 100)}%`;
+    if (!i) return { entendeu: true, texto: "Afiliados: sem Shopee cadastrada ou sem produto com preço salvo. A comissão sugerida e o simulador ficam em Vender mais → Afiliados.", numeros: null };
+    // "suporta X%" / "aguenta X%" → lista os anúncios que aguentam esse % com metade do lucro.
+    const m = t.match(/(\d{1,2})\s*%/);
+    if (m) {
+      const p = Number(m[1]);
+      const sim = i.linhas.filter((l) => l.max >= p);
+      const nao = i.linhas.filter((l) => l.max < p);
+      return { entendeu: true, texto: `Com ${p}% de comissão, ${sim.length} de ${i.linhas.length} anúncios da ${i.canal} deixam pelo menos metade do lucro com você${sim.length ? `: ${sim.slice(0, 6).map((l) => l.nome).join(", ")}${sim.length > 6 ? "…" : ""}` : ""}.${nao.length ? ` Não aguentam: ${nao.slice(0, 5).map((l) => `${l.nome} (máx. ${l.max}%)`).join(", ")}${nao.length > 5 ? "…" : ""}.` : ""}`, numeros: null };
+    }
+    const prod = i.linhas.find((l) => t.includes(l.nome.toLowerCase()));
+    if (prod) return { entendeu: true, texto: `${prod.nome}: comissão máxima segura ${prod.max ? `${prod.max}%` : "— não aguenta afiliado"} (o afiliado fica com no máximo metade do lucro, preço de agora e cupom).${prod.propria ? ` Hoje com ${pc(prod.propria)} só neste anúncio.` : ""}`, numeros: null };
+    const partes = [
+      `Na ${i.canal}: comissão da loja ${i.comissao ? pc(i.comissao) : "não registrada"}, sugerida ${i.sugerida ? `${i.sugerida}%` : "—"}, teto ${i.teto ? `${i.teto}%` : "—"} (mínimo da Shopee ${pc(i.minimo)}).`,
+      i.resultado?.temDados ? `Últimos 30 dias: ${i.resultado.vendas} vendas via afiliado, comissão ${BRL(i.resultado.comissao)}, lucro depois ${BRL(i.resultado.depois)}.` : "Ainda sem venda por afiliado registrada.",
+      i.amostras > 0 ? `Investido em amostras: ${BRL(i.amostras)}.` : "",
+      a?.length ? `Pra fazer: ${a.join(" · ")}.` : "Nada pra fazer agora.",
+    ];
+    return { entendeu: true, texto: partes.filter(Boolean).join(" "), numeros: null };
   }
   if (/\bmei\b|limite de faturamento/.test(t)) {
     const l = kpis?.limiteMei;
