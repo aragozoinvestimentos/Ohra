@@ -3,7 +3,7 @@ import { BRL } from "../lib/format.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { lerXls } from "../lib/lerXls.js";
 import { andamentoDoCsv, somarJanelasAds, juntarAds, juntarDesempenho, cruzarGrupos, lembrarIdsShopee, lerRelatorio, lerXlsx, relatorioDoGuardado, relatorioParaGuardar } from "../lib/relatorioShopee.js";
-import { PLATAFORMAS, caixaDosPedidos, ehNaoPago, interpretarPedidosOlist, ligarSku, plataformaDoNumero, tipoEIdDoItem, normSku } from "../lib/pedidos.js";
+import { PLATAFORMAS, caixaDosPedidos, ehNaoPago, ENTREGUE_DIAS, interpretarPedidosOlist, interpretarPedidosUpseller, ligarSku, plataformaDoNumero, tipoEIdDoItem, normSku } from "../lib/pedidos.js";
 import { CHAVE_CARRINHOS, lembrarCarrinhos } from "../lib/carrinhos.js";
 import { interpretarExtratoShopee, liberadoDoExtrato } from "../lib/carteiras.js";
 import { gravarExtrato } from "../lib/carteirasAcoes.js";
@@ -89,12 +89,14 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     const rel = "pedidos:olist";
     setOcupado(rel);
     try {
-      const { itens: lidos, periodo } = interpretarPedidosOlist(await lerPlanilha(arquivo));
+      // UpSeller (loja que escolheu esse ERP em Regras): mesma gravação; a plataforma vem do arquivo.
+      const up = erp.id === "upseller";
+      const { itens: lidos, periodo } = up ? interpretarPedidosUpseller(await lerPlanilha(arquivo), hoje) : interpretarPedidosOlist(await lerPlanilha(arquivo));
       if (!lidos.length) throw new Error("Nenhum pedido no arquivo. Nada foi importado.");
       const porPlat = new Map();
       const desconhecidos = [];
       for (const i of lidos) {
-        const id = plataformaDoNumero(i.ordem_compra);
+        const id = up ? i.plataformaArquivo || plataformaDoNumero(i.ordem_compra) : plataformaDoNumero(i.ordem_compra);
         if (!id) desconhecidos.push(i);
         else {
           if (!porPlat.has(id)) porPlat.set(id, []);
@@ -120,7 +122,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     for (const [id, lista] of base.porPlat) {
       const x = platsComCanal.find((y) => y.plat.id === id);
       if (!x) semCanal.push({ nome: PLATAFORMAS.find((p) => p.id === id)?.nome || id, n: new Set(lista.map((i) => i.pedido)).size });
-      else grupos.push({ ...x, ligados: lista.map((i) => ({ ...i, it: ligarSku(i.sku, itens) })) });
+      else grupos.push({ ...x, ligados: lista.map((i) => ({ ...i, it: ligarSku(i.sku, itens) || (i.skuPlataforma ? ligarSku(i.skuPlataforma, itens) : null) })) });
     }
     const pendMap = new Map();
     for (const g of grupos)
@@ -147,7 +149,8 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
           semItem++;
           continue;
         }
-        const { it, ...resto } = i;
+        // eslint-disable-next-line no-unused-vars
+        const { it, skuPlataforma, plataformaArquivo, ...resto } = i;
         rows.push({ ...resto, canal_id: g.canal.id, plataforma: g.plat.id, ...tipoEIdDoItem(it) });
       }
     }
@@ -687,13 +690,18 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   const cartaoOlist = (
     <div className="panel ana-olist" key="olist">
       <h3>
-        Pedidos (Olist) <span className="dir">um arquivo com todas as plataformas — o app separa pelo número do pedido</span>
+        Pedidos ({erp.nome}) <span className="dir">{erp.id === "upseller" ? "um arquivo com todas as plataformas — o app separa pela coluna Plataformas" : "um arquivo com todas as plataformas — o app separa pelo número do pedido"}</span>
       </h3>
       {relat({
         rel: "pedidos:olist",
         nome: "Pedidos de venda (todas as plataformas)",
         limite: 7,
-        onde: <>Olist → Vendas → Pedidos de venda → período → <b>Exportar</b> (sem filtrar o e-commerce). Cada pedido vai pra plataforma dele (Shopee, TikTok, Mercado Livre…) e o período conta pra todas</>,
+        onde:
+          erp.id === "upseller" ? (
+            <>UpSeller → Pedidos → <b>Pedidos Históricos</b> (ou Total Pedidos) → período → plataformas, lojas e status “Todos” → <b>Exportar</b>. Pode repetir dias: o mesmo pedido não duplica, só atualiza a situação. “Enviado” há {ENTREGUE_DIAS}+ dias conta como entregue</>
+          ) : (
+            <>Olist → Vendas → Pedidos de venda → período → <b>Exportar</b> (sem filtrar o e-commerce). Cada pedido vai pra plataforma dele (Shopee, TikTok, Mercado Livre…) e o período conta pra todas</>
+          ),
         onArquivo: (f) => enviarOlist(f),
       })}
       {pend?.passo === "plataforma" && (
@@ -834,17 +842,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         <div className="kpi"><div className="l">Lançado no caixa</div><div className="v">{BRL(totRec)}</div><div className="s">entregues + vendas físicas · a receber {BRL(totArec)} (fora do saldo)</div></div>
       </div>
 
-      {erp.id === "olist" && cartaoOlist}
-      {erp.id === "upseller" && (
-        <div className="panel">
-          <h3>
-            Pedidos (UpSeller) <span className="dir">um arquivo com todas as plataformas</span>
-          </h3>
-          <div className="alerta alerta-neutro">
-            <b>A leitura do arquivo da UpSeller ainda está sendo preparada.</b> Exporte em UpSeller → Pedidos → Pedidos Históricos (período, plataformas e status “Todos”) → <b>Exportar</b> e mande o arquivo pro Claude: com ele o app passa a ler os pedidos aqui, igual à Olist. Enquanto isso, a Venda física continua funcionando.
-          </div>
-        </div>
-      )}
+      {(erp.id === "olist" || erp.id === "upseller") && cartaoOlist}
       {erp.id === "nenhum" && (
         <div className="alerta alerta-neutro">Esta loja não usa sistema de pedidos — só a venda física abaixo. Dá pra trocar em Configuração → Regras → Sistema de pedidos (ERP).</div>
       )}

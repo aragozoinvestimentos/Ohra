@@ -2,7 +2,7 @@
 // pode usar a UpSeller. Guardado em lojas.config_escada.erp (sem SQL); sem escolha = Olist.
 export const ERPS = [
   { id: "olist", nome: "Olist", pronto: true },
-  { id: "upseller", nome: "UpSeller", pronto: false },
+  { id: "upseller", nome: "UpSeller", pronto: true },
   { id: "nenhum", nome: "Nenhum (só venda física)", pronto: true },
 ];
 

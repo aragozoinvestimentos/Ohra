@@ -663,3 +663,37 @@ describe("taxa de falha começa do zero (29/10/2026)", () => {
     expect(calcTaxaFalhaAtual([{ status: "ok" }, { status: "ok" }, { status: "falha" }, { status: "ok" }]).taxa).toBe(0.25);
   });
 });
+
+// UpSeller (29/10/2026, arquivo real da Trebub): pedido com 2 itens (desconto só na 1ª linha,
+// rateado), não pago, cancelado e "Enviado" recente × antigo.
+import { interpretarPedidosUpseller, ehValido as ehValidoUp, valorPago as valorPagoUp } from "../src/lib/pedidos.js";
+describe("pedidos da UpSeller", () => {
+  const cab = ["Nº de Pedido da Plataforma", "Nº de Pedido", "Plataformas", "Estado do Pedido", "Hora do Pedido", "Hora do Pagamento", "Hora de Envio", "Pós-venda/Cancelado/Devolvido", "Razão do Cancelamento", "Valor Total de Produtos", "Descontos e Cupons", "SKU", "Preço de Produto", "Qtd. do Produto", "SKU (Armazém)"];
+  const linhas = [
+    cab,
+    ["2607314BME78Y7", "UP1", "Shopee", "Enviado", "2026-07-30 19:32:16", "2026-07-30 19:33:15", "2026-07-31 18:47:22", "", "", "19.78", "-2.0", "MAS-PT", "6.89", "1.0", "MAS-PT"],
+    ["2607314BME78Y7", "UP1", "Shopee", "Enviado", "2026-07-30 19:32:16", "2026-07-30 19:33:15", "2026-07-31 18:47:22", "", "", "", "", "ROLINHO-90-3PÇ", "12.89", "1.0", "ROLINHO-90-3PC"],
+    ["26073148NPGP83", "UP2", "Shopee", "Outras", "2026-07-30 18:39:17", "", "", "Cancelado", "Unpaid Order", "6.89", "0.0", "FEM-PT", "6.89", "1.0", "FEM-PT"],
+    ["585278270110598387", "UP3", "TikTok Shop", "Outras", "2026-07-29 10:00:00", "2026-07-29 10:01:00", "", "Cancelado", "Others", "14.72", "", "FEM-PT", "14.72", "1.0", "FEM-PT"],
+    ["GSH18D30F002Q4P", "UP4", "Shein", "Enviado", "2026-10-27 10:00:00", "2026-10-27 10:01:00", "2026-10-28 09:00:00", "", "", "21.79", "", "CART-PT", "21.79", "2.0", "CART-PT"],
+  ];
+  const { itens, periodo } = interpretarPedidosUpseller(linhas, "2026-10-29");
+  it("lê plataforma, situação e o desconto rateado", () => {
+    expect(itens.length).toBe(5);
+    expect(periodo).toEqual({ de: "2026-07-29", ate: "2026-10-27" });
+    const [a, b, c, d, e] = itens;
+    expect([a.plataformaArquivo, d.plataformaArquivo, e.plataformaArquivo]).toEqual(["shopee", "tiktok", "shein"]);
+    expect(a.situacao).toBe("Entregue");
+    expect(b.sku).toBe("ROLINHO-90-3PC");
+    expect(b.skuPlataforma).toBe("ROLINHO-90-3PÇ");
+    expect(a.desconto_pedido + b.desconto_pedido).toBeCloseTo(2, 2);
+    expect(valorPagoUp(a) + valorPagoUp(b)).toBeCloseTo(17.78, 2);
+    expect(c.situacao).toBe("Não pago");
+    expect(d.situacao).toBe("Cancelado");
+    expect(e.situacao).toBe("Enviado");
+    expect(itens.filter(ehValidoUp).length).toBe(3);
+  });
+  it("recusa arquivo que não é da UpSeller", () => {
+    expect(() => interpretarPedidosUpseller([["ID", "Data"]], "2026-10-29")).toThrow(/UpSeller/);
+  });
+});

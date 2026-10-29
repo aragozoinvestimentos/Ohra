@@ -48,7 +48,7 @@ export const ehEntregue = (sit) => /entregue/i.test(String(sit || "")) && !ehCan
 // Não pago (23/10/2026, arquivo real do TikTok): o cliente fechou o pedido mas
 // não pagou (carrinho abandonado) — a Olist traz "Dados incompletos", sem os
 // dados de envio. Não conta como venda; vai pra Análise → Carrinhos abandonados.
-export const ehNaoPago = (sit) => /dados incompletos|aguardando pagamento|pagamento pendente/i.test(String(sit || ""));
+export const ehNaoPago = (sit) => /dados incompletos|aguardando pagamento|pagamento pendente|^n[ãa]o pago/i.test(String(sit || ""));
 export const ehValido = (p) => !ehCancelado(p.situacao) && !ehNaoPago(p.situacao);
 // Origem da venda (28/10/2026, filtro da Análise): "revenda" se o produto (ou o pai da
 // variação) é de revenda; kit e tudo o mais = "fabricado" (kit misto conta como fabricado).
@@ -132,6 +132,118 @@ export function interpretarPedidosOlist(linhas) {
   const datas = itens.map((i) => i.data).sort();
   const plataformas = new Set(itens.map((i) => plataformaDoNumero(i.ordem_compra)));
   return { itens, periodo: { de: datas[0], ate: datas[datas.length - 1] }, plataformas };
+}
+
+// ---------- UpSeller (29/10/2026, arquivo real da loja Trebub: Pedidos → Exportar) ----------
+// Uma linha por item; num pedido com vários itens o valor do pedido/desconto vem só
+// na 1ª linha (as outras repetem plataforma, estado e datas). O nº no marketplace vem
+// na 1ª coluna e a plataforma na coluna "Plataformas" (não precisa adivinhar pelo número).
+// Situação vira o mesmo vocabulário da Olist, pras mesmas contas: cancelado pela
+// plataforma por "Unpaid Order" ou sem hora de pagamento = "Não pago" (carrinho
+// abandonado); "Enviado" há ≥ ENTREGUE_DIAS dias = "Entregue" (a UpSeller não separa
+// entregue de enviado; o caixa conta o repasse na entrega); pago e ainda não enviado =
+// "Pronto para envio".
+export const ENTREGUE_DIAS = 10;
+const PLAT_UPSELLER = { shopee: "shopee", "tiktok shop": "tiktok", tiktok: "tiktok", shein: "shein", "mercado livre": "ml", mercadolivre: "ml" };
+const COLS_UP = {
+  ordem: "Nº de Pedido da Plataforma",
+  id: "Nº de Pedido",
+  plataforma: "Plataformas",
+  estado: "Estado do Pedido",
+  hora: "Hora do Pedido",
+  pago: "Hora do Pagamento",
+  envio: "Hora de Envio",
+  posVenda: "Pós-venda/Cancelado/Devolvido",
+  razao: "Razão do Cancelamento",
+  totalProdutos: "Valor Total de Produtos",
+  descontos: "Descontos e Cupons",
+  nomeAnuncio: "Nome do Anúncio",
+  sku: "SKU",
+  variacao: "Variação",
+  preco: "Preço de Produto",
+  qtd: "Qtd. do Produto",
+  skuArmazem: "SKU (Armazém)",
+  cliente: "ID do Comprador",
+};
+export function situacaoUpseller({ estado, pago, envio, posVenda, razao }, hoje) {
+  const pv = String(posVenda || "").trim();
+  const est = String(estado || "").trim();
+  if (/cancel/i.test(pv)) return /unpaid/i.test(String(razao || "")) || !pago ? "Não pago" : "Cancelado";
+  if (/devolv|reembols/i.test(pv)) return "Devolvido";
+  if (/n[ãa]o pago/i.test(est) || (!pago && !/enviado/i.test(est))) return "Não pago";
+  if (/cancel/i.test(est)) return "Cancelado";
+  if (/enviado|entregue|conclu/i.test(est)) {
+    const d = String(envio || "").slice(0, 10);
+    const dias = d && hoje ? Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${d}T12:00:00`)) / 86400000) : 0;
+    return /entregue|conclu/i.test(est) || dias >= ENTREGUE_DIAS ? "Entregue" : "Enviado";
+  }
+  return "Pronto para envio";
+}
+export function interpretarPedidosUpseller(linhas, hoje) {
+  const iCab = (linhas || []).findIndex((l) => (l || []).some((c) => String(c || "").trim() === COLS_UP.ordem));
+  if (iCab < 0) throw new Error("Não é a exportação de pedidos da UpSeller (falta a coluna “Nº de Pedido da Plataforma”).");
+  const cab = linhas[iCab].map((c) => String(c || "").trim());
+  const col = {};
+  for (const [k, nome] of Object.entries(COLS_UP)) col[k] = cab.indexOf(nome);
+  const faltam = ["ordem", "plataforma", "estado", "hora", "sku", "preco", "qtd"].filter((k) => col[k] < 0);
+  if (faltam.length) throw new Error(`Faltam colunas no arquivo: ${faltam.map((k) => COLS_UP[k]).join(", ")}.`);
+  const v = (l, k) => (col[k] >= 0 ? l[col[k]] : null);
+  const s = (l, k) => String(v(l, k) ?? "").trim();
+  // agrupa as linhas por pedido (desconto do pedido rateado pelo valor de cada item)
+  const pedidos = new Map();
+  for (const l of linhas.slice(iCab + 1)) {
+    if (!l || !s(l, "ordem")) continue;
+    const ordem = s(l, "ordem");
+    if (!pedidos.has(ordem)) pedidos.set(ordem, []);
+    pedidos.get(ordem).push(l);
+  }
+  const itens = [];
+  const plataformasDesconhecidas = new Set();
+  for (const [ordem, ls] of pedidos) {
+    const l0 = ls[0];
+    const h = s(l0, "hora");
+    const data = /^\d{4}-\d{2}-\d{2}/.test(h) ? h.slice(0, 10) : dataIso(v(l0, "hora"));
+    if (!data) continue;
+    const platNome = s(l0, "plataforma");
+    const plataforma = PLAT_UPSELLER[platNome.toLowerCase()] || null;
+    if (!plataforma) plataformasDesconhecidas.add(platNome || "(vazio)");
+    const situacao = situacaoUpseller({ estado: s(l0, "estado"), pago: s(l0, "pago"), envio: s(l0, "envio"), posVenda: s(l0, "posVenda"), razao: s(l0, "razao") }, hoje);
+    const brutos = ls.map((l) => num(v(l, "preco")) * (num(v(l, "qtd")) || 1));
+    const totBruto = brutos.reduce((t, x) => t + x, 0);
+    const desc = Math.abs(Math.min(0, num(v(l0, "descontos"))));
+    const pedido = s(l0, "id") || ordem;
+    const vistos = new Map();
+    ls.forEach((l, i) => {
+      const skuArm = normSku(v(l, "skuArmazem"));
+      const skuPlat = normSku(v(l, "sku"));
+      const sku = skuArm || skuPlat;
+      const k = `${pedido}|${sku}`;
+      const n = (vistos.get(k) || 0) + 1;
+      vistos.set(k, n);
+      itens.push({
+        chave: `${pedido}|${sku}|${n}`,
+        origem: "olist",
+        pedido,
+        numero: ordem,
+        ordem_compra: ordem,
+        data,
+        situacao,
+        sku,
+        skuPlataforma: skuPlat !== sku ? skuPlat : null,
+        descricao: [s(l, "nomeAnuncio"), s(l, "variacao")].filter(Boolean).join(" · ").slice(0, 200),
+        quantidade: num(v(l, "qtd")) || 1,
+        valor_unitario: num(v(l, "preco")),
+        desconto_item: 0,
+        desconto_pedido: totBruto > 0 ? Math.round(((desc * brutos[i]) / totBruto) * 100) / 100 : 0,
+        frete: 0,
+        cliente: s(l0, "cliente") || null,
+        plataformaArquivo: plataforma,
+      });
+    });
+  }
+  if (!itens.length) throw new Error("Arquivo sem pedidos.");
+  const datas = itens.map((i) => i.data).sort();
+  return { itens, periodo: { de: datas[0], ate: datas[datas.length - 1] }, plataformasDesconhecidas };
 }
 
 // ---------- Ligação pelo SKU ----------
