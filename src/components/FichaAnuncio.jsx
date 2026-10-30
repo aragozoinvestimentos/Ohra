@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { alertaPreco } from "../lib/estrategia.js";
 import FreteAviso from "./FreteAviso.jsx";
 import { supabase } from "../lib/supabaseClient.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { quebraNoValor } from "../lib/precoAgora.js";
 import { TdLucro } from "./AlvoAgora.jsx";
@@ -252,7 +253,11 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
     const tabela = e.itemId.startsWith("k:") ? "kits" : e.itemId.startsWith("v:") ? "produto_variacoes" : "produtos_cadastro";
     const { error } = await supabase.from(tabela).update({ sku: novo || null }).eq("id", e.itemId.slice(2));
     if (error) onToast(`Não foi possível salvar o SKU: ${error.message}`);
-    else onToast(novo ? `SKU salvo: ${novo}` : "SKU removido");
+    else {
+      // sem esperar o realtime: a tabela mostrava o SKU antigo e parecia que não salvou
+      recarregarCatalogo();
+      onToast(novo ? `SKU salvo: ${novo}` : "SKU removido");
+    }
   }
 
   // Copiar um valor só (SKU, preço original, promo) — mostra ✓ na hora.
@@ -538,6 +543,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                                     }}
                                   />
                                   {l.sufixos}
+                                  {l.sufixos && <span className="muted-cel"> (o “{l.sufixos}” vem da opção de cor)</span>}
                                 </span>
                               ) : (
                                 <>
