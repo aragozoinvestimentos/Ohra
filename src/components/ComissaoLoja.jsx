@@ -19,6 +19,7 @@ import Estado from "./Estado.jsx";
 // nunca soma). Regra: o afiliado fica com no máximo metade do lucro (preço de agora + pior caso
 // com o cupom ativo); mínimo da Shopee 4% (Regras). Teste de 15 dias por comissão. Afiliado só
 // mexe em comissão — nunca em preço. Conta ÚNICA em lib/comissaoLoja.js.
+const GRUPO_SIT = { ok: 0, "menos-metade": 0, abaixo: 1, prejuizo: 1, insuficiente: 2 };
 const pctTxt = (p) => `${Math.round(p * 100)}%`;
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 const SIT = {
@@ -51,6 +52,8 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
   const naShopee = padrao?.comissao || null;
   const [pct, setPct] = useState(() => Math.round((naShopee || minimo) * 100));
   const sim = useMemo(() => simularComissaoLoja(linhas, pct / 100), [linhas, pct]);
+  // Aptos em cima; os que não compensam (abaixo do mínimo/prejuízo) embaixo; sem dados no fim.
+  const ordenadas = useMemo(() => [...sim.linhas].sort((a, b) => GRUPO_SIT[a.situacao] - GRUPO_SIT[b.situacao]), [sim.linhas]);
   const [registrar, setRegistrar] = useState(false);
   const [editItem, setEditItem] = useState(null); // { chave, valor }
   const [testes, setTestes] = usePreferencia("afiliados:testes", {});
@@ -224,13 +227,22 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
                 </tr>
               </thead>
               <tbody>
-                {sim.linhas.map((l) => {
+                {ordenadas.map((l, i) => {
                   const [tipo, rot] = SIT[l.situacao];
+                  const divisa = i > 0 && GRUPO_SIT[l.situacao] !== GRUPO_SIT[ordenadas[i - 1].situacao] ? GRUPO_SIT[l.situacao] : null;
                   const ed = editItem?.chave === l.chave;
                   const nVar = l.variacoes?.length || 1;
                   const abre = aberto === l.chave;
                   return (
                     <Fragment key={l.chave}>
+                      {divisa && (
+                        <tr className="linha-divisa">
+                          <td colSpan={9}>
+                            <b>{divisa === 1 ? `Não compensam com ${pct}%` : "Sem dados (falta custo cadastrado)"}</b>
+                            <span className="muted-cel"> · {ordenadas.filter((x) => GRUPO_SIT[x.situacao] === divisa).length}</span>
+                          </td>
+                        </tr>
+                      )}
                       <tr className={abre ? "linha-atual" : ""}>
                         <td>
                           <button type="button" className="link-btn" style={{ margin: 0, textAlign: "left" }} onClick={() => setAberto(abre ? null : l.chave)}>
@@ -280,7 +292,7 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
                         </td>
                         <td className="num">{BRL(l.comissao)}</td>
                         <td className={`num${l.lucroCom < 0 ? " neg" : ""}`}>{l.insuficiente ? "—" : BRL(l.lucroCom)}</td>
-                        <td className="num">{l.insuficiente ? "—" : l.maxSeguro >= minPct ? `${l.maxSeguro}%` : <span className="muted-cel">não aguenta {minPct}%</span>}</td>
+                        <td className="num">{l.insuficiente ? "—" : l.maxSeguro >= minPct ? `${l.maxSeguro}%` : <span className="muted-cel" title={`não aguenta o mínimo da Shopee (${minPct}%)`}>abaixo de {minPct}%</span>}</td>
                         <td>{tipo ? <Estado tipo={tipo}>{rot}</Estado> : <span className="muted-cel">{rot}</span>}</td>
                       </tr>
                       {abre && (
