@@ -6,7 +6,7 @@ import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { gravarPrecoNovo } from "../lib/estrategia.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
 import { LIMITE_NOME_OPCAO } from "../lib/anunciosGrupo.js";
-import { MAX_ADICIONAIS, ajustes4x, aplicarAjuste, montarCombinacoes, regraDaPlataforma } from "../lib/combinacoes.js";
+import { COMBOS_TODAS_MARCADAS, MAX_ADICIONAIS, OPCOES_MAX_ANUNCIO, ajustes4x, aplicarAjuste, montarCombinacoes, regraDaPlataforma } from "../lib/combinacoes.js";
 import { BRL, PCT } from "../lib/format.js";
 import BuscaItem from "./BuscaItem.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -24,7 +24,7 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
   const canal = canais.find((c) => c.id === canalId) || null;
   const [base, setBase] = useState("");
   const [adicionais, setAdicionais] = useState([{ itemId: "", quantidade: 1 }]);
-  const [desmarcadas, setDesmarcadas] = useState(() => new Set());
+  const [desmarcadasEscolha, setDesmarcadas] = useState(null); // null = o padrão (ver `desmarcadas`)
   const [rotulos, setRotulos] = useState({});
   const [salvarPrecos, setSalvarPrecos] = useState(true);
   const [salvando, setSalvando] = useState(false);
@@ -36,7 +36,7 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
   const [assinaturaVista, setAssinaturaVista] = useState(assinatura);
   if (assinatura !== assinaturaVista) {
     setAssinaturaVista(assinatura);
-    setDesmarcadas(new Set());
+    setDesmarcadas(null);
     setRotulos({});
     setAjuste("auto");
   }
@@ -49,6 +49,11 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [assinatura, canal, itens, produtos, kits, embalagens, produtoEmbalagens, precos, publicacoesCanal, cfgDoProduto]
   );
+  // Padrão: todas marcadas; com muitas, só base sozinha, base + cada item e base + todos.
+  const nAd = combos.reduce((m, c) => Math.max(m, (c.indices || []).length), 0);
+  const desmarcadas =
+    desmarcadasEscolha ??
+    (combos.length > COMBOS_TODAS_MARCADAS ? new Set(combos.filter((c) => { const k = (c.indices || []).length; return k > 1 && k < nAd; }).map((c) => c.chave)) : new Set());
   const itemBase = itens.find((i) => i.id === base) || null;
   const cfg = cfgDoProduto(itemBase ? itemBase.produtoId || (itemBase.id.startsWith("p:") ? itemBase.id.slice(2) : null) : null);
   const marcadasBrutas = combos.filter((c) => !desmarcadas.has(c.chave));
@@ -61,15 +66,15 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
   const regra = regraDaPlataforma(marcadas, canal, nomeVariacao);
   const rotuloDe = (c) => rotulos[c.chave] ?? c.rotulo;
   const alternar = (chave) =>
-    setDesmarcadas((s) => {
-      const n = new Set(s);
+    setDesmarcadas(() => {
+      const n = new Set(desmarcadas);
       if (n.has(chave)) n.delete(chave);
       else n.add(chave);
       return n;
     });
   const desmarcarFora = () => {
     setAjuste(null);
-    setDesmarcadas((s) => new Set([...s, ...(regra.quatroX?.fora || [])]));
+    setDesmarcadas(new Set([...desmarcadas, ...(regra.quatroX?.fora || [])]));
   };
   const novos = marcadas.filter((c) => c.novo);
   const precosASalvar = marcadas.filter((c) => c.origemPreco === "sugerido" && c.sugerido > 0);
@@ -203,6 +208,18 @@ export default function MontarCombinacoes({ canalInicial, canais, nomeVariacao, 
       {base && !adicionaisValidos.length && <p className="hint">Escolha pelo menos um item que pode ir junto.</p>}
       {combos.length > 1 && (
         <>
+          {combos.length > COMBOS_TODAS_MARCADAS && (
+            <p className="hint">
+              {combos.length} combinações possíveis — marcamos só a base sozinha, a base com cada item e a base com todos ({marcadasBrutas.length}). Marque as outras que quiser vender.{" "}
+              <button type="button" className="link-btn" onClick={() => setDesmarcadas(new Set())}>marcar todas</button> ·{" "}
+              <button type="button" className="link-btn" onClick={() => setDesmarcadas(new Set(combos.map((c) => c.chave)))}>desmarcar todas</button>
+            </p>
+          )}
+          {marcadasBrutas.length > OPCOES_MAX_ANUNCIO && (
+            <div className="alerta alerta-warn">
+              {marcadasBrutas.length} opções marcadas — a Shopee/TikTok aceitam até {OPCOES_MAX_ANUNCIO} numa variação do anúncio. Desmarque algumas ou divida em mais de um anúncio.
+            </div>
+          )}
           <div className="table-wrap combinacoes-tabela">
             <table>
               <thead>

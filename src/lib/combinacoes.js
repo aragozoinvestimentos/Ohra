@@ -18,7 +18,11 @@ const num = (v) => {
   return isFinite(x) ? x : 0;
 };
 const cent = (v) => Math.round(v * 100) / 100;
-export const MAX_ADICIONAIS = 4;
+export const MAX_ADICIONAIS = 8; // 30/10/2026, pedido do Gustavo (era 4): 8 → até 256 combinações
+// Com muitas combinações, começa marcando só: base sozinha, base + cada item e base + todos.
+export const COMBOS_TODAS_MARCADAS = 16;
+// Shopee/TikTok aceitam até 50 opções numa variação do anúncio (confira no painel).
+export const OPCOES_MAX_ANUNCIO = 50;
 // Recomendação entre vitrine e desconto (ajustes4x).
 export const VITRINE_SUBIDA_MAX = 0.25; // vitrine sobe o "a partir de" mais que isso → considera o desconto
 export const PROMO_MIN = 0.15; // desconto novo abaixo disso = promo pouco atrativa
