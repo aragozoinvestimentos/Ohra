@@ -248,6 +248,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-10-30", texto: "Afiliados: cada anúncio tem uma chavinha ligado/desligado. Desligado = você removeu o anúncio da campanha na Shopee — ele não paga comissão, sai da sugestão da loja e dos avisos de afiliado, e fica numa faixa \"Sem afiliado\" no fim da tabela (o detalhe mostra como ficaria se ligar de novo)." },
   { data: "2026-10-30", texto: "Afiliados: na tabela de comissão os anúncios aptos ficam em cima; os que não compensam com o % da loja vão pra baixo, numa faixa própria, e os sem custo cadastrado no fim." },
   { data: "2026-10-30", texto: "Afiliados por anúncio: a tabela de comissão tem uma linha por anúncio (produto com as variações anunciadas, kit, anúncio com vários itens) — a Shopee põe o % no anúncio inteiro. O máximo seguro do anúncio é a média do máximo de cada variação pelas vendas de 90 dias (10 ou mais) ou das 2 mais apertadas, sempre com a trava de nenhuma variação no prejuízo ou abaixo do lucro mínimo. % antigo salvo numa variação aparece pra passar pro anúncio." },
   { data: "2026-10-30", texto: "Montar combinações (anúncio com vários itens): agora cabem até 8 itens que podem ir junto (eram 4). Com muitas combinações, começo marcando só a base, a base com cada item e a base com todos — e aviso se passar de 50 opções." },

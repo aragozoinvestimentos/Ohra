@@ -734,3 +734,20 @@ describe("afiliados por anúncio (30/10/2026)", () => {
     expect(a.antigas.map((x) => x.pct)).toEqual([0.08]);
   });
 });
+
+describe("afiliado desligado no anúncio (30/10/2026)", () => {
+  it("desligado não paga comissão, sai da sugestão e dos avisos", async () => {
+    const { anunciosDaLoja, simularComissaoLoja, sugestaoComissaoLoja, avisosComissaoLoja } = await import("../src/lib/comissaoLoja.js");
+    const L = (id, preco, lucro, vendas) => ({ chave: `produto|${id}|c`, tipo: "produto", id, item: { id: `p:${id}`, nome: id, custoTotal: 5 }, canal: { id: "c" }, preco, base: preco, lucro, lucroMin: 1, vendas, propria: null, propriaRow: null });
+    const config = [{ id: "r", canal_id: "c", item_tipo: "produto", item_id: "B", ativo: false, comissao: null }];
+    const ans = anunciosDaLoja({ linhas: [L("A", 30, 9, 10), L("B", 10, 1.2, 20)], itens: [], canalId: "c", config });
+    const b = ans.find((a) => a.id === "B");
+    expect(b.desligado).toBe(true);
+    const sim = simularComissaoLoja(ans, 0.1);
+    expect(sim.desligado).toBe(1);
+    expect(sim.linhas.find((l) => l.id === "B")).toMatchObject({ situacao: "desligado", comissao: 0 });
+    expect(sugestaoComissaoLoja(ans).sugerida).toBe(15); // só o A decide (B tinha lucro apertado)
+    const av = avisosComissaoLoja({ linhas: ans, canal: { id: "c", nome: "Shopee" }, comissao: 0.1, hoje: "2026-10-30" });
+    expect(av.some((x) => /B/.test(x.texto))).toBe(false);
+  });
+});

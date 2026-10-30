@@ -301,7 +301,7 @@ export default function Inicio({ onIrPara, onToast }) {
     const resultado = resultadoAfiliados(af.registros, { hoje, lucroPorVenda });
     const sug = sugestaoComissaoLoja(linhasL);
     const amostras = (af.parceiros || []).filter((pa) => pa.amostra_item_id).reduce((t, pa) => t + custoAmostra(pa, itens), 0);
-    const info = { canal: canalAf.nome, comissao, sugerida: sug.sugerida, teto: sug.teto, minimo: minimoAfiliado(dados.cfgLoja), resultado, amostras, linhas: linhasL.map((l) => ({ nome: l.item.nome, max: maxSeguroDoItem(l), propria: l.propria })) };
+    const info = { canal: canalAf.nome, comissao, sugerida: sug.sugerida, teto: sug.teto, minimo: minimoAfiliado(dados.cfgLoja), resultado, amostras, linhas: linhasL.map((l) => ({ nome: l.item.nome, max: maxSeguroDoItem(l), propria: l.propria, desligado: !!l.desligado })) };
     return { avisos: avisosComissaoLoja({ linhas: linhasL, canal: canalAf, comissao, resultado, testes: afTestes, hoje }), info };
   }, [dados.canais, dados.cfgLoja, linhasAf, pedidosValidos, af.config, af.registros, af.parceiros, itens, afTestes, hoje, gruposAnuncio, soNoGrupo, cobraNoCanal]);
   const afLoja = afLojaTudo.avisos;

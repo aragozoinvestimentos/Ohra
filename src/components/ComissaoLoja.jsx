@@ -19,7 +19,7 @@ import Estado from "./Estado.jsx";
 // nunca soma). Regra: o afiliado fica com no máximo metade do lucro (preço de agora + pior caso
 // com o cupom ativo); mínimo da Shopee 4% (Regras). Teste de 15 dias por comissão. Afiliado só
 // mexe em comissão — nunca em preço. Conta ÚNICA em lib/comissaoLoja.js.
-const GRUPO_SIT = { ok: 0, "menos-metade": 0, abaixo: 1, prejuizo: 1, insuficiente: 2 };
+const GRUPO_SIT = { ok: 0, "menos-metade": 0, abaixo: 1, prejuizo: 1, insuficiente: 2, desligado: 3 };
 const pctTxt = (p) => `${Math.round(p * 100)}%`;
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 const SIT = {
@@ -28,6 +28,7 @@ const SIT = {
   abaixo: ["resolver", "não compensa"],
   prejuizo: ["resolver", "prejuízo"],
   insuficiente: ["info", "dados insuficientes"],
+  desligado: [null, "sem afiliado"],
 };
 
 export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registros, mapaAf, lojaId, hoje, onToast }) {
@@ -115,6 +116,29 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
     onToast?.(`${l.item.nome}: ${pctTxt(ant.pct)} no anúncio inteiro`);
   }
 
+  // Chave ligado/desligado (30/10/2026): desligar = você tirou o anúncio da campanha na Shopee
+  // ("Remover"). Grava a linha do anúncio com ativo = false (guarda o % próprio, se havia);
+  // religar volta o % próprio ou apaga a linha (volta o da loja).
+  async function alternarAfiliado(l) {
+    const row = l.linhaAnuncio || (config || []).find((r) => r.canal_id === canal.id && r.item_tipo === l.tipo && r.item_id === l.id);
+    const antes = l.desligado ? null : comissaoEmTxt(l);
+    let error;
+    if (l.desligado) {
+      if (row && Number(row.comissao) > 0) ({ error } = await supabase.from("afiliado_config").update({ ativo: true, atualizado_em: new Date().toISOString() }).eq("id", row.id));
+      else if (row) ({ error } = await supabase.from("afiliado_config").delete().eq("id", row.id));
+    } else {
+      const campos = { ativo: false, atualizado_em: new Date().toISOString() };
+      ({ error } = row ? await supabase.from("afiliado_config").update(campos).eq("id", row.id) : await supabase.from("afiliado_config").insert({ ...campos, comissao: null, loja_id: lojaId || null, canal_id: canal.id, item_tipo: l.tipo, item_id: l.id }));
+    }
+    if (error) return onToast?.(`Não foi possível salvar: ${error.message}`);
+    const t = { ...(testes || {}) };
+    delete t[`item|${l.tipo}|${l.id}|${canal.id}`];
+    setTestes(t);
+    registrarAcao({ lojaId, itemTipo: l.tipo, itemId: l.id, canalId: canal.id, tipo: "afiliado", data: hoje, antes: antes || "desligado", depois: l.desligado ? "ligado" : "desligado", observacao: `afiliado ${l.desligado ? "ligado" : "desligado"} — ${l.item.nome}` });
+    onToast?.(l.desligado ? `${l.item.nome}: afiliado ligado de novo (ponha de volta na campanha da ${canal.nome})` : `${l.item.nome}: sem afiliado — confira se removeu na campanha da ${canal.nome}`);
+  }
+  const comissaoEmTxt = (l) => pctTxt(l.propria != null ? l.propria : naShopee || 0);
+
   function responderTeste(chave, resposta) {
     const t = { ...(testes || {}) };
     if (!t[chave]) return;
@@ -199,6 +223,12 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
           )}
           <span className="af-sim-res">
             <b>{sim.ok}</b> aptos · <b>{sim.menosMetade}</b> afiliado leva mais da metade · <b>{sim.abaixo + sim.prejuizo}</b> não compensam
+            {sim.desligado ? (
+              <>
+                {" "}
+                · <b>{sim.desligado}</b> desligados
+              </>
+            ) : null}
             {sim.insuficiente ? (
               <>
                 {" "}
@@ -238,7 +268,7 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
                       {divisa && (
                         <tr className="linha-divisa">
                           <td colSpan={9}>
-                            <b>{divisa === 1 ? `Não compensam com ${pct}%` : "Sem dados (falta custo cadastrado)"}</b>
+                            <b>{divisa === 1 ? `Não compensam com ${pct}%` : divisa === 3 ? "Sem afiliado (você desligou)" : "Sem dados (falta custo cadastrado)"}</b>
                             <span className="muted-cel"> · {ordenadas.filter((x) => GRUPO_SIT[x.situacao] === divisa).length}</span>
                           </td>
                         </tr>
@@ -272,6 +302,11 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
                             </span>
                           ) : (
                             <>
+                              <ChaveAfiliado ligado={!l.desligado} onAlternar={() => alternarAfiliado(l)} />
+                              {l.desligado ? (
+                                <div className="sub-linha">removido na {canal.nome}</div>
+                              ) : (
+                                <>
                               {pctTxt(l.em)}
                               <div className="sub-linha">
                                 {l.propria != null ? (
@@ -287,10 +322,12 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
                                   </button>
                                 )}
                               </div>
+                                </>
+                              )}
                             </>
                           )}
                         </td>
-                        <td className="num">{BRL(l.comissao)}</td>
+                        <td className="num">{l.desligado ? "—" : BRL(l.comissao)}</td>
                         <td className={`num${l.lucroCom < 0 ? " neg" : ""}`}>{l.insuficiente ? "—" : BRL(l.lucroCom)}</td>
                         <td className="num">{l.insuficiente ? "—" : l.maxSeguro >= minPct ? `${l.maxSeguro}%` : <span className="muted-cel" title={`não aguenta o mínimo da Shopee (${minPct}%)`}>abaixo de {minPct}%</span>}</td>
                         <td>{tipo ? <Estado tipo={tipo}>{rot}</Estado> : <span className="muted-cel">{rot}</span>}</td>
@@ -320,6 +357,18 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
   );
 }
 
+// Chave ligado/desligado do afiliado no anúncio (mesmo visual da chave do teto de Ads).
+function ChaveAfiliado({ ligado, onAlternar }) {
+  return (
+    <label className={`chave-teto chave-af${ligado ? " ligada" : ""}`} title={ligado ? "Afiliado ligado neste anúncio — clique se você removeu ele da campanha na Shopee" : "Sem afiliado neste anúncio — clique pra ligar de novo"}>
+      <button type="button" role="switch" aria-checked={ligado} className="chave-switch" onClick={onAlternar}>
+        <span className="chave-bolinha" />
+      </button>
+      <span>{ligado ? "ligado" : "desligado"}</span>
+    </label>
+  );
+}
+
 const REGRA_MAX = {
   vendas: (l) => `pela média das vendas de 90 dias de cada variação (${l.variacoes.filter((v) => Number(v.lucro) > 0).reduce((t, v) => t + (Number(v.vendas) || 0), 0)} vendas — ${MIN_VENDAS_MIX} ou mais)`,
   apertadas: () => `pela média das 2 variações mais apertadas (menos de ${MIN_VENDAS_MIX} vendas em 90 dias)`,
@@ -340,8 +389,13 @@ function DetalheAnuncioAf({ l, minPct, onPassar }) {
             </button>
           </div>
         ))}
+      {l.desligado && (
+        <div className="alerta alerta-neutro">
+          {`Sem afiliado neste anúncio (você desligou). Abaixo, como ficaria se ligar de novo com ${pctTxt(l.emSeLigar || 0)} da loja.`}
+        </div>
+      )}
       <p className="hint" style={{ marginTop: 0 }}>
-        Com <b>{pctTxt(l.em)}</b> {l.propria != null ? "(deste anúncio)" : "(da loja)"} — vale pra todas as variações. Máximo seguro <b>{l.maxSeguro >= 1 ? `${l.maxSeguro}%` : "—"}</b>
+        Com <b>{pctTxt(l.desligado ? l.emSeLigar || 0 : l.em)}</b> {l.propria != null ? "(deste anúncio)" : "(da loja)"} — vale pra todas as variações. Máximo seguro <b>{l.maxSeguro >= 1 ? `${l.maxSeguro}%` : "—"}</b>
         {regra ? ` ${regra(l)}` : ""}, com a trava: nenhuma variação no prejuízo nem abaixo do lucro mínimo.
         {l.maxSeguro > 0 && l.maxSeguro < minPct ? ` Abaixo do mínimo da Shopee (${minPct}%).` : ""}
       </p>
@@ -360,7 +414,7 @@ function DetalheAnuncioAf({ l, minPct, onPassar }) {
           </thead>
           <tbody>
             {l.variacoes.map((v) => {
-              const p = parteDoAfiliado(v, l.em);
+              const p = parteDoAfiliado(v, l.desligado ? l.emSeLigar || 0 : l.em);
               return (
                 <tr key={v.chave}>
                   <td>{v.item.nome}</td>

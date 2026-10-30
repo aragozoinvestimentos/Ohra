@@ -83,7 +83,7 @@ export function linhasDaLoja({ linhasAf = [], canalId, faixasCupom = [], vendas 
 }
 
 /** Comissão em vigor numa linha: a própria do anúncio ou a da loja (fração). */
-export const comissaoEm = (l, pctLoja) => (l.propria != null ? l.propria : pctLoja);
+export const comissaoEm = (l, pctLoja) => (l.desligado ? 0 : l.propria != null ? l.propria : pctLoja);
 
 /** Lucro de uma linha se um afiliado vender com `pct` (fração). Anúncio (com `variacoes`) = média pelo mix. */
 export function comComissao(l, pct) {
@@ -213,6 +213,12 @@ export function anunciosDaLoja({ linhas = [], itens = [], canalId, config = [], 
       a.tipo === "grupo"
         ? (config || []).find((r) => r.canal_id === canalId && r.item_tipo === "grupo" && r.item_id === a.id && r.ativo !== false && num(r.comissao) > 0) || null
         : vars.find((v) => v.tipo === a.tipo && v.id === a.id)?.propriaRow || null;
+    // Afiliado DESLIGADO neste anúncio (30/10/2026): linha do anúncio em afiliado_config com
+    // ativo = false — você tirou ele da campanha na Shopee ("Remover"). Guarda a comissão própria
+    // (se havia) pra voltar igual ao religar.
+    const tipoRow = a.tipo === "grupo" ? "grupo" : a.tipo;
+    const linhaAnuncio = (config || []).find((r) => r.canal_id === canalId && r.item_tipo === tipoRow && r.item_id === a.id) || null;
+    const desligado = !!linhaAnuncio && linhaAnuncio.ativo === false;
     const antigas = vars.filter((v) => v.propriaRow && v.propriaRow !== propriaRow).map((v) => ({ row: v.propriaRow, nome: v.item.nome, pct: num(v.propriaRow.comissao), linha: v }));
     const m = maxDoAnuncio(vars);
     const ok = vars.filter(valida);
@@ -235,8 +241,10 @@ export function anunciosDaLoja({ linhas = [], itens = [], canalId, config = [], 
       lucroMin: Math.max(0, ...ok.map((v) => num(v.lucroMin))),
       emRampa: vars.some((v) => v.emRampa),
       cupom: Math.max(0, ...vars.map((v) => num(v.cupom))),
-      propria: propriaRow ? num(propriaRow.comissao) : null,
-      propriaRow,
+      propria: desligado ? null : propriaRow ? num(propriaRow.comissao) : null,
+      propriaRow: desligado ? null : propriaRow,
+      desligado,
+      linhaAnuncio,
       antigas,
       insuficiente: !ok.length && vars.every((v) => v.insuficiente),
       _max: m.max,
@@ -279,7 +287,7 @@ export function maisVendidos(linhas, cobertura = COBERTURA_AFILIADO) {
 export function sugestaoComissaoLoja(linhas) {
   const top = maisVendidos(linhas);
   const temLucro = (l) => (l.variacoes ? l.variacoes.some(valida) : num(l.lucro) > 0 && !l.insuficiente);
-  const decide = linhas.filter((l) => top.has(l.chave) && temLucro(l) && l.propria == null);
+  const decide = linhas.filter((l) => top.has(l.chave) && temLucro(l) && l.propria == null && !l.desligado);
   if (!decide.length) return { sugerida: null, teto: null, decide: 0 };
   // sugerida nunca passa do teto (produto de lucro pequeno: metade dele já fica abaixo do mínimo)
   const teto = Math.min(...decide.map(maxTravaDoItem));
@@ -288,9 +296,17 @@ export function sugestaoComissaoLoja(linhas) {
 
 /** Simulador: contagem por situação no % (fração). */
 export function simularComissaoLoja(linhas, pct) {
-  const r = { ok: 0, menosMetade: 0, abaixo: 0, prejuizo: 0, insuficiente: 0, linhas: [] };
+  const r = { ok: 0, menosMetade: 0, abaixo: 0, prejuizo: 0, insuficiente: 0, desligado: 0, linhas: [] };
   for (const l of linhas) {
     const em = comissaoEm(l, pct);
+    if (l.desligado) {
+      // sem afiliado: mostra o que aconteceria com o % da loja, mas a situação é "desligado"
+      const seLigar = num(l.linhaAnuncio?.comissao) > 0 ? num(l.linhaAnuncio.comissao) : pct;
+      const se = comComissao(l, seLigar);
+      r.linhas.push({ ...l, ...se, em: 0, emSeLigar: seLigar, comissao: 0, lucroCom: l.lucro, situacaoSeLigar: se.situacao, situacao: "desligado", maxSeguro: maxSeguroDoItem(l) });
+      r.desligado++;
+      continue;
+    }
     const c = comComissao(l, em);
     r.linhas.push({ ...l, ...c, em, maxSeguro: maxSeguroDoItem(l) });
     if (c.situacao === "ok") r.ok++;
@@ -374,7 +390,7 @@ export function avisosComissaoLoja({ linhas, canal, comissao, resultado, testes 
     out.push({ id: "af|prejuizo", grupo: "resolver", ordem: 2, tom: "bad", titulo: "Afiliados te deram prejuízo nos últimos 30 dias", texto: `${canal?.nome || ""} · comissão R$ ${brl(resultado.comissao)} → lucro depois R$ ${brl(resultado.depois)} — baixe a comissão ou desligue`, ir, rotulo: "Abrir Afiliados" });
   if (!canal || !linhas?.length) return out;
   const nomes = (ls) => `${ls.slice(0, 3).map((l) => l.item.nome).join(", ")}${ls.length > 3 ? ` e mais ${ls.length - 3}` : ""}`;
-  const comAf = linhas.filter((l) => (l.propria ?? comissao) > 0 && !l.insuficiente).map((l) => ({ ...l, em: l.propria ?? comissao, ...comComissao(l, l.propria ?? comissao) }));
+  const comAf = linhas.filter((l) => !l.desligado && (l.propria ?? comissao) > 0 && !l.insuficiente).map((l) => ({ ...l, em: l.propria ?? comissao, ...comComissao(l, l.propria ?? comissao) }));
   const prej = comAf.filter((l) => l.situacao === "prejuizo");
   const ruins = comAf.filter((l) => l.situacao === "abaixo" || l.situacao === "menos-metade");
   if (prej.length)
