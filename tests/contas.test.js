@@ -751,3 +751,48 @@ describe("afiliado desligado no anúncio (30/10/2026)", () => {
     expect(av.some((x) => /B/.test(x.texto))).toBe(false);
   });
 });
+
+import { calcProducao as calcProd, entradaDoDetalhe as entradaDet, derivarDetalhe as derivarDet, mesasDoDetalhe as mesasDet, gramasPorMetro as gpm } from "../src/lib/calc.js";
+
+describe("Dados do fatiador: uma mesa, AMS e várias mesas", () => {
+  const mats = [
+    { nome: "PLA preto", tipo: "filamento", preco: 100 },
+    { nome: "Silk dourado", tipo: "filamento", preco: 200 },
+  ];
+  const base = { diametro: 1.75, densidade: 1.24, falhasPct: 0, manutencaoPct: 0, acabamentoPct: 0, kwh: 1, consumo: 100, modelagem: 0 };
+  const maquina = { tarifa: 1, potencia: 100, custoHoraMaquina: 0.6 };
+
+  it("várias mesas com 1 mesa = a conta de uma mesa (nada muda pra quem converter)", () => {
+    const uma = calcProd(entradaDet({ ...base, comprimento: 40, tempo: 240, materialNome: "PLA preto" }, { precoKg: 100, pecasPorPlaca: 4, maquina, materiais: mats }));
+    const var1 = calcProd(entradaDet({ ...base, impressao: "varias", mesas: [{ nome: "A", materialNome: "PLA preto", comprimento: 40, tempo: 240, rende: 4, leva: 1 }] }, { precoKg: 100, pecasPorPlaca: 4, maquina, materiais: mats }));
+    expect(var1.total).toBeCloseTo(uma.total, 6);
+    expect(var1.peso).toBeCloseTo(uma.peso, 6);
+    expect(uma.tempoUn).toBe(60);
+  });
+
+  it("cada mesa com o preço do filamento dela, dividida pelo que rende × o que leva", () => {
+    const g = gpm(1.75, 1.24);
+    const d = { ...base, impressao: "varias", mesas: [
+      { nome: "Leões", materialNome: "PLA preto", comprimento: 40, tempo: 240, rende: 4, leva: 1 },
+      { nome: "Coroas", materialNome: "Silk dourado", comprimento: 10, tempo: 120, rende: 2, leva: 1 },
+    ] };
+    const r = calcProd(entradaDet(d, { precoKg: 100, pecasPorPlaca: 4, maquina, materiais: mats }));
+    const mat = (40 * g / 1000 * 100) / 4 + (10 * g / 1000 * 200) / 2;
+    expect(r.material).toBeCloseTo(mat, 6);
+    expect(r.tempoUn).toBe(60 + 60);
+    expect(r.mesas).toHaveLength(2);
+    // lote equivalente pras outras telas: rende da 1ª mesa
+    const der = derivarDet(d, 1);
+    expect(der.pecas).toBe(4);
+    expect(der.detalhe.tempo).toBe(480); // 120 min por unidade × 4
+  });
+
+  it("AMS: gramas de cada cor + purga no preço do 1º filamento", () => {
+    const d = { ...base, impressao: "ams", tempo: 300, ams: { filamentos: [{ materialNome: "PLA preto", gramas: 100 }, { materialNome: "Silk dourado", gramas: 20 }], purga: 30 } };
+    const ms = mesasDet(d, (n) => mats.find((m) => m.nome === n).preco, 2);
+    expect(ms[0].fils.find((f) => f.purga).precoKg).toBe(100);
+    const r = calcProd(entradaDet(d, { precoKg: 100, pecasPorPlaca: 2, maquina, materiais: mats }));
+    expect(r.material).toBeCloseTo((0.1 * 100 + 0.02 * 200 + 0.03 * 100) / 2, 6);
+    expect(r.peso).toBeCloseTo(75, 6);
+  });
+});

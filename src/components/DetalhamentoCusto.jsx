@@ -2,6 +2,7 @@ import { BRL } from "../lib/format.js";
 import SeletorItens from "./SeletorItens.jsx";
 import ParteArtesanal from "./ParteArtesanal.jsx";
 import { custoArtesanal } from "../lib/calc.js";
+import ImpressaoFatiador from "./ImpressaoFatiador.jsx";
 
 // Campo numérico compacto que mostra "(era X)" do lado do rótulo quando o
 // valor atual difere do que estava salvo antes dessa edição — pra você ver
@@ -41,6 +42,7 @@ export default function DetalhamentoCusto({
   maquina = null,
   onChangeImpressora,
   materiais = [],
+  pesoCadastro = null,
 }) {
   if (!detalhe) {
     return (
@@ -58,7 +60,6 @@ export default function DetalhamentoCusto({
   const usaFarm = ativas.length > 0;
   const padrao = ativas.find((i) => i.padrao) || ativas[0] || null;
 
-  const pecasPorPlaca = Number(pecasPorImpressao) || 1;
   const sem3d = !!detalhe.sem3d;
   const art = custoArtesanal(detalhe, materiais);
 
@@ -66,34 +67,17 @@ export default function DetalhamentoCusto({
     <div className="detalhe-producao">
       <ParteArtesanal embutido valor={{ artesanal: detalhe.artesanal, sem3d }} materiais={materiais} onChange={({ artesanal, sem3d: s3 }) => onChange({ ...detalhe, artesanal, sem3d: s3 })} />
       {!sem3d && (<>
-      <CampoNum label="Peças por impressão/chapa" valor={pecasPorImpressao ?? 1} anterior={pecasPorImpressaoSalvo} onChange={onChangePecasPorImpressao} />
-      {pecasPorPlaca > 1 && (
-        <div className="hint" style={{ marginTop: -8 }}>
-          Comprimento e tempo abaixo devem ser o TOTAL da chapa com {pecasPorPlaca} peças — o app já divide pra achar o custo de cada uma.
-        </div>
-      )}
-      <div className="row2">
-        <CampoNum label={`Comprimento de filamento (m)${pecasPorPlaca > 1 ? " — total da chapa" : ""}`} valor={detalhe.comprimento} anterior={salvo?.comprimento} onChange={set("comprimento")} step="0.01" />
-        <CampoNum label="Diâmetro do filamento (mm)" valor={detalhe.diametro} anterior={salvo?.diametro} onChange={set("diametro")} step="0.01" />
-      </div>
-      <div className="row2">
-        <CampoNum label="Densidade (g/cm³)" valor={detalhe.densidade} anterior={salvo?.densidade} onChange={set("densidade")} step="0.01" />
-        <CampoNum label={`Tempo de impressão (min)${pecasPorPlaca > 1 ? " — total da chapa" : ""}`} valor={detalhe.tempo} anterior={salvo?.tempo} onChange={set("tempo")} />
-      </div>
-      <div className="field">
-        <label>
-          Filamento
-          {salvo && salvo.materialNome !== detalhe.materialNome && <span className="campo-anterior"> (era {salvo.materialNome})</span>}
-        </label>
-        <select value={detalhe.materialNome} onChange={(e) => set("materialNome")(e.target.value)}>
-          {filamentos.map((m) => (
-            <option key={m.id} value={m.nome}>
-              {m.nome} — R${Number(m.preco).toFixed(2)}/kg
-            </option>
-          ))}
-        </select>
-      </div>
-
+      <ImpressaoFatiador
+        d={detalhe}
+        pecas={pecasPorImpressao ?? 1}
+        onChange={onChange}
+        onPecas={onChangePecasPorImpressao}
+        filamentos={filamentos}
+        resultado={resultado}
+        pesoCadastro={pesoCadastro}
+        anterior={salvo}
+        pecasAnterior={pecasPorImpressaoSalvo}
+      />
       {usaFarm ? (
         <div className="field">
           <label>Impressora</label>

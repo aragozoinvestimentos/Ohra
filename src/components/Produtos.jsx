@@ -209,7 +209,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     const d = form.producao_detalhe;
     const material = filamentos.find((m) => m.nome === d.materialNome) || filamentos[0] || null;
     return calcProducao(
-      entradaDoDetalhe(d, { precoKg: material?.preco ?? 0, consumiveis: custoConsumiveisDetalhe, pecasPorPlaca: form.pecas_por_impressao, maquina: maquinaForm, artesanal: custoArtesanal(d, materiais) })
+      entradaDoDetalhe(d, { precoKg: material?.preco ?? 0, consumiveis: custoConsumiveisDetalhe, pecasPorPlaca: form.pecas_por_impressao, maquina: maquinaForm, artesanal: custoArtesanal(d, materiais), materiais })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.producao_detalhe, form.pecas_por_impressao, filamentos, custoConsumiveisDetalhe, maquinaForm, materiais]);
@@ -668,6 +668,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           impressoraId={form.impressora_id}
           maquina={maquinaForm}
           onChangeImpressora={(id) => setForm((prev) => ({ ...prev, impressora_id: id || null }))}
+          pesoCadastro={form.peso_g === "" || form.peso_g == null ? null : Number(String(form.peso_g).replace(",", ".")) || null}
         />
           </>
         )}

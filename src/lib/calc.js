@@ -136,7 +136,121 @@ export const DEFAULTS_PRODUCAO = {
 // chapa é dividido pelo número de peças pra chegar no custo de cada uma.
 // Consumíveis e modelagem continuam por peça (já têm sua própria
 // quantidade em SeletorItens), não entram nessa divisão.
+// Como o produto é impresso (30/10/2026) — producao_detalhe.impressao:
+// "uma" (padrão, a conta de sempre), "ams" (uma mesa, a impressora troca de
+// cor: ams.filamentos [{materialNome, gramas}] + ams.purga em g) ou "varias"
+// (partes impressas separadas: mesas [{nome, materialNome, comprimento (m),
+// tempo (min), rende, leva}] — cada mesa rende N partes e 1 unidade leva M).
+export function modoImpressao(d) {
+  return d?.impressao === "ams" || d?.impressao === "varias" ? d.impressao : "uma";
+}
+
+// Nome de 1 unidade do produto (peça, kit, conjunto…) — só pros rótulos.
+export function nomeDaUnidade(d) {
+  const u = d?.unidade;
+  return u?.tipo === "kit" ? String(u.nome || "").trim() || "kit" : "peça";
+}
+
+// Gramas por metro de filamento (mesma fórmula do peso da chapa).
+export function gramasPorMetro(diametro, densidade) {
+  return Math.PI * Math.pow((Number(diametro) || 0) / 2, 2) * (Number(densidade) || 0);
+}
+
+// Mesas do detalhamento em formato de conta: [{ nome, fils: [{nome, pesoG,
+// precoKg}], tempo, rende, leva }]. `precoDe(nomeDoFilamento)` dá o preço/kg
+// de cada filamento (preço ao vivo). "uma" = null (a conta antiga continua).
+export function mesasDoDetalhe(d, precoDe, pecas = 1) {
+  const modo = modoImpressao(d);
+  if (modo === "uma") return null;
+  const n = (v) => {
+    const x = Number(String(v ?? "").replace(",", "."));
+    return isFinite(x) ? x : 0;
+  };
+  if (modo === "ams") {
+    const fils = (d.ams?.filamentos || [])
+      .filter((f) => n(f.gramas) > 0)
+      .map((f) => ({ nome: f.materialNome || d.materialNome, pesoG: n(f.gramas), precoKg: precoDe(f.materialNome || d.materialNome) }));
+    const purga = n(d.ams?.purga);
+    if (purga > 0) fils.push({ nome: "purga", purga: true, pesoG: purga, precoKg: precoDe(fils[0]?.nome || d.materialNome) });
+    return [{ nome: "Mesa (AMS)", fils, tempo: n(d.tempo), rende: Math.max(1, n(pecas) || 1), leva: 1 }];
+  }
+  const gm = gramasPorMetro(d.diametro, d.densidade);
+  return (d.mesas || []).map((m, idx) => ({
+    nome: String(m.nome || "").trim() || `Mesa ${idx + 1}`,
+    fils: [{ nome: m.materialNome || d.materialNome, pesoG: n(m.comprimento) * gm, precoKg: precoDe(m.materialNome || d.materialNome) }],
+    tempo: n(m.tempo),
+    rende: Math.max(1, n(m.rende) || 1),
+    leva: m.leva === "" || m.leva == null ? 1 : n(m.leva),
+  }));
+}
+
+// Campos "de compatibilidade" do detalhamento em AMS/várias mesas: o resto do
+// app (Registro de impressões, capacidade, Otimização, planejar kit) lê
+// producao_detalhe.tempo/comprimento/materialNome e pecas_por_impressao como
+// UMA mesa. Aqui vira o lote equivalente: tempo e filamento por unidade × peças
+// do lote (várias mesas = o "rende" da 1ª mesa). Puro.
+export function derivarDetalhe(d, pecas) {
+  const modo = modoImpressao(d);
+  const n = (v) => {
+    const x = Number(String(v ?? "").replace(",", "."));
+    return isFinite(x) ? x : 0;
+  };
+  if (modo === "uma") return { detalhe: d, pecas };
+  const gm = gramasPorMetro(d.diametro, d.densidade) || 1;
+  if (modo === "ams") {
+    const fils = d.ams?.filamentos || [];
+    const g = fils.reduce((t, f) => t + n(f.gramas), 0) + n(d.ams?.purga);
+    return { detalhe: { ...d, comprimento: Math.round((g / gm) * 100) / 100, materialNome: fils[0]?.materialNome || d.materialNome }, pecas };
+  }
+  const mesas = d.mesas || [];
+  if (!mesas.length) return { detalhe: d, pecas };
+  const lote = Math.max(1, n(mesas[0].rende) || 1);
+  let tempoUn = 0;
+  let metrosUn = 0;
+  for (const m of mesas) {
+    const f = (m.leva === "" || m.leva == null ? 1 : n(m.leva)) / Math.max(1, n(m.rende) || 1);
+    tempoUn += n(m.tempo) * f;
+    metrosUn += n(m.comprimento) * f;
+  }
+  return {
+    detalhe: { ...d, tempo: Math.round(tempoUn * lote * 10) / 10, comprimento: Math.round(metrosUn * lote * 100) / 100, materialNome: mesas[0].materialNome || d.materialNome },
+    pecas: lote,
+  };
+}
+
+// Conta por mesa (AMS / várias mesas): cada filamento com o preço dele, cada
+// mesa dividida pelo que rende × o que 1 unidade leva.
+function calcPorMesas(i) {
+  const roiHora = i.custoHoraMaquina != null ? i.custoHoraMaquina : i.maquina / ((i.horasDia * i.diasMes * i.prazoMeses) || 1);
+  const extras = (i.manutencaoPct ?? 0.15) + i.falhasPct + (i.acabamentoPct ?? 0.1);
+  let material = 0;
+  let peso = 0;
+  let tempoUn = 0;
+  const mesas = [];
+  for (const m of i.mesas) {
+    const fator = m.leva / Math.max(1, m.rende);
+    const matMesa = m.fils.reduce((t, f) => t + (f.pesoG / 1000) * f.precoKg, 0);
+    const pesoMesa = m.fils.reduce((t, f) => t + f.pesoG, 0);
+    const enerMesa = ((i.kwh / 1000) * i.consumo) * (m.tempo / 60);
+    const maqMesa = (roiHora / 60) * m.tempo;
+    const custoMesa = matMesa * (1 + extras) + enerMesa + maqMesa;
+    material += matMesa * fator;
+    peso += pesoMesa * fator;
+    tempoUn += m.tempo * fator;
+    mesas.push({ nome: m.nome, rende: m.rende, leva: m.leva, tempo: m.tempo, pesoG: pesoMesa, custoMesa, porUnidade: custoMesa * fator, fils: m.fils });
+  }
+  const energia = ((i.kwh / 1000) * i.consumo) * (tempoUn / 60);
+  const roiPeca = (roiHora / 60) * tempoUn;
+  const manutencao = material * (i.manutencaoPct ?? 0.15);
+  const falhas = material * i.falhasPct;
+  const acabamento = material * (i.acabamentoPct ?? 0.1);
+  const artesanal = Number(i.artesanal) || 0;
+  const total = material + energia + manutencao + falhas + acabamento + i.consumiveis + roiPeca + i.modelagem + artesanal;
+  return { peso: peso + (Number(i.pesoArtesanal) || 0), peso3d: peso, material, energia, manutencao, falhas, acabamento, roiPeca, consumiveis: i.consumiveis, modelagem: i.modelagem, artesanal, total, precoRapido: total * (1 + i.markupRapido), tempoUn, mesas };
+}
+
 export function calcProducao(i) {
+  if (!i.sem3d && Array.isArray(i.mesas) && i.mesas.length) return calcPorMesas(i);
   // Produto só artesanal (detalhe.sem3d): a parte impressa some — sobra a parte
   // artesanal (custo e peso por peça, já divididos pelo lote — custoArtesanal).
   if (i.sem3d) {
@@ -165,13 +279,13 @@ export function calcProducao(i) {
   const artesanal = Number(i.artesanal) || 0;
   const total = material + energia + manutencao + falhas + acabamento + i.consumiveis + roiPeca + i.modelagem + artesanal;
   const precoRapido = total * (1 + i.markupRapido);
-  return { peso: peso + (Number(i.pesoArtesanal) || 0), peso3d: peso, material, energia, manutencao, falhas, acabamento, roiPeca, consumiveis: i.consumiveis, modelagem: i.modelagem, artesanal, total, precoRapido };
+  return { peso: peso + (Number(i.pesoArtesanal) || 0), peso3d: peso, material, energia, manutencao, falhas, acabamento, roiPeca, consumiveis: i.consumiveis, modelagem: i.modelagem, artesanal, total, precoRapido, tempoUn: i.tempo / pecas, pesoChapa };
 }
 
 // Entrada do calcProducao a partir do detalhamento salvo (producao_detalhe).
 // `maquina` = produto._maquina (lib/farm.js): energia e máquina vêm da
 // impressora/farm; sem ela, dos campos antigos do detalhamento.
-export function entradaDoDetalhe(detalhe, { precoKg = 0, consumiveis = 0, pecasPorPlaca = 1, maquina = null, markupRapido = 0, artesanal = null } = {}) {
+export function entradaDoDetalhe(detalhe, { precoKg = 0, consumiveis = 0, pecasPorPlaca = 1, maquina = null, markupRapido = 0, artesanal = null, materiais = null } = {}) {
   const n = (v) => {
     const x = Number(v);
     return isFinite(x) ? x : 0;
@@ -200,6 +314,17 @@ export function entradaDoDetalhe(detalhe, { precoKg = 0, consumiveis = 0, pecasP
     sem3d: !!d.sem3d,
     artesanal: artesanal ? artesanal.porPeca : 0,
     pesoArtesanal: artesanal ? artesanal.pesoPorPeca : 0,
+    mesas: mesasDoDetalhe(d, precoDoFilamento(materiais, precoKg), pecasPorPlaca),
+  };
+}
+
+// Preço/kg de um filamento pelo nome (materiais ao vivo); sem lista ou sem o
+// filamento = o preço do filamento principal.
+export function precoDoFilamento(materiais, precoKg = 0) {
+  const fil = (materiais || []).filter((m) => (m.tipo || "filamento") === "filamento");
+  return (nome) => {
+    const m = nome ? fil.find((x) => x.nome === nome) : null;
+    return m ? Number(m.preco) || 0 : precoKg;
   };
 }
 
@@ -255,6 +380,7 @@ export function custoProdutoPorPeca(produto, materiais) {
     pecasPorPlaca: n(produto.pecas_por_impressao) || 1,
     maquina: produto._maquina,
     artesanal: custoArtesanal(detalhe, materiais),
+    materiais,
   }));
 }
 

@@ -77,7 +77,7 @@ export function custoChapaKit(chapa, linhas, materiais) {
     // Parte artesanal (vela, cimento…) não vai pra chapa: soma por peça.
     modelagem += (custoArtesanal(d, materiais)?.porPeca || 0) * l.quantidade;
   }
-  const entrada = entradaDoDetalhe({ ...detBase, comprimento: num(c.comprimento), tempo: num(c.tempo), materialNome: material?.nome || nomeMat, modelagem: 0, sem3d: false }, {
+  const entrada = entradaDoDetalhe({ ...detBase, comprimento: num(c.comprimento), tempo: num(c.tempo), materialNome: material?.nome || nomeMat, modelagem: 0, sem3d: false, impressao: "uma" }, {
     precoKg: material?.preco ?? 0,
     consumiveis: 0,
     pecasPorPlaca: kitsPorChapa,

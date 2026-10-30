@@ -11,7 +11,13 @@ import PlanejarKit from "./PlanejarKit.jsx";
 // pra config da loja (impressoras, horas disponíveis) quanto pros tempos de
 // cada produto. Fora do componente principal de propósito: se ficasse
 // dentro, seria recriado a cada tecla digitada e perderia o foco.
-function CampoTempo({ valor, sufixo, largura = 64, onSalvar }) {
+// Tempo da mesa que vem do fatiador (Simular custo/Cadastro), em horas.
+function horasDoFatiador(p) {
+  const min = Number(p?.producao_detalhe?.tempo);
+  return min > 0 && !p?.producao_detalhe?.sem3d ? Math.round((min / 60) * 10) / 10 : null;
+}
+
+function CampoTempo({ valor, sufixo, largura = 64, onSalvar, placeholder }) {
   const [editando, setEditando] = useState(valor ?? "");
   const [salvo, disparar] = useSalvoFlash();
   // Valor mudou na origem (outro aparelho, recarga) → mostra o novo.
@@ -29,6 +35,7 @@ function CampoTempo({ valor, sufixo, largura = 64, onSalvar }) {
         min="0"
         style={{ width: largura, textAlign: "right" }}
         value={editando}
+        placeholder={placeholder}
         onChange={(e) => setEditando(e.target.value)}
         onBlur={async () => {
           const num = parseFloat(editando);
@@ -54,7 +61,7 @@ function CampoTempo({ valor, sufixo, largura = 64, onSalvar }) {
 // gargalo de mão de obra (setup, acabamento, embalagem, separação — isso só
 // acontece quando você está com a mão na massa, limitado pelas suas horas).
 function calcularCapacidade(produto, loja, pedidosDia) {
-  const tImpressaoHoras = Number(produto.tempo_impressao_horas);
+  const tImpressaoHoras = Number(produto.tempo_impressao_horas) > 0 ? Number(produto.tempo_impressao_horas) : horasDoFatiador(produto);
   if (!(tImpressaoHoras > 0)) return null; // sem dado suficiente pra calcular
 
   const pecasPorLote = Number(produto.pecas_por_impressao) > 0 ? Number(produto.pecas_por_impressao) : 1;
@@ -217,7 +224,21 @@ export default function Otimizacao({ onToast }) {
                       <CampoTempo valor={p.pecas_por_impressao} sufixo="" largura={50} onSalvar={(v) => salvarCampoProduto(p.id, "pecas_por_impressao", v)} />
                     </td>
                     <td className="num">
-                      <CampoTempo valor={p.tempo_impressao_horas} sufixo="h" largura={56} onSalvar={(v) => salvarCampoProduto(p.id, "tempo_impressao_horas", v)} />
+                      {(() => {
+                        const fat = horasDoFatiador(p);
+                        const dig = Number(p.tempo_impressao_horas) > 0 ? Number(p.tempo_impressao_horas) : null;
+                        return (
+                          <>
+                            <CampoTempo valor={dig ?? (fat != null ? fat : null)} sufixo="h" largura={56} onSalvar={(v) => salvarCampoProduto(p.id, "tempo_impressao_horas", v === fat ? null : v)} />
+                            {dig == null && fat != null && <span className="tempo-auto">↺ do fatiador</span>}
+                            {dig != null && fat != null && Math.abs(dig - fat) >= 0.1 && (
+                              <button type="button" className="link-btn" style={{ fontSize: 11 }} title={`O fatiador dá ${String(fat).replace(".", ",")} h`} onClick={() => salvarCampoProduto(p.id, "tempo_impressao_horas", null)}>
+                                digitado · voltar ao do fatiador
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="num">
                       <CampoTempo valor={p.tempo_setup_min} sufixo="min" largura={56} onSalvar={(v) => salvarCampoProduto(p.id, "tempo_setup_min", v)} />

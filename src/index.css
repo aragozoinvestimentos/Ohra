@@ -2848,3 +2848,39 @@ td.vendas-opcao { padding-left: 26px; }
 /* Afiliados: divisória entre aptos e os que não compensam */
 tr.linha-divisa td { background: var(--surface-2, rgba(0,0,0,.03)); font-size: 12px; color: var(--ink-soft); padding-top: 8px; padding-bottom: 8px; }
 .chave-af { display: flex; justify-content: flex-end; margin-bottom: 2px; }
+
+/* Dados do fatiador — uma mesa / AMS / várias mesas (ImpressaoFatiador.jsx, 30/10/2026) */
+.fat { display: grid; gap: 10px; }
+.fat-bloco { display: grid; gap: 6px; }
+.fat-pergunta { font-weight: 700; font-size: 13px; }
+.fat-opcoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.fat-op { flex: 1 1 170px; min-width: 0; display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; cursor: pointer; background: var(--surface-3); font-size: 12.5px; }
+.fat-op input { margin-top: 3px; accent-color: var(--accent); width: auto !important; }
+.fat-op b { display: block; }
+.fat-op em { font-style: normal; color: var(--ink-faint); font-size: 11.5px; }
+.fat-op.on { border-color: var(--accent); background: var(--accent-soft); }
+.fat-op:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fat-tabela { font-size: 12.5px; }
+.fat-tabela td input, .fat-tabela td select { padding: 4px 6px; }
+.fat-tabela td select { max-width: 200px; }
+.fat-leva { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 12.5px; }
+.fat-leva label { display: flex; gap: 4px; align-items: center; background: var(--surface-2); border-radius: 8px; padding: 2px 8px; }
+.fat-leva input { width: 50px; padding: 2px 4px; }
+.fat-conf { background: var(--st-oportunidade-soft); border-radius: 10px; padding: 9px 12px; display: grid; gap: 3px; font-size: 13px; }
+.fat-total { color: var(--st-oportunidade); }
+.fat-partes { color: var(--ink-soft); font-size: 12px; }
+.fat-dif { color: var(--st-atencao); }
+.x-btn { border: 0; background: none; color: var(--ink-faint); cursor: pointer; font-size: 16px; padding: 0 4px; }
+.x-btn:hover { color: var(--st-resolver); }
+.tempo-auto { display: block; color: var(--st-oportunidade); font-size: 11px; font-weight: 600; }
+.fat-mesas { display: grid; gap: 8px; }
+.fat-mesa { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; display: grid; gap: 6px; background: var(--surface-3); }
+.fat-mesa-l1 { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(120px, 1.4fr) auto; gap: 6px; align-items: center; }
+.fat-mesa-l1 input, .fat-mesa-l1 select { min-width: 0; width: 100%; padding: 5px 7px; }
+.fat-mesa-acoes { display: flex; gap: 4px; align-items: center; white-space: nowrap; }
+.fat-mesa-l2 { display: grid; grid-template-columns: repeat(3, minmax(70px, 1fr)) auto; gap: 6px; align-items: end; }
+.fat-mesa-l2 label { display: grid; gap: 2px; font-size: 11px; color: var(--ink-soft); font-weight: 600; }
+.fat-mesa-l2 input { width: 100%; min-width: 0; padding: 5px 7px; font-variant-numeric: tabular-nums; }
+.fat-mesa-por { display: grid; justify-items: end; font-size: 11px; color: var(--ink-soft); padding-bottom: 4px; }
+.fat-mesa-por b { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) { .fat-mesa-l1 { grid-template-columns: 1fr 1fr; } .fat-mesa-acoes { grid-column: 1 / -1; justify-content: flex-end; } .fat-mesa-l2 { grid-template-columns: repeat(3, 1fr); } .fat-mesa-por { grid-column: 1 / -1; justify-items: start; } }

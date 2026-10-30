@@ -1,7 +1,8 @@
 import { pegarPedido } from "../lib/navegar.js";
 import { useEffect, useMemo, useState } from "react";
 import { usePreferencia } from "../hooks/usePreferencia.js";
-import { calcProducao, custoArtesanal, DEFAULTS_PRODUCAO } from "../lib/calc.js";
+import { calcProducao, custoArtesanal, DEFAULTS_PRODUCAO, derivarDetalhe, mesasDoDetalhe, nomeDaUnidade, precoDoFilamento } from "../lib/calc.js";
+import ImpressaoFatiador from "./ImpressaoFatiador.jsx";
 import ParteArtesanal from "./ParteArtesanal.jsx";
 import { salvarUltimosPercentuais } from "../lib/preferenciasProducao.js";
 import { BRL } from "../lib/format.js";
@@ -89,9 +90,9 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     if (produtoSelecionado.producao_detalhe) {
       setF((prev) => ({ ...DEFAULTS, ...produtoSelecionado.producao_detalhe, markupRapido: prev.markupRapido, pecasPorPlaca, impressoraId }));
     } else if (produtoSelecionado.material_nome) {
-      setF((prev) => ({ ...prev, materialNome: produtoSelecionado.material_nome, pecasPorPlaca, impressoraId }));
+      setF((prev) => ({ ...prev, materialNome: produtoSelecionado.material_nome, pecasPorPlaca, impressoraId, impressao: "uma", unidade: null }));
     } else {
-      setF((prev) => ({ ...prev, pecasPorPlaca, impressoraId }));
+      setF((prev) => ({ ...prev, pecasPorPlaca, impressoraId, impressao: "uma", unidade: null }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [produtoId]);
@@ -131,7 +132,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   // Máquina da impressora escolhida (Minha farm); sem farm → campos antigos.
   const maquinaSel = usaFarm ? maquinaDoProduto({ impressora_id: f.impressoraId || null }, impressoras, farmConfig) : null;
   // Entradas do cálculo com um preço/kg qualquer — o ⇄ Filamentos troca só ele.
-  const entradaCalc = (precoKg) => ({
+  const entradaCalc = (precoKg, todos = false) => ({
       comprimento: n(f.comprimento),
       diametro: n(f.diametro),
       densidade: n(f.densidade),
@@ -153,12 +154,13 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       sem3d,
       artesanal: art?.porPeca || 0,
       pesoArtesanal: art?.pesoPorPeca || 0,
+      mesas: mesasDoDetalhe(f, todos ? () => precoKg : precoDoFilamento(materiais, precoKg), n(f.pecasPorPlaca) || 1),
       ...(maquinaSel ? { kwh: maquinaSel.tarifa, consumo: maquinaSel.potencia, custoHoraMaquina: maquinaSel.custoHoraMaquina } : {}),
     });
   const resultado = useMemo(
     () => calcProducao(entradaCalc(materialSelecionado?.preco ?? 0)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [f, materialSelecionado, custoConsumiveis, art?.porPeca, art?.pesoPorPeca, maquinaSel?.custoHora, maquinaSel?.tarifa, maquinaSel?.potencia]
+    [f, materialSelecionado, materiais, custoConsumiveis, art?.porPeca, art?.pesoPorPeca, maquinaSel?.custoHora, maquinaSel?.tarifa, maquinaSel?.potencia]
   );
 
   // Preço de venda de referência no canal principal (Shopee, ou o 1º canal):
@@ -176,6 +178,15 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
   const sugeridoCanal = pSug != null ? r90up(pSug) : null;
   const minimoCanal = pZero != null ? Math.ceil(pZero * 100 - 1e-6) / 100 : null;
 
+  // Como imprime (uma mesa / AMS / várias mesas) e o que é 1 unidade — vão junto no detalhamento.
+  const fx = derivarDetalhe(f, n(f.pecasPorPlaca) || 1); // lote equivalente (AMS/várias mesas)
+  const camposImpressao = {
+    unidade: f.unidade || null,
+    impressao: f.impressao || "uma",
+    ams: f.impressao === "ams" ? f.ams || null : null,
+    mesas: f.impressao === "varias" ? f.mesas || [] : null,
+  };
+
   // Simulação × produto cadastrado: quanto muda o lucro de tudo que usa ele.
   const impacto = (() => {
     if (!produtoId) return null;
@@ -185,10 +196,10 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       ...atual,
       producao_detalhe: {
         ...(atual.producao_detalhe || {}),
-        comprimento: n(f.comprimento),
+        comprimento: n(fx.detalhe.comprimento),
         diametro: n(f.diametro),
         densidade: n(f.densidade),
-        tempo: n(f.tempo),
+        tempo: n(fx.detalhe.tempo),
         materialNome: materialSelecionado?.nome || "",
         kwh: n(f.kwh),
         consumo: n(f.consumo),
@@ -203,8 +214,9 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         modelagem: n(f.modelagem),
         artesanal: f.artesanal || null,
         sem3d,
+        ...camposImpressao,
       },
-      pecas_por_impressao: Math.max(1, n(f.pecasPorPlaca) || 1),
+      pecas_por_impressao: Math.max(1, n(fx.pecas) || 1),
       ...(maquinaSel ? { impressora_id: maquinaSel.impressoraId, _maquina: maquinaSel } : {}),
       material_nome: materialSelecionado?.nome || atual.material_nome,
       peso_g: isFinite(Number(resultado.peso)) && Number(resultado.peso) > 0 ? Math.round(Number(resultado.peso)) : atual.peso_g,
@@ -246,13 +258,13 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
       custo: resultado.total,
       peso: isFinite(Number(resultado.peso)) ? Number(resultado.peso) : null,
       materialNome: materialSelecionado?.nome || "",
-      pecasPorImpressao: Math.max(1, n(f.pecasPorPlaca) || 1),
+      pecasPorImpressao: Math.max(1, n(fx.pecas) || 1),
       impressoraId: maquinaSel?.impressoraId || null,
       detalhe: {
-        comprimento: n(f.comprimento),
+        comprimento: n(fx.detalhe.comprimento),
         diametro: n(f.diametro),
         densidade: n(f.densidade),
-        tempo: n(f.tempo),
+        tempo: n(fx.detalhe.tempo),
         materialNome: materialSelecionado?.nome || "",
         kwh: n(f.kwh),
         consumo: n(f.consumo),
@@ -267,6 +279,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         modelagem: n(f.modelagem),
         artesanal: f.artesanal || null,
         sem3d,
+        ...camposImpressao,
       },
     });
   }
@@ -289,14 +302,14 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
     <ResumoFixo>
     <Kpis
       itens={[
-        { label: "Custo por peça", valor: BRL(resultado.total), tom: "destaque", sub: n(f.pecasPorPlaca) > 1 ? `chapa com ${n(f.pecasPorPlaca)} peças` : "custo de produção total" },
+        { label: `Custo por ${nomeDaUnidade(f)}`, valor: BRL(resultado.total), tom: "destaque", sub: f.impressao === "varias" ? `${(f.mesas || []).length} mesas · por ${nomeDaUnidade(f)}` : n(f.pecasPorPlaca) > 1 ? `mesa com ${n(f.pecasPorPlaca)} · por ${nomeDaUnidade(f)}` : "custo de produção total" },
         ...(temArt || sem3d
           ? [
               { label: "Parte 3D", valor: sem3d ? "—" : BRL(resultado.total - resultado.artesanal), sub: sem3d ? "produto só artesanal" : `${materialSelecionado?.nome || "filamento"} · máquina e energia` },
               { label: "Parte artesanal", valor: BRL(resultado.artesanal), sub: art?.lote > 1 ? `lote de ${art.lote} peças` : `${art?.linhas.length || 0} itens` },
             ]
           : [
-              { label: "Material", valor: BRL(resultado.material), sub: `${pesoTxt} de ${materialSelecionado?.nome || "filamento"}` },
+              { label: "Material", valor: BRL(resultado.material), sub: f.impressao === "varias" || f.impressao === "ams" ? `${pesoTxt} · cada cor com o preço dela` : `${pesoTxt} de ${materialSelecionado?.nome || "filamento"}` },
               { label: "Máquina e energia", valor: BRL(resultado.energia + resultado.manutencao + resultado.roiPeca), sub: usaFarm ? "energia + manutenção + desgaste da máquina" : "energia + manutenção + ROI" },
             ]),
         { label: canalRef ? `Sugerido na ${canalRef.nome || "Shopee"}` : "Preço sugerido", valor: sugeridoCanal != null ? BRL(sugeridoCanal) : "—", sub: sugeridoCanal != null ? `margem ${Math.round(cfgLoja.margemDesejada * 100)}% · já com as taxas` : "cadastre um canal" },
@@ -327,75 +340,42 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
         <div className="panel">
           <h3 className="section-title">
             <span>
-              Peça (dados do fatiador)
-              <Ajuda texto="Dados que o fatiador (slicer) mostra antes de imprimir. Comprimento é o total de filamento gasto (em metros); diâmetro e densidade dependem do filamento (1.75mm e ~1.24 g/cm³ pra PLA/PETG são padrão); tempo é a duração da impressão. Se você imprime várias peças de uma vez na mesma chapa (aproveitando o espaço da mesa), aumente 'Peças por impressão/chapa' e informe comprimento/tempo do TOTAL da chapa — o app divide tudo automaticamente pra achar o custo de cada peça." />
+              Dados do fatiador
+              <Ajuda texto="Copie do fatiador (slicer) o filamento e o tempo da MESA INTEIRA, do jeito que você imprime — o app divide pelo que cabe na mesa. Uma unidade = o que você vende (uma peça ou um kit/conjunto). Uma mesa com AMS: os gramas de cada cor e a purga. Várias mesas: uma linha por mesa (partes impressas separadas), cada uma com o filamento dela e quantas partes ela rende." />
             </span>
           </h3>
-          <div className="row2">
-          {supabase && (
-            <div className="field">
-              <label>Produto cadastrado (opcional)</label>
-              <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
-                <option value="">— novo cálculo —</option>
-                {produtos.filter((p) => p.origem !== "revenda").map((p) => (
-                  <option key={p.id} value={p.id}>{p.nome}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div className="field">
-            <label>Peças por impressão/chapa</label>
-            <input type="number" step="1" min="1" value={f.pecasPorPlaca} onChange={set("pecasPorPlaca")} />
-          </div>
-          </div>
-          {produtoSelecionado && (
-            <div className="hint" style={{ marginTop: -4 }}>
-              {produtoSelecionado.producao_detalhe
-                ? 'Detalhamento desse produto carregado abaixo — ajuste o que quiser e use "Salvar como Produto" pra atualizar ele (não cria um novo).'
-                : 'Esse produto não tem detalhamento salvo ainda — os campos abaixo continuam como estavam. Ao salvar, isso preenche o detalhamento dele.'}
-            </div>
-          )}
-          {n(f.pecasPorPlaca) > 1 && (
-            <div className="hint" style={{ marginTop: -8 }}>
-              Imprimindo {n(f.pecasPorPlaca)} peças de uma vez na mesma chapa: informe comprimento e tempo de impressão do TOTAL da chapa abaixo — o app divide material, energia, manutenção, falhas, acabamento e ROI da máquina por essa quantidade pra chegar no custo de cada peça.
-            </div>
-          )}
-          <div className="row2">
-            <div className="field">
-              <label>Filamento (m){n(f.pecasPorPlaca) > 1 ? " — total da chapa" : ""}</label>
-              <input type="number" step="0.01" value={f.comprimento} onChange={set("comprimento")} />
-            </div>
-            <div className="field">
-              <label>Tempo de impressão (min){n(f.pecasPorPlaca) > 1 ? " — total da chapa" : ""}</label>
-              <input type="number" step="1" value={f.tempo} onChange={set("tempo")} />
-            </div>
-          </div>
-          <div className="row2">
-            <div className="field">
-              <label>Diâmetro (mm)</label>
-              <input type="number" step="0.01" value={f.diametro} onChange={set("diametro")} />
-            </div>
-            <div className="field">
-              <label>Densidade (g/cm³)</label>
-              <input type="number" step="0.01" value={f.densidade} onChange={set("densidade")} />
-            </div>
-          </div>
-          <div className="field">
-            <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-              Filamento
-              <button type="button" className="link-btn" onClick={() => setVerFilamentos(true)} title="Custo, preço sugerido e lucro desta peça em cada filamento cadastrado">
-                ⇄ comparar filamentos
-              </button>
-            </label>
-            <select value={materialSelecionado?.nome || ""} onChange={setStr("materialNome")}>
-              {filamentos.map((m) => (
-                <option key={m.id} value={m.nome}>
-                  {m.nome} — R${Number(m.preco).toFixed(2)}/kg
-                </option>
-              ))}
-            </select>
-          </div>
-
+          <ImpressaoFatiador
+            d={{ ...f, materialNome: materialSelecionado?.nome || "" }}
+            pecas={f.pecasPorPlaca}
+            onChange={(nd) => setF((prev) => ({ ...prev, ...nd }))}
+            onPecas={(v) => setF((prev) => ({ ...prev, pecasPorPlaca: v }))}
+            filamentos={filamentos}
+            resultado={resultado}
+            pesoCadastro={produtoSelecionado?.peso_g ?? null}
+            onComparar={() => setVerFilamentos(true)}
+            topo={
+              supabase && (
+                <>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Produto cadastrado (opcional)</label>
+                    <select value={produtoId} onChange={(e) => setProdutoId(e.target.value)}>
+                      <option value="">— novo cálculo —</option>
+                      {produtos.filter((p) => p.origem !== "revenda").map((p) => (
+                        <option key={p.id} value={p.id}>{p.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {produtoSelecionado && (
+                    <div className="hint" style={{ margin: 0 }}>
+                      {produtoSelecionado.producao_detalhe
+                        ? 'Detalhamento desse produto carregado abaixo — ajuste o que quiser e use "Atualizar produto" pra gravar nele (não cria um novo).'
+                        : "Esse produto não tem detalhamento salvo ainda — os campos abaixo continuam como estavam. Ao salvar, isso preenche o detalhamento dele."}
+                    </div>
+                  )}
+                </>
+              )
+            }
+          />
         </div>
 
         <div className="panel">
@@ -503,7 +483,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           {(temArt || sem3d) && !sem3d && <div className="res-parte res-3d">Parte 3D</div>}
           {!sem3d && (<>
           <div className="kv">
-            <span className="k">Peso estimado da peça</span>
+            <span className="k">Peso estimado por {nomeDaUnidade(f)}</span>
             <span className="v">{isFinite(Number(resultado.peso)) ? Number(resultado.peso).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " g" : "—"}</span>
           </div>
           <div className="kv"><span className="k">Custo de material</span><span className="v">{BRL(resultado.material)}</span></div>
@@ -588,7 +568,7 @@ export default function CustoProducao({ onUsarCusto, onSalvarProduto, onIrParaMa
           titulo: produtoSelecionado?.nome || "simulação atual",
           custoAtual: custoVenda,
           producaoAtual: resultado.total,
-          producaoCom: (_, fil) => calcProducao(entradaCalc(Number(fil.preco) || 0)).total,
+          producaoCom: (_, fil) => calcProducao(entradaCalc(Number(fil.preco) || 0, true)).total,
           materialAtual: materialSelecionado?.nome || null,
           peso: pesoRef,
           produtoId: produtoId || null,

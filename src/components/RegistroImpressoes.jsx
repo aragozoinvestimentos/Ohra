@@ -25,6 +25,7 @@ const TETO_PADRAO = 50;
 
 const VAZIO_FORM = {
   produtoId: "",
+  mesa: "", // várias mesas: índice da mesa impressa ("" = o produto inteiro)
   nomeLivre: "",
   quantidadeLote: 1,
   tempoEstimadoMin: "",
@@ -127,6 +128,22 @@ export default function RegistroImpressoes({ onToast }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.produtoId, kitInfo?.porChapa, kitInfo?.tempoChapa]);
 
+  // Produto impresso em várias mesas (partes separadas, 30/10/2026): dá pra
+  // registrar UMA mesa — falhou a mesa das coroas = perde só ela.
+  const contaProduto = useMemo(() => (produtoSelecionado ? custoProdutoPorPeca(produtoSelecionado, materiais) : null), [produtoSelecionado, materiais]);
+  const mesasDoProduto = produtoSelecionado?.producao_detalhe?.impressao === "varias" ? contaProduto?.mesas || [] : [];
+  const mesaSel = form.mesa !== "" ? mesasDoProduto[Number(form.mesa)] || null : null;
+  function escolherMesa(v) {
+    const m = v !== "" ? mesasDoProduto[Number(v)] : null;
+    setForm((prev) => ({
+      ...prev,
+      mesa: v,
+      quantidadeLote: m ? m.rende : Number(produtoSelecionado?.pecas_por_impressao) || 1,
+      tempoEstimadoMin: m ? m.tempo : produtoSelecionado?.producao_detalhe?.tempo ?? prev.tempoEstimadoMin,
+      tempoManual: false,
+    }));
+  }
+
   // Ao escolher um produto cadastrado, sugere quantidade e tempo a partir do
   // detalhamento salvo — continua editável, porque na prática o lote de
   // hoje pode ter mais ou menos peças que o padrão do produto.
@@ -137,19 +154,20 @@ export default function RegistroImpressoes({ onToast }) {
       quantidadeLote: Number(produtoSelecionado.pecas_por_impressao) || prev.quantidadeLote || 1,
       tempoEstimadoMin: produtoSelecionado.producao_detalhe?.tempo ?? prev.tempoEstimadoMin,
       tempoManual: false,
+      mesa: "",
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.produtoId]);
 
   const custoPorPecaSelecionado = useMemo(() => {
     if (produtoSelecionado) {
-      const resultado = custoProdutoPorPeca(produtoSelecionado, materiais);
-      return resultado ? resultado.total : null;
+      if (mesaSel) return mesaSel.custoMesa / Math.max(1, mesaSel.rende);
+      return contaProduto ? contaProduto.total : null;
     }
     if (kitInfo) return kitInfo.custo;
     const manual = Number(form.custoPorPecaManual);
     return isFinite(manual) && manual > 0 ? manual : null;
-  }, [produtoSelecionado, kitInfo, materiais, form.custoPorPecaManual]);
+  }, [produtoSelecionado, kitInfo, contaProduto, mesaSel, form.custoPorPecaManual]);
 
   const custoLotePreview = custoPorPecaSelecionado != null ? custoPorPecaSelecionado * (Number(form.quantidadeLote) || 0) : null;
 
@@ -160,8 +178,8 @@ export default function RegistroImpressoes({ onToast }) {
   // Tempo proporcional às peças: a chapa cheia do produto (pecas_por_impressao)
   // leva producao_detalhe.tempo; com menos/mais peças o tempo sugerido acompanha.
   // Se você digitar o tempo na mão, ele não muda mais (até trocar de produto).
-  const tempoChapa = kitInfo ? kitInfo.tempoChapa : Number(produtoSelecionado?.producao_detalhe?.tempo) || null;
-  const pecasChapa = kitInfo ? kitInfo.porChapa : Number(produtoSelecionado?.pecas_por_impressao) || null;
+  const tempoChapa = kitInfo ? kitInfo.tempoChapa : mesaSel ? mesaSel.tempo || null : Number(produtoSelecionado?.producao_detalhe?.tempo) || null;
+  const pecasChapa = kitInfo ? kitInfo.porChapa : mesaSel ? mesaSel.rende : Number(produtoSelecionado?.pecas_por_impressao) || null;
   const tempoProporcional = (qtd) => (tempoChapa && pecasChapa && Number(qtd) > 0 ? Math.round((tempoChapa * Number(qtd)) / pecasChapa) : null);
   function mudarQuantidade(e) {
     const qtd = e.target.value;
@@ -175,7 +193,7 @@ export default function RegistroImpressoes({ onToast }) {
   }
 
   async function registrar() {
-    const nome = produtoSelecionado?.nome || (kitSelecionado ? `${kitSelecionado.nome} (kit)` : "") || form.nomeLivre.trim();
+    const nome = (produtoSelecionado && mesaSel ? `${produtoSelecionado.nome} — mesa ${mesaSel.nome}` : "") || produtoSelecionado?.nome || (kitSelecionado ? `${kitSelecionado.nome} (kit)` : "") || form.nomeLivre.trim();
     if (!nome) {
       onToast?.("Escolha um produto cadastrado ou digite o nome da peça");
       return;
@@ -203,7 +221,7 @@ export default function RegistroImpressoes({ onToast }) {
       onToast?.("Não foi possível registrar agora — tente de novo");
       return;
     }
-    if (form.status === "sucesso") {
+    if (form.status === "sucesso" && !mesaSel) {
       // peças que entram no estoque: o produto, ou as peças do kit impresso junto
       const pecas = produtoSelecionado
         ? [{ produto: produtoSelecionado, quantidade }]
@@ -316,6 +334,21 @@ export default function RegistroImpressoes({ onToast }) {
             </select>
           </div>
 
+          {mesasDoProduto.length > 0 && (
+            <div className="field">
+              <label>Qual mesa você imprimiu?</label>
+              <select value={form.mesa} onChange={(e) => escolherMesa(e.target.value)}>
+                <option value="">O produto inteiro (todas as mesas)</option>
+                {mesasDoProduto.map((m, i) => (
+                  <option key={i} value={String(i)}>
+                    Mesa {m.nome} — rende {m.rende}
+                  </option>
+                ))}
+              </select>
+              {mesaSel && <div className="hint" style={{ marginTop: 4 }}>Se falhar, perde só essa mesa ({BRL(mesaSel.custoMesa)}). Uma mesa sozinha não entra no estoque de prontos.</div>}
+            </div>
+          )}
+
           {!produtoSelecionado && !kitSelecionado && (
             <div className="field">
               <label>Nome da peça</label>
@@ -325,7 +358,7 @@ export default function RegistroImpressoes({ onToast }) {
 
           <div className="row2">
             <div className="field">
-              <label title={kitSelecionado ? "Quantos kits nessa impressão" : "Quantas peças nessa impressão"}>{kitSelecionado ? "Kits no lote" : "Peças no lote"}</label>
+              <label title={kitSelecionado ? "Quantos kits nessa impressão" : "Quantas peças nessa impressão"}>{kitSelecionado ? "Kits no lote" : mesaSel ? `Partes no lote (${mesaSel.nome})` : "Peças no lote"}</label>
               <input type="number" step="1" min="1" value={form.quantidadeLote} onChange={mudarQuantidade} />
             </div>
             <div className="field">
