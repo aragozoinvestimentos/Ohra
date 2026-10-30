@@ -145,6 +145,17 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
         }
         setEditandoId(produtoRecebido.id);
         setForm({
+          ...VAZIO,
+          // campos de revenda/fiscais do produto (30/10/2026: vinham vazios e o Salvar quebrava — e apagaria EAN/NCM)
+          origem: pExistente?.origem === "revenda" ? "revenda" : "fabricado",
+          ean: pExistente?.ean || "",
+          fornecedor_id: pExistente?.fornecedor_id || null,
+          ncm: pExistente?.ncm || "",
+          cest: pExistente?.cest || "",
+          unidade_com: pExistente?.unidade_com || "",
+          origem_mercadoria: pExistente?.origem_mercadoria || "",
+          imposto_st: pExistente?.imposto_st ?? null,
+          monofasico: pExistente?.monofasico ?? null,
           nome: produtoRecebido.nome || pExistente?.nome || "",
           sku: pExistente?.sku || "",
           material_nome: produtoRecebido.materialNome || pExistente?.material_nome || "",
@@ -255,7 +266,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   }
 
   async function salvar() {
-    const nome = form.nome.trim();
+    const nome = String(form.nome || "").trim();
     if (!nome) {
       onToast("Dê um nome ao produto");
       return;
@@ -266,13 +277,13 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     const eraNovo = !editandoId;
     const payload = {
       nome,
-      sku: form.sku.trim() || null,
-      material_nome: form.material_nome.trim() || null,
+      sku: String(form.sku || "").trim() || null,
+      material_nome: String(form.material_nome || "").trim() || null,
       material_id: form.material_id || null,
       custo_producao: arredondarPreco(resultadoDetalhe ? resultadoDetalhe.total : parseFloat(form.custo_producao) || 0),
       frete_padrao: arredondarPreco(parseFloat(form.frete_padrao) || 0),
       embalagem_padrao: arredondarPreco(usaReceitaEmbalagem ? custoEmbalagemReceita : parseFloat(form.embalagem_padrao) || 0),
-      observacao: form.observacao.trim() || null,
+      observacao: String(form.observacao || "").trim() || null,
       producao_detalhe: form.producao_detalhe || null,
       pecas_por_impressao: Math.max(1, parseInt(form.pecas_por_impressao, 10) || 1),
       peso_g: form.peso_g === "" || form.peso_g == null ? null : Number(String(form.peso_g).replace(",", ".")) || null,
@@ -280,7 +291,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       // Revenda (v66): o custo vem das notas de compra — o detalhamento da impressão
       // (se houver) fica guardado, mas não é usado (aoVivo.js olha a origem).
       origem: form.origem === "revenda" ? "revenda" : "fabricado",
-      ean: form.ean.trim() || null,
+      ean: String(form.ean || "").trim() || null,
       fornecedor_id: form.fornecedor_id || null,
       // fiscais (v69): sem a coluna, salva o resto e avisa
       ncm: String(form.ncm || "").replace(/\D/g, "") || null,
