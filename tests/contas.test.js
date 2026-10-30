@@ -697,3 +697,40 @@ describe("pedidos da UpSeller", () => {
     expect(() => interpretarPedidosUpseller([["ID", "Data"]], "2026-10-29")).toThrow(/UpSeller/);
   });
 });
+
+describe("afiliados por anúncio (30/10/2026)", () => {
+  // L = linha por item (linhasDaLoja). Produto P com 1 un. (R$ 10, lucro 3) e Kit 2 (R$ 18, lucro 5).
+  const L = (tipo, id, preco, lucro, vendas, extra = {}) => ({ chave: `${tipo}|${id}|c`, tipo, id, item: { id: `${tipo === "variacao" ? "v" : tipo === "kit" ? "k" : "p"}:${id}`, nome: id, custoTotal: 5, ...extra.item }, canal: { id: "c" }, preco, base: preco, lucro, lucroMin: 1, vendas, propria: null, propriaRow: extra.row || null });
+  it("agrupa variações no anúncio do pai e usa as 2 mais apertadas sem vendas", async () => {
+    const { anunciosDaLoja, maxSeguroDoItem, maxDoAnuncio } = await import("../src/lib/comissaoLoja.js");
+    const un = L("produto", "P", 10, 3, 2);
+    const k2 = L("variacao", "K2", 18, 5, 1, { item: { produtoId: "P" } });
+    const k5 = L("variacao", "K5", 40, 14, 0, { item: { produtoId: "P" } });
+    const fora = L("variacao", "K9", 70, 20, 0, { item: { produtoId: "P", fora: true } });
+    const [a] = anunciosDaLoja({ linhas: [un, k2, k5, fora], itens: [{ id: "p:P", nome: "Produto P" }], canalId: "c", anunciado: (it) => !it.fora });
+    expect(a.chave).toBe("produto|P|c");
+    expect(a.variacoes.map((v) => v.id)).toEqual(["P", "K2", "K5"]); // K9 não anunciada
+    // máx. de cada: 1 un. 15% (3 − 10p ≥ 1,5), kit 2 13% (5 − 18p ≥ 2,5), kit 5 17% → média das 2 menores = 14
+    expect([maxSeguroDoItem(un), maxSeguroDoItem(k2)]).toEqual([15, 13]);
+    expect(maxDoAnuncio(a.variacoes).regra).toBe("apertadas");
+    expect(maxSeguroDoItem(a)).toBe(14);
+  });
+  it("com 10+ vendas usa o mix e a trava nunca deixa variação abaixo do mínimo", async () => {
+    const { maxDoAnuncio, comComissao } = await import("../src/lib/comissaoLoja.js");
+    const un = L("produto", "P", 10, 3, 9); // máx 15, trava 20
+    const k2 = L("variacao", "K2", 18, 2, 1, { item: { produtoId: "P" } }); // máx 5, trava 5
+    const m = maxDoAnuncio([un, k2]);
+    expect(m.regra).toBe("vendas");
+    expect(m.max).toBe(5); // média pelo mix 14 → a trava do kit 2 (5%) segura
+    const a = { variacoes: [un, k2], _max: m.max, _porVendas: true };
+    expect(comComissao(a, 0.06).situacao).toBe("abaixo");
+    expect(comComissao(a, 0.05).situacao).toBe("ok");
+  });
+  it("% antigo numa variação aparece pra passar pro anúncio", async () => {
+    const { anunciosDaLoja } = await import("../src/lib/comissaoLoja.js");
+    const row = { id: "r1", comissao: 0.08 };
+    const [a] = anunciosDaLoja({ linhas: [L("produto", "P", 10, 3, 0), L("variacao", "K2", 18, 5, 0, { item: { produtoId: "P" }, row })], itens: [], canalId: "c" });
+    expect(a.propria).toBe(null);
+    expect(a.antigas.map((x) => x.pct)).toEqual([0.08]);
+  });
+});

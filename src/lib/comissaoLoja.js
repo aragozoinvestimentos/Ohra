@@ -85,8 +85,9 @@ export function linhasDaLoja({ linhasAf = [], canalId, faixasCupom = [], vendas 
 /** Comissão em vigor numa linha: a própria do anúncio ou a da loja (fração). */
 export const comissaoEm = (l, pctLoja) => (l.propria != null ? l.propria : pctLoja);
 
-/** Lucro de uma linha se um afiliado vender com `pct` (fração). */
+/** Lucro de uma linha se um afiliado vender com `pct` (fração). Anúncio (com `variacoes`) = média pelo mix. */
 export function comComissao(l, pct) {
+  if (l?.variacoes) return comComissaoAnuncio(l, pct);
   const comissao = cent(num(l.base) * pct);
   const lucroCom = cent(num(l.lucro) - comissao);
   const situacao = l.insuficiente ? "insuficiente" : lucroCom < 0 ? "prejuizo" : lucroCom < num(l.lucroMin) - 0.004 ? "abaixo" : lucroCom < num(l.lucro) * FRACAO_AFILIADO - 0.004 ? "menos-metade" : "ok";
@@ -95,6 +96,7 @@ export function comComissao(l, pct) {
 
 /** Maior % inteiro em que ESTE anúncio fica com ≥ metade do lucro (e ≥ o mínimo). 0 = nenhum. */
 export function maxSeguroDoItem(l) {
+  if (l?.variacoes) return l._max ?? 0;
   if (l.insuficiente || !(num(l.lucro) > 0)) return 0;
   let r = 0;
   for (let p = 1; p <= PCT_MAX_SIM; p++) {
@@ -102,6 +104,155 @@ export function maxSeguroDoItem(l) {
     else break;
   }
   return r;
+}
+
+/** Maior % inteiro em que a linha fica com lucro ≥ o lucro mínimo da loja (a trava). */
+export function maxTravaDoItem(l) {
+  if (l?.variacoes) return l._trava ?? 0;
+  if (l.insuficiente || !(num(l.lucro) > 0)) return 0;
+  let r = 0;
+  for (let p = 1; p <= PCT_MAX_SIM; p++) {
+    if (comComissao(l, p / 100).lucroCom >= num(l.lucroMin) - 0.004) r = p;
+    else break;
+  }
+  return r;
+}
+
+// ---------------------------------------------------------------------------
+// Por ANÚNCIO (30/10/2026, aprovado pelo Gustavo): a Shopee põe o % no anúncio inteiro —
+// não separa por variação. Uma linha = produto com as variações anunciadas no canal · kit
+// com anúncio próprio · anúncio com vários itens. O "% deste anúncio" vale pra todas.
+// Máximo seguro do anúncio: com ≥ 10 vendas em 90 dias, a média do máximo de cada
+// variação pelo mix real; sem isso, a média das 2 variações mais apertadas. Trava sempre:
+// nenhuma variação fica no prejuízo nem abaixo do lucro mínimo da loja.
+// Variação que já não tem lucro antes do afiliado fica fora da conta (é assunto de preço).
+export const MIN_VENDAS_MIX = 10;
+
+const valida = (v) => !v.insuficiente && num(v.lucro) > 0;
+const pesoDe = (a, v) => (a._porVendas ? num(v.vendas) : 1);
+
+function comComissaoAnuncio(a, pct) {
+  const vars = a.variacoes.map((v) => ({ ...v, ...comComissao(v, pct) }));
+  const ok = vars.filter(valida);
+  if (!ok.length) return { comissao: 0, lucroCom: 0, situacao: "insuficiente", vars };
+  const tw = ok.reduce((t, v) => t + pesoDe(a, v), 0) || 1;
+  const media = (f) => cent(ok.reduce((t, v) => t + f(v) * pesoDe(a, v), 0) / tw);
+  const situacao = ok.some((v) => v.situacao === "prejuizo") ? "prejuizo" : ok.some((v) => v.situacao === "abaixo") ? "abaixo" : Math.round(pct * 100) > num(a._max) ? "menos-metade" : "ok";
+  return { comissao: media((v) => v.comissao), lucroCom: media((v) => v.lucroCom), situacao, vars };
+}
+
+/** Máximo seguro e trava de um anúncio (ver acima). → { max, trava, regra: vendas|apertadas|unica|null } */
+export function maxDoAnuncio(variacoes) {
+  const ok = (variacoes || []).filter(valida);
+  if (!ok.length) return { max: 0, trava: 0, regra: null, porVendas: false };
+  const trava = Math.min(...ok.map(maxTravaDoItem));
+  const vendas = ok.reduce((t, v) => t + num(v.vendas), 0);
+  const porVendas = vendas >= MIN_VENDAS_MIX;
+  let media;
+  let regra;
+  if (ok.length === 1) {
+    media = maxSeguroDoItem(ok[0]);
+    regra = "unica";
+  } else if (porVendas) {
+    media = ok.reduce((t, v) => t + maxSeguroDoItem(v) * num(v.vendas), 0) / vendas;
+    regra = "vendas";
+  } else {
+    const dois = ok.map(maxSeguroDoItem).sort((x, y) => x - y).slice(0, 2);
+    media = (dois[0] + dois[1]) / 2;
+    regra = "apertadas";
+  }
+  return { max: Math.min(Math.floor(media + 1e-9), trava), trava, regra, porVendas };
+}
+
+/**
+ * Agrupa as linhas por item (`linhasDaLoja`) em ANÚNCIOS no canal.
+ * anunciado(item) = a variação está anunciada no canal (`cobraNoCanal`); soNoGrupo = Set dos
+ * ids que só existem dentro de um anúncio com vários itens; grupos = anuncios_grupo.
+ * → [{ chave, tipo produto|kit|grupo, id, item {id, nome, custoTotal}, canal, variacoes, vendas,
+ *      preco (menor), precoMax, lucro (média), lucroMin, emRampa, cupom, propria, propriaRow,
+ *      antigas [{ row, nome, pct, linha }], insuficiente, _max, _trava, _regra, _porVendas }]
+ */
+export function anunciosDaLoja({ linhas = [], itens = [], canalId, config = [], grupos = [], soNoGrupo = new Set(), anunciado = () => true }) {
+  const grupoDoItem = new Map();
+  for (const g of grupos || [])
+    for (const o of Array.isArray(g.opcoes) ? g.opcoes : []) {
+      if (!o?.item_id) continue;
+      const id = `${o.item_tipo === "variacao" ? "v" : o.item_tipo === "kit" ? "k" : "p"}:${o.item_id}`;
+      if (soNoGrupo.has(id) && !grupoDoItem.has(id)) grupoDoItem.set(id, g);
+    }
+  const mapa = new Map();
+  const pegar = (tipo, id, nome) => {
+    const k = `${tipo}|${id}|${canalId}`;
+    if (!mapa.has(k)) mapa.set(k, { chave: k, tipo, id, nome, variacoes: [] });
+    return mapa.get(k);
+  };
+  for (const l of linhas) {
+    const it = l.item;
+    const g = grupoDoItem.get(it.id);
+    if (g) {
+      pegar("grupo", g.id, `Anúncio: ${g.nome}`).variacoes.push(l);
+      continue;
+    }
+    if (l.tipo === "kit") {
+      pegar("kit", l.id, it.nome).variacoes.push(l);
+      continue;
+    }
+    if (l.tipo === "variacao") {
+      if (!it.produtoId || !anunciado(it)) continue;
+      const pai = itens.find((x) => x.id === `p:${it.produtoId}`);
+      pegar("produto", it.produtoId, pai?.nome || it.nome).variacoes.push(l);
+      continue;
+    }
+    pegar("produto", l.id, it.nome).variacoes.push(l);
+  }
+  const out = [];
+  for (const a of mapa.values()) {
+    const vars = [...a.variacoes].sort((x, y) => num(x.preco) - num(y.preco));
+    if (!vars.length) continue;
+    const propriaRow =
+      a.tipo === "grupo"
+        ? (config || []).find((r) => r.canal_id === canalId && r.item_tipo === "grupo" && r.item_id === a.id && r.ativo !== false && num(r.comissao) > 0) || null
+        : vars.find((v) => v.tipo === a.tipo && v.id === a.id)?.propriaRow || null;
+    const antigas = vars.filter((v) => v.propriaRow && v.propriaRow !== propriaRow).map((v) => ({ row: v.propriaRow, nome: v.item.nome, pct: num(v.propriaRow.comissao), linha: v }));
+    const m = maxDoAnuncio(vars);
+    const ok = vars.filter(valida);
+    const base = { _porVendas: m.porVendas };
+    const tw = ok.reduce((t, v) => t + pesoDe(base, v), 0);
+    const lucro = ok.length ? cent(ok.reduce((t, v) => t + num(v.lucro) * pesoDe(base, v), 0) / (tw || 1)) : null;
+    const primeira = vars[0];
+    out.push({
+      chave: a.chave,
+      tipo: a.tipo,
+      id: a.id,
+      item: { id: a.tipo === "grupo" ? `g:${a.id}` : `${a.tipo === "kit" ? "k" : "p"}:${a.id}`, nome: a.nome, custoTotal: num(primeira.item.custoTotal) },
+      canal: primeira.canal,
+      variacoes: vars,
+      vendas: vars.reduce((t, v) => t + num(v.vendas), 0),
+      preco: num(primeira.preco),
+      base: num(primeira.preco),
+      precoMax: num(vars[vars.length - 1].preco),
+      lucro,
+      lucroMin: Math.max(0, ...ok.map((v) => num(v.lucroMin))),
+      emRampa: vars.some((v) => v.emRampa),
+      cupom: Math.max(0, ...vars.map((v) => num(v.cupom))),
+      propria: propriaRow ? num(propriaRow.comissao) : null,
+      propriaRow,
+      antigas,
+      insuficiente: !ok.length && vars.every((v) => v.insuficiente),
+      _max: m.max,
+      _trava: m.trava,
+      _regra: m.regra,
+      _porVendas: m.porVendas,
+    });
+  }
+  return out.sort((x, y) => y.vendas - x.vendas || x.item.nome.localeCompare(y.item.nome));
+}
+
+/** Variação de um anúncio com a comissão: quanto do lucro o afiliado leva. */
+export function parteDoAfiliado(v, pct) {
+  const c = comComissao(v, pct);
+  const leva = num(v.lucro) > 0 ? c.comissao / num(v.lucro) : null;
+  return { ...c, leva, passaMetade: leva != null && leva > FRACAO_AFILIADO + 1e-9, semLucro: !(num(v.lucro) > 0) };
 }
 
 /** Os itens que somam ≥ 80% das vendas (sem venda nenhuma = todos). → Set de chaves */
@@ -121,25 +272,18 @@ export function maisVendidos(linhas, cobertura = COBERTURA_AFILIADO) {
 }
 
 /**
- * Comissão sugerida e teto (em % inteiro): sugerida = maior % em que TODOS os mais vendidos
- * ficam com ≥ metade do lucro; teto = maior % em que todos eles ficam ≥ o lucro mínimo.
+ * Comissão sugerida e teto (em % inteiro): sugerida = o menor máximo seguro entre os mais
+ * vendidos (anúncio: pela regra do mix/2 mais apertadas); teto = o menor máximo da trava (≥ o lucro mínimo).
  * Item que já não tem lucro (≤ 0) não entra (não há metade a dividir).
  */
 export function sugestaoComissaoLoja(linhas) {
   const top = maisVendidos(linhas);
-  const decide = linhas.filter((l) => top.has(l.chave) && num(l.lucro) > 0 && l.propria == null && !l.insuficiente);
+  const temLucro = (l) => (l.variacoes ? l.variacoes.some(valida) : num(l.lucro) > 0 && !l.insuficiente);
+  const decide = linhas.filter((l) => top.has(l.chave) && temLucro(l) && l.propria == null);
   if (!decide.length) return { sugerida: null, teto: null, decide: 0 };
-  const maior = (cond) => {
-    let r = 0;
-    for (let p = 1; p <= PCT_MAX_SIM; p++) {
-      if (decide.every((l) => cond(comComissao(l, p / 100), l))) r = p;
-      else break;
-    }
-    return r;
-  };
   // sugerida nunca passa do teto (produto de lucro pequeno: metade dele já fica abaixo do mínimo)
-  const teto = maior((c, l) => c.lucroCom >= num(l.lucroMin) - 0.004);
-  return { sugerida: Math.min(maior((c, l) => c.lucroCom >= num(l.lucro) * FRACAO_AFILIADO - 0.004), teto), teto, decide: decide.length };
+  const teto = Math.min(...decide.map(maxTravaDoItem));
+  return { sugerida: Math.min(...decide.map(maxSeguroDoItem), teto), teto, decide: decide.length };
 }
 
 /** Simulador: contagem por situação no % (fração). */

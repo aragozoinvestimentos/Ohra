@@ -29,7 +29,7 @@ import { avisosManutencao } from "../lib/manutencao.js";
 import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { custoAmostra, padraoDoCanal, sugestoesAfiliado } from "../lib/afiliados.js";
-import { avisosComissaoLoja, linhasDaLoja, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
+import { anunciosDaLoja, avisosComissaoLoja, linhasDaLoja, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
 import { agruparPorProduto, ehAvisoDeDados, montarPendencias, notaDoAviso, produtoDoAviso, situacaoDados } from "../lib/inicio.js";
 import { produtosParados } from "../lib/relatorios.js";
 import { comoEstaALoja, produtosDaSemana, variacao } from "../lib/resumoLoja.js";
@@ -129,7 +129,7 @@ const textoSemCanal = (p) => {
 export default function Inicio({ onIrPara, onToast }) {
   const { lojaId, lojas } = useLoja();
   const nomeLoja = (lojas || []).find((l) => l.id === lojaId)?.nome || "loja";
-  const { dados, rampasH, af, regras, hoje, linhas: linhasTodas, linhasGrupo, linhasAf, linhasAds, calendario, avalH, pedidosValidos, anuncioDoPedido } = useCrescimento();
+  const { dados, rampasH, af, regras, hoje, linhas: linhasTodas, linhasGrupo, linhasAf, linhasAds, calendario, avalH, pedidosValidos, anuncioDoPedido, soNoGrupo } = useCrescimento();
   // Rampas de produtos que só existem dentro de um anúncio com vários itens
   // saem dos avisos (decide a rampa do anúncio inteiro, que entra no lugar).
   const linhas = useMemo(() => [...linhasTodas.filter((l) => !l.soNoGrupo), ...(linhasGrupo || [])], [linhasTodas, linhasGrupo]);
@@ -293,7 +293,9 @@ export default function Inicio({ onIrPara, onToast }) {
   const afLojaTudo = useMemo(() => {
     const canalAf = (dados.canais || []).find((c) => c.tipo === "shopee");
     if (!canalAf) return { avisos: [], info: null };
-    const linhasL = linhasDaLoja({ linhasAf, canalId: canalAf.id, faixasCupom: cuponsAtivos(dados.cfgLoja, canalAf.id), vendas: vendasPorItemCanal(pedidosValidos, hoje), config: af.config });
+    const porItem = linhasDaLoja({ linhasAf, canalId: canalAf.id, faixasCupom: cuponsAtivos(dados.cfgLoja, canalAf.id), vendas: vendasPorItemCanal(pedidosValidos, hoje), config: af.config });
+    // Por anúncio (30/10/2026): a comissão vale pro anúncio inteiro (variações juntas).
+    const linhasL = anunciosDaLoja({ linhas: porItem, itens, canalId: canalAf.id, config: af.config, grupos: gruposAnuncio, soNoGrupo, anunciado: (it) => (cobraNoCanal ? cobraNoCanal(it, canalAf) : true) });
     const lucroPorVenda = (r) => linhasAf.find((l) => l.chave === `${r.item_tipo}|${r.item_id}|${r.canal_id}`)?.lucro ?? 0;
     const comissao = padraoDoCanal(af.config, canalAf.id).comissao;
     const resultado = resultadoAfiliados(af.registros, { hoje, lucroPorVenda });
@@ -301,7 +303,7 @@ export default function Inicio({ onIrPara, onToast }) {
     const amostras = (af.parceiros || []).filter((pa) => pa.amostra_item_id).reduce((t, pa) => t + custoAmostra(pa, itens), 0);
     const info = { canal: canalAf.nome, comissao, sugerida: sug.sugerida, teto: sug.teto, minimo: minimoAfiliado(dados.cfgLoja), resultado, amostras, linhas: linhasL.map((l) => ({ nome: l.item.nome, max: maxSeguroDoItem(l), propria: l.propria })) };
     return { avisos: avisosComissaoLoja({ linhas: linhasL, canal: canalAf, comissao, resultado, testes: afTestes, hoje }), info };
-  }, [dados.canais, dados.cfgLoja, linhasAf, pedidosValidos, af.config, af.registros, af.parceiros, itens, afTestes, hoje]);
+  }, [dados.canais, dados.cfgLoja, linhasAf, pedidosValidos, af.config, af.registros, af.parceiros, itens, afTestes, hoje, gruposAnuncio, soNoGrupo, cobraNoCanal]);
   const afLoja = afLojaTudo.avisos;
 
   // --- Pra fazer + status ---

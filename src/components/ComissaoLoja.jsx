@@ -1,11 +1,12 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 import { useAcoesComerciais } from "../hooks/useAcoesComerciais.js";
 import { registrarAcao } from "../lib/acoesComerciaisAcoes.js";
 import { cuponsAtivos } from "../lib/cupomLoja.js";
 import { padraoDoCanal } from "../lib/afiliados.js";
-import { DIAS_TESTE, FRACAO_AFILIADO, PCT_MAX_SIM, estadoTeste, linhasDaLoja, maisVendidos, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, resumoProposta, simularComissaoLoja, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
+import { useCrescimento } from "../hooks/useCrescimento.js";
+import { DIAS_TESTE, FRACAO_AFILIADO, MIN_VENDAS_MIX, PCT_MAX_SIM, anunciosDaLoja, estadoTeste, linhasDaLoja, parteDoAfiliado, maisVendidos, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, resumoProposta, simularComissaoLoja, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
 import { BRL } from "../lib/format.js";
 import { canalDireto } from "../lib/canais.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -34,7 +35,14 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
   const canal = canais.find((c) => c.id === canalId) || null;
   const vendas = useMemo(() => vendasPorItemCanal(pedidos, hoje), [pedidos, hoje]);
   const faixas = useMemo(() => cuponsAtivos(dados.cfgLoja, canalId), [dados.cfgLoja, canalId]);
-  const linhas = useMemo(() => linhasDaLoja({ linhasAf, canalId, faixasCupom: faixas, vendas, config }), [linhasAf, canalId, faixas, vendas, config]);
+  const { soNoGrupo } = useCrescimento();
+  // Por ANÚNCIO (30/10/2026): a Shopee põe o % no anúncio inteiro — as variações vêm juntas.
+  const linhasItem = useMemo(() => linhasDaLoja({ linhasAf, canalId, faixasCupom: faixas, vendas, config }), [linhasAf, canalId, faixas, vendas, config]);
+  const linhas = useMemo(
+    () => anunciosDaLoja({ linhas: linhasItem, itens: dados.itens, canalId, config, grupos: dados.gruposAnuncio, soNoGrupo, anunciado: (it) => (dados.cobraNoCanal && canal ? dados.cobraNoCanal(it, canal) : true) }),
+    [linhasItem, dados, canalId, config, soNoGrupo, canal]
+  );
+  const [aberto, setAberto] = useState(null);
   const top = useMemo(() => maisVendidos(linhas), [linhas]);
   const sug = useMemo(() => sugestaoComissaoLoja(linhas), [linhas]);
   const minimo = minimoAfiliado(dados.cfgLoja);
@@ -90,7 +98,18 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
     if (error) return onToast?.(`Não foi possível salvar: ${error.message}`);
     abrirTeste(`item|${l.tipo}|${l.id}|${canal.id}`, valor, l.propria, l);
     setEditItem(null);
-    onToast?.(valor != null ? `${l.item.nome}: ${pctTxt(valor)} só neste anúncio (ponha o mesmo na Shopee)` : `${l.item.nome}: volta pra comissão da loja`);
+    onToast?.(valor != null ? `${l.item.nome}: ${pctTxt(valor)} no anúncio inteiro (ponha o mesmo na Shopee)` : `${l.item.nome}: volta pra comissão da loja`);
+    return true;
+  }
+
+  // % antigo salvo numa variação (ou num item de anúncio com vários itens): a Shopee não separa
+  // por variação — passa pro anúncio inteiro e só então apaga a linha antiga.
+  async function passarProAnuncio(l, ant) {
+    const ok = await salvarPropria(l, ant.pct);
+    if (ok !== true) return;
+    const { error } = await supabase.from("afiliado_config").delete().in("id", l.antigas.map((x) => x.row.id));
+    if (error) return onToast?.(`O anúncio ficou com ${pctTxt(ant.pct)}, mas a comissão antiga não saiu: ${error.message}`);
+    onToast?.(`${l.item.nome}: ${pctTxt(ant.pct)} no anúncio inteiro`);
   }
 
   function responderTeste(chave, resposta) {
@@ -125,7 +144,7 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
         </h3>
         <Kpis
           itens={[
-            { label: "Comissão sugerida", valor: sug.sugerida ? `${sug.sugerida}%` : "—", sub: !sug.sugerida ? "sem lucro pra dividir nos que mais vendem" : linhas.some((l) => l.vendas > 0) ? "os que mais vendem (90 dias) ficam com ≥ metade do lucro" : "sem vendas importadas: todos os produtos contam" },
+            { label: "Comissão sugerida", valor: sug.sugerida ? `${sug.sugerida}%` : "—", sub: sug.sugerida === 0 ? "um dos que mais vendem não aguenta nem 1%" : !sug.sugerida ? "sem lucro pra dividir nos que mais vendem" : linhas.some((l) => l.vendas > 0) ? "os que mais vendem (90 dias) ficam com ≥ metade do lucro" : "sem vendas importadas: todos os produtos contam" },
             { label: "Começar com", valor: inicial ? `${inicial}%` : "—", sub: inicial ? `o mínimo da Shopee; dá pra subir 1 ponto por teste até ${sug.sugerida}%` : naoAguenta ? `os que mais vendem não aguentam o mínimo de ${minPct}%` : "—", tom: naoAguenta ? "warn" : undefined },
             { label: "Teto", valor: sug.teto ? `${sug.teto}%` : "—", sub: "acima disso algum dos que mais vendem fica abaixo do lucro mínimo" },
             {
@@ -193,7 +212,7 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
             <table>
               <thead>
                 <tr>
-                  <th>Produto</th>
+                  <th>Anúncio</th>
                   <th className="num">Preço agora</th>
                   <th className="num">Vendas 90d</th>
                   <th className="num">Lucro sem afiliado</th>
@@ -208,53 +227,70 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
                 {sim.linhas.map((l) => {
                   const [tipo, rot] = SIT[l.situacao];
                   const ed = editItem?.chave === l.chave;
+                  const nVar = l.variacoes?.length || 1;
+                  const abre = aberto === l.chave;
                   return (
-                    <tr key={l.chave}>
-                      <td>
-                        <b>{l.item.nome}</b>
-                        {l.emRampa && <Estado tipo="decisao">em rampa</Estado>}
-                        {top.has(l.chave) && l.vendas > 0 && <span className="muted-cel"> · mais vende</span>}
-                        {l.cupom > 0 && <div className="sub-linha">com o cupom: −{BRL(l.cupom)}</div>}
-                      </td>
-                      <td className="num">{BRL(l.preco)}</td>
-                      <td className="num">{l.vendas || "—"}</td>
-                      <td className="num">{l.insuficiente ? "—" : BRL(l.lucro)}</td>
-                      <td className="num">
-                        {ed ? (
-                          <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-                            <input type="number" min="1" max="60" value={editItem.valor} onChange={(e) => setEditItem({ ...editItem, valor: e.target.value })} style={{ width: 56 }} aria-label="% deste anúncio" />
-                            <button type="button" className="btn btn-mini primary" onClick={() => Number(editItem.valor) > 0 && salvarPropria(l, Number(editItem.valor) / 100)}>
-                              ok
-                            </button>
-                            <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => setEditItem(null)}>
-                              ×
-                            </button>
-                          </span>
-                        ) : (
-                          <>
-                            {pctTxt(l.em)}
-                            <div className="sub-linha">
-                              {l.propria != null ? (
-                                <>
-                                  só neste anúncio ·{" "}
-                                  <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => salvarPropria(l, null)}>
-                                    voltar ao da loja
+                    <Fragment key={l.chave}>
+                      <tr className={abre ? "linha-atual" : ""}>
+                        <td>
+                          <button type="button" className="link-btn" style={{ margin: 0, textAlign: "left" }} onClick={() => setAberto(abre ? null : l.chave)}>
+                            {abre ? "▾" : "▸"} <b>{l.item.nome}</b>
+                          </button>
+                          {l.emRampa && <Estado tipo="decisao">em rampa</Estado>}
+                          {top.has(l.chave) && l.vendas > 0 && <span className="muted-cel"> · mais vende</span>}
+                          <div className="sub-linha">
+                            {l.tipo === "grupo" ? `vários itens · ${nVar} opç${nVar === 1 ? "ão" : "ões"}` : l.tipo === "kit" ? "kit" : nVar > 1 ? `${nVar} variações` : "1 unidade"}
+                            {l.cupom > 0 ? ` · com o cupom: −${BRL(l.cupom)}` : ""}
+                          </div>
+                          {l.antigas?.length > 0 && <div className="sub-linha"><Estado tipo="atencao">⚠ % antigo numa variação</Estado></div>}
+                        </td>
+                        <td className="num">{l.precoMax && l.precoMax !== l.preco ? `${BRL(l.preco)} – ${BRL(l.precoMax)}` : BRL(l.preco)}</td>
+                        <td className="num">{l.vendas || "—"}</td>
+                        <td className="num">{l.insuficiente || l.lucro == null ? "—" : BRL(l.lucro)}</td>
+                        <td className="num">
+                          {ed ? (
+                            <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                              <input type="number" min="1" max="60" value={editItem.valor} onChange={(e) => setEditItem({ ...editItem, valor: e.target.value })} style={{ width: 56 }} aria-label="% deste anúncio" />
+                              <button type="button" className="btn btn-mini primary" onClick={() => Number(editItem.valor) > 0 && salvarPropria(l, Number(editItem.valor) / 100)}>
+                                ok
+                              </button>
+                              <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => setEditItem(null)}>
+                                ×
+                              </button>
+                            </span>
+                          ) : (
+                            <>
+                              {pctTxt(l.em)}
+                              <div className="sub-linha">
+                                {l.propria != null ? (
+                                  <>
+                                    só neste anúncio ·{" "}
+                                    <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => salvarPropria(l, null)}>
+                                      voltar ao da loja
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => setEditItem({ chave: l.chave, valor: String(l.maxSeguro >= minPct ? minPct : l.maxSeguro || minPct) })}>
+                                    % deste anúncio
                                   </button>
-                                </>
-                              ) : (
-                                <button type="button" className="link-btn" style={{ margin: 0 }} onClick={() => setEditItem({ chave: l.chave, valor: String(l.maxSeguro >= minPct ? minPct : l.maxSeguro || minPct) })}>
-                                  % deste anúncio
-                                </button>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </td>
-                      <td className="num">{BRL(l.comissao)}</td>
-                      <td className={`num${l.lucroCom < 0 ? " neg" : ""}`}>{l.insuficiente ? "—" : BRL(l.lucroCom)}</td>
-                      <td className="num">{l.insuficiente ? "—" : l.maxSeguro >= minPct ? `${l.maxSeguro}%` : <span className="muted-cel">não aguenta {minPct}%</span>}</td>
-                      <td>{tipo ? <Estado tipo={tipo}>{rot}</Estado> : <span className="muted-cel">{rot}</span>}</td>
-                    </tr>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </td>
+                        <td className="num">{BRL(l.comissao)}</td>
+                        <td className={`num${l.lucroCom < 0 ? " neg" : ""}`}>{l.insuficiente ? "—" : BRL(l.lucroCom)}</td>
+                        <td className="num">{l.insuficiente ? "—" : l.maxSeguro >= minPct ? `${l.maxSeguro}%` : <span className="muted-cel">não aguenta {minPct}%</span>}</td>
+                        <td>{tipo ? <Estado tipo={tipo}>{rot}</Estado> : <span className="muted-cel">{rot}</span>}</td>
+                      </tr>
+                      {abre && (
+                        <tr className="linha-detalhe">
+                          <td colSpan={9} style={{ whiteSpace: "normal" }}>
+                            <DetalheAnuncioAf l={l} minPct={minPct} onPassar={(ant) => passarProAnuncio(l, ant)} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -262,13 +298,90 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
           </div>
         )}
         <p className="hint" style={{ marginBottom: 0 }}>
-          A comissão sai do lucro — o preço não muda por causa de afiliado. Anúncio que não aguenta: ponha um % próprio menor nele (se a Shopee deixar) ou deixe a comissão da loja mais baixa. O marketplace desconta a comissão do repasse: não lance no Fluxo de Caixa.
+          Uma linha por anúncio (a Shopee põe a comissão no anúncio inteiro): com mais de uma variação, lucro, afiliado ganha e você fica são a média — clique no anúncio pra ver cada variação. A comissão sai do lucro — o preço não muda por causa de afiliado. Anúncio que não aguenta: ponha um % próprio menor nele (se a Shopee deixar) ou deixe a comissão da loja mais baixa. O marketplace desconta a comissão do repasse: não lance no Fluxo de Caixa.
         </p>
       </div>
       <AcompanhamentoAfiliados testes={testes} linhas={linhas} canal={canal} comissaoLoja={naShopee} sugerida={sug.sugerida} hoje={hoje} onResponder={responderTeste} />
       <PropostaAfiliado linhas={linhas} canal={canal} lojaId={lojaId} hoje={hoje} onToast={onToast} />
       <ResultadoAfiliados registros={registros} mapaAf={mapaAf} hoje={hoje} />
     </>
+  );
+}
+
+const REGRA_MAX = {
+  vendas: (l) => `pela média das vendas de 90 dias de cada variação (${l.variacoes.filter((v) => Number(v.lucro) > 0).reduce((t, v) => t + (Number(v.vendas) || 0), 0)} vendas — ${MIN_VENDAS_MIX} ou mais)`,
+  apertadas: () => `pela média das 2 variações mais apertadas (menos de ${MIN_VENDAS_MIX} vendas em 90 dias)`,
+  unica: () => "pela única variação anunciada",
+};
+
+// Detalhe do anúncio: cada variação com o que o afiliado ganha e o que sobra pra você.
+function DetalheAnuncioAf({ l, minPct, onPassar }) {
+  const regra = REGRA_MAX[l._regra];
+  return (
+    <div className="detalhe-cel">
+      {l.antigas?.length > 0 &&
+        l.antigas.map((a) => (
+          <div key={a.row.id} className="alerta alerta-warn">
+            {`Você tinha ${pctTxt(a.pct)} só em ${a.nome} — a Shopee não separa a comissão por variação, ela vale pro anúncio inteiro.`}{" "}
+            <button type="button" className="btn btn-mini" onClick={() => onPassar(a)}>
+              Passar {pctTxt(a.pct)} pro anúncio
+            </button>
+          </div>
+        ))}
+      <p className="hint" style={{ marginTop: 0 }}>
+        Com <b>{pctTxt(l.em)}</b> {l.propria != null ? "(deste anúncio)" : "(da loja)"} — vale pra todas as variações. Máximo seguro <b>{l.maxSeguro >= 1 ? `${l.maxSeguro}%` : "—"}</b>
+        {regra ? ` ${regra(l)}` : ""}, com a trava: nenhuma variação no prejuízo nem abaixo do lucro mínimo.
+        {l.maxSeguro > 0 && l.maxSeguro < minPct ? ` Abaixo do mínimo da Shopee (${minPct}%).` : ""}
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{l.tipo === "grupo" ? "Opção" : "Variação"}</th>
+              <th className="num">Preço agora</th>
+              <th className="num">Vendas 90d</th>
+              <th className="num">Lucro sem afiliado</th>
+              <th className="num">Afiliado ganha</th>
+              <th className="num">Sobra pra você</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {l.variacoes.map((v) => {
+              const p = parteDoAfiliado(v, l.em);
+              return (
+                <tr key={v.chave}>
+                  <td>{v.item.nome}</td>
+                  <td className="num">{BRL(v.preco)}</td>
+                  <td className="num">{v.vendas || "—"}</td>
+                  <td className="num">{v.insuficiente ? "—" : BRL(v.lucro)}</td>
+                  <td className="num">
+                    {BRL(p.comissao)}
+                    {p.leva != null && <div className="sub-linha">{Math.round(p.leva * 100)}% do lucro</div>}
+                  </td>
+                  <td className={`num${p.lucroCom < 0 ? " neg" : ""}`}>{v.insuficiente ? "—" : BRL(p.lucroCom)}</td>
+                  <td>
+                    {v.insuficiente ? (
+                      <span className="muted-cel">sem custo cadastrado</span>
+                    ) : p.semLucro ? (
+                      <span className="muted-cel">já sem lucro antes do afiliado (assunto de preço)</span>
+                    ) : p.situacao === "prejuizo" ? (
+                      <Estado tipo="resolver">prejuízo</Estado>
+                    ) : p.situacao === "abaixo" ? (
+                      <Estado tipo="resolver">abaixo do lucro mínimo</Estado>
+                    ) : p.passaMetade ? (
+                      <Estado tipo="info">passa da metade do lucro</Estado>
+                    ) : (
+                      <span className="muted-cel">✓</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -418,7 +531,7 @@ function PropostaAfiliado({ linhas, canal, lojaId, hoje, onToast }) {
       <h3 className="section-title">
         <span>
           Proposta pra um afiliado
-          <Ajuda texto="Pra quando você convidar alguém com um % só pra ele (campanha direcionada / amostra): escolha os produtos e o %, veja o lucro de cada um antes de enviar. Salvar cria o parceiro (convidado) e guarda a proposta." />
+          <Ajuda texto="Pra quando você convidar alguém com um % só pra ele (campanha direcionada / amostra): escolha os anúncios e o %, veja o lucro de cada um (média das variações) antes de enviar. Salvar cria o parceiro (convidado) e guarda a proposta." />
         </span>
         <button type="button" className="btn btn-mini" onClick={() => setAberta((a) => !a)}>
           {aberta ? "Fechar" : "+ Nova proposta"}
@@ -456,7 +569,7 @@ function PropostaAfiliado({ linhas, canal, lojaId, hoje, onToast }) {
               <thead>
                 <tr>
                   <th />
-                  <th>Produto</th>
+                  <th>Anúncio</th>
                   <th className="num">Preço agora</th>
                   <th className="num">Lucro sem</th>
                   <th className="num">Comissão</th>
