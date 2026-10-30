@@ -248,7 +248,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
-  { data: "2026-10-30", texto: "Ficha do anúncio: o ✎ do SKU agora mostra o SKU novo na hora (antes ficava o antigo até recarregar). O final do SKU (ex.: -PT) vem da opção de cor — muda tirando e criando a cor de novo." },
+  { data: "2026-10-30", texto: "Ficha do anúncio: o ✎ do SKU abre o campo só na linha clicada (com cores, abria em todas e fechava sozinho) e mostra o SKU novo na hora. O final do SKU (ex.: -PT) vem da opção de cor — muda tirando e criando a cor de novo." },
   { data: "2026-10-29", texto: "Pedidos da UpSeller: a loja que escolheu UpSeller em Regras sobe o arquivo de Pedidos (Exportar) em Atualizar dados, igual à Olist. O app separa Shopee, TikTok e Shein pela coluna Plataformas; cancelado por falta de pagamento vira carrinho abandonado; “Enviado” há 10 dias ou mais conta como entregue." },
   { data: "2026-10-29", texto: "Cada loja escolhe o sistema de pedidos (ERP) em Configuração → Regras: Olist, UpSeller ou nenhum (só venda física). O Atualizar dados, o Início e o Bom dia falam do sistema escolhido. A leitura do arquivo da UpSeller ainda está sendo preparada." },
   { data: "2026-10-29", texto: "Produto de revenda na Página do produto: o passo 2 virou \"Custo de compra\" (média das notas ou o custo digitado) — não pede mais detalhamento de produção nem mostra \"Simular custo\"." },

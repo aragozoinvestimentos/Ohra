@@ -73,7 +73,9 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
   const [abertos, setAbertos] = useState({});
   const [salvando, setSalvando] = useState(false);
   const [modoTres, setModoTres] = useState("juntar"); // "juntar" | "separar" — quando dá 3 variações
-  const [skuEdit, setSkuEdit] = useState(null); // { itemId, valor }
+  // { itemId, linha, valor } — `linha` = a linha clicada: com cores, várias linhas são o
+  // MESMO item; abrir o campo em todas fazia uma roubar o foco da outra e fechar na hora.
+  const [skuEdit, setSkuEdit] = useState(null);
 
   const canal = canais.find((c) => c.id === canalId) || canais[0] || null;
   // Lucro pelo que o cliente paga (lib/precoAgora.js).
@@ -530,7 +532,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                         {a.linhas.map((l) => (
                           <tr key={`${l.item.id}|${l.sufixos}`}>
                             <td className="ficha-sku">
-                              {skuEdit?.itemId === l.item.id ? (
+                              {skuEdit?.linha === `${idx}|${l.item.id}|${l.sufixos}` ? (
                                 <span className="ficha-sku-edit">
                                   <input
                                     autoFocus
@@ -557,7 +559,7 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                                     type="button"
                                     className="link-btn ficha-sku-btn"
                                     title={`Editar o SKU de ${rotuloItem(l.item)} (vale pra todas as opções dele)`}
-                                    onClick={() => setSkuEdit({ itemId: l.item.id, valor: l.item.sku || "" })}
+                                    onClick={() => setSkuEdit({ itemId: l.item.id, linha: `${idx}|${l.item.id}|${l.sufixos}`, valor: l.item.sku || "" })}
                                   >
                                     ✎
                                   </button>
