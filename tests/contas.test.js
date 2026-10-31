@@ -13,7 +13,7 @@ import { resultadoNoPreco, resolverTaxasNoPreco } from "../src/lib/calc.js";
 import { calcularAnuncio, calcularEscada, configEscada, lucroNoPreco, precoPorMarkup, r5090perto, r90perto, r90up } from "../src/lib/escada.js";
 import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
 import { quebraLucro } from "../src/lib/precoAgora.js";
-import { avaliarAds, degrauAnterior, economiaRealAds, numerosDoPeriodo, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas } from "../src/lib/ads.js";
+import { avaliarAds, degrauAnterior, economiaRealAds, numerosDoPeriodo, textoMudancaPreco, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas } from "../src/lib/ads.js";
 import { interpretarAds, juntarAds, somarJanelasAds } from "../src/lib/relatorioShopee.js";
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
 import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
@@ -983,5 +983,43 @@ describe("Ads do anúncio inteiro pelos pedidos reais (Conjunto de Natal, 01/11/
   it("menos de 3 vendas pagas: vale o preço e o lucro de hoje", () => {
     const p = periodoAjustado({ id: "x", inicio: "2026-10-14", parcial: { ate: "2026-10-30", gasto: 20, vendas: 2, historico: [] } }, { pagas: () => ({ un: 2, pago: 60, lucro: 20 }), cobre: () => true });
     expect(economiaRealAds([p], "2026-10-31", { preco: 30, lucro: 10 })).toMatchObject({ precoAds: 30, lucroAds: 10, economiaReal: null });
+  });
+});
+
+describe("Rampa × Ads: preço mudou no meio do período (A/B/C, 31/10/2026)", () => {
+  const pagas = (de, ate) => {
+    // antes de 25/10: 6 vendas a R$ 30 (lucro 9); a partir de 25/10: 4 a R$ 34 (lucro 12)
+    const t = { un: 0, pago: 0, lucro: 0 };
+    if (de < "2026-10-25") Object.assign(t, { un: 6, pago: 180, lucro: 54 });
+    if (ate >= "2026-10-25") { t.un += 4; t.pago += 136; t.lucro += 48; }
+    return t;
+  };
+  const p0 = { id: "r", inicio: "2026-10-10", fim: null, orcamento_diario: 10, meta_roas: 4, parcial: { ate: "2026-10-30", gasto: 90, cliques: 400, vendas: 10, historico: [] } };
+  it("A: com 3+ vendas pagas depois da mudança, preço e lucro reais só delas", () => {
+    const p = periodoAjustado(p0, { pagas, cobre: () => true, mudancas: ["2026-10-25"] });
+    expect(p.mudancaPreco).toBe("2026-10-25");
+    expect(p.parcial.ajuste.mudanca.antes.un).toBe(6);
+    expect(p.parcial.ajuste.mudanca.depois.un).toBe(4);
+    const e = economiaRealAds([p], "2026-10-31", { preco: 34, lucro: 12 });
+    expect(e.precoAds).toBe(34);
+    expect(e.lucroAds).toBe(12);
+    expect(e.economiaReal.desdeMudanca).toBe(true);
+  });
+  it("A: menos de 3 depois da mudança → o período todo", () => {
+    const p = periodoAjustado(p0, { pagas: (de, ate) => (ate >= "2026-10-29" && de >= "2026-10-29" ? { un: 1, pago: 34, lucro: 12 } : { un: 7, pago: 214, lucro: 66 }), cobre: () => true, mudancas: ["2026-10-29"] });
+    const e = economiaRealAds([p], "2026-10-31", { preco: 34, lucro: 12 });
+    expect(e.economiaReal.desdeMudanca).toBe(false);
+    expect(e.precoAds).toBeCloseTo(214 / 7, 2);
+  });
+  it("C: texto antes × depois", () => {
+    const p = periodoAjustado(p0, { pagas, cobre: () => true, mudancas: ["2026-10-25"] });
+    expect(textoMudancaPreco(p.parcial.ajuste)).toBe("Preço mudou em 25/10 (rampa): vendas antes R$ 30,00 (6 pagas) · depois R$ 34,00 (4 pagas) — o retorno já usa só as vendas depois da mudança.");
+  });
+  it("B: mudança de preço há 2 dias = o Ads espera 7 dias pra decidir", () => {
+    const p = periodoAjustado(p0, { pagas, cobre: () => true, mudancas: ["2026-10-29"] });
+    const av = avaliarAds({ preco: 34, lucro: 12, periodos: [p], hoje: "2026-10-31" });
+    expect(av.chave).toBe("aprendendo");
+    expect(av.titulo).toMatch(/Preço mudou/);
+    expect(av.decideEm).toBe("2026-11-05");
   });
 });

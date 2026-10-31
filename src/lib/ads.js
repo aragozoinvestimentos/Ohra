@@ -691,8 +691,10 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     // Ritmo: 7 dias de aprendizado no começo do período; depois de cada ajuste
     // (ou volta/revisão), decide de novo em 7 dias (decisaoDias, 21/10/2026 —
     // antes 3). Alavancar (sazonal) continua decidindo a cada 3 dias.
-    const refAj = [ultimoAjuste, rev?.data].filter((d) => d && d > ativo.inicio).sort().pop();
+    const mudPreco = ativo.mudancaPreco && ativo.mudancaPreco <= hoje ? ativo.mudancaPreco : null;
+    const refAj = [ultimoAjuste, rev?.data, mudPreco].filter((d) => d && d > ativo.inicio).sort().pop();
     const refDecisao = refAj || ativo.inicio;
+    const peloPreco = !!mudPreco && refAj === mudPreco;
     const depoisDeAjuste = refDecisao !== ativo.inicio;
     const gapDias = depoisDeAjuste ? (alavancar ? num(regras.alavancarAprendizado) || 3 : num(regras.decisaoDias) || 3) : regras.aprendizadoDias;
     const diasDesde = diasEntre(refDecisao, hoje);
@@ -708,9 +710,11 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
       return sitA(
         "aprendendo",
         "decisao",
-        depoisDeAjuste ? `Depois do ajuste · dia ${diasDesde + 1} de ${gapDias}` : `Aprendendo · dia ${diasDesde + 1} de ${gapDias}`,
+        depoisDeAjuste ? peloPreco ? `Preço mudou · dia ${diasDesde + 1} de ${gapDias}` : `Depois do ajuste · dia ${diasDesde + 1} de ${gapDias}` : `Aprendendo · dia ${diasDesde + 1} de ${gapDias}`,
         depoisDeAjuste
-          ? `Você mudou orçamento/meta em ${dm(refDecisao)}: espere até ${dm(somarDiasIso(refDecisao, gapDias))} pra decidir de novo (a Shopee se ajusta uns dias).`
+          ? peloPreco
+            ? `O preço mudou em ${dm(refDecisao)} (rampa): espere até ${dm(somarDiasIso(refDecisao, gapDias))} pra mexer no Ads — uma mudança por vez, senão não dá pra saber o que deu efeito.`
+            : `Você mudou orçamento/meta em ${dm(refDecisao)}: espere até ${dm(somarDiasIso(refDecisao, gapDias))} pra decidir de novo (a Shopee se ajusta uns dias).`
           : `A plataforma ainda está aprendendo: não mexa na meta nem no orçamento até ${dm(somarDiasIso(refDecisao, gapDias))}. Envie o CSV do Shopee Ads normalmente.`,
         { numeros, decideEm: somarDiasIso(refDecisao, gapDias) }
       );
@@ -1040,7 +1044,7 @@ export function origemDoGasto(periodo, semanas) {
 // pendentes(de, ate) → unidades de pedidos ainda NÃO pagos do anúncio
 // cobre(de, ate) → os pedidos importados cobrem essas datas
 export const FOLGA_PAGAMENTO_DIAS = 2;
-export function periodoAjustado(p, { pagas, pendentes = () => 0, cobre }) {
+export function periodoAjustado(p, { pagas, pendentes = () => 0, cobre, mudancas = [] }) {
   const par = p?.parcial;
   if (!par?.ate || !p?.inicio || !pagas || !cobre) return p;
   const ini = String(p.inicio).slice(0, 10);
@@ -1059,8 +1063,17 @@ export function periodoAjustado(p, { pagas, pendentes = () => 0, cobre }) {
   const pend = cob ? pendentes(somarDiasIso(ate, -FOLGA_PAGAMENTO_DIAS), ate) : 0;
   const novo = capar(par);
   const estado = !cob ? "insuficiente" : pend > 0 ? "provisorio" : "confirmado";
+  // Preço mudou pela rampa dentro do período (A/C, 31/10/2026): vendas pagas
+  // antes × depois da mudança. A última mudança até hoje vira referência da
+  // decisão (B) mesmo depois do último CSV.
+  const muds = (mudancas || []).map((d) => String(d).slice(0, 10)).filter((d) => d > ini).sort();
+  const mud = muds[muds.length - 1] || null;
+  let mudanca = null;
+  if (mud && pg && mud <= ate) mudanca = { data: mud, antes: pagas(ini, somarDiasIso(mud, -1)), depois: pagas(mud, ate) };
+  else if (mud) mudanca = { data: mud, antes: null, depois: null };
   return {
     ...p,
+    mudancaPreco: mud,
     parcialShopee: p.parcialShopee || par,
     parcial: {
       ...novo,
@@ -1074,6 +1087,7 @@ export function periodoAjustado(p, { pagas, pendentes = () => 0, cobre }) {
         pagoReal: pg ? pg.pago : null,
         lucroReal: pg ? pg.lucro : null,
         receitaShopee: par.receita != null ? num(par.receita) : null,
+        mudanca,
       },
     },
   };
@@ -1090,6 +1104,17 @@ export function textoAjusteAds(aj, roasShopee) {
   return `${base} — conta não pagos, cancelados e outros produtos depois do clique · ${partes.join(" · ")}${aj.estado === "provisorio" ? ` · ${aj.pendentes} pedido${aj.pendentes === 1 ? "" : "s"} ainda sem pagamento (provisório)` : ""}`;
 }
 
+// C (31/10/2026): "Preço mudou em dd/mm (rampa): vendas antes R$ X · depois R$ Y".
+export function textoMudancaPreco(aj) {
+  const m = aj?.mudanca;
+  if (!m?.data) return null;
+  const [, mm, dd] = m.data.split("-");
+  const med = (t) => (t && num(t.un) > 0 ? `R$ ${(num(t.pago) / num(t.un)).toFixed(2).replace(".", ",")} (${num(t.un)} paga${num(t.un) === 1 ? "" : "s"})` : "sem venda paga");
+  if (!m.depois) return `Preço mudou em ${dd}/${mm} (rampa) — o Ads espera 7 dias pra decidir de novo.`;
+  const conta = num(m.depois.un) >= MIN_PAGAS_REAL ? "o retorno já usa só as vendas depois da mudança" : `o retorno usa o período todo até ter ${MIN_PAGAS_REAL} vendas pagas depois dela`;
+  return `Preço mudou em ${dd}/${mm} (rampa): vendas antes ${med(m.antes)} · depois ${med(m.depois)} — ${conta}.`;
+}
+
 // Preço e lucro REAIS por venda pras contas do Ads (01/11/2026): a média dos
 // pedidos PAGOS do anúncio no período de Ads (o que o cliente pagou de verdade,
 // com promo, cupom e o degrau da rampa de cada dia — subiu o degrau, as vendas
@@ -1102,7 +1127,12 @@ export function economiaRealAds(periodos, hoje, { preco, lucro }) {
   const p = periodoAtivo(lista, hoje) || [...lista].filter((x) => x?.parcial?.ajuste).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)))[0] || null;
   const aj = p?.parcial?.ajuste;
   if (!aj || aj.estado === "insuficiente" || !(num(aj.pagas) >= MIN_PAGAS_REAL) || !(num(aj.pagoReal) > 0)) return { precoAds: preco, lucroAds: lucro, economiaReal: null };
-  const precoReal = num(aj.pagoReal) / num(aj.pagas);
-  const lucroReal = num(aj.lucroReal) / num(aj.pagas);
-  return { precoAds: precoReal, lucroAds: lucroReal, economiaReal: { pagas: num(aj.pagas), preco: precoReal, lucro: lucroReal, precoHoje: preco, lucroHoje: lucro, desde: String(p.inicio).slice(0, 10), ate: p.parcial.ate } };
+  // Depois de uma mudança de preço da rampa vale só o que vendeu desde ela
+  // (com MIN_PAGAS_REAL pagas); até lá, o período todo.
+  const dep = aj.mudanca?.depois;
+  const usaDepois = dep && num(dep.un) >= MIN_PAGAS_REAL && num(dep.pago) > 0;
+  const un = usaDepois ? num(dep.un) : num(aj.pagas);
+  const precoReal = (usaDepois ? num(dep.pago) : num(aj.pagoReal)) / un;
+  const lucroReal = (usaDepois ? num(dep.lucro) : num(aj.lucroReal)) / un;
+  return { precoAds: precoReal, lucroAds: lucroReal, economiaReal: { pagas: un, preco: precoReal, lucro: lucroReal, precoHoje: preco, lucroHoje: lucro, desde: usaDepois ? aj.mudanca.data : String(p.inicio).slice(0, 10), ate: p.parcial.ate, desdeMudanca: !!usaDepois } };
 }

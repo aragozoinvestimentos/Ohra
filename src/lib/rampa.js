@@ -851,6 +851,23 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   else if (podeSubir) sugestao = { chave: "subir", tom: "good", rotulo: !portoesOk && atalho?.ok ? "Subir degrau (vendendo rápido)" : "Subir degrau", saltos: 1, peloRitmo: !portoesOk && !!atalho?.ok };
   else sugestao = { chave: "segurar", tom: lucroCheck?.status === "fica" ? "neu" : "warn", rotulo: lucroCheck?.status === "fica" ? "Fica: lucro mantido" : "Segurar" };
 
+  // Uma mudança por vez (B, 31/10/2026): mexeu no Ads (ligou, orçamento, meta,
+  // volta da pausa) há menos de 7 dias → não sugere subir degrau ainda.
+  let adsMexeu = null;
+  if (ctx.adsAtivo && sugestao.chave === "subir") {
+    const a = ctx.adsAtivo;
+    const ds = [String(a.inicio || "").slice(0, 10), ...(Array.isArray(a.ajustes) ? a.ajustes.filter((x) => x && x.tipo !== "pausa" && x.tipo !== "revisei").map((x) => String(x.data || "").slice(0, 10)) : [])].filter((d) => d && d <= hoje).sort();
+    const ult = ds[ds.length - 1];
+    const espera = num(regras.adsMexeuDias ?? 7);
+    if (ult && diasEntre(ult, hoje) < espera) {
+      const ate = new Date(`${ult}T12:00:00`);
+      ate.setDate(ate.getDate() + espera);
+      const ateIso = ate.toISOString().slice(0, 10);
+      adsMexeu = { data: ult, ate: ateIso };
+      sugestao = { chave: "segurar", tom: "neu", rotulo: `Ads mudou em ${ult.slice(8, 10)}/${ult.slice(5, 7)} — subir a partir de ${ateIso.slice(8, 10)}/${ateIso.slice(5, 7)}`, adsMexeu: true, saltos: sugestao.saltos };
+    }
+  }
+
   // "Pode vender até N% menos e ganhar o mesmo" no próximo degrau.
   const lucroProx = lucroEm(sugestao.saltos === 2 ? degraus[i + 2] : proximo);
   const podePerder = lucroAtual > 0 && lucroProx > lucroAtual ? 1 - lucroAtual / lucroProx : null;
@@ -865,7 +882,7 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const alvoMudou = num(ctx.alvo) > 0 ? alvoMudouDaRampa(degraus, alvo, rampa.checklist) : null;
 
   return {
-    alvoMudou,
+    alvoMudou, adsMexeu,
     degraus, i, preco, alvo, proximo, fase, acimaAtivo, noAlvo, teste, acima, diasRampa,
     lucroAtual, lucroAlvo: lucroEm(alvo), lucroProximo: lucroEm(proximo), lucroEm,
     zero: ctx.lucroEm ? precoComLucro(0, alvo) : ctx.canal ? zeroAZero(ctx.canal, ctx.custo, ctx.peso, ctx.cfg) : null,

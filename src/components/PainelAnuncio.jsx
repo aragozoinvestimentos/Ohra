@@ -8,7 +8,7 @@ import { comCupomAtivo, cuponsAtivos, textoFaixa } from "../lib/cupomLoja.js";
 import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { irParaAba, pegarPedido } from "../lib/navegar.js";
 import { pedirPasso } from "../lib/passosPreco.js";
-import { adsNaJanela, numerosDoPeriodo, REGRAS_ADS, textoAjusteAds } from "../lib/ads.js";
+import { adsNaJanela, numerosDoPeriodo, REGRAS_ADS, textoAjusteAds, textoMudancaPreco } from "../lib/ads.js";
 import { acaoDaRampa, proximaConferencia } from "../lib/rampaAgora.js";
 import { estadoDoAlerta, ROTULO_ESTADO } from "../lib/estados.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
@@ -886,6 +886,7 @@ function AbaAds({ l, hoje, ped }) {
             <div className="pa-corpo">
               <Medidor pontos={[{ rot: "período", r: n.retorno }, { rot: "7 dias", r: ret7, ruim: ret7 != null && ret7 < 1 }]} />
               {aj && (aj.estado === "insuficiente" || aj.shopee !== n.vendas) && <p className={`hint${aj.estado === "insuficiente" ? " atencao-txt" : ""}`} style={{ margin: "4px 0 8px" }}>{textoAjusteAds(aj, roasShopee)}</p>}
+              {aj?.mudanca && <p className="hint" style={{ margin: "4px 0 8px" }}>{textoMudancaPreco(aj)}</p>}
               <Kpis
                 itens={[
                   { label: "ROAS de equilíbrio", valor: um(empate), sub: ads.economiaReal ? `ticket real ${BRL(ads.economiaReal.preco)} ÷ lucro real ${BRL(ads.economiaReal.lucro)}` : "preço ÷ lucro antes do Ads" },

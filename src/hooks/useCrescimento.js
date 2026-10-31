@@ -166,6 +166,26 @@ function useCalculoCrescimento() {
     // Kit Completo e contava só as 6 vendas dela, não as 11 do anúncio).
     const grupoDoItem = new Map();
     for (const [id, lista] of gruposPorItem(grupos)) if (soNoGrupo.has(id) && lista[0]) grupoDoItem.set(id, lista[0].grupo.id);
+    // Datas em que o preço mudou pela rampa (subida, descida, ajuste do degrau,
+    // rampa refeita) por item × canal — o Ads lê (A/B/C, 31/10/2026).
+    const regsPorRampa = new Map();
+    for (const r of registrosGravados || []) {
+      if (!regsPorRampa.has(r.rampa_id)) regsPorRampa.set(r.rampa_id, []);
+      regsPorRampa.get(r.rampa_id).push(r);
+    }
+    const mudancasDaRampa = (rampa) => {
+      if (!rampa) return [];
+      const regs = regsPorRampa.get(rampa.id) || [];
+      const inicios = regs.filter((r) => r.tipo === "inicio").map((r) => String(r.data).slice(0, 10)).sort();
+      const ds = [...regs.filter((r) => r.tipo === "subida" || r.tipo === "descida").map((r) => String(r.data).slice(0, 10)), ...inicios.slice(1), ...(Array.isArray(rampa.checklist?.ajustesDegrau) ? rampa.checklist.ajustesDegrau.map((a) => String(a.data || "").slice(0, 10)).filter(Boolean) : [])];
+      return [...new Set(ds)].sort();
+    };
+    const rampaDoPeriodo = (tipo, id, canalId) => {
+      if (tipo === "grupo") return (rampasGrupo || []).find((r) => r.grupo_id === id && r.canal_id === canalId);
+      if (tipo === "kit") return (rampasKit || []).find((r) => r.kit_id === id && r.canal_id === canalId);
+      if (tipo === "produto") return (rampas || []).find((r) => r.produto_id === id && r.canal_id === canalId);
+      return null;
+    };
     const periodos = (adsH.periodos || []).map((p) => {
       if (!p?.parcial?.ate || p.item_tipo === "loja" || !p.item_id) return p;
       const canal = canais.find((c) => c.id === p.canal_id);
@@ -189,10 +209,12 @@ function useCalculoCrescimento() {
         return t;
       };
       const pendentes = (de, ate) => (naoPagos.get(p.canal_id) || []).filter((l) => l.data >= de && l.data <= ate && casa(l)).reduce((t, l) => t + (Number(l.q) || 1), 0);
-      return periodoAjustado(p, { pagas, pendentes, cobre: (de, ate) => reais.cobertura.cobre(canal, de, ate) });
+      const gidP = p.item_tipo === "grupo" ? p.item_id : grupoDoItem.get(`${p.item_tipo === "kit" ? "k" : p.item_tipo === "variacao" ? "v" : "p"}:${p.item_id}`);
+      const rampaP = (gidP && rampaDoPeriodo("grupo", gidP, p.canal_id)) || rampaDoPeriodo(p.item_tipo, p.item_id, p.canal_id);
+      return periodoAjustado(p, { pagas, pendentes, cobre: (de, ate) => reais.cobertura.cobre(canal, de, ate), mudancas: mudancasDaRampa(rampaP).filter((d) => d <= hoje) });
     });
     return { ...adsH, periodos };
-  }, [adsH, reais.linhas, reais.cobertura, pedidosPorCanal, canais, itens, soNoGrupo, skuGrupo, grupos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [adsH, reais.linhas, reais.cobertura, pedidosPorCanal, canais, itens, soNoGrupo, skuGrupo, grupos, registrosGravados, rampas, rampasGrupo, rampasKit, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
   const vendasDeItens = (canalId, ids) => (de, ate) => {
     let t = 0;
     for (const l of pedidosPorCanal.get(canalId) || []) if (l.data >= de && l.data <= ate && ids.has(l.id_item) && !grupoDoPedido(l)) t += l.q;

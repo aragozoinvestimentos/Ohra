@@ -4,7 +4,7 @@ import ChaveTeto from "./ChaveTeto.jsx";
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, numerosDoPeriodo, retornoAds, textoAjusteAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS, HORARIO_ADS } from "../lib/ads.js";
+import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, numerosDoPeriodo, retornoAds, textoAjusteAds, textoMudancaPreco, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS, HORARIO_ADS } from "../lib/ads.js";
 import { porSemana } from "../lib/rampa.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { adsPorItemApp, valoresDoPeriodo, cruzarGrupos, lerRelatorio } from "../lib/relatorioShopee.js";
@@ -788,9 +788,15 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           {(() => {
             // ROAS ajustado (01/11/2026): vendas via Ads = só as pagas deste anúncio.
             const aj = av.ativo.parcial?.ajuste;
-            if (!aj || (aj.estado !== "insuficiente" && aj.shopee === (n.vendas || 0))) return null;
+            const mostraAj = aj && (aj.estado === "insuficiente" || aj.shopee !== (n.vendas || 0));
+            if (!mostraAj && !aj?.mudanca) return null;
             const roasSh = n.gasto > 0 ? (aj.shopee * (l.precoAds ?? l.preco)) / n.gasto : null;
-            return <div className={`muted-cel${aj.estado === "insuficiente" ? " atencao-txt" : ""}`} style={{ marginTop: 2 }}>{textoAjusteAds(aj, roasSh)}</div>;
+            return (
+              <>
+                {mostraAj && <div className={`muted-cel${aj.estado === "insuficiente" ? " atencao-txt" : ""}`} style={{ marginTop: 2 }}>{textoAjusteAds(aj, roasSh)}</div>}
+                {aj.mudanca && <div className="muted-cel" style={{ marginTop: 2 }}>{textoMudancaPreco(aj)}</div>}
+              </>
+            );
           })()}
           {(() => {
             const o = origemDoGasto(av.ativo, l.semanas);
