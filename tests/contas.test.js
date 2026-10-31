@@ -1,5 +1,3 @@
-import { saudeDoDinheiro } from "../src/lib/saudeDinheiro.js";
-import { saldoFilamentos } from "../src/lib/saldoFilamento.js";
 import { telasSemUso } from "../src/lib/telasSemUso.js";
 import { saldosCaixinhas, sugestaoDistribuicao, divisaoDaLoja } from "../src/lib/caixinhas.js";
 import { aplicarCrescer, estadoCrescer } from "../src/lib/ads.js";
@@ -1113,31 +1111,6 @@ describe("Caixinhas do Dinheiro", () => {
   it("giro acima do alvo libera a sobra", () => {
     const r = sugestaoDistribuicao({ c: { custo: 100, imposto: 0, liquido: 0 }, caixa: 1000, saldos: { giro: 300 }, divisao: divisaoDaLoja({}) });
     expect(r.linhas[0]).toMatchObject({ caixinha: "giro", liberar: true, valor: 200 });
-  });
-});
-
-describe("Saúde do dinheiro", () => {
-  it("fôlego, ponto de equilíbrio e Ads", () => {
-    const s = saudeDoDinheiro({ caixa: 3000, saldos: { giro: 0, reserva: 0 }, totalCaixinhas: 0, fixasMes: 500, r3: { pago: 6000, lucroBruto: 1800, ads: 300, liquido: -0 }, meses3: 3 });
-    const x = Object.fromEntries(s.indicadores.map((i) => [i.chave, i]));
-    expect(x.folego.estado).toBe("ok"); // 6 meses
-    expect(x.equilibrio.valor).toBe("R$ 2.000,00/mês"); // 500 ÷ 25%
-    expect(x.equilibrio.estado).toBe("ok"); // fatura 2.000/mês
-    expect(x.ads.estado).toBe("ok"); // 17%
-  });
-  it("conta atrasada e caixinhas acima do caixa = resolver", () => {
-    const s = saudeDoDinheiro({ caixa: 100, totalCaixinhas: 300, nAtrasadas: 1, atrasadas: 50 });
-    expect(s.pior).toBe("resolver");
-  });
-});
-
-describe("Saldo de filamento", () => {
-  it("contagem + compras depois − (sem impressão) e sem contagem = conte", () => {
-    const materiais = [{ id: "m1", nome: "PLA", tipo: "filamento" }, { id: "m2", nome: "PETG", tipo: "filamento" }];
-    const r = saldoFilamentos({ materiais, contagens: [{ material_id: "m1", cor: "Preto", kg: 0.8, data: "2026-10-10" }, { material_id: "m1", cor: "Branco", kg: 0.5, data: "2026-10-10" }, { material_id: "m1", cor: "Preto", kg: 2, data: "2026-09-01" }], compras: [{ material_id: "m1", quantidade: 1, data: "2026-10-20" }, { material_id: "m1", quantidade: 5, data: "2026-09-15" }], hoje: "2026-10-31" });
-    expect(r[0].saldo).toBe(2.3);
-    expect(r[0].cores.length).toBe(2);
-    expect(r[1].saldo).toBeNull();
   });
 });
 

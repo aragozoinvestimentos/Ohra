@@ -70,7 +70,6 @@ const PainelAnuncio = lazyAba(() => import("./components/PainelAnuncio.jsx"));
 const PaginaProduto = lazyAba(() => import("./components/PaginaProduto.jsx"));
 const ResumoMes = lazyAba(() => import("./components/ResumoMes.jsx"));
 const Fiscal = lazyAba(() => import("./components/Fiscal.jsx"));
-const SaudeDinheiro = lazyAba(() => import("./components/SaudeDinheiro.jsx"));
 const CompararPeriodos = lazyAba(() => import("./components/CompararPeriodos.jsx"));
 const CarrinhosAbandonados = lazyAba(() => import("./components/CarrinhosAbandonados.jsx"));
 const AnaliseDiagnostico = lazyAba(() => import("./components/AnaliseDiagnostico.jsx"));
@@ -172,14 +171,13 @@ const MENU = [
         key: "m-dinheiro",
         label: "Dinheiro",
         icone: "caixa",
-        sub: "Resultado do mês, caixa e caixinhas, contas, fiscal, saúde do dinheiro, metas e retorno por item",
+        sub: "Resultado do mês, caixa e caixinhas, contas, fiscal, metas e retorno por item",
         abas: [
           // Resultado (28/10/2026) = Resumo do mês + Vendas do mês + Payoff (3 vistas, VistasResultado)
           { tab: "resumoMes", label: "Resultado", tambemSub: [["caixa", "vendas"], ["caixa", "payoff"]] },
           { tab: "caixa", s: "caixa", label: "Caixa" },
           { tab: "caixa", s: "contas", label: "Contas fixas e parcelas" },
           { tab: "fiscal", label: "Fiscal" },
-          { tab: "saude", label: "Saúde do dinheiro" },
           { tab: "caixa", s: "vendas", label: "Vendas do mês", oculta: true },
           { tab: "caixa", s: "payoff", label: "Payoff", oculta: true },
           SEP,
@@ -226,7 +224,6 @@ const MENU = [
           // Insumos (28/10/2026): saíram de Produção — tudo que se compra num lugar só
           { tab: "insumos", s: "materiais", label: "Materiais" },
           { tab: "insumos", s: "embalagens", label: "Embalagens" },
-          { tab: "insumos", s: "saldo", label: "Saldo de filamento" },
         ],
       },
     ],
@@ -305,7 +302,7 @@ export default function App() {
   const [crescimentoSub] = useSubAba(SUB_CHAVE.crescimento, "rampa");
   const [caixaSub] = useSubAba(SUB_CHAVE.caixa, "caixa");
   const [analiseSub] = useSubAba(SUB_CHAVE.analise, "abc", ["abc", "xyz", "evolucao"]);
-  const [insumosSub] = useSubAba(SUB_CHAVE.insumos, "materiais", ["materiais", "embalagens", "saldo"]);
+  const [insumosSub] = useSubAba(SUB_CHAVE.insumos, "materiais", ["materiais", "embalagens"]);
   const [importarSub] = useSubAba(SUB_CHAVE.importar, "importar", ["importar", "historico"]);
   const [estoqueSub] = useSubAba(SUB_CHAVE.estoque, "estoque", ["estoque", "notas", "fornecedores", "inventario"]);
   const [liveSub] = useSubAba(SUB_CHAVE.live, "planejar");
@@ -805,14 +802,6 @@ export default function App() {
           {visitadas.has("resumoMes") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
               <ResumoMes key={lojaId || "sem-loja"} />
-            </Suspense>
-          )}
-        </section>
-
-        <section className={`view ${tab === "saude" ? "active" : ""}`}>
-          {visitadas.has("saude") && (
-            <Suspense fallback={<div className="empty">Carregando…</div>}>
-              <SaudeDinheiro key={lojaId || "sem-loja"} />
             </Suspense>
           )}
         </section>

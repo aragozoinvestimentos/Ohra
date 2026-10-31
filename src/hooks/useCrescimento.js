@@ -6,7 +6,7 @@ import { estadoRampa, metricasFunil, referenciaFunilLoja, regrasDaLoja } from ".
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
-import { periodoAjustado, economiaRealAds, aplicarCrescer, estadoCrescer } from "../lib/ads.js";
+import { periodoAjustado, economiaRealAds, aplicarCrescer, estadoCrescer, periodoLigado } from "../lib/ads.js";
 import { lucroDaLinha } from "../lib/resumoLoja.js";
 import { adsNaJanela, pausasDoPeriodo, valoresAtuais, avaliarAds, avaliarAdsLoja, capacidadeDoItem, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, roasEmpate, tetoDaLoja } from "../lib/ads.js";
 import { useLembretes } from "./useLembretes.js";
@@ -687,6 +687,9 @@ function useCalculoCrescimento() {
       for (const d of mudancasDaRampa(rp)) muds.push({ data: d, tipo: "preco", texto: "degrau da rampa" });
       for (const p of b.periodos || []) {
         if (p.item_tipo === "loja") continue;
+        // Período ENCERRADO (01/11/2026, Chaveiro e Suporte de gato): você já
+        // desligou esse Ads — o veredito das mudanças dele não pede mais nada.
+        if (!periodoLigado(p, hoje)) continue;
         if (p.inicio) muds.push({ data: String(p.inicio).slice(0, 10), tipo: "ads", texto: "Ads ligado" });
         for (const a of Array.isArray(p.ajustes) ? p.ajustes : []) {
           if (!a?.data || a.tipo === "pausa" || a.tipo === "revisei") continue;
