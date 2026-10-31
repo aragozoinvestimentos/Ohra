@@ -2885,7 +2885,7 @@ tr.linha-divisa td { background: var(--surface-2, rgba(0,0,0,.03)); font-size: 1
 .fat-mesa-por b { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
 @media (max-width: 520px) { .fat-mesa-l1 { grid-template-columns: 1fr 1fr; } .fat-mesa-acoes { grid-column: 1 / -1; justify-content: flex-end; } .fat-mesa-l2 { grid-template-columns: repeat(3, 1fr); } .fat-mesa-por { grid-column: 1 / -1; justify-items: start; } }
 
-/* Campanhas do TikTok (CampanhasTiktok.jsx, 31/10/2026) */
+/* Campanhas da loja (CampanhasLoja.jsx, 31/10/2026) */
 .camp-regra { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; background: var(--st-info-soft, var(--surface-2)); border-radius: 10px; padding: 9px 12px; font-size: 13px; margin-bottom: 10px; }
 .camp-regra b { color: var(--st-decisao, var(--accent)); }
 .camp-regra label { display: flex; gap: 6px; align-items: center; }
@@ -2913,3 +2913,8 @@ tr.linha-divisa td { background: var(--surface-2, rgba(0,0,0,.03)); font-size: 1
 .camp-barra i { display: block; height: 100%; }
 .cb-camp { background: var(--accent); } .cb-cup { background: #c98a5b; } .cb-frete { background: #a59a8e; } .cb-live { background: #1a9a96; } .cb-falta { background: var(--st-resolver); }
 tr.camp-fora td { opacity: .55; }
+.camp-sug { display: flex; align-items: center; gap: 14px; justify-content: space-between; flex-wrap: wrap; margin: 0 0 10px; padding: 10px 14px; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--st-oportunidade) 35%, transparent); background: var(--st-oportunidade-soft); }
+.camp-sug > div { display: grid; gap: 2px; flex: 1 1 320px; }
+.camp-sug b { font-size: 15px; }
+.camp-sug.nao { border-color: var(--line); background: var(--panel); }
+.camp-aviso-canal { margin: 0 0 10px; }

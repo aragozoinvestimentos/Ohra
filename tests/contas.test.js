@@ -797,9 +797,9 @@ describe("Dados do fatiador: uma mesa, AMS e várias mesas", () => {
   });
 });
 
-import { descontosForaDaLive, espacoNoItem, capDaCampanha, resumoDaCampanha, avisosCampanhas } from "../src/lib/campanhas.js";
+import { descontosForaDaLive, espacoNoItem, capDaCampanha, resumoDaCampanha, avisosCampanhas, sugestaoDeCampanha, vendasPorAnuncio } from "../src/lib/campanhas.js";
 
-describe("Campanhas do TikTok: reserva da live", () => {
+describe("Campanhas da loja: reserva da live", () => {
   const canal = { id: "t", tipo: "tiktok", nome: "TikTok" };
   const cfg = { margemMin: 0.15, margemDesejada: 0.3, lucroMinimo: 0 };
   const x = { canal, preco: 59.9, custo: 15, peso: 200, cfg };
@@ -835,5 +835,24 @@ describe("Campanhas do TikTok: reserva da live", () => {
     const av = avisosCampanhas({ campanhas: [{ ...camp, itens: ["p:1", "p:2"] }], linhas, canal, hoje });
     expect(av).toHaveLength(1);
     expect(av[0].titulo).toMatch(/sem espaço pro cupom da live/);
+  });
+
+  it("sugere o % pelas vendas da loja (80%), tira quem não aguenta e respeita o piso de 5%", () => {
+    const pedidos = [
+      { valido: true, canal_id: "t", id_item: "v:9", item: { produtoId: 1 }, q: 7, data: "2026-10-20" },
+      { valido: true, canal_id: "t", id_item: "p:1", q: 1, data: "2026-10-21" },
+      { valido: true, canal_id: "t", id_item: "p:2", q: 1, data: "2026-10-21" },
+      { valido: true, canal_id: "s", id_item: "p:2", q: 50, data: "2026-10-21" },
+    ];
+    const vendas = vendasPorAnuncio(pedidos, "t", hoje);
+    expect(vendas.get("p:1")).toBe(8);
+    const linhas = [{ id: "p:1", nome: "A", cap: 12 }, { id: "p:2", nome: "B", cap: 3 }, { id: "p:3", nome: "C", cap: -1 }];
+    const s = sugestaoDeCampanha(linhas, vendas);
+    expect(s.pct).toBe(12); // A = 8 de 9,2 vendas (> 80%)
+    expect(s.compensa).toBe(true);
+    expect(s.itens).toEqual(["p:1"]);
+    expect(s.fora.map((f) => f.nome)).toEqual(["B", "C"]);
+    const pouca = sugestaoDeCampanha([{ id: "p:1", nome: "A", cap: 3 }], new Map());
+    expect(pouca.compensa).toBe(false);
   });
 });

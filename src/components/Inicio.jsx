@@ -169,7 +169,7 @@ export default function Inicio({ onIrPara, onToast }) {
     }
     return out;
   }, [dados]);
-  // Campanhas do TikTok (31/10/2026): campanha ativa deixando produto sem espaço pro cupom da live.
+  // Campanhas da loja (31/10/2026): campanha ativa deixando produto sem espaço pro cupom da live.
   const [campPref] = usePreferencia("promocoes:campanhas", {});
   const campanhasAvisos = useMemo(() => {
     const lista = Array.isArray(campPref?.campanhas) ? campPref.campanhas : [];

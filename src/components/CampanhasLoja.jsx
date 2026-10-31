@@ -12,7 +12,12 @@ import {
   situacaoDosAnuncios,
   resumoDaCampanha,
   novaCampanha,
+  vendasPorAnuncio,
+  sugestaoDeCampanha,
+  campanhaDaSugestao,
+  PISO_SUGESTAO,
 } from "../lib/campanhas.js";
+import { useCrescimento } from "../hooks/useCrescimento.js";
 import { hojeSP } from "../lib/datas.js";
 import { irParaAba } from "../lib/navegar.js";
 import { BRL, DATA } from "../lib/format.js";
@@ -21,11 +26,12 @@ import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 
-// Campanhas do TikTok (31/10/2026, aprovado pela prévia): um % pra todos os
+// Campanhas da loja (antes "Campanhas do TikTok", 31/10/2026): um % pra todos os
 // produtos da campanha; o app mostra, anúncio a anúncio, quanto do desconto
 // máximo sobra pro cupom da live (reserva fixa da loja). Conta em lib/campanhas.js.
 // Guardado em preferencias_loja `promocoes:campanhas` = { canalId, reserva, campanhas }.
-// Só informa: nada muda no preço salvo nem na plataforma.
+// Só informa: nada muda no preço salvo nem na plataforma. A sugestão de campanha
+// (% e produtos) é de CADA loja: vendas, taxas, custo e margem dela.
 const ESTADO = {
   ok: { cls: "st st-oportunidade", txt: "✓ live cabe" },
   "come-live": { cls: "st st-atencao", txt: "⚠ come a live" },
@@ -57,7 +63,7 @@ function Barra({ e, reserva }) {
   );
 }
 
-export default function CampanhasTiktok() {
+export default function CampanhasLoja() {
   const dados = useEscada();
   const { canais, cfgLoja } = dados;
   const hoje = hojeSP();
@@ -85,6 +91,17 @@ export default function CampanhasTiktok() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [anuncios, JSON.stringify(vigentes), faixas, hoje, reserva, JSON.stringify(simulada)]
   );
+  // Sugestão: sem a campanha que está sendo editada e sem simulação.
+  const { pedidosValidos } = useCrescimento();
+  const vendas = useMemo(() => (canal ? vendasPorAnuncio(pedidosValidos, canal.id, hoje) : new Map()), [pedidosValidos, canal, hoje]);
+  const edId = ed?.id;
+  const linhasBase = useMemo(
+    () => situacaoDosAnuncios(anuncios, { campanhas: vigentes.filter((c) => c.id !== edId), faixas, hoje, reserva }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [anuncios, JSON.stringify(vigentes), edId, faixas, hoje, reserva]
+  );
+  const sug = useMemo(() => sugestaoDeCampanha(linhasBase, vendas), [linhasBase, vendas]);
+  const temCampPreco = vigentes.some((c) => tipoDaCampanha(c.tipo).camada === "preco" && !tipoDaCampanha(c.tipo).live);
   const marcados = new Set(ed?.itens || []);
   const resumo = ed && tipoEd.camada === "preco" ? resumoDaCampanha(linhas.filter((l) => marcados.has(l.id)), num(ed.pct)) : null;
   // relâmpago da LIVE: o % tem que caber no que sobra fora da live
@@ -140,6 +157,45 @@ export default function CampanhasTiktok() {
           { label: "Abaixo do mínimo", valor: abaixo, tom: abaixo ? "bad" : undefined, sub: "já fora da live passam do limite" },
         ]}
       />
+
+      {canal && canal.tipo !== "tiktok" && (
+        <p className="hint camp-aviso-canal">
+          Esta tela segue a regra do TikTok (um % igual pra todos os produtos da campanha). Na {canal.nome} a promoção costuma ser por anúncio — a visão própria
+          desse canal ainda vai ser combinada.
+        </p>
+      )}
+
+      {sug && !ed && !temCampPreco && (
+        <div className={`camp-sug${sug.compensa ? "" : " nao"}`}>
+          {sug.compensa ? (
+            <>
+              <div>
+                <span className="camp-tipo">Campanha sugerida · {canal?.nome}</span>
+                <b>
+                  Desconto no produto {sug.pct}% em {sug.itens.length} produto{sug.itens.length > 1 ? "s" : ""}
+                </b>
+                <span className="muted-cel">
+                  Guarda os {reserva}% da live em todos eles · {sug.porVendas ? `${Math.round(sug.cobertura * 100)}% das suas vendas (90 dias) aguentam` : "pelo catálogo (ainda sem vendas neste canal)"}
+                  {sug.fora.length > 0 && ` · fora: ${sug.fora.slice(0, 4).map((f) => f.nome).join(", ")}${sug.fora.length > 4 ? "…" : ""} (não aguentam ${sug.pct}%)`}
+                </span>
+              </div>
+              <button type="button" className="btn primary" onClick={() => setEd(campanhaDaSugestao(canalId, sug, hoje))}>
+                Criar com essa sugestão
+              </button>
+            </>
+          ) : (
+            <div>
+              <span className="camp-tipo">Campanha sugerida · {canal?.nome}</span>
+              <b>Hoje não compensa campanha de desconto</b>
+              <span className="muted-cel">
+                Guardando os {reserva}% da live, {sug.pct > 0 ? `os produtos que mais vendem só aguentam ${sug.pct}% — menos de ${PISO_SUGESTAO}% não chama atenção` : "os produtos que mais vendem não têm espaço nem com o preço cheio"}
+                {sug.fora.length > 0 && ` (${sug.fora.slice(0, 3).map((f) => f.nome).join(", ")})`}. Campanha só depois de ter mais folga no preço.
+              </span>
+            </div>
+          )}
+          <Ajuda texto={`Calculada com os números desta loja: vendas dos últimos 90 dias, preço de agora, custo, taxas do canal, cupom ativo e o lucro mínimo. É o maior % em que os produtos que fazem 80% das vendas ainda guardam a reserva da live (pedido de 1 un., o pior caso). Abaixo de ${PISO_SUGESTAO}% não sugere. Só sugestão — a campanha é criada na plataforma.`} />
+        </div>
+      )}
 
       <div className="panel">
         <h3 className="section-title">
@@ -247,6 +303,15 @@ export default function CampanhasTiktok() {
                 <div className="field">
                   <label>
                     Desconto <b className="camp-pct">{num(ed.pct)}%</b>
+                    {sug?.compensa && num(ed.pct) !== sug.pct && (
+                      <>
+                        {" "}
+                        <span className="muted-cel">· sugerido {sug.pct}%</span>{" "}
+                        <button type="button" className="link-btn" onClick={() => setEd({ ...ed, pct: sug.pct })}>
+                          usar
+                        </button>
+                      </>
+                    )}
                   </label>
                   <input type="range" min="1" max="40" value={num(ed.pct) || 1} onChange={(e) => setEd({ ...ed, pct: e.target.value })} />
                 </div>

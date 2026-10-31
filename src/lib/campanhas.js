@@ -225,3 +225,60 @@ export function novaCampanha(canalId, base = null) {
   if (base) return { ...base, id, encerrada: false, nome: `${base.nome || ""} (cópia)`.trim() };
   return { id, canalId, tipo: "produto", nome: "", pct: 10, valor: "", minimo: "", itens: [], todos: false, inicio: "", fim: "", encerrada: false };
 }
+
+// Sugestão de campanha (31/10/2026, pedido do Gustavo): calculada por LOJA com as
+// vendas, taxas, custo e margem DELA. Maior % em que os anúncios que fazem
+// COBERTURA_SUGESTAO (80%) das vendas de 90 dias ainda guardam a reserva da live
+// (mesma ideia do cupom ideal). Abaixo de PISO_SUGESTAO (5%) não sugere.
+export const PISO_SUGESTAO = 5;
+export const COBERTURA_SUGESTAO = 0.8;
+const PCT_SUGESTAO_MAX = 40;
+
+/** Unidades vendidas por ANÚNCIO (variação soma no produto) num canal, nos últimos `dias`. */
+export function vendasPorAnuncio(pedidos, canalId, hoje, dias = 90) {
+  const d = new Date(`${hoje}T12:00:00`);
+  d.setDate(d.getDate() - dias);
+  const de = d.toISOString().slice(0, 10);
+  const m = new Map();
+  for (const l of pedidos || []) {
+    if (!l.valido || l.origem === "fisico" || l.canal_id !== canalId || !l.id_item || String(l.data) < de) continue;
+    const id = l.id_item.startsWith("v:") && l.item?.produtoId ? `p:${l.item.produtoId}` : l.id_item;
+    m.set(id, (m.get(id) || 0) + (Number(l.q) || 1));
+  }
+  return m;
+}
+
+/**
+ * linhas = situacaoDosAnuncios (sem campanha simulada); vendas = vendasPorAnuncio.
+ * → null (sem anúncio com dado) | { pct, compensa, itens (ids), fora [{id, nome, cap}], porVendas, cobertura }
+ */
+export function sugestaoDeCampanha(linhas, vendas = new Map(), { piso = PISO_SUGESTAO, cobertura = COBERTURA_SUGESTAO } = {}) {
+  const ls = (linhas || []).filter((l) => l.cap != null);
+  if (!ls.length) return null;
+  const temVenda = ls.some((l) => (vendas.get(l.id) || 0) > 0);
+  const peso = (l) => (temVenda ? vendas.get(l.id) || 0.2 : 1);
+  const total = ls.reduce((t, l) => t + peso(l), 0);
+  let pct = 0;
+  for (let p = 1; p <= PCT_SUGESTAO_MAX; p++) {
+    const ok = ls.filter((l) => l.cap >= p).reduce((t, l) => t + peso(l), 0);
+    if (ok / total >= cobertura - 1e-9) pct = p;
+    else break;
+  }
+  const porVenda = (a, b) => (vendas.get(b.id) || 0) - (vendas.get(a.id) || 0);
+  const fora = ls.filter((l) => l.cap < pct || l.cap < 0).sort(porVenda).map((l) => ({ id: l.id, nome: l.nome, cap: l.cap }));
+  return {
+    pct,
+    compensa: pct >= piso,
+    itens: ls.filter((l) => l.cap >= pct && l.cap >= 0).map((l) => l.id),
+    fora,
+    porVendas: temVenda,
+    cobertura,
+  };
+}
+
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+/** Campanha nova já com a sugestão (nome = mês de hoje). */
+export function campanhaDaSugestao(canalId, sug, hoje) {
+  const mes = MESES[Number(String(hoje).slice(5, 7)) - 1] || "";
+  return { ...novaCampanha(canalId), nome: mes ? `Campanha de ${mes}` : "", pct: sug.pct, itens: [...sug.itens], inicio: hoje };
+}
