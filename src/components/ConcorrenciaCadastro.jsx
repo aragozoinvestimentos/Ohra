@@ -6,6 +6,8 @@ import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { ordenarCanais } from "../lib/canais.js";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
+import { usePreferencia } from "../hooks/usePreferencia.js";
+import { hojeSP } from "../lib/datas.js";
 
 // Etapa "Concorrência" do cadastro de produto (31/10/2026): o preço que o concorrente
 // cobra (o que o cliente paga) por canal, pro avulso e cada variação, numa tabela só.
@@ -16,7 +18,11 @@ const brl = (v) => (v == null ? "" : String(Number(v).toFixed(2)).replace(".", "
 
 export default function ConcorrenciaCadastro({ produtoId, onToast }) {
   const { lojaId } = useLoja();
-  const { canais = [], variacoes = [], concorrentes = [] } = useCatalogo();
+  const { canais = [], variacoes = [], concorrentes = [], precos = [] } = useCatalogo();
+  // Faixa da busca (menor · maior) do anúncio — a MESMA "Régua de preço × concorrência"
+  // do Painel do anúncio (preferencias_loja "anuncios:regua", chave "p:<id>|<canal>").
+  const [regua, setRegua] = usePreferencia("anuncios:regua", {});
+  const [faixa, setFaixa] = useState({});
   const [edit, setEdit] = useState({});
   const [salvo, setSalvo] = useState({});
   const linhas = [
@@ -51,6 +57,36 @@ export default function ConcorrenciaCadastro({ produtoId, onToast }) {
     });
     setSalvo((p) => ({ ...p, [k]: true }));
   }
+
+  const chaveR = (c) => `p:${produtoId}|${c.id}`;
+  function gravarFaixa(c) {
+    const f = faixa[c.id];
+    if (!f) return;
+    const r = regua?.[chaveR(c)] || {};
+    const min = f.min !== undefined ? (num(f.min) > 0 ? num(f.min) : null) : r.min ?? null;
+    const max = f.max !== undefined ? (num(f.max) > 0 ? num(f.max) : null) : r.max ?? null;
+    const novo = { ...(regua || {}) };
+    if (min == null && max == null) delete novo[chaveR(c)];
+    else novo[chaveR(c)] = { min, max, em: hojeSP() };
+    setRegua(novo);
+    setFaixa((p) => {
+      const n = { ...p };
+      delete n[c.id];
+      return n;
+    });
+    if (min && max && max <= min) onToast?.("O maior preço precisa ser maior que o menor");
+  }
+  const posicao = (c) => {
+    const r = regua?.[chaveR(c)];
+    const min = Number(r?.min) || 0;
+    const max = Number(r?.max) || 0;
+    const voce = precos.find((x) => x.item_tipo === "produto" && x.item_id === produtoId && x.canal_id === c.id)?.preco;
+    if (!(min > 0 && max > min)) return null;
+    if (!(Number(voce) > 0)) return "sem preço salvo ainda";
+    const v = Number(voce);
+    const media = (min + max) / 2;
+    return `você ${brl(v)}: ${v < min ? "abaixo do menor" : v > max ? "acima do maior" : v <= media ? "abaixo da média" : "acima da média"}`;
+  };
 
   if (!cs.length) return <div className="hint">Nenhum canal ativo — cadastre em Configuração → Canais.</div>;
   return (
@@ -96,6 +132,49 @@ export default function ConcorrenciaCadastro({ produtoId, onToast }) {
                 })}
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+      <h3 className="section-title">
+        Faixa de preço na busca
+        <Ajuda texto="O MENOR e o MAIOR preço que você vê na busca do canal pra esse produto (o que o cliente compara). Vai pra Régua de preço × concorrência do Painel do anúncio, que mostra onde o seu preço de agora fica. Só referência: nada muda no preço." />
+      </h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Canal</th>
+              <th>Menor na busca</th>
+              <th>Maior na busca</th>
+              <th>Onde você está</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cs.map((c) => {
+              const r = regua?.[chaveR(c)] || {};
+              const f = faixa[c.id] || {};
+              return (
+                <tr key={c.id}>
+                  <td>
+                    <CanalTag canal={c} />
+                  </td>
+                  {["min", "max"].map((k) => (
+                    <td key={k}>
+                      <input
+                        style={{ width: 90 }}
+                        inputMode="decimal"
+                        placeholder="R$"
+                        value={f[k] ?? brl(r[k])}
+                        onChange={(e) => setFaixa((p) => ({ ...p, [c.id]: { ...(p[c.id] || {}), [k]: e.target.value } }))}
+                        onBlur={() => gravarFaixa(c)}
+                        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                      />
+                    </td>
+                  ))}
+                  <td className="muted-cel">{posicao(c) || "—"}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

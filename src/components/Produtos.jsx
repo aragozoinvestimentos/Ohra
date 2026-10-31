@@ -90,6 +90,7 @@ const daLoja = (p, lojaId) => !!p && (!p.loja_id || !lojaId || p.loja_id === loj
 export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onProdutoCriado }) {
   const { lojaId } = useLoja();
   usePreferencia("producao:ultimos-percentuais", null); // carrega do banco os últimos % de falha/manutenção/acabamento
+  const [reguaCad] = usePreferencia("anuncios:regua", {}); // faixa da busca (etapa Concorrência)
   // Produtos (crus, como estão no banco — o formulário edita os valores
   // gravados), embalagens e materiais (receita e detalhamento) e kits (SKU
   // duplicado) vêm do catálogo compartilhado: uma busca + um realtime.
@@ -293,7 +294,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     emb: !!editandoId && (usaReceitaEmbalagem || nPos(form.embalagem_padrao)),
     quando: !!quandoVendeDe(produtoAtual),
     var: !!editandoId && (variacoesCat || []).some((v) => v.produto_id === editandoId),
-    conc: !!editandoId && (concorrentesCat || []).some((c) => c.item_id === editandoId || (variacoesCat || []).some((v) => v.produto_id === editandoId && v.id === c.item_id)),
+    conc: !!editandoId && (Object.keys(reguaCad || {}).some((k) => k.startsWith(`p:${editandoId}|`)) || (concorrentesCat || []).some((c) => c.item_id === editandoId || (variacoesCat || []).some((v) => v.produto_id === editandoId && v.id === c.item_id))),
     fiscal: !!editandoId && !!String(form.ncm || "").trim(),
     pronto: false,
   };
