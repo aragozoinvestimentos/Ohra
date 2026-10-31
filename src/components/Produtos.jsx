@@ -24,6 +24,7 @@ import DadosFiscais from "./DadosFiscais.jsx";
 import { useRevenda } from "../hooks/useRevenda.js";
 import { quandoVendeDe } from "../lib/calendario.js";
 import { abrirProduto } from "../lib/anuncios.js";
+import ConcorrenciaCadastro from "./ConcorrenciaCadastro.jsx";
 
 // Barra das etapas do cadastro: ✓ feito · ● agora · – pulado · número = falta.
 function PassosCadastro({ passos, passo, feitos, pulados, liberado, onIr }) {
@@ -92,7 +93,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   // Produtos (crus, como estão no banco — o formulário edita os valores
   // gravados), embalagens e materiais (receita e detalhamento) e kits (SKU
   // duplicado) vêm do catálogo compartilhado: uma busca + um realtime.
-  const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, impressoras, farmConfig, carregando, canais: canaisCat = [], variacoes: variacoesCat = [] } = useCatalogo();
+  const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, impressoras, farmConfig, carregando, canais: canaisCat = [], variacoes: variacoesCat = [], concorrentes: concorrentesCat = [] } = useCatalogo();
   const revendaDados = useRevenda();
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
@@ -280,6 +281,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     { id: "emb", t: "Embalagem", s: "marketplace + orgânico", salva: true },
     { id: "quando", t: "Quando vende", s: "ano, pico, época" },
     { id: "var", t: "Variações", s: "kit 2, kit 3…" },
+    { id: "conc", t: "Concorrência", s: "preço por canal" },
     { id: "fiscal", t: "Fiscal", s: "opcional", salva: true },
     { id: "pronto", t: "Pronto", s: "ir pro preço" },
   ];
@@ -291,6 +293,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     emb: !!editandoId && (usaReceitaEmbalagem || nPos(form.embalagem_padrao)),
     quando: !!quandoVendeDe(produtoAtual),
     var: !!editandoId && (variacoesCat || []).some((v) => v.produto_id === editandoId),
+    conc: !!editandoId && (concorrentesCat || []).some((c) => c.item_id === editandoId || (variacoesCat || []).some((v) => v.produto_id === editandoId && v.id === c.item_id)),
     fiscal: !!editandoId && !!String(form.ncm || "").trim(),
     pronto: false,
   };
@@ -801,12 +804,18 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           />
           </>
         )}
-        {passo === 5 && (
+        {passo === 5 && editandoId && (
+          <>
+            <h3 className="section-title">6 · Preço da concorrência</h3>
+            <ConcorrenciaCadastro produtoId={editandoId} onToast={onToast} />
+          </>
+        )}
+        {passo === 6 && (
           <>
             <DadosFiscais form={form} setForm={setForm} revenda={ehRev} abertoInicial />
           </>
         )}
-        {passo === 6 && editandoId && (
+        {passo === 7 && editandoId && (
           <div className="cad-pronto">
             <div className="cad-pronto-titulo">{form.nome || "Produto"} cadastrado ✓</div>
             <p className="hint">
@@ -827,7 +836,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           </div>
         )}
 
-        {passo < 6 && (
+        {passo < 7 && (
           <div className="cad-rodape">
             {passo > 0 && (
               <button type="button" className="btn" onClick={() => setPasso(passo - 1)} disabled={salvando}>
