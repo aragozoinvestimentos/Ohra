@@ -171,7 +171,7 @@ const MENU = [
         key: "m-dinheiro",
         label: "Dinheiro",
         icone: "caixa",
-        sub: "Resultado do mês, caixa e caixinhas, contas, fiscal, metas e retorno por item",
+        sub: "Resultado do mês, caixa, contas, fiscal, metas e retorno por item",
         abas: [
           // Resultado (28/10/2026) = Resumo do mês + Vendas do mês + Payoff (3 vistas, VistasResultado)
           { tab: "resumoMes", label: "Resultado", tambemSub: [["caixa", "vendas"], ["caixa", "payoff"]] },

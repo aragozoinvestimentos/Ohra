@@ -3,178 +3,99 @@ import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
 import { recarregarReserva } from "../hooks/useReservaProducao.js";
-import { useCaixinhas } from "../hooks/useCaixinhas.js";
-import { CAIXINHAS, NOME_CAIXINHA, jaDistribuiu } from "../lib/caixinhas.js";
+import { saldosCaixinhas } from "../lib/caixinhas.js";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 
-// Caixinhas do Dinheiro (01/11/2026, schema v72) — conta em lib/caixinhas.js.
-// Separações virtuais do caixa da loja: o saldo não muda, só ganha destino.
-const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-const nomeMes = (m) => `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(0, 4)}`;
+// Caixinha "Insumos" no Dinheiro → Caixa (01/11/2026, simplificada): o dinheiro
+// separado pra comprar material e embalagem. Nada sai do caixa — o saldo da loja
+// só mostra quanto já tem destino. Conta em lib/caixinhas.js.
 const num = (v) => (Number.isFinite(Number(String(v).replace(",", "."))) ? Number(String(v).replace(",", ".")) : 0);
-const SQL = "Falta rodar o supabase/schema_v72.sql no Supabase pra usar as caixinhas.";
+const NOME_ANTIGA = { impostos: "Impostos", equipamentos: "Equipamentos", reserva: "Reserva", reinvestimento: "Reinvestimento", prolabore: "Pró-labore" };
 
-export default function CaixinhasCaixa({ registros = [], disponivel, caixa, lancamentos = [], hoje, onToast }) {
+export default function CaixinhasCaixa({ registros = [], disponivel, caixa, hoje, onToast }) {
   const { lojaId } = useLoja();
-  const { mes, sug, divisao, pref, setPref, saldos, total } = useCaixinhas({ registros, lancamentos, caixa, hoje });
-  const [dist, setDist] = useState(null); // { mes, linhas editáveis }
-  const [usar, setUsar] = useState(null); // { caixinha, valor, descricao }
-  const [verPct, setVerPct] = useState(false);
+  const { insumos, antigas, total } = saldosCaixinhas(registros);
+  const [mov, setMov] = useState(null); // { tipo, valor, descricao }
   const [salvando, setSalvando] = useState(false);
-  const feito = jaDistribuiu(registros, mes);
-
   const livre = Math.round((caixa - total) * 100) / 100;
 
-  async function gravar(linhas, extra) {
+  async function gravar(linhas) {
     if (!supabase) return false;
     setSalvando(true);
-    const r = await supabase.from("reserva_producao").insert(linhas.map((l) => ({ loja_id: lojaId || null, data: hoje, ...extra, ...l })));
+    let r = await supabase.from("reserva_producao").insert(linhas);
+    // Sem o v72 a coluna `caixinha` não existe: Insumos grava sem ela (é o padrão).
+    if (r.error && /caixinha|origem/.test(r.error.message)) r = await supabase.from("reserva_producao").insert(linhas.map(({ caixinha: _c, ...x }) => x));
     setSalvando(false);
     if (r.error) {
-      onToast?.(/caixinha|origem/.test(r.error.message) ? SQL : `Não foi possível salvar: ${r.error.message}`);
+      onToast?.(`Não foi possível salvar: ${r.error.message}`);
       return false;
     }
     recarregarReserva();
     return true;
   }
 
-  async function confirmarDist() {
-    const linhas = dist.linhas
-      .filter((l) => num(l.valor) > 0)
-      .map((l) => ({ caixinha: l.caixinha, tipo: l.liberar ? "usar" : "separar", valor: Math.round(num(l.valor) * 100) / 100, mes: dist.mes, origem: "distribuir", descricao: `Distribuição de ${nomeMes(dist.mes)}${l.liberar ? " (giro acima do alvo — liberado)" : ""}` }));
-    if (!linhas.length) return setDist(null);
-    if (await gravar(linhas, {})) {
-      onToast?.(`Distribuição de ${nomeMes(dist.mes)} feita`);
-      setDist(null);
+  async function confirmar() {
+    const v = num(mov.valor);
+    if (!(v > 0)) return onToast?.("Digite o valor");
+    const ok = await gravar([{ loja_id: lojaId || null, data: hoje, mes: hoje.slice(0, 7), tipo: mov.tipo, valor: Math.round(v * 100) / 100, descricao: mov.descricao.trim() || (mov.tipo === "usar" ? "usado" : "separado") }]);
+    if (ok) {
+      onToast?.(mov.tipo === "usar" ? "Tirado da caixinha Insumos" : "Separado na caixinha Insumos");
+      setMov(null);
     }
   }
 
-  async function confirmarUsar() {
-    const v = num(usar.valor);
-    if (!(v > 0)) return onToast?.("Digite o valor");
-    if (await gravar([{ caixinha: usar.caixinha, tipo: usar.tipo, valor: Math.round(v * 100) / 100, mes: hoje.slice(0, 7), descricao: usar.descricao.trim() || (usar.tipo === "usar" ? "usado" : "separado à mão") }], {})) {
-      onToast?.(usar.tipo === "usar" ? `Tirado de ${NOME_CAIXINHA[usar.caixinha]}` : `Separado em ${NOME_CAIXINHA[usar.caixinha]}`);
-      setUsar(null);
-    }
+  async function liberarAntigas() {
+    const linhas = Object.entries(antigas)
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => ({ loja_id: lojaId || null, data: hoje, mes: hoje.slice(0, 7), tipo: "usar", valor: v, caixinha: k, descricao: "caixinha antiga liberada" }));
+    if (linhas.length && (await gravar(linhas))) onToast?.("Caixinhas antigas liberadas");
   }
 
   if (!disponivel) return null;
-
   return (
     <div className="panel caixinhas">
       <h3>
-        Caixinhas <Ajuda texto="Separações virtuais do dinheiro da loja: o saldo não muda, só ganha destino. Giro, Impostos e Equipamentos são calculados (saem do dinheiro que não é lucro: custo das peças e imposto). Só o “Sobrou pra você” do mês é dividido em Pró-labore, Reserva e Reinvestimento." />
+        Caixinha Insumos <Ajuda texto="Dinheiro separado pra comprar filamento, material e embalagem. Nada sai do caixa: o saldo da loja continua o mesmo, só mostra quanto já tem destino. Quando comprar, na − Saída marque “Pago com a caixinha Insumos”." />
       </h3>
       <div className="caixinhas-topo">
         <span>
-          Caixa da loja <b>{BRL(caixa)}</b> · nas caixinhas <b>{BRL(total)}</b> · <span className={livre < 0 ? "neg" : ""}>livre <b>{BRL(livre)}</b></span>
+          Na caixinha <b className="caixinha-valor">{BRL(insumos)}</b>
         </span>
-        {livre < -0.009 && <span className="st st-atencao">⚠ as caixinhas passaram do dinheiro que existe — tire de alguma</span>}
+        <span className="hint">
+          caixa da loja {BRL(caixa)} · <span className={livre < 0 ? "neg" : ""}>livre {BRL(livre)}</span>
+        </span>
         <span className="caixinhas-acoes">
-          {!feito ? (
-            <button className="btn primary btn-mini" onClick={() => setDist({ mes, linhas: sug.linhas.map((l) => ({ ...l, valor: String(l.valor.toFixed(2)) })) })}>
-              Distribuir {nomeMes(mes)}
-            </button>
-          ) : (
-            <span className="hint">✓ {nomeMes(mes)} distribuído</span>
-          )}
-          <button className="link-btn" onClick={() => setVerPct((v) => !v)}>
-            {verPct ? "fechar divisão" : "mudar a divisão"}
+          <button className="btn btn-mini primary" onClick={() => setMov({ tipo: "separar", valor: "", descricao: "" })}>
+            + Separar
+          </button>
+          <button className="btn btn-mini" onClick={() => setMov({ tipo: "usar", valor: "", descricao: "" })}>
+            Usar
           </button>
         </span>
       </div>
-      {verPct && (
-        <div className="caixinhas-pct">
-          {[
-            ["prolabore", "Pró-labore"],
-            ["reserva", "Reserva de emergência"],
-            ["reinvestimento", "Reinvestimento"],
-          ].map(([k, rot]) => (
-            <label key={k}>
-              {rot}{" "}
-              <input type="number" min="0" max="100" step="1" style={{ width: 64 }} value={Math.round(divisao[k] * 100)} onChange={(e) => setPref({ ...(pref || {}), [k]: Math.max(0, Number(e.target.value) || 0) / 100 })} />%
-            </label>
-          ))}
-          <label>
-            Meta da reserva{" "}
-            <input type="number" min="1" max="12" step="1" style={{ width: 56 }} value={divisao.reservaMeses} onChange={(e) => setPref({ ...(pref || {}), reservaMeses: Math.max(1, Number(e.target.value) || 3) })} /> meses de contas fixas
-          </label>
-          {!divisao.somaOk && <span className="st st-atencao">⚠ a soma está em {Math.round(divisao.soma * 100)}% (o certo é 100%)</span>}
-        </div>
+      {livre < -0.009 && <p className="st st-atencao">⚠ A caixinha passou do dinheiro que existe no caixa — tire um pouco dela.</p>}
+      {Object.keys(antigas).length > 0 && (
+        <p className="hint">
+          Caixinhas antigas: {Object.entries(antigas).map(([k, v]) => `${NOME_ANTIGA[k] || k} ${BRL(v)}`).join(" · ")} —{" "}
+          <button className="link-btn" onClick={liberarAntigas}>
+            liberar
+          </button>
+        </p>
       )}
-      <div className="caixinhas-grade">
-        {CAIXINHAS.map((c) => (
-          <div key={c.chave} className="caixinha">
-            <div className="caixinha-nome">
-              {c.nome} <Ajuda texto={c.ajuda} />
-              {!c.calc && <span className="hint"> {Math.round(divisao[c.chave] * 100)}%</span>}
-            </div>
-            <div className={`caixinha-valor${saldos[c.chave] < 0 ? " neg" : ""}`}>{BRL(saldos[c.chave])}</div>
-            <div className="caixinha-botoes">
-              <button className="link-btn" onClick={() => setUsar({ caixinha: c.chave, tipo: "usar", valor: "", descricao: "" })}>
-                usar
-              </button>
-              <button className="link-btn" onClick={() => setUsar({ caixinha: c.chave, tipo: "separar", valor: "", descricao: "" })}>
-                + separar
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {dist && (
-        <EditarDialog titulo={`Distribuir ${nomeMes(dist.mes)}`} salvando={salvando} onSalvar={confirmarDist} onCancelar={() => setDist(null)} salvarLabel="Confirmar a distribuição" classe="modal-box-md">
+      {mov && (
+        <EditarDialog titulo={mov.tipo === "usar" ? "Usar da caixinha Insumos" : "Separar na caixinha Insumos"} salvando={salvando} onSalvar={confirmar} onCancelar={() => setMov(null)} salvarLabel={mov.tipo === "usar" ? "Tirar da caixinha" : "Separar"}>
           <p className="hint">
-            Livre no caixa agora: <b>{BRL(sug.livreAntes)}</b>.{" "}
-            {sug.sobrou > 0 ? (
-              <>
-                Sobrou pra você em {nomeMes(dist.mes)}: <b>{BRL(sug.sobrou)}</b>.
-              </>
-            ) : sug.faltou > 0 ? (
-              <>
-                {nomeMes(dist.mes)} fechou faltando <b>{BRL(sug.faltou)}</b> — não há o que dividir em Pró-labore/Reserva/Reinvestimento.
-              </>
-            ) : null}{" "}
-            Os valores são editáveis. Nada sai do caixa.
-          </p>
-          {sug.limitado && <p className="st st-atencao">⚠ O dinheiro livre não cobre tudo: as primeiras caixinhas (Impostos, Giro, Equipamentos) vêm antes.</p>}
-          {dist.linhas.length === 0 ? (
-            <p className="hint">Nada pra separar neste mês.</p>
-          ) : (
-            <table className="tabela-mini">
-              <tbody>
-                {dist.linhas.map((l, i) => (
-                  <tr key={l.caixinha + i}>
-                    <td>
-                      <b>{NOME_CAIXINHA[l.caixinha]}</b>
-                      {l.liberar && <span className="hint"> · liberar</span>}
-                      <div className="hint">{l.conta}</div>
-                    </td>
-                    <td style={{ width: 120 }}>
-                      <input type="text" inputMode="decimal" value={l.valor} onChange={(e) => setDist((d) => ({ ...d, linhas: d.linhas.map((x, j) => (j === i ? { ...x, valor: e.target.value } : x)) }))} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </EditarDialog>
-      )}
-
-      {usar && (
-        <EditarDialog titulo={`${usar.tipo === "usar" ? "Usar de" : "Separar em"} ${NOME_CAIXINHA[usar.caixinha]}`} salvando={salvando} onSalvar={confirmarUsar} onCancelar={() => setUsar(null)} salvarLabel={usar.tipo === "usar" ? "Tirar da caixinha" : "Separar"}>
-          <p className="hint">
-            Saldo: {BRL(saldos[usar.caixinha])}. {usar.tipo === "usar" ? "Se o dinheiro saiu de verdade, lance também a saída no Caixa (ou use “Sai de uma caixinha?” na própria saída)." : `Livre no caixa: ${BRL(livre)}.`}
+            Na caixinha: {BRL(insumos)} · livre no caixa: {BRL(livre)}. {mov.tipo === "usar" && "Se o dinheiro saiu de verdade, lance também a saída no Caixa (ou marque “Pago com a caixinha Insumos” na própria saída)."}
           </p>
           <div className="grid-auto">
             <label>
               Valor (R$)
-              <input type="text" inputMode="decimal" value={usar.valor} onChange={(e) => setUsar((u) => ({ ...u, valor: e.target.value }))} autoFocus />
+              <input type="text" inputMode="decimal" value={mov.valor} onChange={(e) => setMov((m) => ({ ...m, valor: e.target.value }))} autoFocus />
             </label>
             <label>
               Pra quê
-              <input type="text" value={usar.descricao} onChange={(e) => setUsar((u) => ({ ...u, descricao: e.target.value }))} placeholder="ex.: filamento, Ads, salário" />
+              <input type="text" value={mov.descricao} onChange={(e) => setMov((m) => ({ ...m, descricao: e.target.value }))} placeholder="ex.: filamento PETG, embalagens" />
             </label>
           </div>
         </EditarDialog>

@@ -1,5 +1,5 @@
 import { telasSemUso } from "../src/lib/telasSemUso.js";
-import { saldosCaixinhas, sugestaoDistribuicao, divisaoDaLoja } from "../src/lib/caixinhas.js";
+import { saldosCaixinhas } from "../src/lib/caixinhas.js";
 import { aplicarCrescer, estadoCrescer } from "../src/lib/ads.js";
 import { efeitoDaMudanca } from "../src/lib/efeito.js";
 import { cascataDoPeriodo, comoEstaALoja, fraseDoResultado, lucroDaLinha, variacaoSegura } from "../src/lib/resumoLoja.js";
@@ -1085,32 +1085,12 @@ describe("Crescer de propósito", () => {
   });
 });
 
-describe("Caixinhas do Dinheiro", () => {
-  it("linha antiga sem caixinha conta no Giro", () => {
-    const s = saldosCaixinhas([{ tipo: "separar", valor: 100 }, { tipo: "usar", valor: 30 }, { tipo: "separar", valor: 50, caixinha: "prolabore" }]);
-    expect(s.saldos.giro).toBe(70);
-    expect(s.saldos.prolabore).toBe(50);
-    expect(s.total).toBe(120);
-  });
-  it("exemplo do Gustavo: calculadas antes, depois 10/30/60 do que sobrou", () => {
-    const r = sugestaoDistribuicao({ c: { custo: 1020, imposto: 80, liquido: 500 }, maquina: 120, fixasProximo: 0, fixasMes: 1000, saldos: { giro: 0, reserva: 0 }, caixa: 5000, divisao: divisaoDaLoja({}) });
-    const v = Object.fromEntries(r.linhas.map((l) => [l.caixinha, l.valor]));
-    expect(v).toEqual({ impostos: 80, giro: 900, equipamentos: 120, prolabore: 50, reserva: 150, reinvestimento: 300 });
-  });
-  it("reserva cheia manda o % dela pro reinvestimento", () => {
-    const r = sugestaoDistribuicao({ c: { custo: 0, imposto: 0, liquido: 100 }, fixasMes: 100, saldos: { reserva: 300 }, caixa: 1000, divisao: divisaoDaLoja({}) });
-    const v = Object.fromEntries(r.linhas.map((l) => [l.caixinha, l.valor]));
-    expect(v.reserva).toBeUndefined();
-    expect(v.reinvestimento).toBe(90);
-  });
-  it("nunca separa mais que o livre do caixa", () => {
-    const r = sugestaoDistribuicao({ c: { custo: 500, imposto: 0, liquido: 0 }, caixa: 200, saldos: {}, divisao: divisaoDaLoja({}) });
-    expect(r.linhas[0].valor).toBe(200);
-    expect(r.limitado).toBe(true);
-  });
-  it("giro acima do alvo libera a sobra", () => {
-    const r = sugestaoDistribuicao({ c: { custo: 100, imposto: 0, liquido: 0 }, caixa: 1000, saldos: { giro: 300 }, divisao: divisaoDaLoja({}) });
-    expect(r.linhas[0]).toMatchObject({ caixinha: "giro", liberar: true, valor: 200 });
+describe("Caixinha Insumos", () => {
+  it("linha antiga (sem caixinha) e giro contam em Insumos; as outras ficam como antigas", () => {
+    const s = saldosCaixinhas([{ tipo: "separar", valor: 100 }, { tipo: "usar", valor: 30 }, { tipo: "separar", valor: 20, caixinha: "giro" }, { tipo: "separar", valor: 50, caixinha: "prolabore" }]);
+    expect(s.insumos).toBe(90);
+    expect(s.antigas).toEqual({ prolabore: 50 });
+    expect(s.total).toBe(140);
   });
 });
 

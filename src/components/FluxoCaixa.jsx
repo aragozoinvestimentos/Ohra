@@ -38,7 +38,7 @@ import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { saldoAds } from "../lib/saldoAds.js";
 import SaldoAdsCaixa from "./SaldoAdsCaixa.jsx";
 import CaixinhasCaixa from "./CaixinhasCaixa.jsx";
-import { CAIXINHAS, saldosCaixinhas } from "../lib/caixinhas.js";
+import { saldosCaixinhas } from "../lib/caixinhas.js";
 import CarteirasCaixa, { TransferirDialog } from "./CarteirasCaixa.jsx";
 import { useExtratoCarteira } from "../hooks/useExtratoCarteira.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
@@ -462,15 +462,14 @@ export default function FluxoCaixa({ onToast }) {
       );
     // Saída paga com a reserva de produção (schema v51): sai também da reserva.
     if (!form.id && form.usarReserva && form.tipo === "saida" && !form.recorrente) {
-      const cx = form.usarReserva === true ? "giro" : form.usarReserva;
+      const cx = "giro";
       const linhaR = { loja_id: lojaId || null, tipo: "usar", valor, data: form.realizado ? form.data_realizada || hoje : form.data_prevista, descricao: form.descricao.trim(), lancamento_id: r.data?.id || null, caixinha: cx };
       let rr = await supabase.from("reserva_producao").insert(linhaR);
       if (rr.error && /caixinha/.test(rr.error.message) && cx === "giro") {
         delete linhaR.caixinha;
         rr = await supabase.from("reserva_producao").insert(linhaR);
       }
-      if (rr.error && /caixinha/.test(rr.error.message)) onToast?.("Saída lançada, mas falta rodar o supabase/schema_v72.sql pra usar as caixinhas");
-      else if (rr.error) onToast?.(/reserva_producao/i.test(rr.error.message) ? "Saída lançada, mas falta rodar o supabase/schema_v51.sql pra usar a reserva" : `Saída lançada, mas a reserva não foi atualizada: ${rr.error.message}`);
+      if (rr.error) onToast?.(/reserva_producao/i.test(rr.error.message) ? "Saída lançada, mas falta rodar o supabase/schema_v51.sql pra usar a reserva" : `Saída lançada, mas a reserva não foi atualizada: ${rr.error.message}`);
       else recarregarReserva();
     }
     onToast?.(form.id ? "Lançamento atualizado" : form.recorrente ? "Lançamento recorrente criado" : parcelado ? `Parcelado em ${nParc}× registrado` : "Lançamento registrado");
@@ -669,7 +668,7 @@ export default function FluxoCaixa({ onToast }) {
                   label: geral ? "Saldo atual" : `Saldo atual · ${nomeCarteira(cartSel)}`,
                   valor: BRL(saldoAtual),
                   tom: saldoAtual >= 0 ? "destaque" : "bad",
-                  sub: reserva.disponivel && geral && saldosCx.total > 0 ? `livre ${BRL(livre)} · nas caixinhas ${BRL(saldosCx.total)}` : "dinheiro da loja (o pago do seu bolso não sai daqui)",
+                  sub: reserva.disponivel && geral && saldosCx.total > 0 ? `livre ${BRL(livre)} · caixinha Insumos ${BRL(saldosCx.insumos)}` : "dinheiro da loja (o pago do seu bolso não sai daqui)",
                 },
                 {
                   label: `Entradas de ${rotuloMes(mesFiltro)}`,
@@ -700,7 +699,7 @@ export default function FluxoCaixa({ onToast }) {
             />
           </ResumoFixo>
 
-          {geral && <CaixinhasCaixa registros={reserva.registros} disponivel={reserva.disponivel} caixa={saldoAtual} lancamentos={lancamentos} hoje={hoje} onToast={onToast} />}
+          {geral && <CaixinhasCaixa registros={reserva.registros} disponivel={reserva.disponivel} caixa={saldoAtual} hoje={hoje} onToast={onToast} />}
           <SaldoAdsCaixa s={saldoDeAds} hoje={hoje} onRecarga={abrirRecargaAds} nomeDe={nomeDoPeriodoAds} />
 
           {nPendencias > 0 && (
@@ -1220,17 +1219,9 @@ export default function FluxoCaixa({ onToast }) {
             </div>
           )}
           {!form.id && !form.modeloId && form.tipo === "saida" && !form.recorrente && reserva.disponivel && (
-            <label className="check-linha" title="A saída sai também da caixinha escolhida (ex.: filamento → Giro, impressora → Equipamentos, salário → Pró-labore)">
-              Sai de uma caixinha?{" "}
-              <select value={form.usarReserva === true ? "giro" : form.usarReserva || ""} onChange={(e) => setForm((p) => ({ ...p, usarReserva: e.target.value || false }))}>
-                <option value="">não</option>
-                {CAIXINHAS.map((c) => (
-                  <option key={c.chave} value={c.chave}>
-                    {c.nome}
-                    {saldosCx.saldos[c.chave] > 0 ? ` (saldo ${BRL(saldosCx.saldos[c.chave])})` : ""}
-                  </option>
-                ))}
-              </select>
+            <label className="check-linha" title="Filamento, material ou embalagem: sai também da caixinha Insumos">
+              <input type="checkbox" checked={!!form.usarReserva} onChange={(e) => setForm((p) => ({ ...p, usarReserva: e.target.checked }))} />
+              Pago com a caixinha Insumos {saldosCx.insumos > 0 ? `(saldo ${BRL(saldosCx.insumos)})` : ""}
             </label>
           )}
           {!form.modeloId && !form.parcelado && (
