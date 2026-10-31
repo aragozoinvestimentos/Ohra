@@ -1102,3 +1102,22 @@ describe("Telas sem uso", () => {
     expect(r.completo).toBe(false);
   });
 });
+
+import { partesProntas, usarConjuntos, acertarPartes } from "../src/lib/partesMesas.js";
+describe("partes prontas de várias mesas", () => {
+  const mesas = [{ nome: "Leão", leva: 1 }, { nome: "Letreiro", leva: 1 }, { nome: "Coroa", leva: 2 }];
+  const reg = (m, q, status = "sucesso") => ({ produto_id: "p1", produto_nome: `Leão de Judá — mesa ${m}`, quantidade_lote: q, status });
+  it("soma as mesas e fecha conjuntos só quando todas têm partes", () => {
+    const registros = [reg("Leão", 4), reg("Coroa", 4), reg("Letreiro", 3, "falha")];
+    let r = partesProntas({ registros, produtoId: "p1", mesas });
+    expect(r.conjuntos).toBe(0);
+    expect(r.faltam).toEqual([{ nome: "Letreiro", falta: 1 }]);
+    r = partesProntas({ registros, produtoId: "p1", mesas, extra: { mesa: "Letreiro", quantidade: 3 } });
+    expect(r.conjuntos).toBe(2); // coroa leva 2 → 4 coroas = 2 conjuntos
+    const desc = usarConjuntos({}, mesas, 2);
+    r = partesProntas({ registros: [...registros, reg("Letreiro", 3)], produtoId: "p1", mesas, descontar: desc });
+    expect(r.linhas.map((l) => l.prontas)).toEqual([2, 1, 0]);
+    const ac = acertarPartes(registros, "p1", mesas, { Leão: 0, Letreiro: 0, Coroa: 0 });
+    expect(partesProntas({ registros, produtoId: "p1", mesas, descontar: ac }).temAlguma).toBe(false);
+  });
+});

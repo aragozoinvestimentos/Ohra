@@ -19,6 +19,9 @@ import { usePreferencia } from "../hooks/usePreferencia.js";
 import { entradaDeProducao } from "../lib/revendaAcoes.js";
 import { temEstoquePronto } from "../lib/revenda.js";
 import { hojeSP } from "../lib/datas.js";
+import { partesProntas, usarConjuntos, acertarPartes, textoPartes } from "../lib/partesMesas.js";
+import { abrirEstoque } from "../lib/estoqueNav.js";
+import EditarDialog from "./EditarDialog.jsx";
 
 const TETO_STORAGE_KEY = "ohra:registro-impressao:teto-prejuizo";
 const TETO_PADRAO = 50;
@@ -49,6 +52,9 @@ export default function RegistroImpressoes({ onToast }) {
   // Estoque de fabricados (v70): impressão com sucesso de produto marcado "tenho estoque
   // pronto" pergunta "Pôr no estoque?" — já preenchido, editável, nunca trava.
   const [pergunta, setPergunta] = useState(null);
+  // Várias mesas: partes já usadas em conjuntos (ou acertadas) — { produtoId: { mesa: n } }.
+  const [partesDesc, setPartesDesc] = usePreferencia("producao:partes-mesas", {});
+  const [acertar, setAcertar] = useState(null); // { produtoId, valores: { mesa: "n" } }
   // Teto de prejuízo por lote: salvo no banco (preferencias_loja, v59) — igual em todo aparelho.
   const [tetoReais, setTetoReais] = usePreferencia("impressao:teto-prejuizo", TETO_PADRAO, { legado: () => {
     try {
@@ -131,7 +137,7 @@ export default function RegistroImpressoes({ onToast }) {
   // Produto impresso em várias mesas (partes separadas, 30/10/2026): dá pra
   // registrar UMA mesa — falhou a mesa das coroas = perde só ela.
   const contaProduto = useMemo(() => (produtoSelecionado ? custoProdutoPorPeca(produtoSelecionado, materiais) : null), [produtoSelecionado, materiais]);
-  const mesasDoProduto = produtoSelecionado?.producao_detalhe?.impressao === "varias" ? contaProduto?.mesas || [] : [];
+  const mesasDoProduto = useMemo(() => (produtoSelecionado?.producao_detalhe?.impressao === "varias" ? contaProduto?.mesas || [] : []), [produtoSelecionado, contaProduto]);
   const mesaSel = form.mesa !== "" ? mesasDoProduto[Number(form.mesa)] || null : null;
   function escolherMesa(v) {
     const m = v !== "" ? mesasDoProduto[Number(v)] : null;
@@ -142,6 +148,21 @@ export default function RegistroImpressoes({ onToast }) {
       tempoEstimadoMin: m ? m.tempo : produtoSelecionado?.producao_detalhe?.tempo ?? prev.tempoEstimadoMin,
       tempoManual: false,
     }));
+  }
+
+  // Partes prontas das mesas (cada mesa impressa sozinha soma aqui até fechar conjuntos).
+  const partes = useMemo(
+    () => (produtoSelecionado && mesasDoProduto.length ? partesProntas({ registros, produtoId: produtoSelecionado.id, mesas: mesasDoProduto, descontar: partesDesc?.[produtoSelecionado.id] }) : null),
+    [produtoSelecionado, mesasDoProduto, registros, partesDesc],
+  );
+  function perguntaConjuntos(produto, n, registroId) {
+    setPergunta({ registroId, nome: `${produto.nome} (conjunto das mesas)`, conjuntos: { produtoId: produto.id, max: n }, itens: [{ produtoId: produto.id, nome: produto.nome, quantidade: String(n) }] });
+  }
+  function consumirConjuntos(produtoId, n) {
+    const p = produtos.find((x) => x.id === produtoId);
+    const mesas = p ? custoProdutoPorPeca(p, materiais)?.mesas || [] : [];
+    if (!mesas.length || !(n > 0)) return;
+    setPartesDesc({ ...(partesDesc || {}), [produtoId]: usarConjuntos(partesDesc?.[produtoId], mesas, n) });
   }
 
   // Ao escolher um produto cadastrado, sugere quantidade e tempo a partir do
@@ -230,6 +251,10 @@ export default function RegistroImpressoes({ onToast }) {
           : [];
       const itens = pecas.filter((x) => temEstoquePronto(x.produto)).map((x) => ({ produtoId: x.produto.id, nome: x.produto.nome, quantidade: String(x.quantidade) }));
       if (itens.length) setPergunta({ registroId: criado?.id || null, nome, itens });
+    } else if (form.status === "sucesso" && mesaSel && produtoSelecionado && temEstoquePronto(produtoSelecionado)) {
+      // Uma mesa: as partes somam; se fechou conjunto (com as mesas de antes), pergunta.
+      const r = partesProntas({ registros, produtoId: produtoSelecionado.id, mesas: mesasDoProduto, descontar: partesDesc?.[produtoSelecionado.id], extra: { mesa: mesaSel.nome, quantidade } });
+      if (r.conjuntos > 0) perguntaConjuntos(produtoSelecionado, r.conjuntos, criado?.id || null);
     }
     setForm((prev) => ({ ...VAZIO_FORM, produtoId: prev.produtoId }));
     onToast?.("Impressão registrada");
@@ -345,7 +370,34 @@ export default function RegistroImpressoes({ onToast }) {
                   </option>
                 ))}
               </select>
-              {mesaSel && <div className="hint" style={{ marginTop: 4 }}>Se falhar, perde só essa mesa ({BRL(mesaSel.custoMesa)}). Uma mesa sozinha não entra no estoque de prontos.</div>}
+              {mesaSel && <div className="hint" style={{ marginTop: 4 }}>Se falhar, perde só essa mesa ({BRL(mesaSel.custoMesa)}). As partes ficam guardadas e viram estoque quando fechar um conjunto com as outras mesas.</div>}
+              {partes && (
+                <div className="hint" style={{ marginTop: 4 }}>
+                  Partes prontas: {textoPartes(partes)}
+                  {partes.conjuntos > 0 ? ` → fecha ${partes.conjuntos} conjunto${partes.conjuntos > 1 ? "s" : ""}` : partes.faltam.length ? ` → pro próximo conjunto faltam ${partes.faltam.map((f) => `${f.falta} ${f.nome}`).join(", ")}` : ""}
+                  {" · "}
+                  <button type="button" className="link-btn" onClick={() => setAcertar({ produtoId: produtoSelecionado.id, valores: Object.fromEntries(partes.linhas.map((l) => [l.nome, String(l.prontas)])) })}>
+                    acertar
+                  </button>
+                  {partes.conjuntos > 0 && temEstoquePronto(produtoSelecionado) && (
+                    <>
+                      {" · "}
+                      <button type="button" className="link-btn" onClick={() => perguntaConjuntos(produtoSelecionado, partes.conjuntos, null)}>
+                        pôr no estoque
+                      </button>
+                    </>
+                  )}
+                  {!temEstoquePronto(produtoSelecionado) && (
+                    <>
+                      {" · "}
+                      este produto não está no estoque de prontos —{" "}
+                      <button type="button" className="link-btn" onClick={() => abrirEstoque("estoque")}>
+                        controlar em Estoque e compras
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -431,7 +483,7 @@ export default function RegistroImpressoes({ onToast }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
                 {pergunta.itens.map((it, i) => (
                   <label key={it.produtoId} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ flex: "1 1 160px" }}>{it.nome} — peças boas</span>
+                    <span style={{ flex: "1 1 160px" }}>{it.nome} — {pergunta.conjuntos ? "conjuntos completos" : "peças boas"}</span>
                     <input
                       inputMode="numeric"
                       style={{ width: 90 }}
@@ -448,17 +500,56 @@ export default function RegistroImpressoes({ onToast }) {
                   onClick={async () => {
                     const r = await entradaDeProducao({ lojaId, registroId: pergunta.registroId, nome: pergunta.nome, data: hojeSP(), itens: pergunta.itens.map((x) => ({ produtoId: x.produtoId, quantidade: Number(String(x.quantidade).replace(",", ".")) || 0 })) });
                     onToast?.(r.error ? r.error.message : r.aviso || "No estoque ✓");
-                    if (!r.error) setPergunta(null);
+                    if (!r.error) {
+                      if (pergunta.conjuntos) consumirConjuntos(pergunta.conjuntos.produtoId, Number(String(pergunta.itens[0]?.quantidade).replace(",", ".")) || 0);
+                      setPergunta(null);
+                    }
                   }}
                 >
                   Pôr no estoque
                 </button>
-                <button type="button" className="btn btn-mini" onClick={() => setPergunta(null)}>
+                <button
+                  type="button"
+                  className="btn btn-mini"
+                  onClick={() => {
+                    if (pergunta.conjuntos) consumirConjuntos(pergunta.conjuntos.produtoId, Number(String(pergunta.itens[0]?.quantidade).replace(",", ".")) || 0);
+                    setPergunta(null);
+                  }}
+                >
                   Não, foi pra encomenda
                 </button>
+                {pergunta.conjuntos && (
+                  <button type="button" className="btn btn-mini" onClick={() => setPergunta(null)}>
+                    Deixar as partes guardadas
+                  </button>
+                )}
               </div>
+              {pergunta.conjuntos && <p className="hint" style={{ margin: "6px 0 0" }}>As partes das mesas que formaram esses conjuntos saem das “partes prontas”.</p>}
               <p className="hint" style={{ margin: "6px 0 0" }}>Se fechar sem responder, nada trava: dá pra lançar depois em Estoque e compras (± Ajustar).</p>
             </div>
+          )}
+          {acertar && (
+            <EditarDialog
+              titulo="Acertar as partes prontas"
+              onCancelar={() => setAcertar(null)}
+              onSalvar={() => {
+                const p = produtos.find((x) => x.id === acertar.produtoId);
+                const mesas = p ? custoProdutoPorPeca(p, materiais)?.mesas || [] : [];
+                setPartesDesc({ ...(partesDesc || {}), [acertar.produtoId]: acertarPartes(registros, acertar.produtoId, mesas, acertar.valores) });
+                setAcertar(null);
+                onToast?.("Partes acertadas");
+              }}
+            >
+              <p className="hint">Quantas partes de cada mesa existem prontas de verdade (sem contar as que já estão montadas no estoque).</p>
+              <div className="grid-auto">
+                {Object.keys(acertar.valores).map((m) => (
+                  <label key={m}>
+                    {m}
+                    <input inputMode="numeric" value={acertar.valores[m]} onChange={(e) => setAcertar((a) => ({ ...a, valores: { ...a.valores, [m]: e.target.value } }))} />
+                  </label>
+                ))}
+              </div>
+            </EditarDialog>
           )}
         </div>
 
