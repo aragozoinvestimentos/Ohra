@@ -2918,3 +2918,10 @@ tr.camp-fora td { opacity: .55; }
 .camp-sug b { font-size: 15px; }
 .camp-sug.nao { border-color: var(--line); background: var(--panel); }
 .camp-aviso-canal { margin: 0 0 10px; }
+/* Atualizar dados → Últimas importações (UltimasImportacoes.jsx, 31/10/2026) */
+.imp-filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 8px 14px; }
+.imp-filtros .subabas { margin: 0; }
+.imp-plats { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.imp-resumo { white-space: normal; min-width: 260px; max-width: 520px; }
+tr.imp-erro td { color: var(--ink-faint); }
+.imp-efeito { margin: 0 0 12px; padding-left: 18px; display: grid; gap: 6px; color: var(--ink-soft); font-size: 13px; }

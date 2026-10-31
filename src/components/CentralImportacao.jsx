@@ -7,7 +7,10 @@ import { PLATAFORMAS, caixaDosPedidos, ehNaoPago, ENTREGUE_DIAS, interpretarPedi
 import { CHAVE_CARRINHOS, lembrarCarrinhos } from "../lib/carrinhos.js";
 import { interpretarExtratoShopee, liberadoDoExtrato } from "../lib/carteiras.js";
 import { gravarExtrato } from "../lib/carteirasAcoes.js";
-import { excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
+import { apagarRegistroImportacao, atualizarImportacao, excluirVendaFisica, gravarPedidos, ignorarSku, registrarImportacao, registrarVendaFisica, sincronizarCaixa } from "../lib/pedidosAcoes.js";
+import { efeitoDaExclusao, envioAnterior, listaImportacoes, pareceOutraLoja, rotuloTipo } from "../lib/importacoes.js";
+import { excluirImportacao } from "../lib/importacoesAcoes.js";
+import UltimasImportacoes from "./UltimasImportacoes.jsx";
 import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { canalComEmbalagem } from "../lib/embalagemCanal.js";
 import { hojeSP } from "../lib/datas.js";
@@ -54,7 +57,7 @@ async function lerPlanilha(arquivo) {
   return lerXls(buf);
 }
 
-export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, hoje, onToast }) {
+export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, hoje, onToast, vista = "importar" }) {
   const { lojaId, lojas } = useLoja();
   const erp = erpDaLoja((lojas || []).find((l) => l.id === lojaId)?.config_escada);
   const { itens, canais, produtos, kits, precos, cfgDoProduto, gruposAnuncio: grupos = [] } = esc;
@@ -133,6 +136,9 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
           pendMap.set(i.sku, x);
         }
     const pronto = { ...base, grupos, semCanal };
+    // Arquivo de outra loja? Quase nenhum SKU bate com o catálogo desta loja.
+    const outra = !base.confirmouLoja && pareceOutraLoja(grupos.flatMap((g) => g.ligados));
+    if (outra) return setPend({ ...base, passo: "outra-loja", outra });
     if (pendMap.size) setPend({ ...pronto, passo: "skus", pendentes: [...pendMap.values()], resolvidos: {} });
     else gravarOlist(pronto);
   }
@@ -158,13 +164,20 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     // no banco e os deste arquivo —, pra contar como recuperado se for pago depois.
     const memCarr = lembrarCarrinhos(lerPreferencia(CHAVE_CARRINHOS) || {}, [...(ped.pedidos || []), ...rows], hoje);
     if (memCarr) await gravarPreferencia(CHAVE_CARRINHOS, memCarr, lojaId);
+    // O envio é registrado ANTES (v71): cada pedido novo guarda de qual envio
+    // entrou — Últimas importações → × tira só o que este arquivo trouxe.
+    const reg = await registrarImportacao({ lojaId, relatorio: rel, arquivo, periodo, ok: true, resumo: "gravando…" });
+    const impId = reg.ok ? reg.id : null;
+    let controle = false;
     if (rows.length) {
-      const r = await gravarPedidos({ lojaId, linhas: rows });
+      const r = await gravarPedidos({ lojaId, linhas: rows, importacaoId: impId, existentes });
       if (!r.ok) {
+        await apagarRegistroImportacao(impId);
         setResultado((x) => ({ ...x, [rel]: { t: "erro", txt: r.msg } }));
         setOcupado(null);
         return;
       }
+      controle = !r.semControle;
     }
     // Caixa com todos os pedidos (os de antes + estes), numa conta só.
     const porChave = new Map((ped.pedidos || []).map((p) => [p.chave, p]));
@@ -180,11 +193,12 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       const naoPagos = new Set(doPlat.filter((x) => ehNaoPago(x.situacao)).map((x) => x.pedido)).size;
       const extras = [cancel ? `${cancel} cancelado${cancel > 1 ? "s" : ""}` : "", naoPagos ? `${naoPagos} não pago${naoPagos > 1 ? "s" : ""} — carrinho abandonado` : ""].filter(Boolean).join(", ");
       const resumo = `${dm(periodo.de)} a ${dm(periodo.ate)} · ${pedN ? `${pedN} pedido${pedN === 1 ? "" : "s"}, ${novos} ite${novos === 1 ? "m novo" : "ns novos"}${extras ? ` (${extras})` : ""}` : "nenhum pedido no período"} · pelo arquivo da Olist`;
-      await registrarImportacao({ lojaId, relatorio: `pedidos:${plat.id}`, arquivo, periodo, ok: true, resumo });
+      await registrarImportacao({ lojaId, relatorio: `pedidos:${plat.id}`, arquivo, periodo, ok: true, resumo, dados: impId ? { pai: impId } : null });
       if (pedN) partes.push(`${plat.nome} ${pedN}`);
     }
     const resumo = `${dm(periodo.de)} a ${dm(periodo.ate)} · ${partes.length ? partes.join(" · ") : "nenhum pedido"}${semItem ? ` · ${semItem} ite${semItem === 1 ? "m" : "ns"} com SKU fora (pendente/descartado)` : ""}${nIgn ? ` · ${nIgn} pedido${nIgn > 1 ? "s" : ""} de plataforma desconhecida ignorado${nIgn > 1 ? "s" : ""}` : ""}`;
-    await registrarImportacao({ lojaId, relatorio: rel, arquivo, periodo, ok: true, resumo });
+    if (impId) await atualizarImportacao(impId, { resumo, dados: { controle } });
+    else await registrarImportacao({ lojaId, relatorio: rel, arquivo, periodo, ok: true, resumo });
     setResultado((x) => ({ ...x, [rel]: { t: "ok", txt: `${resumo} · agora` } }));
     const avs = [...(cx.ok ? cx.avisos : [cx.msg]), ...semCanal.map((x) => `${x.n} pedido${x.n > 1 ? "s" : ""} da ${x.nome} ${x.n > 1 ? "ficaram" : "ficou"} de fora — cadastre o canal em Configuração → Canais e reenvie o arquivo.`)];
     setAvisos((a) => ({ ...a, [rel]: avs }));
@@ -201,12 +215,19 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     try {
       const r = interpretarExtratoShopee(await lerPlanilha(arquivo));
       if (!r.ok) throw new Error(r.erro);
-      const g = await gravarExtrato({ lojaId, plataforma: "shopee", transacoes: r.transacoes });
-      if (!g.ok) throw new Error(g.msg);
+      const reg = await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivo.name, periodo: { de: r.de, ate: r.ate }, ok: true, resumo: "gravando…" });
+      const impId = reg.ok ? reg.id : null;
+      const g = await gravarExtrato({ lojaId, plataforma: "shopee", transacoes: r.transacoes, importacaoId: impId });
+      if (!g.ok) {
+        await apagarRegistroImportacao(impId);
+        throw new Error(g.msg);
+      }
       const lib = liberadoDoExtrato(r.transacoes.map((t) => ({ ...t, plataforma: "shopee" })), "shopee");
       const resumo = `${dm(r.de)} a ${dm(r.ate)} · ${r.transacoes.length} transaç${r.transacoes.length === 1 ? "ão" : "ões"} · liberado ${BRL(lib?.saldo || 0)}${g.saques ? ` · ${g.saques} saque${g.saques > 1 ? "s" : ""} no Caixa` : ""}`;
-      await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivo.name, periodo: { de: r.de, ate: r.ate }, ok: true, resumo });
+      if (impId) await atualizarImportacao(impId, { resumo, dados: { controle: !g.semControle } });
+      else await registrarImportacao({ lojaId, relatorio: rel, arquivo: arquivo.name, periodo: { de: r.de, ate: r.ate }, ok: true, resumo });
       setResultado((x) => ({ ...x, [rel]: { t: "ok", txt: `${resumo} · agora` } }));
+      recarregarPedidos();
       window.dispatchEvent(new Event("focus"));
       onToast?.("Extrato da Shopee importado — veja em Dinheiro → Caixa (carteira Shopee)");
     } catch (e) {
@@ -242,6 +263,48 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         .filter((x) => x.ficha)
         .map(({ g, ficha }) => ({ id: g.id, nome: g.nome, opcoes: ficha.opcoes.map((o, idx) => ({ idx, skus: ficha.linhas.filter((l) => l.opcao === o).map((l) => l.sku) })) }))
     );
+  }
+  // Andamento do Ads pelas janelas do CSV (envio novo ou envio excluído —
+  // Últimas importações): regrava o acumulado nos períodos ligados.
+  async function aplicarAndamentoAds(janelasAds, rel) {
+    const temGmv = !!ultimaImp("shopee:gmv");
+    const soma = somarJanelasAds(janelasAds.map((j) => relatorioDoGuardado(j.rel)));
+    const res = andamentoDoCsv([soma], linhasAds?.linhas || [], temGmv ? null : linhasAds?.lojaLinha || null);
+    const furos = furosDasJanelas(janelasAds, null);
+    let n = 0;
+    for (const l of (linhasAds?.linhas || []).filter((x) => x.av?.ativo && x.canal?.tipo === "shopee")) {
+      const x = res.porChave[l.chave] || (res.zerados.includes(l.chave) ? { gasto: 0, cliques: 0, vendas: 0 } : null);
+      if (!x || !res.periodo?.ate) continue;
+      let val = { ate: res.periodo.ate, gasto: num(x.gasto), cliques: Math.round(num(x.cliques)), vendas: Math.round(num(x.vendas)) };
+      // ✎ Acerto à mão (23/10/2026): o valor digitado vale até a data dele e
+      // os CSVs somam só os envios DEPOIS dela — até chegar um envio exato
+      // desde o início do período, que vale mais que o acerto.
+      const ac = l.av.ativo.parcial?.acerto;
+      let acerto;
+      if (ac?.ate) {
+        if (janelasAds.some((j) => j.de <= l.av.ativo.inicio && j.ate > ac.ate)) acerto = null;
+        else {
+          const depois = janelasAds.filter((j) => j.de > ac.ate);
+          if (!depois.length) continue;
+          const resD = andamentoDoCsv([somarJanelasAds(depois.map((j) => relatorioDoGuardado(j.rel)))], [l], null);
+          const y = resD.porChave[l.chave] || { gasto: 0, cliques: 0, vendas: 0 };
+          val = { ate: resD.periodo?.ate || val.ate, gasto: Math.round((num(ac.gasto) + num(y.gasto)) * 100) / 100, cliques: Math.round(num(ac.cliques) + num(y.cliques)), vendas: Math.round(num(ac.vendas) + num(y.vendas)) };
+        }
+      }
+      const s = await salvarAndamentoAds(l.av.ativo, { ...val, ...(acerto === null ? { acerto: null } : {}) });
+      if (!s.ok) throw new Error(s.msg);
+      n++;
+    }
+    let txtLoja = "";
+    if (res.lojaAndamento) {
+      const s = await salvarAndamentoAds(res.lojaAndamento.periodo, { ate: res.lojaAndamento.ate, ...res.lojaAndamento.valores });
+      if (!s.ok) throw new Error(s.msg);
+      txtLoja = ` + GMV Max da Loja (${BRL(res.lojaAndamento.valores.gasto)})`;
+    }
+    setPerguntas((res.perguntas || []).filter((q) => adsIgnorados[q.chave] !== sigPergunta(q)));
+    setInfos(res.infos || []);
+    setAvisos((a) => ({ ...a, [rel]: [...furos.map((f) => `Ads: ${textoFuro(f)} — exporte esse período pra completar (o resto já foi somado).`), ...(res.avisos || [])] }));
+    return { soma, n, txtLoja };
   }
   async function enviarShopee(tipo, arquivos) {
     const rel = `shopee:${tipo}`;
@@ -297,43 +360,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       } else {
         // GMV Max da Loja: com o arquivo próprio já enviado, a linha da loja
         // deste CSV fica de fora (o botão “GMV Max da Loja” manda nela).
-        const temGmv = !!ultimaImp("shopee:gmv");
-        const soma = somarJanelasAds(janelasAds.map((j) => relatorioDoGuardado(j.rel)));
-        const res = andamentoDoCsv([soma], linhasAds?.linhas || [], temGmv ? null : linhasAds?.lojaLinha || null);
-        const furos = furosDasJanelas(janelasAds, null);
-        let n = 0;
-        for (const l of (linhasAds?.linhas || []).filter((x) => x.av?.ativo && x.canal?.tipo === "shopee")) {
-          const x = res.porChave[l.chave] || (res.zerados.includes(l.chave) ? { gasto: 0, cliques: 0, vendas: 0 } : null);
-          if (!x || !res.periodo?.ate) continue;
-          let val = { ate: res.periodo.ate, gasto: num(x.gasto), cliques: Math.round(num(x.cliques)), vendas: Math.round(num(x.vendas)) };
-          // ✎ Acerto à mão (23/10/2026): o valor digitado vale até a data dele e
-          // os CSVs somam só os envios DEPOIS dela — até chegar um envio exato
-          // desde o início do período, que vale mais que o acerto.
-          const ac = l.av.ativo.parcial?.acerto;
-          let acerto;
-          if (ac?.ate) {
-            if (janelasAds.some((j) => j.de <= l.av.ativo.inicio && j.ate > ac.ate)) acerto = null;
-            else {
-              const depois = janelasAds.filter((j) => j.de > ac.ate);
-              if (!depois.length) continue;
-              const resD = andamentoDoCsv([somarJanelasAds(depois.map((j) => relatorioDoGuardado(j.rel)))], [l], null);
-              const y = resD.porChave[l.chave] || { gasto: 0, cliques: 0, vendas: 0 };
-              val = { ate: resD.periodo?.ate || val.ate, gasto: Math.round((num(ac.gasto) + num(y.gasto)) * 100) / 100, cliques: Math.round(num(ac.cliques) + num(y.cliques)), vendas: Math.round(num(ac.vendas) + num(y.vendas)) };
-            }
-          }
-          const s = await salvarAndamentoAds(l.av.ativo, { ...val, ...(acerto === null ? { acerto: null } : {}) });
-          if (!s.ok) throw new Error(s.msg);
-          n++;
-        }
-        let txtLoja = "";
-        if (res.lojaAndamento) {
-          const s = await salvarAndamentoAds(res.lojaAndamento.periodo, { ate: res.lojaAndamento.ate, ...res.lojaAndamento.valores });
-          if (!s.ok) throw new Error(s.msg);
-          txtLoja = ` + GMV Max da Loja (${BRL(res.lojaAndamento.valores.gasto)})`;
-        }
-        setPerguntas((res.perguntas || []).filter((q) => adsIgnorados[q.chave] !== sigPergunta(q)));
-        setInfos(res.infos || []);
-        setAvisos((a) => ({ ...a, [rel]: [...furos.map((f) => `Ads: ${textoFuro(f)} — exporte esse período pra completar (o resto já foi somado).`), ...(res.avisos || [])] }));
+        const { soma, n, txtLoja } = await aplicarAndamentoAds(janelasAds, rel);
         resumo = `${dm(r.periodo?.de)} a ${dm(r.periodo?.ate)}${txtListas} · somado desde ${dm(soma.periodo.de)} (${janelasAds.length} envio${janelasAds.length === 1 ? "" : "s"}) · andamento atualizado em ${n} anúncio${n === 1 ? "" : "s"} com Ads ligado${txtLoja}`;
         window.dispatchEvent(new Event("focus"));
       }
@@ -349,6 +376,42 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
   // ---------- Shopee: GMV Max da Loja (arquivo próprio) ----------
   // Cada arquivo = uma janela (o período exportado). As janelas se somam no
   // período ligado da loja; a mesma janela de novo substitui; furo = aviso.
+  // Andamento da GMV Max da Loja pelas janelas (envio novo ou excluído).
+  async function aplicarGmv(janelas) {
+    const ll = linhasAds?.lojaLinha || null;
+    const ativo = ll?.av?.ativo || null;
+    const avs = [];
+    let txt = "";
+    if (ativo) {
+      const doPer = janelasDoPeriodo(janelas, ativo);
+      // ✎ Acerto à mão: vale até a data dele; soma só os envios depois dela
+      // (um envio exato desde o início do período vale mais que o acerto).
+      const acM = ativo.parcial?.acerto;
+      const cobre = acM?.ate && doPer.some((j) => j.de <= ativo.inicio && j.ate > acM.ate);
+      let ac = acumuladoDasJanelas(acM?.ate && !cobre ? doPer.filter((j) => j.de > acM.ate) : doPer);
+      if (acM?.ate && !cobre && ac) {
+        const r2 = (x) => Math.round(x * 100) / 100;
+        const mais = (h) => ({ ...h, gasto: r2(num(acM.gasto) + num(h.gasto)), cliques: num(acM.cliques) + num(h.cliques), vendas: num(acM.vendas) + num(h.vendas), receita: r2(num(acM.receita) + num(h.receita)) });
+        ac = { ...mais(ac), ate: ac.ate, historico: [{ ate: acM.ate, gasto: num(acM.gasto), cliques: num(acM.cliques), vendas: num(acM.vendas), receita: num(acM.receita) }, ...(ac.historico || []).map(mais)] };
+      }
+      if (ac) {
+        const s = await salvarAndamentoAds(ativo, { ate: ac.ate, gasto: ac.gasto, cliques: ac.cliques, vendas: ac.vendas, receita: ac.receita, historico: ac.historico, ...(cobre ? { acerto: null } : {}) });
+        if (!s.ok) throw new Error(s.msg);
+        txt = ` · período da loja desde ${dm(ativo.inicio)}: ${BRL(ac.gasto)} gastos, ${ac.vendas} vendas, até ${dm(ac.ate)}`;
+      }
+      for (const f of furosDasJanelas(doPer, ativo.inicio)) avs.push(`Furo no período da GMV Max: ${textoFuro(f)} — exporte exatamente esse período e envie aqui (ele se soma sem duplicar).`);
+      const antes = janelas.filter((j) => j.ate < ativo.inicio);
+      if (antes.length) avs.push(`${antes.length} envio${antes.length === 1 ? "" : "s"} antes de ${dm(ativo.inicio)} (início do período da loja no app) — não entra${antes.length === 1 ? "" : "m"} no andamento.`);
+      setPerguntas((p) => p.filter((q) => q.l?.tipo !== "loja"));
+    } else if (ll) {
+      const ac = acumuladoDasJanelas(janelas);
+      if (ac && ac.gasto > 0) {
+        setPerguntas((p) => [...p.filter((q) => q.l?.tipo !== "loja"), { chave: ll.chave, l: ll, tipo: "criar", data: ac.de, ate: ac.ate, valores: { gasto: ac.gasto, cliques: ac.cliques, vendas: ac.vendas, receita: ac.receita, historico: ac.historico } }]);
+        for (const f of furosDasJanelas(janelas, ac.de)) avs.push(`Furo: ${textoFuro(f)} — exporte esse período e envie aqui.`);
+      }
+    }
+    return { txt, avs };
+  }
   async function enviarGmv(arquivos) {
     const rel = "shopee:gmv";
     setOcupado(rel);
@@ -369,38 +432,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
         janelas = r.janelas;
         if (r.info) infosJ.push(r.info);
       }
-      const ll = linhasAds?.lojaLinha || null;
-      const ativo = ll?.av?.ativo || null;
-      const avs = [];
-      let txt = "";
-      if (ativo) {
-        const doPer = janelasDoPeriodo(janelas, ativo);
-        // ✎ Acerto à mão: vale até a data dele; soma só os envios depois dela
-        // (um envio exato desde o início do período vale mais que o acerto).
-        const acM = ativo.parcial?.acerto;
-        const cobre = acM?.ate && doPer.some((j) => j.de <= ativo.inicio && j.ate > acM.ate);
-        let ac = acumuladoDasJanelas(acM?.ate && !cobre ? doPer.filter((j) => j.de > acM.ate) : doPer);
-        if (acM?.ate && !cobre && ac) {
-          const r2 = (x) => Math.round(x * 100) / 100;
-          const mais = (h) => ({ ...h, gasto: r2(num(acM.gasto) + num(h.gasto)), cliques: num(acM.cliques) + num(h.cliques), vendas: num(acM.vendas) + num(h.vendas), receita: r2(num(acM.receita) + num(h.receita)) });
-          ac = { ...mais(ac), ate: ac.ate, historico: [{ ate: acM.ate, gasto: num(acM.gasto), cliques: num(acM.cliques), vendas: num(acM.vendas), receita: num(acM.receita) }, ...(ac.historico || []).map(mais)] };
-        }
-        if (ac) {
-          const s = await salvarAndamentoAds(ativo, { ate: ac.ate, gasto: ac.gasto, cliques: ac.cliques, vendas: ac.vendas, receita: ac.receita, historico: ac.historico, ...(cobre ? { acerto: null } : {}) });
-          if (!s.ok) throw new Error(s.msg);
-          txt = ` · período da loja desde ${dm(ativo.inicio)}: ${BRL(ac.gasto)} gastos, ${ac.vendas} vendas, até ${dm(ac.ate)}`;
-        }
-        for (const f of furosDasJanelas(doPer, ativo.inicio)) avs.push(`Furo no período da GMV Max: ${textoFuro(f)} — exporte exatamente esse período e envie aqui (ele se soma sem duplicar).`);
-        const antes = janelas.filter((j) => j.ate < ativo.inicio);
-        if (antes.length) avs.push(`${antes.length} envio${antes.length === 1 ? "" : "s"} antes de ${dm(ativo.inicio)} (início do período da loja no app) — não entra${antes.length === 1 ? "" : "m"} no andamento.`);
-        setPerguntas((p) => p.filter((q) => q.l?.tipo !== "loja"));
-      } else if (ll) {
-        const ac = acumuladoDasJanelas(janelas);
-        if (ac && ac.gasto > 0) {
-          setPerguntas((p) => [...p.filter((q) => q.l?.tipo !== "loja"), { chave: ll.chave, l: ll, tipo: "criar", data: ac.de, ate: ac.ate, valores: { gasto: ac.gasto, cliques: ac.cliques, vendas: ac.vendas, receita: ac.receita, historico: ac.historico } }]);
-          for (const f of furosDasJanelas(janelas, ac.de)) avs.push(`Furo: ${textoFuro(f)} — exporte esse período e envie aqui.`);
-        }
-      }
+      const { txt, avs } = await aplicarGmv(janelas);
       const nProd = lidos.reduce((n, x) => Math.max(n, (x.lojaPorItem || []).length), 0);
       const resumo = `${lidos.map((x) => `${dm(x.periodo.de)} a ${dm(x.periodo.ate)}`).join(" + ")}: ${BRL(lidos.reduce((a, x) => a + (x.loja?.gasto || 0), 0))} gastos · ${nProd} produto${nProd === 1 ? "" : "s"} na campanha (só informação — não cria Ads de produto)${txt}${infosJ.length ? ` · ${infosJ.join(" · ")}` : ""}`;
       setAvisos((a) => ({ ...a, [rel]: avs }));
@@ -451,6 +483,76 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     } else if (["parado", "corrigir", "criar-encerrado"].includes(q.tipo)) setAdsIgnorados((m) => ({ ...m, [q.chave]: sigPergunta(q) }));
     setPerguntas((p) => p.filter((x) => x.chave !== q.chave));
   }
+
+  // ---------- Últimas importações: excluir um envio ----------
+  // Só o envio mais novo de cada tipo (lib/importacoes.js). Depois de tirar:
+  // pedidos → refaz o Fluxo de Caixa; Ads/GMV → regrava o andamento pelo envio
+  // anterior; desempenho/extrato → as telas leem o que sobrou.
+  const listaEnvios = useMemo(() => listaImportacoes(ped.importacoes || []), [ped.importacoes]);
+  const [excluirEnvio, setExcluirEnvio] = useState(null);
+  const janelasDoEnvio = (imp) => imp?.dados?.janelas || (imp?.dados && imp.periodo_de ? [{ de: String(imp.periodo_de).slice(0, 10), ate: String(imp.periodo_ate).slice(0, 10), rel: { ...imp.dados, partes: undefined } }] : []);
+  async function confirmarExcluirEnvio() {
+    const e = excluirEnvio;
+    setExcluirEnvio(null);
+    if (!e) return;
+    setOcupado("excluir");
+    try {
+      const ant = envioAnterior(e, listaEnvios);
+      const r = await excluirImportacao({ entrada: e, lojaId });
+      if (!r.ok) throw new Error(r.msg);
+      const extras = [];
+      if (e.tipo === "pedidos" && e.imp.ok !== false) {
+        const fora = new Set((ped.pedidos || []).filter((p) => p.importacao_id === e.imp.id).map((p) => p.id));
+        const cx = await sincronizarCaixa({ lojaId, pedidos: (ped.pedidos || []).filter((p) => !fora.has(p.id)), ctx });
+        if (r.pedidos) extras.push(`${r.pedidos} ite${r.pedidos === 1 ? "m" : "ns"} de pedido removido${r.pedidos === 1 ? "" : "s"}`);
+        if (cx.ok) extras.push("Fluxo de Caixa refeito");
+      }
+      if (e.tipo === "extrato" && r.transacoes) extras.push(`${r.transacoes} transaç${r.transacoes === 1 ? "ão" : "ões"} removida${r.transacoes === 1 ? "" : "s"}`);
+      if (e.tipo === "ads" && ant && e.imp.ok !== false) {
+        const j = janelasDoEnvio(ant.imp);
+        if (j.length) {
+          const a = await aplicarAndamentoAds(j, "shopee:ads");
+          extras.push(`andamento do Ads regravado em ${a.n} anúncio${a.n === 1 ? "" : "s"}`);
+        }
+      }
+      if (e.tipo === "gmv" && ant && e.imp.ok !== false) {
+        const j = janelasDoEnvio(ant.imp);
+        if (j.length) {
+          await aplicarGmv(j);
+          extras.push("andamento da GMV Max regravado");
+        }
+      }
+      setResultado((x) => {
+        const n = { ...x };
+        delete n[e.imp.relatorio];
+        return n;
+      });
+      recarregarPedidos();
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("ohra:caixa"));
+      onToast?.(`Envio de ${rotuloTipo(e.tipo).toLowerCase()} excluído${extras.length ? ` · ${extras.join(" · ")}` : ""}`);
+    } catch (err) {
+      onToast?.(err.message || "Não foi possível excluir o envio.");
+    }
+    setOcupado(null);
+  }
+  const confirmaEnvio = excluirEnvio && (
+    <ConfirmDialog
+      titulo={`Excluir este envio de ${rotuloTipo(excluirEnvio.tipo).toLowerCase()}?`}
+      mensagem={`${excluirEnvio.imp.arquivo || "arquivo"} · ${excluirEnvio.imp.resumo || ""}`}
+      confirmarLabel="Excluir envio"
+      perigo
+      larga
+      onConfirm={confirmarExcluirEnvio}
+      onCancel={() => setExcluirEnvio(null)}
+    >
+      <ul className="imp-efeito">
+        {efeitoDaExclusao(excluirEnvio, listaEnvios, ped.pedidos || []).map((t) => (
+          <li key={t}>{t}</li>
+        ))}
+      </ul>
+    </ConfirmDialog>
+  );
 
   // ---------- Status de cada botão ----------
   function status(rel, limiteDias) {
@@ -704,6 +806,18 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
           ),
         onArquivo: (f) => enviarOlist(f),
       })}
+      {pend?.passo === "outra-loja" && (
+        <div className="ana-pend">
+          <b>⚠ Este arquivo parece ser de outra loja</b>
+          <div>
+            Só {pend.outra.ligados} de {pend.outra.total} itens têm um SKU cadastrado na loja <b>{(lojas || []).find((l) => l.id === lojaId)?.nome || "atual"}</b>. Confira se você está na loja certa (menu lateral) antes de gravar — nada foi gravado ainda.
+          </div>
+          <div className="ana-pend-acoes">
+            <button type="button" className="btn btn-mini primary" onClick={() => setPend(null)}>Cancelar (não gravar)</button>
+            <button type="button" className="btn btn-mini" onClick={() => prepararOlist({ ...pend, passo: undefined, outra: undefined, confirmouLoja: true })}>É desta loja — continuar</button>
+          </div>
+        </div>
+      )}
       {pend?.passo === "plataforma" && (
         <div className="ana-pend">
           <b>
@@ -833,6 +947,14 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     </div>
   );
 
+  if (vista === "historico")
+    return (
+      <>
+        <UltimasImportacoes lista={listaEnvios} pedidos={ped.pedidos || []} ocupado={ocupado === "excluir"} onExcluir={setExcluirEnvio} />
+        {confirmaEnvio}
+      </>
+    );
+
   return (
     <>
       <div className="kpis">
@@ -889,6 +1011,12 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
           </div>
         </div>
       )}
+      <p className="hint" style={{ margin: "0 0 8px" }}>
+        Lançou um arquivo errado?{" "}
+        <button type="button" className="link-btn" onClick={() => trocarSubAba("ohra:importar-sub", "historico")}>
+          Últimas importações → desfazer um envio
+        </button>
+      </p>
       <div className="ana-fontes">
         {cards[0]}
         {cartaoFisico}

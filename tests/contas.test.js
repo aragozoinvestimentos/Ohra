@@ -856,3 +856,38 @@ describe("Campanhas da loja: reserva da live", () => {
     expect(pouca.compensa).toBe(false);
   });
 });
+
+import { listaImportacoes, podeExcluir, efeitoDaExclusao, pareceOutraLoja } from "../src/lib/importacoes.js";
+
+describe("Últimas importações", () => {
+  const imps = [
+    { id: "o1", relatorio: "pedidos:olist", arquivo: "a.xls", criado_em: "2026-10-28T10:00:00Z", ok: true, periodo_de: "2026-10-01", periodo_ate: "2026-10-27" },
+    { id: "s1", relatorio: "pedidos:shopee", arquivo: "a.xls", criado_em: "2026-10-28T10:00:30Z", ok: true, resumo: "3 pedidos" },
+    { id: "t1", relatorio: "pedidos:tiktok", arquivo: "a.xls", criado_em: "2026-10-28T10:00:31Z", ok: true, resumo: "nenhum pedido no período" },
+    { id: "o2", relatorio: "pedidos:olist", arquivo: "b.xls", criado_em: "2026-10-30T10:00:00Z", ok: true, dados: { controle: true }, periodo_ate: "2026-10-29" },
+    { id: "s2", relatorio: "pedidos:shopee", arquivo: "b.xls", criado_em: "2026-10-30T10:00:05Z", ok: true, dados: { pai: "o2" }, resumo: "5 pedidos" },
+    { id: "a1", relatorio: "shopee:ads", criado_em: "2026-10-29T10:00:00Z", ok: true },
+    { id: "a2", relatorio: "shopee:ads", criado_em: "2026-10-30T11:00:00Z", ok: true },
+  ];
+  const lista = listaImportacoes(imps);
+
+  it("agrupa os marcadores por plataforma no arquivo do ERP e só o mais novo de cada tipo sai", () => {
+    expect(lista.map((e) => e.imp.id)).toEqual(["a2", "o2", "a1", "o1"]);
+    const o1 = lista.find((e) => e.imp.id === "o1");
+    expect(o1.filhos.map((f) => f.id).sort()).toEqual(["s1", "t1"]);
+    expect(o1.plataformas).toEqual(["shopee"]);
+    expect(podeExcluir(o1, lista).pode).toBe(false);
+    expect(podeExcluir(lista.find((e) => e.imp.id === "o2"), lista).pode).toBe(true);
+    expect(podeExcluir(lista.find((e) => e.imp.id === "a1"), lista).pode).toBe(false);
+  });
+
+  it("diz quantos pedidos saem e reconhece arquivo de outra loja", () => {
+    const o2 = lista.find((e) => e.imp.id === "o2");
+    const txt = efeitoDaExclusao(o2, lista, [{ importacao_id: "o2", pedido: "X" }, { importacao_id: "o2", pedido: "X" }, { importacao_id: null, pedido: "Y" }]);
+    expect(txt[0]).toMatch(/Saem 1 pedido \(2 itens\)/);
+    expect(txt[2]).toMatch(/até 27\/10/);
+    const linhas = Array.from({ length: 12 }, (_, i) => ({ sku: `S${i}`, it: i < 2 ? {} : null }));
+    expect(pareceOutraLoja(linhas)).toEqual({ total: 12, ligados: 2 });
+    expect(pareceOutraLoja(linhas.map((l) => ({ ...l, it: {} })))).toBeNull();
+  });
+});

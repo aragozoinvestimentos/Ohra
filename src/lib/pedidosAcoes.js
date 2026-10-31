@@ -7,20 +7,51 @@ const FALTA_SQL = "Falta rodar o supabase/schema_v55.sql no Supabase (aba Análi
 const erroMsg = (e) => (/pedidos_itens|importacoes|skus_ignorados|origem_import|schema cache|does not exist/.test(e?.message || "") ? FALTA_SQL : `Não foi possível salvar: ${e?.message}`);
 
 export async function registrarImportacao({ lojaId, relatorio, arquivo = null, periodo = null, ok = true, resumo = "", dados = null }) {
-  const { error } = await supabase.from("importacoes").insert({ loja_id: lojaId || null, relatorio, arquivo, periodo_de: periodo?.de || null, periodo_ate: periodo?.ate || null, ok, resumo, dados });
+  const { data, error } = await supabase.from("importacoes").insert({ loja_id: lojaId || null, relatorio, arquivo, periodo_de: periodo?.de || null, periodo_ate: periodo?.ate || null, ok, resumo, dados }).select("id").single();
+  return error ? { ok: false, msg: erroMsg(error) } : { ok: true, id: data?.id || null };
+}
+/** Completa o registro do envio (resumo final, dados) depois de gravar. */
+export async function atualizarImportacao(id, campos) {
+  if (!id) return { ok: false };
+  const { error } = await supabase.from("importacoes").update(campos).eq("id", id);
+  return error ? { ok: false, msg: erroMsg(error) } : { ok: true };
+}
+/** Tira um registro de envio (gravação que falhou no meio). */
+export async function apagarRegistroImportacao(id) {
+  if (!id) return { ok: true };
+  const { error } = await supabase.from("importacoes").delete().eq("id", id);
   return error ? { ok: false, msg: erroMsg(error) } : { ok: true };
 }
 
-/** Grava (upsert pela chave) os itens de pedido já ligados ao catálogo. */
-export async function gravarPedidos({ lojaId, linhas }) {
+/**
+ * Grava (upsert pela chave) os itens de pedido já ligados ao catálogo.
+ * importacaoId (v71): só os itens NOVOS (chave fora de `existentes`) guardam de
+ * qual envio entraram — os que já existiam mantêm o envio de origem deles.
+ * Sem a coluna (v71 não rodado) grava sem ela e devolve semControle.
+ */
+export async function gravarPedidos({ lojaId, linhas, importacaoId = null, existentes = null }) {
   if (!linhas.length) return { ok: true, n: 0 };
   const agora = new Date().toISOString();
-  const rows = linhas.map((l) => ({ ...l, loja_id: lojaId || null, atualizado_em: agora }));
-  for (let i = 0; i < rows.length; i += 500) {
-    const { error } = await supabase.from("pedidos_itens").upsert(rows.slice(i, i + 500), { onConflict: "loja_id,chave" });
-    if (error) return { ok: false, msg: erroMsg(error) };
+  const base = linhas.map((l) => ({ ...l, loja_id: lojaId || null, atualizado_em: agora }));
+  let comId = importacaoId ? base.filter((r) => !existentes?.has(r.chave)).map((r) => ({ ...r, importacao_id: importacaoId })) : [];
+  const semId = importacaoId ? base.filter((r) => existentes?.has(r.chave)) : base;
+  let semControle = !importacaoId;
+  const enviar = async (rows) => {
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error } = await supabase.from("pedidos_itens").upsert(rows.slice(i, i + 500), { onConflict: "loja_id,chave" });
+      if (error) return error;
+    }
+    return null;
+  };
+  let e = comId.length ? await enviar(comId) : null;
+  if (e && /importacao_id/.test(e.message || "")) {
+    semControle = true;
+    comId = comId.map(({ importacao_id: _x, ...r }) => r); // eslint-disable-line no-unused-vars
+    e = await enviar(comId);
   }
-  return { ok: true, n: rows.length };
+  if (!e && semId.length) e = await enviar(semId);
+  if (e) return { ok: false, msg: erroMsg(e) };
+  return { ok: true, n: base.length, novos: semControle ? 0 : comId.length, semControle };
 }
 
 export async function ignorarSku({ lojaId, sku }) {

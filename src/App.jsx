@@ -101,7 +101,7 @@ const MENU = [
     grupo: null,
     itens: [
       { key: "m-inicio", label: "Início", icone: "inicio", sub: "O que pede atenção hoje e como a loja está", abas: [{ tab: "inicio", label: "Início", tambem: "sede" }, { tab: "sede", label: "Sede", oculta: true }] },
-      { key: "m-atualizar", label: "Atualizar dados", icone: "analise", sub: "Pedidos, desempenho, Ads, GMV Max, avaliações e venda física — tudo que vem dos marketplaces", abas: [{ tab: "importar", label: "Atualizar dados" }] },
+      { key: "m-atualizar", label: "Atualizar dados", icone: "analise", sub: "Pedidos, desempenho, Ads, GMV Max, avaliações e venda física — tudo que vem dos marketplaces", abas: [{ tab: "importar", s: "importar", label: "Importar" }, { tab: "importar", s: "historico", label: "Últimas importações" }] },
     ],
   },
   {
@@ -255,7 +255,7 @@ const TABS = [...new Set(ITENS_MENU.flatMap((i) => i.abas.filter((a) => a.tab).m
 
 const TAB_KEY = "ohra:ultima-aba";
 // Chaves das sub-abas lembradas das telas (as mesmas que as telas já usavam).
-const SUB_CHAVE = { cadastros: "ohra:cadastros-sub", crescimento: "ohra:crescimento-sub", caixa: "ohra:caixa:sub", analise: "ohra:analise-sub", live: "ohra:live-sub", insumos: "ohra:insumos-sub", estoque: "ohra:estoque-sub" };
+const SUB_CHAVE = { cadastros: "ohra:cadastros-sub", crescimento: "ohra:crescimento-sub", caixa: "ohra:caixa:sub", analise: "ohra:analise-sub", live: "ohra:live-sub", insumos: "ohra:insumos-sub", estoque: "ohra:estoque-sub", importar: "ohra:importar-sub" };
 
 // O app abre no Início (sessão nova do navegador). Recarregar a página na
 // mesma sessão continua na aba em que estava — só aceita uma chave que ainda
@@ -293,6 +293,7 @@ export default function App() {
   const [caixaSub] = useSubAba(SUB_CHAVE.caixa, "caixa");
   const [analiseSub] = useSubAba(SUB_CHAVE.analise, "abc", ["abc", "xyz", "evolucao"]);
   const [insumosSub] = useSubAba(SUB_CHAVE.insumos, "materiais", ["materiais", "embalagens"]);
+  const [importarSub] = useSubAba(SUB_CHAVE.importar, "importar", ["importar", "historico"]);
   const [estoqueSub] = useSubAba(SUB_CHAVE.estoque, "estoque", ["estoque", "notas", "fornecedores", "inventario"]);
   const [liveSub] = useSubAba(SUB_CHAVE.live, "planejar");
   // Última tela aberta dentro de cada item do menu (estado derivado da aba atual).
@@ -426,6 +427,8 @@ export default function App() {
       pegarPedido("analise");
       key = "importar";
     }
+    // Quem manda pra Atualizar dados quer importar (não a lista de envios).
+    if (key === "importar") trocarSubAba(SUB_CHAVE.importar, "importar");
     if (key === "publicar" || key === "lancamento" || key === "ficha" || key === "quantidade" || key === "avulso") {
       setCanalSub(key);
       key = "canal";
@@ -479,7 +482,7 @@ export default function App() {
   const grupoAtual = tab === "tutorial" ? "Ajuda" : menuAtual?.grupo || "Margem Real";
   const tituloAtual = tab === "tutorial" ? TUTORIAL.label : menuAtual?.label;
   const subtituloAtual = tab === "tutorial" ? TUTORIAL.sub : menuAtual?.sub;
-  const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub, analise: analiseSub, live: liveSub, insumos: insumosSub, estoque: estoqueSub };
+  const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub, analise: analiseSub, live: liveSub, insumos: insumosSub, estoque: estoqueSub, importar: importarSub };
   const abaAtiva = (a) => (a.tab === tab && (!a.s || a.s === subDaAba[a.tab])) || (a.tambem && a.tambem === tab) || (a.tambemSub || []).some(([t, s]) => t === tab && subDaAba[t] === s);
   // Vai pra uma sub-aba do cabeçalho: troca a aba e a sub-aba dela.
   function irParaEntrada(a) {

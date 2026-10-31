@@ -44,11 +44,28 @@ export async function excluirTransferencia(transferenciaId) {
  * cria o saque no Caixa pra cada saída de saque do extrato (uma vez só, pela
  * origem "extrato|<plataforma>|<chave>").
  */
-export async function gravarExtrato({ lojaId, plataforma, transacoes }) {
+export async function gravarExtrato({ lojaId, plataforma, transacoes, importacaoId = null }) {
   const rows = transacoes.map((t) => ({ loja_id: lojaId || null, plataforma, chave: t.chave, data: t.data.replace(" ", "T"), tipo: t.tipo, descricao: t.descricao, pedido: t.pedido, valor: t.valor, status: t.status, saldo_apos: t.saldo_apos }));
-  for (let i = 0; i < rows.length; i += 500) {
-    const { error } = await supabase.from("extrato_carteira").upsert(rows.slice(i, i + 500), { onConflict: "loja_id,plataforma,chave" });
-    if (error) return { ok: false, msg: erroMsg(error) };
+  // v71: as transações NOVAS guardam de qual envio entraram (pro × do envio).
+  let ja = new Set();
+  if (importacaoId) {
+    let q = supabase.from("extrato_carteira").select("chave").eq("plataforma", plataforma);
+    if (lojaId) q = q.eq("loja_id", lojaId);
+    const r = await q;
+    ja = new Set((r.data || []).map((x) => x.chave));
+  }
+  let semControle = !importacaoId;
+  const grupos = importacaoId ? [rows.filter((r) => !ja.has(r.chave)).map((r) => ({ ...r, importacao_id: importacaoId })), rows.filter((r) => ja.has(r.chave))] : [rows];
+  for (let g of grupos) {
+    for (let i = 0; i < g.length; i += 500) {
+      let { error } = await supabase.from("extrato_carteira").upsert(g.slice(i, i + 500), { onConflict: "loja_id,plataforma,chave" });
+      if (error && /importacao_id/.test(error.message || "")) {
+        semControle = true;
+        g = g.map(({ importacao_id: _x, ...r }) => r); // eslint-disable-line no-unused-vars
+        ({ error } = await supabase.from("extrato_carteira").upsert(g.slice(i, i + 500), { onConflict: "loja_id,plataforma,chave" }));
+      }
+      if (error) return { ok: false, msg: erroMsg(error) };
+    }
   }
   let saques = 0;
   for (const t of transacoes.filter((x) => x.saque)) {
@@ -56,5 +73,5 @@ export async function gravarExtrato({ lojaId, plataforma, transacoes }) {
     if (!r.ok) return r;
     saques++;
   }
-  return { ok: true, n: rows.length, saques };
+  return { ok: true, n: rows.length, saques, semControle };
 }
