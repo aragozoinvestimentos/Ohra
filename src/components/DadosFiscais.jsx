@@ -20,8 +20,8 @@ const ORIGENS = [
 const simNao = (v) => (v === true ? "sim" : v === false ? "nao" : "");
 const deSimNao = (v) => (v === "sim" ? true : v === "nao" ? false : null);
 
-export default function DadosFiscais({ form, setForm, revenda }) {
-  const [aberto, setAberto] = useState(!!revenda && !form.ncm);
+export default function DadosFiscais({ form, setForm, revenda, abertoInicial }) {
+  const [aberto, setAberto] = useState(abertoInicial ?? (!!revenda && !form.ncm));
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
   const sugMono = monofasicoPeloNcm(form.ncm);
   const resumo = [form.ncm ? `NCM ${form.ncm}` : "sem NCM", form.imposto_st === true && "com ST", form.monofasico === true && "monofásico"].filter(Boolean).join(" · ");

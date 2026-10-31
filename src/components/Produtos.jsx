@@ -1,5 +1,4 @@
 import { usePreferencia } from "../hooks/usePreferencia.js";
-import { irParaAba } from "../lib/navegar.js";
 import { useEffect, useMemo, useState } from "react";
 import ImpactoCusto from "./ImpactoCusto.jsx";
 import { useEscada } from "../hooks/useEscada.js";
@@ -23,6 +22,30 @@ import BlocoRevenda from "./BlocoRevenda.jsx";
 import CalculadoraPreco from "./CalculadoraPreco.jsx";
 import DadosFiscais from "./DadosFiscais.jsx";
 import { useRevenda } from "../hooks/useRevenda.js";
+import { quandoVendeDe } from "../lib/calendario.js";
+import { abrirProduto } from "../lib/anuncios.js";
+
+// Barra das etapas do cadastro: ✓ feito · ● agora · – pulado · número = falta.
+function PassosCadastro({ passos, passo, feitos, pulados, liberado, onIr }) {
+  return (
+    <nav className="cad-passos" aria-label="Etapas do cadastro">
+      {passos.map((p, i) => {
+        const agora = i === passo;
+        const cls = agora ? "agora" : feitos[p.id] ? "feito" : pulados[p.id] ? "pulado" : "";
+        const b = !agora && feitos[p.id] ? "✓" : !agora && pulados[p.id] ? "–" : i + 1;
+        return (
+          <button key={p.id} type="button" className={`cad-passo ${cls}`} aria-current={agora ? "step" : undefined} disabled={!liberado && i > 0} onClick={() => onIr(i)}>
+            <span className="cad-b">{b}</span>
+            <span>
+              <span className="cad-t">{p.t}</span>
+              <span className="cad-s">{!agora && pulados[p.id] && !feitos[p.id] ? "pulado" : p.s}</span>
+            </span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
 
 const VAZIO = {
   nome: "",
@@ -69,7 +92,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   // Produtos (crus, como estão no banco — o formulário edita os valores
   // gravados), embalagens e materiais (receita e detalhamento) e kits (SKU
   // duplicado) vêm do catálogo compartilhado: uma busca + um realtime.
-  const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, impressoras, farmConfig, carregando, canais: canaisCat = [] } = useCatalogo();
+  const { produtos, embalagens: embalagensCatalogo, materiais, kits: kitsSku, impressoras, farmConfig, carregando, canais: canaisCat = [], variacoes: variacoesCat = [] } = useCatalogo();
   const revendaDados = useRevenda();
   const [form, setForm] = useState(VAZIO);
   const [editandoId, setEditandoId] = useState(null);
@@ -77,7 +100,10 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   const [pecasPorImpressaoSalvo, setPecasPorImpressaoSalvo] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [sugestoesOcultas, setSugestoesOcultas] = useState(false);
-  const [produtoCriado, setProdutoCriado] = useState(null); // { id, nome } — só depois de CADASTRAR um produto novo (não numa edição), pro atalho "Ir para Precificação por Canal"
+  // Cadastro em etapas (31/10/2026, aprovado pela prévia): 1 O que é · 2 Custo · 3 Embalagem ·
+  // 4 Quando vende · 5 Variações · 6 Fiscal · Pronto. A etapa 1 já salva o produto.
+  const [passo, setPasso] = useState(0);
+  const [pulados, setPulados] = useState({});
   const ehRev = form.origem === "revenda";
   const temNotas = ehRev && !!editandoId && revendaDados.comprasItens.some((i) => i.produto_id === editandoId);
 
@@ -174,6 +200,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
         });
         setDetalheSalvo(produtoRecebido.detalhe || null);
         setPecasPorImpressaoSalvo(produtoRecebido.pecasPorImpressao ?? pExistente?.pecas_por_impressao ?? 1);
+        setPasso(1);
       })();
       return;
     }
@@ -247,7 +274,35 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editandoId, form, resultadoDetalhe, usaReceitaEmbalagem, custoEmbalagemReceita, dadosVivos.produtos, dadosVivos.itens, dadosVivos.precos, dadosVivos.canais, maquinaForm]);
 
+  const PASSOS_CAD = [
+    { id: "oque", t: "O que é", s: "nome, SKU, tipo", salva: true },
+    { id: "custo", t: "Custo", s: ehRev ? "custo de compra" : "produção", salva: true },
+    { id: "emb", t: "Embalagem", s: "marketplace + orgânico", salva: true },
+    { id: "quando", t: "Quando vende", s: "ano, pico, época" },
+    { id: "var", t: "Variações", s: "kit 2, kit 3…" },
+    { id: "fiscal", t: "Fiscal", s: "opcional", salva: true },
+    { id: "pronto", t: "Pronto", s: "ir pro preço" },
+  ];
+  const nPos = (v) => Number(String(v ?? "").replace(",", ".")) > 0;
+  const produtoAtual = editandoId ? produtos.find((x) => x.id === editandoId) || null : null;
+  const feitos = {
+    oque: !!editandoId,
+    custo: !!editandoId && (ehRev ? temNotas || nPos(form.custo_producao) : !!form.producao_detalhe || nPos(form.custo_producao)),
+    emb: !!editandoId && (usaReceitaEmbalagem || nPos(form.embalagem_padrao)),
+    quando: !!quandoVendeDe(produtoAtual),
+    var: !!editandoId && (variacoesCat || []).some((v) => v.produto_id === editandoId),
+    fiscal: !!editandoId && !!String(form.ncm || "").trim(),
+    pronto: false,
+  };
+  const faltam = PASSOS_CAD.filter((x) => x.id !== "pronto" && !feitos[x.id]).map((x) => x.t);
+  function irPasso(i) {
+    if (i > 0 && !editandoId) return onToast("Salve a etapa 1 (O que é) primeiro");
+    setPasso(i);
+  }
+
   function limpar() {
+    setPasso(0);
+    setPulados({});
     setForm(VAZIO);
     setEditandoId(null);
     setDetalheSalvo(null);
@@ -265,7 +320,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     }));
   }
 
-  async function salvar() {
+  async function salvar({ irPara = null } = {}) {
     const nome = String(form.nome || "").trim();
     if (!nome) {
       onToast("Dê um nome ao produto");
@@ -367,19 +422,25 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
     const mediaImpacto = impacto?.relevante && impacto.linhas.length ? impacto.linhas.reduce((s, l) => s + l.diferenca, 0) / impacto.linhas.length : null;
     onToast(
       eraNovo
-        ? "Produto cadastrado"
+        ? "Produto salvo — continue o cadastro"
         : mediaImpacto != null
           ? `Produto atualizado · lucro ${mediaImpacto >= 0 ? "+" : "−"}R$ ${Math.abs(mediaImpacto).toFixed(2).replace(".", ",")}/venda em média (${impacto.itensAfetados} item(ns)) · detalhes em Produtos precificados → Custo mudou`
           : "Produto atualizado"
     );
-    // Atalhos depois de salvar (novo ou editado): calcular custo / precificar.
-    setProdutoCriado(produtoId ? { id: produtoId, nome, novo: eraNovo } : null);
-    limpar();
+    // Continua no cadastro em etapas: o produto (novo) passa a ser o que está sendo editado.
+    setEditandoId(produtoId);
+    setDetalheSalvo(form.producao_detalhe || null);
+    setPecasPorImpressaoSalvo(form.pecas_por_impressao ?? 1);
+    if (irPara != null) {
+      setPulados((x) => ({ ...x, [PASSOS_CAD[passo]?.id]: false }));
+      setPasso(irPara);
+    }
   }
 
   async function editar(p) {
     setEditandoId(p.id);
-    setProdutoCriado(null);
+    setPasso(0);
+    setPulados({});
     let itens = [];
     if (supabase) {
       const { data } = await supabase.from("produto_embalagens").select("*").eq("produto_id", p.id);
@@ -419,7 +480,6 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
   // ficam do jeito que a pessoa já tinha digitado (é o que diferencia essa
   // variação da original), só o resto vem copiado.
   async function usarComoBase(p) {
-    setProdutoCriado(null);
     let itens = [];
     if (supabase) {
       const { data } = await supabase.from("produto_embalagens").select("*").eq("produto_id", p.id);
@@ -478,9 +538,13 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
       )}
       <div className="panel">
         <h3 className="section-title">
-          {editandoId ? "Editar produto" : "Cadastrar produto"}
+          {editandoId ? `Editar produto${form.nome ? ` — ${form.nome}` : ""}` : "Cadastrar produto"}
           <Ajuda texto="Dica: em Custo de Produção, o botão “Salvar como produto” já traz o custo calculado pra cá. Pra ver, buscar, clonar, editar ou excluir os produtos já cadastrados, use Catálogo → Produtos precificados." />
         </h3>
+        <PassosCadastro passos={PASSOS_CAD} passo={passo} feitos={feitos} pulados={pulados} liberado={!!editandoId} onIr={irPasso} />
+        {passo === 0 && (
+          <>
+            <h3 className="section-title">1 · O que é</h3>
         <div className="origem-produto" role="radiogroup" aria-label="De onde vem este produto">
           <button type="button" role="radio" aria-checked={!ehRev} className={`origem-op${!ehRev ? " on" : ""}`} onClick={() => setForm((prev) => ({ ...prev, origem: "fabricado" }))}>
             <b>Fabricado</b>
@@ -575,7 +639,33 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
             </div>
           </div>
         )}
-        <div className="row4">
+            <div className="row3">
+          <div className="field">
+            <label>
+              Peso da peça (g)
+              <Ajuda texto="Peso de UMA peça, sem embalagem. Vem sozinho quando você salva pelo Custo de Produção (calculado pelo filamento) — dá pra ajustar se pesar na balança. Somado ao peso dos itens de embalagem, vira o peso de envio (usado nas variações e em Produtos precificados)." />
+            </label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={form.peso_g}
+              placeholder={resultadoDetalhe?.peso ? String(Math.round(resultadoDetalhe.peso)) : "ex: 82"}
+              onChange={setCampo("peso_g")}
+            />
+          </div>
+            </div>
+        <div className="field">
+          <label>Observação (opcional)</label>
+          <input type="text" value={form.observacao} onChange={setCampo("observacao")} />
+        </div>
+
+          </>
+        )}
+        {passo === 1 && (
+          <>
+            <h3 className="section-title">2 · {ehRev ? "Custo de compra" : "Custo de produção"}</h3>
+            <div className="row4">
           <div className="field">
             <label>{ehRev ? "Custo de compra (R$)" : "Custo de produção (R$)"}</label>
             {ehRev ? (
@@ -601,54 +691,7 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
               />
             )}
           </div>
-          <div className="field">
-            <label>Frete padrão (R$)</label>
-            <input type="number" step="0.01" value={form.frete_padrao} onChange={setCampo("frete_padrao")} />
-          </div>
-          <div className="field">
-            <label>Embalagem (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              disabled={usaReceitaEmbalagem}
-              value={usaReceitaEmbalagem ? custoEmbalagemReceita.toFixed(2) : form.embalagem_padrao}
-              onChange={setCampo("embalagem_padrao")}
-              title={usaReceitaEmbalagem ? "Calculado a partir dos itens de embalagem abaixo" : "Valor manual — some itens abaixo pra calcular sozinho"}
-            />
-          </div>
-          <div className="field">
-            <label>
-              Peso da peça (g)
-              <Ajuda texto="Peso de UMA peça, sem embalagem. Vem sozinho quando você salva pelo Custo de Produção (calculado pelo filamento) — dá pra ajustar se pesar na balança. Somado ao peso dos itens de embalagem, vira o peso de envio (usado nas variações e em Produtos precificados)." />
-            </label>
-            <input
-              type="number"
-              step="1"
-              min="0"
-              value={form.peso_g}
-              placeholder={resultadoDetalhe?.peso ? String(Math.round(resultadoDetalhe.peso)) : "ex: 82"}
-              onChange={setCampo("peso_g")}
-            />
-          </div>
-        </div>
-        <div className="field">
-          <label>Observação (opcional)</label>
-          <input type="text" value={form.observacao} onChange={setCampo("observacao")} />
-        </div>
-
-        <h3 className="section-title">
-          Itens de embalagem
-          <Ajuda texto="Escolha os itens (cadastrados em Cadastros → Embalagens) que esse produto gasta pra ser enviado, e quantos de cada. O total substitui o campo manual 'Embalagem' acima e atualiza sozinho se o preço de um item mudar. Deixe vazio pra usar o campo manual." />
-        </h3>
-        <SeletorItens
-          catalogo={catalogoEmbalagem}
-          itens={form.embalagemItens}
-          onChange={(itens) => setForm((prev) => ({ ...prev, embalagemItens: itens }))}
-          rotuloVazio='Nenhuma embalagem cadastrada — cadastre em Cadastros → Embalagens (caixa, plástico bolha...), ou use o campo manual acima.'
-        />
-
-        <DadosFiscais form={form} setForm={setForm} revenda={ehRev} />
-
+            </div>
         {ehRev ? (
           <BlocoRevenda
             produtoId={editandoId}
@@ -684,7 +727,58 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
           </>
         )}
 
-        {editandoId ? (
+            {editandoId && <ImpactoCusto impacto={impacto} titulo="Impacto da mudança (se salvar)" />}
+          </>
+        )}
+        {passo === 2 && (
+          <>
+            <h3 className="section-title">3 · Embalagem</h3>
+            <div className="row4">
+          <div className="field">
+            <label>Frete padrão (R$)</label>
+            <input type="number" step="0.01" value={form.frete_padrao} onChange={setCampo("frete_padrao")} />
+          </div>
+          <div className="field">
+            <label>Embalagem (R$)</label>
+            <input
+              type="number"
+              step="0.01"
+              disabled={usaReceitaEmbalagem}
+              value={usaReceitaEmbalagem ? custoEmbalagemReceita.toFixed(2) : form.embalagem_padrao}
+              onChange={setCampo("embalagem_padrao")}
+              title={usaReceitaEmbalagem ? "Calculado a partir dos itens de embalagem abaixo" : "Valor manual — some itens abaixo pra calcular sozinho"}
+            />
+          </div>
+            </div>
+        <h3 className="section-title">
+          Itens de embalagem
+          <Ajuda texto="Escolha os itens (cadastrados em Cadastros → Embalagens) que esse produto gasta pra ser enviado, e quantos de cada. O total substitui o campo manual 'Embalagem' acima e atualiza sozinho se o preço de um item mudar. Deixe vazio pra usar o campo manual." />
+        </h3>
+        <SeletorItens
+          catalogo={catalogoEmbalagem}
+          itens={form.embalagemItens}
+          onChange={(itens) => setForm((prev) => ({ ...prev, embalagemItens: itens }))}
+          rotuloVazio='Nenhuma embalagem cadastrada — cadastre em Cadastros → Embalagens (caixa, plástico bolha...), ou use o campo manual acima.'
+        />
+
+            <h3 className="section-title">Embalagem no orgânico (venda na loja)</h3>
+            {(() => {
+              const p = produtos.find((x) => x.id === editandoId);
+              return p ? (
+                <EmbalagemOrganicoBloco key={`${p.id}-${JSON.stringify(p.embalagem_organico || null)}`} dono={{ tipo: "produto", id: p.id, nome: p.nome }} config={p.embalagem_organico || null} canais={canaisCat} embalagens={embalagensCatalogo} onToast={onToast} />
+              ) : null;
+            })()}
+            {editandoId && <ImpactoCusto impacto={impacto} titulo="Impacto da mudança (se salvar)" />}
+          </>
+        )}
+        {passo === 3 && editandoId && (
+          <>
+            <h3 className="section-title">4 · Quando vende</h3>
+            <QuandoVende produtoId={editandoId} onToast={onToast} />
+          </>
+        )}
+        {passo === 4 && editandoId && (
+          <>
           <VariacoesProduto
             produto={{
               id: editandoId,
@@ -705,76 +799,63 @@ export default function Produtos({ produtoRecebido, abrirProdutoId, onToast, onP
             materiais={materiais}
             onToast={onToast}
           />
-        ) : (
-          <>
-            <h3 className="section-title">Variações de quantidade</h3>
-            <div className="hint">Cadastre o produto primeiro — depois, ao editar, dá pra criar variações (kit 2, kit 3…).</div>
           </>
         )}
-
-        {editandoId && (
+        {passo === 5 && (
           <>
-            <h3 className="section-title">Quando vende</h3>
-            <QuandoVende produtoId={editandoId} onToast={onToast} />
-            <h3 className="section-title">Embalagem no orgânico (venda na loja)</h3>
-            {(() => {
-              const p = produtos.find((x) => x.id === editandoId);
-              return p ? (
-                <EmbalagemOrganicoBloco key={`${p.id}-${JSON.stringify(p.embalagem_organico || null)}`} dono={{ tipo: "produto", id: p.id, nome: p.nome }} config={p.embalagem_organico || null} canais={canaisCat} embalagens={embalagensCatalogo} onToast={onToast} />
-              ) : null;
-            })()}
+            <DadosFiscais form={form} setForm={setForm} revenda={ehRev} abertoInicial />
           </>
         )}
+        {passo === 6 && editandoId && (
+          <div className="cad-pronto">
+            <div className="cad-pronto-titulo">{form.nome || "Produto"} cadastrado ✓</div>
+            <p className="hint">
+              {faltam.length ? `Ficou faltando: ${faltam.join(", ")} — dá pra voltar em qualquer etapa (clique na barra acima) ou completar pela Página do produto.` : "Cadastro completo."}
+            </p>
+            <p className="hint">Agora o preço e o anúncio: 1º Avulso → 2º Por quantidade → 3º Ficha (cores) → 4º Lançamento → 5º Anunciar.</p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+              <button type="button" className="btn" onClick={() => abrirProduto(`p:${editandoId}`)}>
+                Abrir a Página do produto
+              </button>
+              <button type="button" className="btn" onClick={() => { limpar(); }}>
+                + Cadastrar outro produto
+              </button>
+              <button type="button" className="btn primary" onClick={() => onProdutoCriado?.(editandoId, form.nome)}>
+                Precificar este produto →
+              </button>
+            </div>
+          </div>
+        )}
 
-        {editandoId && <ImpactoCusto impacto={impacto} titulo="Impacto da mudança (se salvar)" />}
-
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button className="btn primary" onClick={salvar} disabled={salvando}>
-            {salvando ? "Salvando…" : editandoId ? "Salvar alterações" : "+ Cadastrar produto"}
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              limpar();
-              setProdutoCriado(null);
-            }}
-            disabled={salvando}
-          >
-            {editandoId ? "Cancelar" : "Limpar"}
-          </button>
-        </div>
+        {passo < 6 && (
+          <div className="cad-rodape">
+            {passo > 0 && (
+              <button type="button" className="btn" onClick={() => setPasso(passo - 1)} disabled={salvando}>
+                ← Voltar
+              </button>
+            )}
+            <button type="button" className="link-btn" onClick={limpar} disabled={salvando}>
+              {editandoId ? "Fechar (sem salvar esta etapa)" : "Limpar"}
+            </button>
+            <span style={{ flex: 1 }} />
+            {passo > 0 && (
+              <button type="button" className="link-btn" onClick={() => { setPulados((x) => ({ ...x, [PASSOS_CAD[passo].id]: true })); setPasso(passo + 1); }} disabled={salvando}>
+                Pular por agora
+              </button>
+            )}
+            {PASSOS_CAD[passo].salva ? (
+              <button className="btn primary" onClick={() => salvar({ irPara: passo + 1 })} disabled={salvando}>
+                {salvando ? "Salvando…" : passo === 0 && !editandoId ? "Salvar e continuar →" : "Salvar e continuar →"}
+              </button>
+            ) : (
+              <button className="btn primary" onClick={() => setPasso(passo + 1)}>
+                Próximo →
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {produtoCriado && (
-        <div className="panel" style={{ background: "var(--surface-2)" }}>
-          <div className="hint" style={{ marginTop: 0 }}>
-            Produto "{produtoCriado.nome}" {produtoCriado.novo ? "cadastrado" : "salvo"}. Próximo passo:
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                irParaAba("producao", { produtoId: produtoCriado.id });
-                setProdutoCriado(null);
-              }}
-            >
-              Calcular custo →
-            </button>
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => {
-                onProdutoCriado?.(produtoCriado.id, produtoCriado.nome);
-                setProdutoCriado(null);
-              }}
-            >
-              Precificar este produto →
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

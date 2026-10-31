@@ -2942,3 +2942,18 @@ tr.imp-erro td { color: var(--ink-faint); }
 .caixinhas-acoes { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; }
 .caixinha-valor { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0; }
 .caixinha-valor.neg, .caixinhas-topo .neg { color: var(--st-resolver); }
+
+/* Cadastro de produto em etapas (31/10/2026) */
+.cad-passos { display: flex; gap: 6px; overflow-x: auto; margin: 4px 0 12px; padding-bottom: 2px; }
+.cad-passo { flex: 1 0 116px; display: flex; gap: 8px; align-items: center; text-align: left; border: 1px solid var(--border); border-radius: 12px; padding: 7px 10px; background: var(--surface); color: var(--ink-soft); font: inherit; cursor: pointer; }
+.cad-passo:disabled { cursor: not-allowed; opacity: .55; }
+.cad-passo .cad-b { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; flex: none; border: 1.5px solid var(--border); color: var(--ink-faint); }
+.cad-passo .cad-t { display: block; font-size: 12.5px; font-weight: 700; line-height: 1.2; color: var(--ink); }
+.cad-passo .cad-s { display: block; font-size: 11px; color: var(--ink-faint); }
+.cad-passo.feito .cad-b { background: var(--st-oportunidade-soft); border-color: var(--st-oportunidade); color: var(--st-oportunidade); }
+.cad-passo.pulado .cad-b { border-style: dashed; }
+.cad-passo.agora { border-color: var(--accent); background: var(--accent-soft); }
+.cad-passo.agora .cad-b { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cad-rodape { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.cad-pronto { text-align: center; padding: 18px 8px; }
+.cad-pronto-titulo { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
