@@ -301,7 +301,17 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       if (!s.ok) throw new Error(s.msg);
       txtLoja = ` + GMV Max da Loja (${BRL(res.lojaAndamento.valores.gasto)})`;
     }
-    setPerguntas((res.perguntas || []).filter((q) => adsIgnorados[q.chave] !== sigPergunta(q)));
+    // "Estender o fim?" só com gasto DEPOIS do fim do período (31/10/2026, Kit Leão):
+    // o CSV somado desde o 1º envio carrega o gasto antigo da campanha que já
+    // acabou — sem gasto nos envios que começam depois do fim, não pergunta.
+    const perg = (res.perguntas || []).filter((q) => {
+      if (q.tipo !== "estender") return true;
+      const depois = janelasAds.filter((j) => j.de > q.periodo.fim);
+      if (!depois.length) return false;
+      const rd = andamentoDoCsv([somarJanelasAds(depois.map((j) => relatorioDoGuardado(j.rel)))], [{ ...q.l, av: { ...q.l.av, ativo: null } }], null);
+      return num(rd.porChave[q.chave]?.gasto) > 0.004 || (rd.perguntas || []).some((x) => x.chave === q.chave);
+    });
+    setPerguntas(perg.filter((q) => adsIgnorados[q.chave] !== sigPergunta(q)));
     setInfos(res.infos || []);
     setAvisos((a) => ({ ...a, [rel]: [...furos.map((f) => `Ads: ${textoFuro(f)} — exporte esse período pra completar (o resto já foi somado).`), ...(res.avisos || [])] }));
     return { soma, n, txtLoja };
@@ -480,7 +490,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
       if (r && !r.ok) return onToast?.(r.msg);
       window.dispatchEvent(new Event("focus"));
       if (msg) onToast?.(msg);
-    } else if (["parado", "corrigir", "criar-encerrado"].includes(q.tipo)) setAdsIgnorados((m) => ({ ...m, [q.chave]: sigPergunta(q) }));
+    } else if (["parado", "corrigir", "criar-encerrado", "estender"].includes(q.tipo)) setAdsIgnorados((m) => ({ ...m, [q.chave]: sigPergunta(q) }));
     setPerguntas((p) => p.filter((x) => x.chave !== q.chave));
   }
 
