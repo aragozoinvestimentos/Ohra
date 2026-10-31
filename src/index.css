@@ -2884,3 +2884,32 @@ tr.linha-divisa td { background: var(--surface-2, rgba(0,0,0,.03)); font-size: 1
 .fat-mesa-por { display: grid; justify-items: end; font-size: 11px; color: var(--ink-soft); padding-bottom: 4px; }
 .fat-mesa-por b { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
 @media (max-width: 520px) { .fat-mesa-l1 { grid-template-columns: 1fr 1fr; } .fat-mesa-acoes { grid-column: 1 / -1; justify-content: flex-end; } .fat-mesa-l2 { grid-template-columns: repeat(3, 1fr); } .fat-mesa-por { grid-column: 1 / -1; justify-items: start; } }
+
+/* Campanhas do TikTok (CampanhasTiktok.jsx, 31/10/2026) */
+.camp-regra { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; background: var(--st-info-soft, var(--surface-2)); border-radius: 10px; padding: 9px 12px; font-size: 13px; margin-bottom: 10px; }
+.camp-regra b { color: var(--st-decisao, var(--accent)); }
+.camp-regra label { display: flex; gap: 6px; align-items: center; }
+.camp-canal { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.camp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; padding: 10px 14px; }
+.camp-card { border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; display: grid; gap: 3px; background: var(--surface-3); text-align: left; font: inherit; color: inherit; }
+.camp-card.on { border-color: var(--accent); }
+.camp-card-t { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.camp-tipo { font-size: 11px; font-weight: 700; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .04em; }
+.camp-val { font-size: 18px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.camp-acoes { display: flex; gap: 10px; font-size: 12px; }
+.camp-nova { border-style: dashed; place-items: center; color: var(--ink-faint); min-height: 90px; cursor: pointer; }
+.camp-encerradas { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-soft); }
+.camp-pct { color: var(--accent); font-size: 16px; }
+.camp-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.camp-box { border-radius: 10px; padding: 9px 12px; font-size: 13px; display: grid; gap: 3px; justify-items: start; }
+.camp-box.ok { background: var(--st-oportunidade-soft); }
+.camp-box.ok > b { color: var(--st-oportunidade); font-size: 17px; }
+.camp-box.warn { background: var(--st-atencao-soft); }
+.camp-box.warn > b { color: var(--st-atencao); }
+.camp-tirar { font-size: 14px; }
+.camp-leg { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--ink-soft); padding: 8px 14px 0; }
+.camp-leg span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+.camp-barra { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--surface-2); width: 200px; }
+.camp-barra i { display: block; height: 100%; }
+.cb-camp { background: var(--accent); } .cb-cup { background: #c98a5b; } .cb-frete { background: #a59a8e; } .cb-live { background: #1a9a96; } .cb-falta { background: var(--st-resolver); }
+tr.camp-fora td { opacity: .55; }

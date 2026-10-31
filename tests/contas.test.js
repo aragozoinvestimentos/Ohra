@@ -796,3 +796,44 @@ describe("Dados do fatiador: uma mesa, AMS e várias mesas", () => {
     expect(r.peso).toBeCloseTo(75, 6);
   });
 });
+
+import { descontosForaDaLive, espacoNoItem, capDaCampanha, resumoDaCampanha, avisosCampanhas } from "../src/lib/campanhas.js";
+
+describe("Campanhas do TikTok: reserva da live", () => {
+  const canal = { id: "t", tipo: "tiktok", nome: "TikTok" };
+  const cfg = { margemMin: 0.15, margemDesejada: 0.3, lucroMinimo: 0 };
+  const x = { canal, preco: 59.9, custo: 15, peso: 200, cfg };
+  const hoje = "2026-10-31";
+  const camp = { id: "a", tipo: "produto", pct: 10, itens: ["p:1"], fim: "2026-11-30" };
+
+  it("soma campanha + cupom ativo + frete fora da live (a da LIVE fica de fora)", () => {
+    const live = { id: "l", tipo: "relampago-live", pct: 20, itens: ["p:1"] };
+    const frete = { id: "f", tipo: "frete", valor: 4, minimo: 30, todos: true };
+    const f = descontosForaDaLive({ campanhas: [camp, live, frete], anuncioId: "p:1", preco: 59.9, faixas: [{ minimo: 40, tipo: "pct", valor: 5 }], hoje });
+    expect(f.camp).toBe(10);
+    expect(f.cupom).toBeCloseTo(53.91 * 0.05, 2);
+    expect(f.frete).toBe(4);
+  });
+
+  it("sobra pra live diminui com a campanha e o cap guarda a reserva", () => {
+    const sem = espacoNoItem(x, { camp: 0, cupom: 0, frete: 0 }, 10);
+    const com = espacoNoItem(x, descontosForaDaLive({ campanhas: [camp], anuncioId: "p:1", preco: 59.9, hoje }), 10);
+    expect(com.sobra).toBeLessThan(sem.sobra);
+    expect(sem.sobra).toBe(sem.maxSem);
+    const cap = capDaCampanha(x, { campanhas: [], anuncioId: "p:1", faixas: [], hoje, reserva: 10 });
+    const noCap = espacoNoItem(x, { camp: cap, cupom: 0, frete: 0 }, 10);
+    expect(noCap.sobra).toBeGreaterThanOrEqual(10);
+    expect(espacoNoItem(x, { camp: cap + 1, cupom: 0, frete: 0 }, 10).sobra).toBeLessThan(10);
+  });
+
+  it("resumo diz quem tirar e o Início avisa quem come a live", () => {
+    const linhas = [{ id: "p:1", nome: "A", cap: 15, estado: "ok", sobra: 12 }, { id: "p:2", nome: "B", cap: 4, estado: "come-live", sobra: 4 }];
+    const r = resumoDaCampanha(linhas, 10);
+    expect(r.capTodos).toBe(4);
+    expect(resumoDaCampanha([...linhas, { id: "p:3", nome: "C", cap: -1 }], 10).capTodos).toBe(4);
+    expect(r.tirar.map((l) => l.nome)).toEqual(["B"]);
+    const av = avisosCampanhas({ campanhas: [{ ...camp, itens: ["p:1", "p:2"] }], linhas, canal, hoje });
+    expect(av).toHaveLength(1);
+    expect(av[0].titulo).toMatch(/sem espaço pro cupom da live/);
+  });
+});

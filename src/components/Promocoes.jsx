@@ -3,11 +3,13 @@ import { pegarPedido } from "../lib/navegar.js";
 import PromocaoSimulador from "./PromocaoSimulador.jsx";
 import PromocoesSalvas from "./PromocoesSalvas.jsx";
 import CupomLoja from "./CupomLoja.jsx";
+import CampanhasTiktok from "./CampanhasTiktok.jsx";
 
 const SUBABAS = [
   { key: "simular", label: "Simular promoção" },
   { key: "salvas", label: "Promoções salvas" },
   { key: "cupom", label: "Cupom da loja" },
+  { key: "campanhas", label: "Campanhas do TikTok" },
 ];
 
 export default function Promocoes({ onToast }) {
@@ -41,6 +43,7 @@ export default function Promocoes({ onToast }) {
       {sub === "simular" && <PromocaoSimulador onToast={onToast} />}
       {sub === "salvas" && <PromocoesSalvas onToast={onToast} />}
       {sub === "cupom" && <CupomLoja />}
+      {sub === "campanhas" && <CampanhasTiktok />}
     </div>
   );
 }

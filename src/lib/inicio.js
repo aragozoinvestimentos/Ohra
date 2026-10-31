@@ -91,6 +91,7 @@ export function montarPendencias({
   adsSazonal = [], // [{ chave, item, canal, aviso }] fases do Ads sazonal (ads.js → avisoAdsSazonal)
   importacoes = null, // { disponivel, lista, plataformas: [{ id, nome }] } — central da aba Análise (v55)
   saldoDeAds = null, // saldoAds (lib/saldoAds.js): recargas − gasto dos CSVs
+  campanhasAvisos = [], // campanhas do TikTok sem espaço pro cupom da live (campanhas.js → avisosCampanhas), já no formato de pendência
   cupomRuins = [], // [{ item, canal, lucro, estado }] cupom ativo da loja deixando anúncio no prejuízo/abaixo (cupomLoja.js)
   diagnosticos = [], // [{ l (montarAnuncios), d (lib/diagnostico.js) }] — só atenção/oportunidade
   vendasSemana = () => 0, // (itemId, canalId) → unidades por semana (pedidos de 4 semanas) — pro valor em R$ do aviso
@@ -651,6 +652,7 @@ export function montarPendencias({
     });
   }
   for (const p of afLoja) add(p);
+  for (const p of campanhasAvisos) add(p);
   for (const { item, canal } of atracao)
     add({
       id: `atracao|${item.id}|${canal.id}`,

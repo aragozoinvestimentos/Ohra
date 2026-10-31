@@ -1,4 +1,5 @@
 import { comCupomAtivo, cuponsAtivos } from "../lib/cupomLoja.js";
+import { anunciosDaCampanha, situacaoDosAnuncios, avisosCampanhas, campanhaVigente, RESERVA_LIVE_PADRAO } from "../lib/campanhas.js";
 import { vendasPeloComeco } from "../lib/vinculoSku.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
 import { PLATAFORMAS } from "../lib/pedidos.js";
@@ -168,6 +169,22 @@ export default function Inicio({ onIrPara, onToast }) {
     }
     return out;
   }, [dados]);
+  // Campanhas do TikTok (31/10/2026): campanha ativa deixando produto sem espaço pro cupom da live.
+  const [campPref] = usePreferencia("promocoes:campanhas", {});
+  const campanhasAvisos = useMemo(() => {
+    const lista = Array.isArray(campPref?.campanhas) ? campPref.campanhas : [];
+    const vig = lista.filter((c) => campanhaVigente(c, hoje));
+    if (!vig.length) return [];
+    const reserva = campPref.reserva == null || campPref.reserva === "" ? RESERVA_LIVE_PADRAO : Number(campPref.reserva) || 0;
+    const out = [];
+    for (const c of dados.canais || []) {
+      const doCanal = vig.filter((x) => x.canalId === c.id);
+      if (!doCanal.length) continue;
+      const linhasC = situacaoDosAnuncios(anunciosDaCampanha(dados, c), { campanhas: doCanal, faixas: cuponsAtivos(dados.cfgLoja, c.id), hoje, reserva });
+      out.push(...avisosCampanhas({ campanhas: doCanal, linhas: linhasC, canal: c, hoje }));
+    }
+    return out;
+  }, [campPref, dados, hoje]);
   const peloComeco = useMemo(() => vendasPeloComeco(reais.linhas, { produtos: dados.produtos, kits: dados.kits, hoje }), [reais.linhas, dados.produtos, dados.kits, hoje]);
   const impCentral = useMemo(
     () => (reais.carregando ? null : { disponivel: reais.disponivel, lista: reais.importacoes, plataformas: PLATAFORMAS.filter((p) => (dados.canais || []).some((c) => c.tipo === p.tipo)), avaliacoes: avaliacoesPend, peloComeco }),
@@ -347,8 +364,8 @@ export default function Inicio({ onIrPara, onToast }) {
   const revisarME = precisaRevisarME(dados.cfgLoja);
   const limMei = useMemo(() => (regime.regime === "mei" ? limiteMei({ pedidos: pedidosValidos || [], limite: regime.limiteAnual, hoje }) : null), [regime.regime, regime.limiteAnual, pedidosValidos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: erpDaLoja(dados.cfgLoja).id === "nenhum" && impCentral ? { ...impCentral, plataformas: [] } : impCentral, saldoDeAds, cupomRuins, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, revisarME, hoje }),
-    [vendasSemana, cupomRuins, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, dados.cfgLoja, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, revisarME, hoje]
+    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: erpDaLoja(dados.cfgLoja).id === "nenhum" && impCentral ? { ...impCentral, plataformas: [] } : impCentral, saldoDeAds, cupomRuins, campanhasAvisos, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, revisarME, hoje }),
+    [vendasSemana, cupomRuins, campanhasAvisos, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, dados.cfgLoja, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, revisarME, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.
