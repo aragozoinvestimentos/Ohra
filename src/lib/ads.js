@@ -586,8 +586,14 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     // — quero saber cedo e mudar às 22h"): no ÚLTIMO dia da espera de 7 dias a
     // recomendação já aparece, com "mude hoje entre 22h e meia-noite".
     let noiteDecisao = false;
+    // ROAS ajustado (01/11/2026): aumentar o orçamento só com as vendas CONFIRMADAS
+    // pelos pedidos pagos (provisório = tem pedido ainda sem pagamento; insuficiente =
+    // faltam os pedidos dessas datas). Frear continua valendo (o ajustado é o máximo).
+    const ajuste = ativo.parcial?.ajuste || null;
     const sitA = (chave, estado, titulo, texto, extra = {}) =>
-      noiteDecisao && ACOES_NOITE.has(chave)
+      chave === "aumentar" && ajuste && ajuste.estado !== "confirmado"
+        ? sit("aguardar-pedidos", "info", ajuste.estado === "provisorio" ? "Dá pra aumentar — espere os pedidos pagarem" : "Dá pra aumentar — importe os pedidos antes", ajuste.estado === "provisorio" ? `Pelo CSV dá pra subir o orçamento, mas ${ajuste.pendentes} pedido${ajuste.pendentes === 1 ? "" : "s"} deste anúncio ainda não ${ajuste.pendentes === 1 ? "foi pago" : "foram pagos"}. Confira de novo quando o próximo arquivo de pedidos confirmar o pagamento.` : "Os pedidos importados ainda não cobrem as datas do CSV do Ads — sem eles o app não sabe quantas vendas foram pagas de verdade (a Shopee conta não pagos e outros produtos). Importe os pedidos em Atualizar dados.", { avisoMeta, ...extra })
+        : noiteDecisao && ACOES_NOITE.has(chave)
         ? sit(chave, estado, `Hoje à noite: ${titulo}`, `${texto} Último dia da semana: os 6 dias já mostram o resultado — mude na Shopee hoje entre 22h e meia-noite (o orçamento zera à 0h).`, { avisoMeta, noite: true, ...extra })
         : sit(chave, estado, titulo, texto, { avisoMeta, ...extra });
     // Teste de lançamento: orçamento fechado, regras e resultado na Rampa.
@@ -1018,4 +1024,68 @@ export function origemDoGasto(periodo, semanas) {
     somaMao: r2(mao.reduce((t, s) => t + num(s.ads_gasto), 0)),
     fora,
   };
+}
+
+// ---------- ROAS ajustado (01/11/2026, aprovado pelo Gustavo) ----------
+// O CSV do Shopee Ads conta como "venda via Ads" pedido NÃO pago, cancelado e
+// compra de OUTRO produto depois do clique. O app guarda o número da Shopee
+// (parcialShopee / vendasShopee) e, pras contas e decisões, usa:
+//   vendas via Ads = o menor entre os "Itens Vendidos Diretos" do CSV (só o
+//   produto do anúncio; relatório antigo sem a coluna = o total) e as unidades
+//   PAGAS do anúncio nos pedidos importados no mesmo período.
+// Os arquivos não ligam pedido a pedido (a Olist não diz se veio do Ads), então
+// é o MÁXIMO que o Ads pode ter vendido: seguro pra frear; pra acelerar, vale a
+// etiqueta (confirmado · provisório · dados insuficientes).
+// pagas(de, ate) → { un, pago, lucro } (pedidos válidos do anúncio)
+// pendentes(de, ate) → unidades de pedidos ainda NÃO pagos do anúncio
+// cobre(de, ate) → os pedidos importados cobrem essas datas
+export const FOLGA_PAGAMENTO_DIAS = 2;
+export function periodoAjustado(p, { pagas, pendentes = () => 0, cobre }) {
+  const par = p?.parcial;
+  if (!par?.ate || !p?.inicio || !pagas || !cobre) return p;
+  const ini = String(p.inicio).slice(0, 10);
+  const daShopee = (h) => (h.diretas != null ? num(h.diretas) : num(h.vendas));
+  const capar = (h) => {
+    if (!h?.ate) return h;
+    const ate = String(h.ate).slice(0, 10);
+    if (!cobre(ini, ate)) return { ...h, vendasShopee: num(h.vendas) };
+    // pedido ainda não pago nos últimos dias pode pagar: entra no teto (não pune)
+    const pend = pendentes(somarDiasIso(ate, -FOLGA_PAGAMENTO_DIAS), ate);
+    return { ...h, vendas: Math.min(daShopee(h), pagas(ini, ate).un + pend), vendasShopee: num(h.vendas) };
+  };
+  const ate = String(par.ate).slice(0, 10);
+  const cob = cobre(ini, ate);
+  const pg = cob ? pagas(ini, ate) : null;
+  const pend = cob ? pendentes(somarDiasIso(ate, -FOLGA_PAGAMENTO_DIAS), ate) : 0;
+  const novo = capar(par);
+  const estado = !cob ? "insuficiente" : pend > 0 ? "provisorio" : "confirmado";
+  return {
+    ...p,
+    parcialShopee: p.parcialShopee || par,
+    parcial: {
+      ...novo,
+      historico: Array.isArray(par.historico) ? par.historico.map(capar) : par.historico,
+      ajuste: {
+        estado,
+        shopee: num(par.vendas),
+        diretas: par.diretas != null ? num(par.diretas) : null,
+        pagas: pg ? pg.un : null,
+        pendentes: pend,
+        pagoReal: pg ? pg.pago : null,
+        lucroReal: pg ? pg.lucro : null,
+        receitaShopee: par.receita != null ? num(par.receita) : null,
+      },
+    },
+  };
+}
+
+// Texto curto da diferença (Painel do anúncio, cartão do período).
+export function textoAjusteAds(aj, roasShopee) {
+  if (!aj) return null;
+  if (aj.estado === "insuficiente") return "ROAS ajustado indisponível — importe os pedidos dessas datas (vale o número da Shopee por enquanto).";
+  const base = `Shopee diz ${aj.shopee} venda${aj.shopee === 1 ? "" : "s"}${roasShopee != null ? ` (ROAS ${String(Math.round(roasShopee * 10) / 10).replace(".", ",")})` : ""}`;
+  const partes = [];
+  if (aj.diretas != null && aj.diretas < aj.shopee) partes.push(`${aj.diretas} do próprio produto`);
+  partes.push(`${aj.pagas} paga${aj.pagas === 1 ? "" : "s"} deste anúncio no período`);
+  return `${base} — conta não pagos, cancelados e outros produtos depois do clique · ${partes.join(" · ")}${aj.estado === "provisorio" ? ` · ${aj.pendentes} pedido${aj.pendentes === 1 ? "" : "s"} ainda sem pagamento (provisório)` : ""}`;
 }

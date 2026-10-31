@@ -13,7 +13,8 @@ import { resultadoNoPreco, resolverTaxasNoPreco } from "../src/lib/calc.js";
 import { calcularAnuncio, calcularEscada, configEscada, lucroNoPreco, precoPorMarkup, r5090perto, r90perto, r90up } from "../src/lib/escada.js";
 import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
 import { quebraLucro } from "../src/lib/precoAgora.js";
-import { avaliarAds, degrauAnterior, passoDaEscada, primeiroDiaFraco, tetoPorFaixas } from "../src/lib/ads.js";
+import { avaliarAds, degrauAnterior, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas } from "../src/lib/ads.js";
+import { interpretarAds, juntarAds, somarJanelasAds } from "../src/lib/relatorioShopee.js";
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
 import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
 import { ateDoEnvioPedidos } from "../src/lib/pedidos.js";
@@ -918,5 +919,47 @@ describe("dinheiro: uma conta só (31/10/2026)", () => {
     expect(f.texto).toContain("mais que o lucro dos produtos");
     expect(variacaoSegura(-150.25, 8.78, 14)).toBeNull();
     expect(variacaoSegura(120, 100, 500)).toBeCloseTo(0.2);
+  });
+});
+
+describe("ROAS ajustado — vendas via Ads só as pagas (01/11/2026)", () => {
+  const periodo = { id: "a", inicio: "2026-10-14", parcial: { ate: "2026-10-30", gasto: 149.4, cliques: 2292, vendas: 20, diretas: 15, historico: [{ ate: "2026-10-25", gasto: 100, vendas: 12, diretas: 9 }] } };
+  const pagas = (de, ate) => (ate >= "2026-10-30" ? { un: 11, pago: 373.7, lucro: 116.97 } : { un: 7, pago: 240, lucro: 75 });
+  it("caso real: CSV 20 (15 diretas) → 11 pagas; histórico também; o número da Shopee fica guardado", () => {
+    const p = periodoAjustado(periodo, { pagas, cobre: () => true });
+    expect(p.parcial.vendas).toBe(11);
+    expect(p.parcial.historico[0].vendas).toBe(7);
+    expect(p.parcial.ajuste).toMatchObject({ estado: "confirmado", shopee: 20, diretas: 15, pagas: 11, lucroReal: 116.97 });
+    expect(p.parcialShopee.vendas).toBe(20);
+  });
+  it("diretas menores que as pagas: vale o direto (o resto foi orgânico)", () => {
+    const p = periodoAjustado({ ...periodo, parcial: { ...periodo.parcial, diretas: 6, historico: [] } }, { pagas, cobre: () => true });
+    expect(p.parcial.vendas).toBe(6);
+  });
+  it("pedido ainda sem pagamento nos últimos 2 dias = provisório (entra no teto); sem pedidos importados = insuficiente", () => {
+    const pr = periodoAjustado(periodo, { pagas, pendentes: () => 2, cobre: () => true });
+    expect(pr.parcial.vendas).toBe(13);
+    expect(pr.parcial.ajuste.estado).toBe("provisorio");
+    const ins = periodoAjustado(periodo, { pagas, cobre: () => false });
+    expect(ins.parcial.vendas).toBe(20);
+    expect(ins.parcial.ajuste.estado).toBe("insuficiente");
+  });
+  it("aumentar o orçamento só com o ajustado confirmado", () => {
+    const base = { preco: 40, lucro: 14, hoje: "2026-10-31" };
+    const p = { id: "x", inicio: "2026-10-01", orcamento_diario: 10, meta_roas: 3, tipo: "normal", ajustes: [], parcial: { ate: "2026-10-30", gasto: 100, cliques: 400, vendas: 12, historico: [], ajuste: { estado: "provisorio", pendentes: 1, shopee: 12, pagas: 12 } } };
+    const av = avaliarAds({ ...base, periodos: [p] });
+    expect(av.chave).not.toBe("aumentar");
+  });
+  it("lê a coluna Itens Vendidos Diretos do CSV e soma nas listas/janelas", () => {
+    const linhas = [
+      ["Período", "01/10/2026-07/10/2026"],
+      ["Nome do Anúncio", "ID do produto", "Status", "Data de Início", "Cliques", "Itens Vendidos", "Itens Vendidos Diretos", "GMV", "Despesas"],
+      ["Leão", "111", "Em Andamento", "01/10/2026 10:00", "50", "5", "3", "150", "20"],
+    ];
+    const r = interpretarAds(linhas, "x.csv");
+    expect(r.porItem.get("111")).toMatchObject({ vendas: 5, diretas: 3 });
+    const r2 = { ...interpretarAds([["Período", "08/10/2026-14/10/2026"], linhas[1], ["Leão", "111", "Em Andamento", "01/10/2026 10:00", "10", "2", "1", "60", "8"]], "y.csv"), arquivo: "y" };
+    expect(somarJanelasAds([{ ...r, arquivo: "x" }, r2]).porItem.get("111")).toMatchObject({ vendas: 7, diretas: 4 });
+    expect(juntarAds([{ ...r, arquivo: "x" }, { ...r, arquivo: "x2" }]).porItem.get("111")).toMatchObject({ vendas: 5, diretas: 3 });
   });
 });

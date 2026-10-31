@@ -270,6 +270,7 @@ export function interpretarAds(linhas, nomeArquivo) {
     gasto: achar(cab, "Despesas"),
     cli: achar(cab, "Cliques"),
     itens: achar(cab, "Itens Vendidos"),
+    diretas: achar(cab, "Itens Vendidos Diretos"),
     conv: achar(cab, "Conversões"),
     gmv: achar(cab, "GMV"),
     status: achar(cab, "Status"),
@@ -277,7 +278,7 @@ export function interpretarAds(linhas, nomeArquivo) {
     lance: achar(cab, "Método de Lance"),
   };
   const porItem = new Map();
-  const total = { gasto: 0, cliques: 0, vendas: 0 };
+  const total = { gasto: 0, cliques: 0, vendas: 0, diretas: c.diretas >= 0 ? 0 : null };
   // GMV Max da Loja: linha própria, sem ID do produto ("-") e sem separar
   // por produto (conferido no CSV real de 17/10/2026).
   let loja = null;
@@ -299,10 +300,13 @@ export function interpretarAds(linhas, nomeArquivo) {
     const g = numPonto(l[c.gasto]) || 0;
     const cl = numPonto(l[c.cli]) || 0;
     const v = numPonto(l[c.itens >= 0 ? c.itens : c.conv]) || 0;
-    const a = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, nome: l[c.nome] || "", linhas: [] };
+    // "Itens Vendidos" conta compras de OUTROS produtos depois do clique; os
+    // "Diretos" são só o produto do anúncio (é o que as decisões usam).
+    const vd = c.diretas >= 0 ? numPonto(l[c.diretas]) || 0 : null;
+    const a = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, diretas: c.diretas >= 0 ? 0 : null, nome: l[c.nome] || "", linhas: [] };
     // Assinatura da linha (o mesmo anúncio aparece em mais de uma lista da
     // Shopee — "melhor desempenho", "recém-cadastrados"… — e não pode somar 2×).
-    a.linhas.push({ k: `${l[c.nome] || ""}|${c.inicio >= 0 ? l[c.inicio] || "" : ""}`, g, cl, v });
+    a.linhas.push({ k: `${l[c.nome] || ""}|${c.inicio >= 0 ? l[c.inicio] || "" : ""}`, g, cl, v, vd });
     // Status do anúncio na Shopee (Em Andamento / Pausado / Excluído): o que
     // estiver rodando prevalece quando o mesmo produto tem mais de uma linha.
     const st = c.status >= 0 ? String(l[c.status] || "").trim() : "";
@@ -314,10 +318,12 @@ export function interpretarAds(linhas, nomeArquivo) {
     a.gasto += g;
     a.cliques += cl;
     a.vendas += v;
+    a.diretas = somaD(a.diretas, vd);
     porItem.set(id, a);
     total.gasto += g;
     total.cliques += cl;
     total.vendas += v;
+    total.diretas = somaD(total.diretas, vd);
   }
   for (const a of porItem.values()) a.gasto = Math.round(a.gasto * 100) / 100;
   total.gasto = Math.round(total.gasto * 100) / 100;
@@ -384,12 +390,12 @@ export function juntarAds(relatorios) {
   const camp = new Map(); // id → Map(k → {g, cl, v})
   for (const r of lista)
     for (const [id, a] of r.porItem) {
-      const t = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, nome: a.nome };
+      const t = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, diretas: null, nome: a.nome };
       if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
       if (a.lance) t.lance = a.lance;
       porItem.set(id, t);
       const m = camp.get(id) || new Map();
-      const linhasA = Array.isArray(a.linhas) && a.linhas.length && typeof a.linhas[0] === "object" ? a.linhas : [{ k: "*", g: a.gasto, cl: a.cliques, v: a.vendas }];
+      const linhasA = Array.isArray(a.linhas) && a.linhas.length && typeof a.linhas[0] === "object" ? a.linhas : [{ k: "*", g: a.gasto, cl: a.cliques, v: a.vendas, vd: a.diretas ?? null }];
       for (const x of linhasA) {
         const ant = m.get(x.k);
         if (!ant || x.g > ant.g || (x.g === ant.g && x.cl > ant.cl)) m.set(x.k, x);
@@ -400,12 +406,13 @@ export function juntarAds(relatorios) {
     const t = porItem.get(id);
     // Com linhas detalhadas, a entrada genérica "*" (relatório antigo) só vale se for maior que a soma das campanhas.
     const det = [...m.entries()].filter(([k]) => k !== "*").map(([, x]) => x);
-    const somaDet = det.reduce((q, x) => ({ g: q.g + x.g, cl: q.cl + x.cl, v: q.v + x.v }), { g: 0, cl: 0, v: 0 });
+    const somaDet = det.reduce((q, x) => ({ g: q.g + x.g, cl: q.cl + x.cl, v: q.v + x.v, vd: somaD(q.vd, x.vd ?? null) }), { g: 0, cl: 0, v: 0, vd: 0 });
     const gen = m.get("*");
     const fim = gen && gen.g > somaDet.g ? gen : somaDet;
     t.gasto = Math.round(fim.g * 100) / 100;
     t.cliques = fim.cl;
     t.vendas = fim.v;
+    t.diretas = det.length || fim !== somaDet ? fim.vd ?? null : null;
     if (fim === somaDet) t.linhas = det;
     total.gasto += t.gasto;
     total.cliques += t.cliques;
@@ -434,19 +441,21 @@ export function somarJanelasAds(relatorios) {
   const porItem = new Map();
   for (const r of lista)
     for (const [id, a] of r.porItem) {
-      const t = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, nome: a.nome, camp: new Map() };
+      const t = porItem.get(id) || { gasto: 0, cliques: 0, vendas: 0, diretas: 0, nome: a.nome, camp: new Map() };
       if (a.status) t.status = a.status; // o da janela mais recente
       if (a.lance) t.lance = a.lance;
       t.gasto += num0(a.gasto);
       t.cliques += num0(a.cliques);
       t.vendas += num0(a.vendas);
+      t.diretas = somaD(t.diretas, a.diretas ?? null);
       const ls = Array.isArray(a.linhas) && a.linhas.length && typeof a.linhas[0] === "object" ? a.linhas : null;
       if (ls)
         for (const x of ls) {
-          const c = t.camp.get(x.k) || { k: x.k, g: 0, cl: 0, v: 0 };
+          const c = t.camp.get(x.k) || { k: x.k, g: 0, cl: 0, v: 0, vd: 0 };
           c.g += num0(x.g);
           c.cl += num0(x.cl);
           c.v += num0(x.v);
+          c.vd = somaD(c.vd, x.vd ?? null);
           t.camp.set(x.k, c);
         }
       else t.semLinhas = true;
@@ -556,13 +565,16 @@ function lembrarGrupoShopee(itemId, grupoId) {
 // campanha antiga (período já encerrado no app) da atual. Sem a data = null.
 function campanhasDe(a) {
   const ls = Array.isArray(a?.linhas) && a.linhas.length && typeof a.linhas[0] === "object" ? a.linhas : null;
-  if (!ls) return [{ inicio: null, g: num0(a?.gasto), cl: num0(a?.cliques), v: num0(a?.vendas) }];
+  if (!ls) return [{ inicio: null, g: num0(a?.gasto), cl: num0(a?.cliques), v: num0(a?.vendas), vd: a?.diretas ?? null }];
   return ls.map((x) => {
     const raw = String(x.k || "").split("|").pop().trim().split(" ")[0];
-    return { inicio: isoDeBR(raw) || null, g: num0(x.g), cl: num0(x.cl), v: num0(x.v) };
+    return { inicio: isoDeBR(raw) || null, g: num0(x.g), cl: num0(x.cl), v: num0(x.v), vd: x.vd ?? null };
   });
 }
 const num0 = (x) => (isFinite(Number(x)) ? Number(x) : 0);
+// Vendas DIRETAS (só o produto do anúncio) — 01/11/2026. null = o arquivo não
+// trazia a coluna (relatório antigo): a soma com um null fica null.
+const somaD = (a, b) => (a == null || b == null ? null : a + b);
 
 /**
  * O CSV soma TODAS as campanhas do anúncio (a antiga, que você pausou, e a
@@ -590,8 +602,8 @@ export function valoresDoPeriodo(x, periodo, periodosDoItem = []) {
   };
   const dentro = cs.filter((c) => dono(c) === periodo);
   if (dentro.length === cs.length) return x;
-  const soma = dentro.reduce((t, c) => ({ g: t.g + c.g, cl: t.cl + c.cl, v: t.v + c.v }), { g: 0, cl: 0, v: 0 });
-  return { ...x, gasto: Math.round(soma.g * 100) / 100, cliques: soma.cl, vendas: soma.v, separado: true };
+  const soma = dentro.reduce((t, c) => ({ g: t.g + c.g, cl: t.cl + c.cl, v: t.v + c.v, vd: somaD(t.vd, c.vd ?? null) }), { g: 0, cl: 0, v: 0, vd: 0 });
+  return { ...x, gasto: Math.round(soma.g * 100) / 100, cliques: soma.cl, vendas: soma.v, diretas: soma.vd, separado: true };
 }
 
 export function adsPorItemApp(relatorios, itensApp) {
@@ -603,13 +615,14 @@ export function adsPorItemApp(relatorios, itensApp) {
   for (const [id, a] of ads.porItem) {
     const sku = normSku(idSku[id]);
     if (!sku) continue;
-    const t = porSku.get(sku) || { gasto: 0, cliques: 0, vendas: 0, ids: [], campanhas: [] };
+    const t = porSku.get(sku) || { gasto: 0, cliques: 0, vendas: 0, diretas: 0, ids: [], campanhas: [] };
     if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
     if (a.lance) t.lance = a.lance;
     t.campanhas.push(...campanhasDe(a));
     t.gasto += a.gasto;
     t.cliques += a.cliques;
     t.vendas += a.vendas;
+    t.diretas = somaD(t.diretas, a.diretas ?? null);
     t.ids.push(id);
     porSku.set(sku, t);
   }
@@ -619,7 +632,7 @@ export function adsPorItemApp(relatorios, itensApp) {
   for (const it of itensApp.filter((x) => x.grupoId)) {
     const ids = [...ads.porItem.keys()].filter((id) => idGrupo[id] === it.grupoId);
     if (!ids.length) continue;
-    const t = { gasto: 0, cliques: 0, vendas: 0, campanhas: [] };
+    const t = { gasto: 0, cliques: 0, vendas: 0, diretas: 0, campanhas: [] };
     for (const id of ids) {
       const a = ads.porItem.get(id);
       if (a.status && (!t.status || /andamento/i.test(a.status))) t.status = a.status;
@@ -628,15 +641,16 @@ export function adsPorItemApp(relatorios, itensApp) {
       t.gasto += a.gasto;
       t.cliques += a.cliques;
       t.vendas += a.vendas;
+      t.diretas = somaD(t.diretas, a.diretas ?? null);
       usados.add(id);
     }
-    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "", lance: t.lance || "", campanhas: t.campanhas };
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, diretas: t.diretas, status: t.status || "", lance: t.lance || "", campanhas: t.campanhas };
   }
   for (const it of itensApp.filter((x) => !x.grupoId)) {
     const t = porSku.get(normSku(it.sku));
     if (!t) continue;
     t.ids.forEach((id) => usados.add(id));
-    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, status: t.status || "", lance: t.lance || "", campanhas: t.campanhas };
+    porChave[it.chave] = { gasto: Math.round(t.gasto * 100) / 100, cliques: t.cliques, vendas: t.vendas, diretas: t.diretas, status: t.status || "", lance: t.lance || "", campanhas: t.campanhas };
   }
   const adsSemPar = [...ads.porItem.entries()].filter(([id, a]) => !usados.has(id) && a.gasto > 0).map(([id, a]) => ({ itemId: id, ...a, conhecido: !!idSku[id] || !!idGrupo[id] }));
   const avisos = [];
@@ -774,7 +788,7 @@ export function andamentoDoCsv(lidos, todas, lojaLinha = null) {
     const ult0 = ativo || (l.periodos || [])[0] || null;
     const x = l.tipo === "loja" ? x0 : valoresDoPeriodo(x0, ult0, l.periodos);
     if (ativo && x !== x0) res.porChave[chave] = x;
-    const valores = { gasto: x.gasto, cliques: Math.round(x.cliques || 0), vendas: Math.round(x.vendas || 0), ...(x.receita != null ? { receita: x.receita } : {}) };
+    const valores = { gasto: x.gasto, cliques: Math.round(x.cliques || 0), vendas: Math.round(x.vendas || 0), ...(x.diretas != null ? { diretas: Math.round(x.diretas) } : {}), ...(x.receita != null ? { receita: x.receita } : {}) };
     if (ativo) {
       if (parado(st) && !(/pausad/i.test(st) && pausadoNoApp(l.av))) perguntas.push({ chave, l, tipo: "parado", status: nomeSt(st), periodo: ativo, data: quandoParou(ativo, x.gasto), valores });
       else if (metaNaShopee(x0?.lance, ativo, res.periodo?.ate)) perguntas.push({ chave: `${chave}|meta`, l, tipo: "meta-shopee", periodo: ativo, valores, orcamento: orcamentoAtual(ativo) });
@@ -794,7 +808,7 @@ export function andamentoDoCsv(lidos, todas, lojaLinha = null) {
     else if (!ult || !ult.fim || ult.fim < ini) {
       // Período novo: só as campanhas que começaram depois do último encerrado.
       const xn = valoresDoPeriodo(x0, { id: "novo", inicio: ini }, l.periodos);
-      if (xn.gasto > 0) perguntas.push({ chave, l, tipo: "criar", data: ini, ate: res.periodo.ate, valores: { gasto: xn.gasto, cliques: Math.round(xn.cliques || 0), vendas: Math.round(xn.vendas || 0) } });
+      if (xn.gasto > 0) perguntas.push({ chave, l, tipo: "criar", data: ini, ate: res.periodo.ate, valores: { gasto: xn.gasto, cliques: Math.round(xn.cliques || 0), vendas: Math.round(xn.vendas || 0), ...(xn.diretas != null ? { diretas: Math.round(xn.diretas) } : {}) } });
     }
   };
   for (const l of shopee) {

@@ -6,6 +6,8 @@ import { estadoRampa, metricasFunil, referenciaFunilLoja, regrasDaLoja } from ".
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
+import { periodoAjustado } from "../lib/ads.js";
+import { lucroDaLinha } from "../lib/resumoLoja.js";
 import { adsNaJanela, pausasDoPeriodo, valoresAtuais, avaliarAds, avaliarAdsLoja, capacidadeDoItem, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, roasEmpate, tetoDaLoja } from "../lib/ads.js";
 import { useLembretes } from "./useLembretes.js";
 import { usePreferencia } from "./usePreferencia.js";
@@ -61,10 +63,10 @@ function useCalculoCrescimento() {
   // que só existem nele. Período de opção com o MESMO andamento de um período
   // do anúncio (o CSV gravado nos dois) sai — senão o gasto conta 2×.
   const periodosDoAnuncio = (gid, canalId, idsSo) => {
-    const doAnuncio = periodosDoItem(adsH.periodos, "grupo", gid, canalId);
+    const doAnuncio = periodosDoItem(adsHv.periodos, "grupo", gid, canalId);
     const sig = (p) => (p.parcial?.ate ? `${p.parcial.ate}|${Number(p.parcial.gasto) || 0}` : null);
     const vistos = new Set(doAnuncio.map(sig).filter(Boolean));
-    const dasOpcoes = idsSo.flatMap((id) => periodosDoItem(adsH.periodos, itemTipoDoId(id), id.slice(2), canalId)).filter((p) => !sig(p) || !vistos.has(sig(p)));
+    const dasOpcoes = idsSo.flatMap((id) => periodosDoItem(adsHv.periodos, itemTipoDoId(id), id.slice(2), canalId)).filter((p) => !sig(p) || !vistos.has(sig(p)));
     return { doAnuncio, dasOpcoes };
   };
   const af = useAfiliados();
@@ -148,6 +150,45 @@ function useCalculoCrescimento() {
     if (id.startsWith("v:")) return l.item?.produtoId ? { tipo: "produto", id: l.item.produtoId } : null;
     return { tipo: id.startsWith("k:") ? "kit" : "produto", id: id.slice(2) };
   };
+  // ROAS ajustado (01/11/2026): cada período de Ads com as vendas via Ads
+  // limitadas às unidades PAGAS do anúncio nos pedidos (o CSV da Shopee conta
+  // não pago, cancelado e outros produtos). O número da Shopee fica em
+  // parcialShopee / vendasShopee; as gravações usam o original (salvarAndamentoAds).
+  const adsHv = useMemo(() => {
+    const naoPagos = new Map();
+    for (const l of reais.linhas || []) {
+      if (!l.naoPago || !l.canal_id) continue;
+      if (!naoPagos.has(l.canal_id)) naoPagos.set(l.canal_id, []);
+      naoPagos.get(l.canal_id).push(l);
+    }
+    const periodos = (adsH.periodos || []).map((p) => {
+      if (!p?.parcial?.ate || p.item_tipo === "loja" || !p.item_id) return p;
+      const canal = canais.find((c) => c.id === p.canal_id);
+      if (!canal) return p;
+      let casa;
+      if (p.item_tipo === "grupo") casa = (l) => grupoDoPedido(l)?.grupoId === p.item_id;
+      else {
+        const pref = p.item_tipo === "kit" ? "k" : p.item_tipo === "variacao" ? "v" : "p";
+        const ids = new Set([`${pref}:${p.item_id}`, ...(pref === "p" ? itens.filter((i) => i.id.startsWith("v:") && i.produtoId === p.item_id).map((i) => i.id) : [])]);
+        // item que só vende dentro de um anúncio com vários itens: a venda vem pelo SKU da opção
+        const dentroDoGrupo = soNoGrupo.has(`${pref}:${p.item_id}`);
+        casa = (l) => ids.has(l.id_item) && (dentroDoGrupo || !grupoDoPedido(l));
+      }
+      const pagas = (de, ate) => {
+        const t = { un: 0, pago: 0, lucro: 0 };
+        for (const l of pedidosPorCanal.get(p.canal_id) || [])
+          if (l.data >= de && l.data <= ate && casa(l)) {
+            t.un += Number(l.q) || 0;
+            t.pago += Number(l.pago) || 0;
+            t.lucro += lucroDaLinha(l);
+          }
+        return t;
+      };
+      const pendentes = (de, ate) => (naoPagos.get(p.canal_id) || []).filter((l) => l.data >= de && l.data <= ate && casa(l)).reduce((t, l) => t + (Number(l.q) || 1), 0);
+      return periodoAjustado(p, { pagas, pendentes, cobre: (de, ate) => reais.cobertura.cobre(canal, de, ate) });
+    });
+    return { ...adsH, periodos };
+  }, [adsH, reais.linhas, reais.cobertura, pedidosPorCanal, canais, itens, soNoGrupo, skuGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
   const vendasDeItens = (canalId, ids) => (de, ate) => {
     let t = 0;
     for (const l of pedidosPorCanal.get(canalId) || []) if (l.data >= de && l.data <= ate && ids.has(l.id_item) && !grupoDoPedido(l)) t += l.q;
@@ -243,7 +284,7 @@ function useCalculoCrescimento() {
         vendasEm = vendasDeItens(canal.id, new Set([`k:${r.kit_id}`]));
         const kit = kits.find((k) => k.id === r.kit_id);
         funis = canal.tipo === "shopee" ? funisDoSku(kit?.sku) : [];
-        periodosR = periodosDoItem(adsH.periodos, "kit", r.kit_id, canal.id);
+        periodosR = periodosDoItem(adsHv.periodos, "kit", r.kit_id, canal.id);
         aval = avaliacoesDe("kit", r.kit_id, canal.id);
       } else if (r.grupo_id) {
         vendasEm = vendasDoGrupo(canal.id, r.grupo_id);
@@ -261,7 +302,7 @@ function useCalculoCrescimento() {
         vendasEm = vendasDeItens(canal.id, ids);
         const prod = produtos.find((p) => p.id === r.produto_id);
         funis = canal.tipo === "shopee" ? funisDoSku(prod?.sku) : [];
-        periodosR = periodosDoItem(adsH.periodos, "produto", r.produto_id, canal.id);
+        periodosR = periodosDoItem(adsHv.periodos, "produto", r.produto_id, canal.id);
         aval = avaliacoesDe("produto", r.produto_id, canal.id);
       }
       const { semanas, parcial } = semanasAutomaticas({ chave: r.id, gravados: grav, hoje, vendasEm, cobre: cobreDe(canal), precoEm: precoDaRampa(r, grav), periodos: periodosR, funis });
@@ -276,7 +317,7 @@ function useCalculoCrescimento() {
       if (ini0) antes.set(r.id, vendasEm("2000-01-01", somarDias(ini0, -1)));
     }
     return { registros: juntarRegistros(regs, []), parciais, seteDias, antes };
-  }, [rampas, rampasGrupo, rampasKit, registrosGravados, canais, itens, produtos, kits, adsH.periodos, avalH.registros, pedidosPorCanal, skuGrupo, desempenhos, reais.cobertura, hoje, grupos, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rampas, rampasGrupo, rampasKit, registrosGravados, canais, itens, produtos, kits, adsHv.periodos, avalH.registros, pedidosPorCanal, skuGrupo, desempenhos, reais.cobertura, hoje, grupos, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
   const registros = vivo.registros;
   const rampasHV = useMemo(() => ({ ...rampasH, registros }), [rampasH, registros]);
 
@@ -301,7 +342,7 @@ function useCalculoCrescimento() {
         if (!produto || !canal || !item) return null;
         const cfg = cfgDoProduto(r.produto_id);
         const salvo = precos.find((p) => p.item_tipo === "produto" && p.item_id === r.produto_id && p.canal_id === r.canal_id);
-        const adsAtivo = periodoAtivo(periodosDoItem(adsH.periodos, "produto", r.produto_id, r.canal_id), hoje);
+        const adsAtivo = periodoAtivo(periodosDoItem(adsHv.periodos, "produto", r.produto_id, r.canal_id), hoje);
         const sazonal = infoSazonal(quandoVendeDe(produto), calendario, hoje);
         const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null, antesDoInicio: vivo.antes?.get(r.id) || 0 };
         const regs = registros.filter((g) => g.rampa_id === r.id);
@@ -318,7 +359,7 @@ function useCalculoCrescimento() {
           if (!kit || !canal || !item) return null;
           const cfg = cfgDoProduto(null);
           const salvo = precos.find((p) => p.item_tipo === "kit" && p.item_id === r.kit_id && p.canal_id === r.canal_id);
-          const adsAtivo = periodoAtivo(periodosDoItem(adsH.periodos, "kit", r.kit_id, r.canal_id), hoje);
+          const adsAtivo = periodoAtivo(periodosDoItem(adsHv.periodos, "kit", r.kit_id, r.canal_id), hoje);
           // Sazonal: a 1ª peça "só na época de…".
           let sazonal = null;
           for (const c of item.componentes || []) {
@@ -335,7 +376,7 @@ function useCalculoCrescimento() {
       )
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, rampasKit, kits, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsH.periodos, calendario, campanha, soNoGrupo, vivo.parciais, vivo.seteDias, vivo.antes]);
+  }, [rampas, rampasKit, kits, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsHv.periodos, calendario, campanha, soNoGrupo, vivo.parciais, vivo.seteDias, vivo.antes]);
 
   // Rampa do ANÚNCIO com vários itens (v54, grupoRampa.js): degraus em % do
   // preço salvo de cada opção; mesma estadoRampa por dentro.
@@ -368,7 +409,7 @@ function useCalculoCrescimento() {
       out.push({ r, grupo, canal, produto: { id: null, nome: `Anúncio: ${grupo.nome}`, sku: "" }, item: null, ehGrupo: true, g, est: g.est, regs });
     }
     return out.sort((a, b) => a.grupo.nome.localeCompare(b.grupo.nome));
-  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, vivo.seteDias, hoje, calendario, funilLoja, adsH.periodos, campanha, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, vivo.seteDias, hoje, calendario, funilLoja, adsHv.periodos, campanha, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Comissão de afiliado por item × canal (ao vivo).
   const linhasAf = useMemo(
@@ -423,7 +464,7 @@ function useCalculoCrescimento() {
         // Produto "só na época de…": fase do Ads sazonal (Aquecer/Ajustar/Alavancar/Corte).
         const produto = tipo === "produto" ? produtos.find((p) => p.id === id) : null;
         const sazonal = produto ? faseAdsSazonal(infoSazonal(quandoVendeDe(produto), calendario, hoje), hoje, regrasA) : null;
-        base.push({ chave: `${tipo}|${id}|${canal.id}`, item: it, tipo, id, canal, rampa, preco, lucroEm, lucro: lucroEm(preco), semanas: semanasDe(tipo, id, canal.id, rampa, canal, preco, periodosDoItem(adsH.periodos, tipo, id, canal.id), it), periodos: periodosDoItem(adsH.periodos, tipo, id, canal.id), sazonal, capacidadeDia: capacidadeDoItem(it, produtos, impressoras, farmConfig) });
+        base.push({ chave: `${tipo}|${id}|${canal.id}`, item: it, tipo, id, canal, rampa, preco, lucroEm, lucro: lucroEm(preco), semanas: semanasDe(tipo, id, canal.id, rampa, canal, preco, periodosDoItem(adsHv.periodos, tipo, id, canal.id), it), periodos: periodosDoItem(adsHv.periodos, tipo, id, canal.id), sazonal, capacidadeDia: capacidadeDoItem(it, produtos, impressoras, farmConfig) });
       }
     }
     // Anúncio com vários itens = UMA linha de Ads (plano 14/10/2026). Equilíbrio
@@ -574,7 +615,7 @@ function useCalculoCrescimento() {
         equilibrio = eqs.length ? eqs[Math.floor(eqs.length / 2)] : null;
         origemEq = "média dos produtos (sem pedidos importados)";
       }
-      const periodosL = periodosDoItem(adsH.periodos, "loja", lojaId, canalLoja.id);
+      const periodosL = periodosDoItem(adsHv.periodos, "loja", lojaId, canalLoja.id);
       const aL30 = adsNaJanela(periodosL, [], j30.de, hoje);
       const aL7 = adsNaJanela(periodosL, [], j7.de, hoje);
       gasto30 += aL30.gasto;
@@ -654,13 +695,13 @@ function useCalculoCrescimento() {
       }
     }
     return { loja, teto, sazonal, linhas: linhasA, lojaLinha, lembretesOk: lembretesH.disponivel };
-  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsH.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos, ignorarTeto]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsHv.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos, ignorarTeto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pedidosValidos = reais.linhas;
   return useMemo(
-    () => ({ dados, rampasH: rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, anuncioDoPedido, pedidosValidos, desempenhos, desempenhoDoAnuncio }),
+    () => ({ dados, rampasH: rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH: adsHv, regrasA, linhasAds, organicasH, organicasVivas, avalH, anuncioDoPedido, pedidosValidos, desempenhos, desempenhoDoAnuncio }),
     // anuncioDoPedido muda junto com skuGrupo (mesma render)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dados, rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsH, regrasA, linhasAds, organicasH, organicasVivas, avalH, skuGrupo, pedidosValidos, desempenhos]
+    [dados, rampasHV, af, regras, hoje, funilLoja, calendario, linhas, linhasGrupo, soNoGrupo, linhasAf, mapaAf, semanaAf, adsHv, regrasA, linhasAds, organicasH, organicasVivas, avalH, skuGrupo, pedidosValidos, desempenhos]
   );
 }

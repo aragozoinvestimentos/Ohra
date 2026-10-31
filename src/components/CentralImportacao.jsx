@@ -275,7 +275,7 @@ export default function CentralImportacao({ esc, ped, linhas, linhasAds, cres, h
     for (const l of (linhasAds?.linhas || []).filter((x) => x.av?.ativo && x.canal?.tipo === "shopee")) {
       const x = res.porChave[l.chave] || (res.zerados.includes(l.chave) ? { gasto: 0, cliques: 0, vendas: 0 } : null);
       if (!x || !res.periodo?.ate) continue;
-      let val = { ate: res.periodo.ate, gasto: num(x.gasto), cliques: Math.round(num(x.cliques)), vendas: Math.round(num(x.vendas)) };
+      let val = { ate: res.periodo.ate, gasto: num(x.gasto), cliques: Math.round(num(x.cliques)), vendas: Math.round(num(x.vendas)), ...(x.diretas != null ? { diretas: Math.round(num(x.diretas)) } : {}) };
       // ✎ Acerto à mão (23/10/2026): o valor digitado vale até a data dele e
       // os CSVs somam só os envios DEPOIS dela — até chegar um envio exato
       // desde o início do período, que vale mais que o acerto.

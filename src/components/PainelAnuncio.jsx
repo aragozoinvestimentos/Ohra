@@ -8,7 +8,7 @@ import { comCupomAtivo, cuponsAtivos, textoFaixa } from "../lib/cupomLoja.js";
 import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { irParaAba, pegarPedido } from "../lib/navegar.js";
 import { pedirPasso } from "../lib/passosPreco.js";
-import { adsNaJanela, numerosDoPeriodo, REGRAS_ADS } from "../lib/ads.js";
+import { adsNaJanela, numerosDoPeriodo, REGRAS_ADS, textoAjusteAds } from "../lib/ads.js";
 import { acaoDaRampa, proximaConferencia } from "../lib/rampaAgora.js";
 import { estadoDoAlerta, ROTULO_ESTADO } from "../lib/estados.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
@@ -851,7 +851,12 @@ function AbaAds({ l, hoje, ped }) {
   const historico = [...(ads.periodos || [])].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)));
   // % das vendas que vieram do Ads, no mesmo período do Ads ligado.
   const unPeriodo = n && av.ativo ? ped.filter((p) => String(p.data) >= String(av.ativo.inicio).slice(0, 10) && (!n.ate || String(p.data) <= n.ate)).reduce((t, p) => t + num(p.q), 0) : 0;
-  const lucroAntes = n ? n.vendas * num(ads.lucro) + 0 : null;
+  // ROAS ajustado (01/11/2026): vendas via Ads limitadas às PAGAS do anúncio;
+  // lucro por venda = a média REAL dos pedidos pagos do período (promo, cupom).
+  const aj = av.ativo?.parcial?.ajuste || null;
+  const lucroVenda = aj?.pagas > 0 && aj.lucroReal != null ? aj.lucroReal / aj.pagas : num(ads.lucro);
+  const roasShopee = aj && n?.gasto > 0 ? (aj.shopee * ads.preco) / n.gasto : null;
+  const lucroAntes = n ? n.vendas * lucroVenda : null;
   const lucroDepois = n ? lucroAntes - n.gasto : null;
   const tipo = av.estado === "ok" ? "info" : av.estado;
   return (
@@ -879,10 +884,11 @@ function AbaAds({ l, hoje, ped }) {
             </h3>
             <div className="pa-corpo">
               <Medidor pontos={[{ rot: "período", r: n.retorno }, { rot: "7 dias", r: ret7, ruim: ret7 != null && ret7 < 1 }]} />
+              {aj && (aj.estado === "insuficiente" || aj.shopee !== n.vendas) && <p className={`hint${aj.estado === "insuficiente" ? " atencao-txt" : ""}`} style={{ margin: "4px 0 8px" }}>{textoAjusteAds(aj, roasShopee)}</p>}
               <Kpis
                 itens={[
                   { label: "ROAS de equilíbrio", valor: um(empate), sub: "preço ÷ lucro antes do Ads" },
-                  { label: "ROAS do período", valor: um(n.roas) },
+                  { label: aj && aj.estado !== "insuficiente" ? "ROAS ajustado" : "ROAS do período", valor: um(n.roas), sub: aj && aj.estado !== "insuficiente" && roasShopee != null && Math.abs(roasShopee - n.roas) >= 0.05 ? `Shopee diz ${um(roasShopee)}${aj.estado === "provisorio" ? " · provisório" : ""}` : aj?.estado === "provisorio" ? "provisório" : null },
                   { label: "Retorno", valor: n.retorno != null ? `${um(n.retorno)}×` : "—", tom: n.retorno >= 1 ? "good" : n.retorno != null ? "bad" : undefined, sub: n.retorno != null ? `cada R$ 1 voltou R$ ${um(n.retorno)} de lucro` : null },
                   { label: "Últimos 7 dias", valor: ret7 != null ? `${um(ret7)}×` : "—", tom: ret7 != null && ret7 < 1 ? "bad" : undefined, sub: `gasto ${BRL(j7.gasto)}` },
                 ]}
@@ -896,13 +902,13 @@ function AbaAds({ l, hoje, ped }) {
             <div className="pa-grade-metricas">
               <Metrica rot="Investimento" v={BRL(n.gasto)} />
               <Metrica rot="Vendido via Ads" v={BRL(n.receita)} />
-              <Metrica rot="Vendas via Ads" v={um(n.vendas)} />
+              <Metrica rot="Vendas via Ads" v={um(n.vendas)} e={aj && aj.shopee !== n.vendas ? `pagas · Shopee: ${aj.shopee}` : null} />
               <Metrica rot="Cliques" v={n.cliques || "—"} />
               <Metrica rot="CPC" v={n.cliques ? BRL(n.gasto / n.cliques) : "—"} e="gasto ÷ cliques" />
               <Metrica rot="Conversão" v={n.cliques ? PCT(n.vendas / n.cliques) : "—"} e="vendas ÷ cliques" />
               <Metrica rot="Custo por venda" v={n.custoPorVenda != null ? BRL(n.custoPorVenda) : "—"} />
               <Metrica rot="ACOS" v={n.receita > 0 ? PCT(n.gasto / n.receita) : "—"} e="gasto ÷ vendido" />
-              <Metrica rot="Lucro por venda" v={BRL(ads.lucro)} e="antes do Ads" />
+              <Metrica rot="Lucro por venda" v={BRL(lucroVenda)} e={aj?.pagas > 0 && aj.lucroReal != null ? "antes do Ads · média dos pedidos pagos" : "antes do Ads"} />
               <Metrica rot="% vendas via Ads" v={unPeriodo > 0 ? PCT(Math.min(1, n.vendas / unPeriodo)) : "—"} e="das unidades do período" />
               <Metrica rot="Lucro antes do Ads" v={BRL(lucroAntes)} />
               <Metrica rot="Lucro depois do Ads" v={BRL(lucroDepois + 0)} cls={lucroDepois < 0 ? "neg" : lucroDepois > 0 ? "pos" : ""} />

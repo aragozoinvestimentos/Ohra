@@ -4,7 +4,7 @@ import ChaveTeto from "./ChaveTeto.jsx";
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, numerosDoPeriodo, retornoAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS, HORARIO_ADS } from "../lib/ads.js";
+import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, numerosDoPeriodo, retornoAds, textoAjusteAds, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS, HORARIO_ADS } from "../lib/ads.js";
 import { porSemana } from "../lib/rampa.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { adsPorItemApp, valoresDoPeriodo, cruzarGrupos, lerRelatorio } from "../lib/relatorioShopee.js";
@@ -785,6 +785,13 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
             <div><span>Retorno</span><b className={`ads-roas${ret == null ? "" : ret >= 1 ? " bom" : " ruim"}`}>{ret != null ? `${um(ret)}×` : "—"}</b></div>
           </div>
           {ret != null && <div className="muted-cel" style={{ marginTop: 2 }}>{textoRetorno(ret)} (antes de descontar o R$ 1)</div>}
+          {(() => {
+            // ROAS ajustado (01/11/2026): vendas via Ads = só as pagas deste anúncio.
+            const aj = av.ativo.parcial?.ajuste;
+            if (!aj || (aj.estado !== "insuficiente" && aj.shopee === (n.vendas || 0))) return null;
+            const roasSh = n.gasto > 0 ? (aj.shopee * l.preco) / n.gasto : null;
+            return <div className={`muted-cel${aj.estado === "insuficiente" ? " atencao-txt" : ""}`} style={{ marginTop: 2 }}>{textoAjusteAds(aj, roasSh)}</div>;
+          })()}
           {(() => {
             const o = origemDoGasto(av.ativo, l.semanas);
             const acM = av.ativo.parcial?.acerto;
