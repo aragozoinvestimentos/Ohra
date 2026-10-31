@@ -51,6 +51,7 @@ import { LinhaTarefa, TarefaDialog } from "./Tarefas.jsx";
 import { useTarefas } from "../hooks/useTarefas.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { useEstoque } from "../hooks/useEstoque.js";
+import { useSaldoFilamento } from "../hooks/useSaldoFilamento.js";
 import { limiteMei, precisaRevisarME, regimeDaLoja } from "../lib/revenda.js";
 import { saldoAds } from "../lib/saldoAds.js";
 import { concluidasRecentes, repartirTarefas } from "../lib/tarefas.js";
@@ -360,12 +361,13 @@ export default function Inicio({ onIrPara, onToast }) {
   }, [pedidosValidos, hoje]);
   // Revenda (v66): estoque a repor/negativo e o limite do MEI
   const estoqueRev = useEstoque();
+  const saldoFil = useSaldoFilamento();
   const regime = regimeDaLoja(dados.cfgLoja);
   const revisarME = precisaRevisarME(dados.cfgLoja);
   const limMei = useMemo(() => (regime.regime === "mei" ? limiteMei({ pedidos: pedidosValidos || [], limite: regime.limiteAnual, hoje }) : null), [regime.regime, regime.limiteAnual, pedidosValidos, hoje]);
   const todasPendencias = useMemo(
-    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: erpDaLoja(dados.cfgLoja).id === "nenhum" && impCentral ? { ...impCentral, plataformas: [] } : impCentral, saldoDeAds, cupomRuins, campanhasAvisos, diagnosticos, estoque: estoqueRev.linhas, limiteMei: limMei, revisarME, hoje }),
-    [vendasSemana, cupomRuins, campanhasAvisos, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, dados.cfgLoja, saldoDeAds, diagnosticos, estoqueRev.linhas, limMei, revisarME, hoje]
+    () => montarPendencias({ vendasSemana, precosAlerta, caixa, rampas: linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefas: tarefasH.tarefas, ads: linhasAds, farm, temporadas, campanha: campanhaProx, revisoes, adsSazonal: linhasAds?.sazonal || [], importacoes: erpDaLoja(dados.cfgLoja).id === "nenhum" && impCentral ? { ...impCentral, plataformas: [] } : impCentral, saldoDeAds, cupomRuins, campanhasAvisos, diagnosticos, filamentos: saldoFil.linhas, estoque: estoqueRev.linhas, limiteMei: limMei, revisarME, hoje }),
+    [vendasSemana, cupomRuins, campanhasAvisos, precosAlerta, caixa, linhas, anunciosAtualizar, promosAcima, afSugestoes, afLoja, atracao, tarefasH.tarefas, linhasAds, farm, temporadas, campanhaProx, revisoes, impCentral, dados.cfgLoja, saldoDeAds, diagnosticos, saldoFil.linhas, estoqueRev.linhas, limMei, revisarME, hoje]
   );
   // "Lembrar em 30 dias" (tabela lembretes, v40): aviso automático que não é
   // urgente some por 30 dias e volta sozinho se ainda valer. Urgente nunca some.

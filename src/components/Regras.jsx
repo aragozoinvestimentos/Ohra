@@ -1,3 +1,4 @@
+import TelasSemUso from "./TelasSemUso.jsx";
 import { useState } from "react";
 import { MINIMO_AFILIADO, minimoAfiliado } from "../lib/comissaoLoja.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -119,6 +120,9 @@ export default function Regras({ onToast }) {
       </Secao>
       <Secao titulo="Afiliados" resumo={rs.afiliados} onde="Vender mais → Afiliados" ajuda="Comissão mínima que a plataforma aceita (a Shopee: 4% na maioria das categorias — confira no painel quando for configurar). Produto que não aguenta esse mínimo com metade do lucro aparece como “não compensa”.">
         <RegraAfiliados cfg={cfg} onSalvar={(afiliados) => salvarChave({ afiliados }, "Regra de afiliados salva")} />
+      </Secao>
+      <Secao titulo="Telas que você não abriu" resumo="revisar o que não se usa" onde="só a lista e o seu voto — nada some sozinho">
+        <TelasSemUso />
       </Secao>
       <Secao titulo="Estoque sugerido" resumo={rs.estoque} onde="Análise → Curva XYZ" ajuda="Dias de cobertura por classe (AX, AY, BX) + folga da fila de impressão; o resto fica sob pedido. Só sugestão — o app não controla estoque.">
         <RegraEstoque cfg={cfg} onSalvar={(estoque) => salvarChave({ estoque }, "Regras do estoque salvas")} />

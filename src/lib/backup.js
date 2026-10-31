@@ -17,7 +17,7 @@ export const TABELAS_BACKUP = [
   "precos_canal", "precos_concorrente", "publicacoes_canal", "anuncios_grupo",
   "orcamentos_avulsos", "promocoes_salvas", "metas_mensais",
   "registros_impressao", "impressoras", "farm_config", "farm_alteracoes", "manutencoes",
-  "lancamentos_caixa", "reserva_producao", "vendas_organicas",
+  "lancamentos_caixa", "reserva_producao", "vendas_organicas", "insumos_contagem",
   "rampas_preco", "rampa_registros", "ads_periodos",
   "afiliado_config", "afiliados", "afiliado_registros",
   "lembretes", "tarefas", "preferencias_loja",

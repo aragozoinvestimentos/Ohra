@@ -1,3 +1,4 @@
+import { usePreferencia } from "../hooks/usePreferencia.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EXEMPLOS_PERGUNTA, ROTULOS_ABA, conferirSenhaApp, montarPacote, responderPergunta, resumoUso } from "../lib/consultor.js";
 import { atualizarRegistros, excluirRegistro, gravarRegistro, lerNivelApp } from "../lib/consultorAcoes.js";
@@ -419,7 +420,8 @@ function Levar({ nomeLoja, hoje, registros, perguntas, opinioes = [], aprovadas,
   const erros = registros.filter((r) => r.tipo === "erro" && String(r.chave).slice(0, 10) >= somarDias(hoje, -13));
   const uso = resumoUso(registros, somarDias(hoje, -29));
   const aprendizado = useMemo(() => linhasAprendizado(registros), [registros]);
-  const texto = useMemo(() => montarPacote({ nomeLoja, hoje, perguntas, consultorias: aprovadas, erros, uso, kpis, aprendizado, opinioes, atuais }), [nomeLoja, hoje, perguntas, aprovadas, erros, uso, kpis, aprendizado, opinioes, atuais]);
+  const [telasVotos] = usePreferencia("app:telas-sem-uso", {});
+  const texto = useMemo(() => montarPacote({ nomeLoja, hoje, perguntas, consultorias: aprovadas, erros, uso, kpis, aprendizado, opinioes, atuais, telasVotos }), [nomeLoja, hoje, perguntas, aprovadas, erros, uso, kpis, aprendizado, opinioes, atuais, telasVotos]);
   async function copiar() {
     try {
       await navigator.clipboard.writeText(texto);

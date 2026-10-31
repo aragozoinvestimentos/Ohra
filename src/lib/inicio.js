@@ -97,12 +97,28 @@ export function montarPendencias({
   diagnosticos = [], // [{ l (montarAnuncios), d (lib/diagnostico.js) }] — só atenção/oportunidade
   vendasSemana = () => 0, // (itemId, canalId) → unidades por semana (pedidos de 4 semanas) — pro valor em R$ do aviso
   revisarME = false, // regime mudou de MEI pra Simples e ainda não foi revisado
+  filamentos = [], // useSaldoFilamento().linhas (v73) — comprar / acabou
   estoque = [], // useEstoque().linhas (revenda, v66) — repor / zerado / negativo
   limiteMei = null, // lib/revenda.js limiteMei() — só com regime MEI
   hoje = "",
 }) {
   const out = [];
   const add = (p) => out.push(p);
+
+  // ---- Saldo de filamento (v73): acabou / dura pouco ----
+  for (const f of filamentos) {
+    if (f.estado !== "comprar" && f.estado !== "acabou") continue;
+    add({
+      id: `filamento|${f.material.id}`,
+      grupo: "rotina",
+      ordem: 3,
+      tom: "warn",
+      titulo: `${f.material.nome}: ${f.estado === "acabou" ? "filamento acabou (pela conta)" : `comprar filamento — dura ~${f.dura} dias`}`,
+      texto: `saldo estimado ${(f.saldo || 0).toFixed(2).replace(".", ",")} kg · gasta ${(f.gasto30 || 0).toFixed(2).replace(".", ",")} kg em 30 dias — confira contando o que tem`,
+      ir: { aba: "insumos", pedido: { sub: "saldo" } },
+      rotulo: "Ver saldo de filamento",
+    });
+  }
 
   // ---- Revenda (v66): estoque a repor / negativo e o limite do MEI ----
   for (const l of estoque) {

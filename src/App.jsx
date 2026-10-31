@@ -1,6 +1,7 @@
 import { PASSOS } from "./lib/passosPreco.js";
 import { trocarSubAba, useSubAba } from "./lib/subAbas.js";
 import { pegarPedido, pegarPedidoSemConsumir } from "./lib/navegar.js";
+import { definirTelas } from "./lib/telasSemUso.js";
 import { assinarMarcas, lerMarcas, somarMarcas } from "./lib/marcas.js";
 import { CrescimentoProvider } from "./hooks/useCrescimento.js";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -69,6 +70,7 @@ const PainelAnuncio = lazyAba(() => import("./components/PainelAnuncio.jsx"));
 const PaginaProduto = lazyAba(() => import("./components/PaginaProduto.jsx"));
 const ResumoMes = lazyAba(() => import("./components/ResumoMes.jsx"));
 const Fiscal = lazyAba(() => import("./components/Fiscal.jsx"));
+const SaudeDinheiro = lazyAba(() => import("./components/SaudeDinheiro.jsx"));
 const CompararPeriodos = lazyAba(() => import("./components/CompararPeriodos.jsx"));
 const CarrinhosAbandonados = lazyAba(() => import("./components/CarrinhosAbandonados.jsx"));
 const AnaliseDiagnostico = lazyAba(() => import("./components/AnaliseDiagnostico.jsx"));
@@ -170,13 +172,14 @@ const MENU = [
         key: "m-dinheiro",
         label: "Dinheiro",
         icone: "caixa",
-        sub: "Resultado do mês, caixa, contas, fiscal, metas e retorno por item",
+        sub: "Resultado do mês, caixa e caixinhas, contas, fiscal, saúde do dinheiro, metas e retorno por item",
         abas: [
           // Resultado (28/10/2026) = Resumo do mês + Vendas do mês + Payoff (3 vistas, VistasResultado)
           { tab: "resumoMes", label: "Resultado", tambemSub: [["caixa", "vendas"], ["caixa", "payoff"]] },
           { tab: "caixa", s: "caixa", label: "Caixa" },
           { tab: "caixa", s: "contas", label: "Contas fixas e parcelas" },
           { tab: "fiscal", label: "Fiscal" },
+          { tab: "saude", label: "Saúde do dinheiro" },
           { tab: "caixa", s: "vendas", label: "Vendas do mês", oculta: true },
           { tab: "caixa", s: "payoff", label: "Payoff", oculta: true },
           SEP,
@@ -223,6 +226,7 @@ const MENU = [
           // Insumos (28/10/2026): saíram de Produção — tudo que se compra num lugar só
           { tab: "insumos", s: "materiais", label: "Materiais" },
           { tab: "insumos", s: "embalagens", label: "Embalagens" },
+          { tab: "insumos", s: "saldo", label: "Saldo de filamento" },
         ],
       },
     ],
@@ -255,6 +259,15 @@ const TABS = [...new Set(ITENS_MENU.flatMap((i) => i.abas.filter((a) => a.tab).m
 
 const TAB_KEY = "ohra:ultima-aba";
 // Chaves das sub-abas lembradas das telas (as mesmas que as telas já usavam).
+// Telas sem uso (01/11/2026): a lista de telas do menu vai pra lib/telasSemUso.js.
+definirTelas(
+  (() => {
+    const vistas = new Map();
+    for (const g of MENU) for (const it of g.itens || [g]) for (const a of it.abas || []) if (a.tab && !a.oculta && !vistas.has(a.tab)) vistas.set(a.tab, { tab: a.tab, label: `${it.label} → ${a.label}`, semRevisao: a.tab === "inicio" });
+    return [...vistas.values()];
+  })()
+);
+
 const SUB_CHAVE = { cadastros: "ohra:cadastros-sub", crescimento: "ohra:crescimento-sub", caixa: "ohra:caixa:sub", analise: "ohra:analise-sub", live: "ohra:live-sub", insumos: "ohra:insumos-sub", estoque: "ohra:estoque-sub", importar: "ohra:importar-sub" };
 
 // O app abre no Início (sessão nova do navegador). Recarregar a página na
@@ -292,7 +305,7 @@ export default function App() {
   const [crescimentoSub] = useSubAba(SUB_CHAVE.crescimento, "rampa");
   const [caixaSub] = useSubAba(SUB_CHAVE.caixa, "caixa");
   const [analiseSub] = useSubAba(SUB_CHAVE.analise, "abc", ["abc", "xyz", "evolucao"]);
-  const [insumosSub] = useSubAba(SUB_CHAVE.insumos, "materiais", ["materiais", "embalagens"]);
+  const [insumosSub] = useSubAba(SUB_CHAVE.insumos, "materiais", ["materiais", "embalagens", "saldo"]);
   const [importarSub] = useSubAba(SUB_CHAVE.importar, "importar", ["importar", "historico"]);
   const [estoqueSub] = useSubAba(SUB_CHAVE.estoque, "estoque", ["estoque", "notas", "fornecedores", "inventario"]);
   const [liveSub] = useSubAba(SUB_CHAVE.live, "planejar");
@@ -429,6 +442,8 @@ export default function App() {
     }
     // Quem manda pra Atualizar dados quer importar (não a lista de envios).
     if (key === "importar") trocarSubAba(SUB_CHAVE.importar, "importar");
+    // Pedido com sub-aba (ex.: Insumos → Saldo de filamento): troca a sub-aba do cabeçalho.
+    if ((key === "insumos" || key === "caixa") && pegarPedidoSemConsumir(key)?.sub) trocarSubAba(SUB_CHAVE[key], pegarPedido(key).sub);
     if (key === "publicar" || key === "lancamento" || key === "ficha" || key === "quantidade" || key === "avulso") {
       setCanalSub(key);
       key = "canal";
@@ -790,6 +805,14 @@ export default function App() {
           {visitadas.has("resumoMes") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
               <ResumoMes key={lojaId || "sem-loja"} />
+            </Suspense>
+          )}
+        </section>
+
+        <section className={`view ${tab === "saude" ? "active" : ""}`}>
+          {visitadas.has("saude") && (
+            <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <SaudeDinheiro key={lojaId || "sem-loja"} />
             </Suspense>
           )}
         </section>

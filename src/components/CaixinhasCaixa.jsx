@@ -1,14 +1,10 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { useCrescimento } from "../hooks/useCrescimento.js";
-import { useRankingData } from "../hooks/useRankingData.js";
-import { usePreferencia } from "../hooks/usePreferencia.js";
 import { recarregarReserva } from "../hooks/useReservaProducao.js";
-import { cascataDoPeriodo, despesasFixasDoMes } from "../lib/resumoLoja.js";
-import { maquinaDoItem } from "../lib/calc.js";
-import { CAIXINHAS, NOME_CAIXINHA, divisaoDaLoja, jaDistribuiu, saldosCaixinhas, sugestaoDistribuicao } from "../lib/caixinhas.js";
+import { useCaixinhas } from "../hooks/useCaixinhas.js";
+import { CAIXINHAS, NOME_CAIXINHA, jaDistribuiu } from "../lib/caixinhas.js";
 import EditarDialog from "./EditarDialog.jsx";
 import Ajuda from "./Ajuda.jsx";
 
@@ -16,55 +12,17 @@ import Ajuda from "./Ajuda.jsx";
 // Separações virtuais do caixa da loja: o saldo não muda, só ganha destino.
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const nomeMes = (m) => `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(0, 4)}`;
-const mesAntes = (m, n = 1) => {
-  const d = new Date(`${m}-15T12:00:00`);
-  d.setMonth(d.getMonth() - n);
-  return d.toISOString().slice(0, 7);
-};
-const fimDoMes = (m) => {
-  const d = new Date(`${m}-01T12:00:00`);
-  d.setMonth(d.getMonth() + 1);
-  d.setDate(0);
-  return d.toISOString().slice(0, 10);
-};
 const num = (v) => (Number.isFinite(Number(String(v).replace(",", "."))) ? Number(String(v).replace(",", ".")) : 0);
 const SQL = "Falta rodar o supabase/schema_v72.sql no Supabase pra usar as caixinhas.";
 
 export default function CaixinhasCaixa({ registros = [], disponivel, caixa, lancamentos = [], hoje, onToast }) {
   const { lojaId } = useLoja();
-  const cres = useCrescimento();
-  const { produtos, materiais } = useRankingData();
-  const [pref, setPref] = usePreferencia("dinheiro:caixinhas", {});
-  const divisao = divisaoDaLoja(pref);
-  const { saldos, total } = useMemo(() => saldosCaixinhas(registros), [registros]);
+  const { mes, sug, divisao, pref, setPref, saldos, total } = useCaixinhas({ registros, lancamentos, caixa, hoje });
   const [dist, setDist] = useState(null); // { mes, linhas editáveis }
   const [usar, setUsar] = useState(null); // { caixinha, valor, descricao }
   const [verPct, setVerPct] = useState(false);
   const [salvando, setSalvando] = useState(false);
-
-  const mes = mesAntes(hoje.slice(0, 7)); // o mês que fechou
   const feito = jaDistribuiu(registros, mes);
-  const sug = useMemo(() => {
-    const de = `${mes}-01`;
-    const ate = fimDoMes(mes);
-    const c = cascataDoPeriodo({ pedidos: cres.pedidosValidos || [], linhasAds: cres.linhasAds, lancamentos, de, ate }).total;
-    let maquina = 0;
-    for (const p of cres.pedidosValidos || []) {
-      const d = String(p.data).slice(0, 10);
-      if (!p.valido || d < de || d > ate || !p.item) continue;
-      maquina += maquinaDoItem(p.item, produtos, materiais) * (Number(p.q) || 0);
-    }
-    const proximo = hoje.slice(0, 7);
-    return sugestaoDistribuicao({
-      c,
-      maquina: Math.round(maquina * 100) / 100,
-      fixasProximo: despesasFixasDoMes(lancamentos, proximo).total,
-      fixasMes: despesasFixasDoMes(lancamentos, mes).total,
-      saldos,
-      caixa,
-      divisao,
-    });
-  }, [mes, cres.pedidosValidos, cres.linhasAds, lancamentos, produtos, materiais, saldos, caixa, divisao, hoje]);
 
   const livre = Math.round((caixa - total) * 100) / 100;
 

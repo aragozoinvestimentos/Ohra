@@ -433,7 +433,7 @@ const quandoAprovou = (r) => {
   const h = (Array.isArray(r.dados?.historico) ? r.dados.historico : []).filter((x) => x.status === "quero" || x.status === "aprovada");
   return h.length ? h[h.length - 1].data : String(r.atualizado_em || r.criado_em || "").slice(0, 10);
 };
-export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, uso, kpis, aprendizado = [], opinioes = [], atuais = null }) {
+export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, uso, kpis, aprendizado = [], opinioes = [], atuais = null, telasVotos = null }) {
   const l = [];
   l.push(`# Consultor da Sede — ${nomeLoja} — ${dm(hoje)}/${hoje.slice(0, 4)}`);
   if (kpis) l.push(`Mês até hoje: vendas ${BRL(kpis.vendas || 0)} · lucro depois do Ads ${BRL(kpis.depoisAds || 0)}${kpis.liquido != null ? ` · sobrou pra você (depois das contas fixas) ${BRL(kpis.liquido)}` : ""} · caixa ${kpis.caixa != null ? BRL(kpis.caixa) : "—"}${kpis.meta ? ` · meta ${BRL(kpis.meta)}` : ""}`);
@@ -463,6 +463,12 @@ export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, u
       }
       l.push(`  por que agora: ${c.dados?.porque}`, `  o que a análise deve responder: ${c.dados?.responderia}`);
     }
+  }
+  // Telas sem uso (01/11/2026): o voto do Gustavo em Configuração → Regras.
+  const votos = Object.entries(telasVotos || {}).filter(([, v]) => v?.voto);
+  if (votos.length) {
+    l.push("", "## Telas que não abro — meu voto");
+    for (const [tab, v] of votos) l.push(`- ${ROTULOS_ABA[tab] || tab}: ${v.voto === "concordo" ? "concordo em tirar/esconder" : "não concordo, fica"} (${dm(v.em)})`);
   }
   if (erros.length) {
     l.push("", "## Erros do app (últimos 14 dias)");

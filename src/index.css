@@ -2947,3 +2947,13 @@ tr.imp-erro td { color: var(--ink-faint); }
 .caixinha-valor { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0; }
 .caixinha-valor.neg, .caixinhas-topo .neg { color: var(--st-resolver); }
 .caixinha-botoes { display: flex; gap: 10px; font-size: 12px; }
+/* Saúde do dinheiro (01/11/2026) */
+.saude-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.saude-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 10px 0; }
+.saude-card { text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font: inherit; color: var(--ink); }
+.saude-card:hover { border-color: var(--border-strong); }
+.saude-card.saude-resolver { background: var(--st-resolver-soft); }
+.saude-card.saude-atencao { background: var(--st-atencao-soft); }
+.saude-titulo { font-size: 12px; font-weight: 700; color: var(--ink-soft); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.saude-valor { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.saude-frase { font-size: 12px; color: var(--ink-soft); line-height: 1.4; }
