@@ -6,6 +6,7 @@
 import { pendenciasDeTarefas } from "./tarefas.js";
 import { estadoSugestaoAfiliado } from "./estados.js";
 import { andamentoAtrasado, periodoLigado } from "./ads.js";
+import { efeitoVisivel } from "./efeito.js";
 import { precisaRecarregar } from "./saldoAds.js";
 
 const brl = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -360,10 +361,38 @@ export function montarPendencias({
       add({ id: `gmv|${p.id}|${p.aviso.tipo}`, grupo: p.aviso.estado === "oportunidade" ? "oportunidade" : "rotina", ordem: 3, tom: p.aviso.estado === "oportunidade" ? "good" : "warn", titulo: `${nome}: ${p.aviso.titulo}`, texto: `Shopee · GMV Max da Loja · ${p.aviso.texto}`, ir: irLoja, rotulo: "Ver no Ads" });
     }
   }
+  // "Surtiu efeito?" (01/11/2026) — veredito de cada mudança no anúncio (lib/efeito.js decide).
+  for (const l of ads?.linhas || []) {
+    const ef = l.efeito;
+    if (!ef || ef.estado !== "final" || !efeitoVisivel(ef, hoje)) continue;
+    if (ef.veredito === "igual") continue;
+    const grupo = ef.veredito === "prejuizo" ? "resolver" : ef.grupo === "oportunidade" ? "oportunidade" : "rotina";
+    const itemId = l.item.id;
+    add({
+      id: `efeito|${l.chave}|${ef.mudanca.data}`,
+      grupo,
+      ordem: 2,
+      tom: grupo === "resolver" ? "bad" : grupo === "oportunidade" ? "good" : "warn",
+      titulo: `${l.item.nome}: ${ef.titulo}`,
+      texto: `${l.canal.nome} · ${ef.acao ? `${ef.acao} — ` : ""}sobrou ${ef.depois?.sobrouDia != null ? `R$ ${ef.depois.sobrouDia.toFixed(2).replace(".", ",")}` : "—"}/dia depois × R$ ${(ef.antes?.sobrouDia ?? 0).toFixed(2).replace(".", ",")}/dia antes`,
+      ir: { aba: "anuncio", pedido: { itemId, canalId: l.canal.id, aba: "resumo" } },
+      rotulo: "Ver o resultado",
+    });
+  }
   for (const l of [...(ads?.lojaLinha ? [ads.lojaLinha] : []), ...(ads?.linhas || [])]) {
     const av = l.av;
     if (!av.ativo) continue;
     const irL = { aba: "crescimento", pedido: { sub: "ads", adsChave: l.chave } };
+    // Crescer de propósito (01/11/2026): passou do limite = Resolver; 7º dia = conferir.
+    if (av.chave === "crescer-limite") {
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|crescer-limite`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: crescer de propósito passou do limite`, texto: `${l.canal.nome} · ${av.titulo.split(" — ")[1] || ""} de prejuízo em 7 dias — volte 1 degrau, suba a meta ou pause`, ir: irL, rotulo: "Abrir Ads" });
+      continue;
+    }
+    if (av.crescer?.conferir) {
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|crescer-dia7|${av.crescer.desde}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: crescer de propósito — dia ${av.crescer.dia}, confira o resultado`, texto: `${l.canal.nome} · vence em ${av.crescer.ate.slice(8, 10)}/${av.crescer.ate.slice(5, 7)}; veja se as vendas e avaliações vieram`, ir: { aba: "anuncio", pedido: { itemId: l.item.id, canalId: l.canal.id, aba: "resumo" } }, rotulo: "Ver o resultado" });
+      if (av.chave === "crescer") continue;
+    }
+    if (av.chave === "crescer") continue;
     // Método do Luan (16/10/2026): dia 3 sem venda, pausado, conferir, virar meta, campanha da loja.
     if (av.chave === "sem-venda-dia3") {
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|dia3`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: ${av.semVenda?.dias || 3} dias pagando Ads sem venda`, texto: `${l.canal.nome} · pause e arrume o anúncio antes de gastar mais`, ir: irL, rotulo: "Ver o que fazer" });

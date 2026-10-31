@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ComoMediuOrcamento from "./ComoMediuOrcamento.jsx";
 import ChaveTeto from "./ChaveTeto.jsx";
+import CrescerProposito from "./CrescerProposito.jsx";
 import { useEscada } from "../hooks/useEscada.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
@@ -25,6 +26,7 @@ import Ajuda from "./Ajuda.jsx";
 import { CartoesAlvoAgora, DiferencaAlvoAgora } from "./AlvoAgora.jsx";
 import { CartaoDiagnostico, FunilQuatro } from "./Diagnostico.jsx";
 import HistoricoAcoes from "./HistoricoAcoes.jsx";
+import SurtiuEfeito from "./SurtiuEfeito.jsx";
 
 // Painel do anúncio (remap 21/10/2026, aprovado pela prévia): TUDO de um
 // produto (ou kit / anúncio com vários itens) NUM canal — resumo, vendas,
@@ -336,6 +338,7 @@ function AbaResumo({ l, v, vAnt, adsJ, pedP, de, hoje, dias, irAba }) {
           <p>Preço, rampa e Ads deste anúncio estão em dia.</p>
         </div>
       )}
+      {l.ads?.efeito && <SurtiuEfeito ef={l.ads.efeito} />}
       <div className="pa-grid2">
         <div className="panel">
           <h3>Tudo que o app está olhando neste anúncio</h3>
@@ -870,6 +873,7 @@ function AbaAds({ l, hoje, ped }) {
         <div className="pa-agora-acoes">
           <button type="button" className="btn btn-mini primary" onClick={abrir}>Abrir no Ads (ajustar, pausar, novo período)</button>
           {av.ativo && <ChaveTeto chave={l.ads?.chave} />}
+          {av.ativo && <CrescerProposito chave={l.ads?.chave} crescer={l.ads?.crescer} ads={l.ads?.av?.numeros} />}
         </div>
       </div>
       {av.ativo && n ? (

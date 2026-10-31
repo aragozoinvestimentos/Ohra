@@ -2933,3 +2933,7 @@ tr.imp-erro td { color: var(--ink-faint); }
 .frase-resultado.frase-ruim b { color: var(--st-resolver); }
 .frase-resultado.frase-bom { background: var(--st-oportunidade-soft); border-color: transparent; }
 .frase-resultado.frase-bom b { color: var(--st-oportunidade); }
+/* Crescer de propósito (01/11/2026) */
+.crescer-proposito { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); }
+.crescer-proposito.ligado { color: var(--accent); font-weight: 700; }
+.crescer-proposito label { display: inline-flex; align-items: center; gap: 6px; }

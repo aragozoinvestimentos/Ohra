@@ -6,7 +6,7 @@ import { estadoRampa, metricasFunil, referenciaFunilLoja, regrasDaLoja } from ".
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
-import { periodoAjustado, economiaRealAds } from "../lib/ads.js";
+import { periodoAjustado, economiaRealAds, aplicarCrescer, estadoCrescer } from "../lib/ads.js";
 import { lucroDaLinha } from "../lib/resumoLoja.js";
 import { adsNaJanela, pausasDoPeriodo, valoresAtuais, avaliarAds, avaliarAdsLoja, capacidadeDoItem, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, roasEmpate, tetoDaLoja } from "../lib/ads.js";
 import { useLembretes } from "./useLembretes.js";
@@ -23,7 +23,8 @@ import { somarDias } from "../lib/pedidos.js";
 import { useVendasOrganicas } from "./useVendasOrganicas.js";
 import { configCalendario, infoSazonal, proximaCampanha, quandoVendeDe } from "../lib/calendario.js";
 import { useAvaliacoes } from "./useAvaliacoes.js";
-import { juntarRegistros, registrosDeAvaliacao, semanasAutomaticas } from "../lib/semanasAuto.js";
+import { adsDaSemana, juntarRegistros, registrosDeAvaliacao, semanasAutomaticas } from "../lib/semanasAuto.js";
+import { efeitoDaMudanca } from "../lib/efeito.js";
 import { cruzarGrupos, normSku, relatorioDoGuardado } from "../lib/relatorioShopee.js";
 import { fichaDoGrupo } from "../lib/anunciosGrupo.js";
 import { PLATAFORMAS } from "../lib/pedidos.js";
@@ -154,6 +155,24 @@ function useCalculoCrescimento() {
   // limitadas às unidades PAGAS do anúncio nos pedidos (o CSV da Shopee conta
   // não pago, cancelado e outros produtos). O número da Shopee fica em
   // parcialShopee / vendasShopee; as gravações usam o original (salvarAndamentoAds).
+  // Datas em que o preço mudou pela rampa (subida, descida, ajuste do degrau,
+  // rampa refeita) por rampa — o Ads e o "Surtiu efeito?" leem (31/10/2026).
+  const mudancasPorRampa = useMemo(() => {
+    const regsPorRampa = new Map();
+    for (const r of registrosGravados || []) {
+      if (!regsPorRampa.has(r.rampa_id)) regsPorRampa.set(r.rampa_id, []);
+      regsPorRampa.get(r.rampa_id).push(r);
+    }
+    const m = new Map();
+    for (const rampa of [...(rampas || []), ...(rampasGrupo || []), ...(rampasKit || [])]) {
+      const regs = regsPorRampa.get(rampa.id) || [];
+      const inicios = regs.filter((r) => r.tipo === "inicio").map((r) => String(r.data).slice(0, 10)).sort();
+      const ds = [...regs.filter((r) => r.tipo === "subida" || r.tipo === "descida").map((r) => String(r.data).slice(0, 10)), ...inicios.slice(1), ...(Array.isArray(rampa.checklist?.ajustesDegrau) ? rampa.checklist.ajustesDegrau.map((a) => String(a.data || "").slice(0, 10)).filter(Boolean) : [])];
+      m.set(rampa.id, [...new Set(ds)].sort());
+    }
+    return m;
+  }, [registrosGravados, rampas, rampasGrupo, rampasKit]);
+  const mudancasDaRampa = (rampa) => (rampa ? mudancasPorRampa.get(rampa.id) || [] : []);
   const adsHv = useMemo(() => {
     const naoPagos = new Map();
     for (const l of reais.linhas || []) {
@@ -166,20 +185,6 @@ function useCalculoCrescimento() {
     // Kit Completo e contava só as 6 vendas dela, não as 11 do anúncio).
     const grupoDoItem = new Map();
     for (const [id, lista] of gruposPorItem(grupos)) if (soNoGrupo.has(id) && lista[0]) grupoDoItem.set(id, lista[0].grupo.id);
-    // Datas em que o preço mudou pela rampa (subida, descida, ajuste do degrau,
-    // rampa refeita) por item × canal — o Ads lê (A/B/C, 31/10/2026).
-    const regsPorRampa = new Map();
-    for (const r of registrosGravados || []) {
-      if (!regsPorRampa.has(r.rampa_id)) regsPorRampa.set(r.rampa_id, []);
-      regsPorRampa.get(r.rampa_id).push(r);
-    }
-    const mudancasDaRampa = (rampa) => {
-      if (!rampa) return [];
-      const regs = regsPorRampa.get(rampa.id) || [];
-      const inicios = regs.filter((r) => r.tipo === "inicio").map((r) => String(r.data).slice(0, 10)).sort();
-      const ds = [...regs.filter((r) => r.tipo === "subida" || r.tipo === "descida").map((r) => String(r.data).slice(0, 10)), ...inicios.slice(1), ...(Array.isArray(rampa.checklist?.ajustesDegrau) ? rampa.checklist.ajustesDegrau.map((a) => String(a.data || "").slice(0, 10)).filter(Boolean) : [])];
-      return [...new Set(ds)].sort();
-    };
     const rampaDoPeriodo = (tipo, id, canalId) => {
       if (tipo === "grupo") return (rampasGrupo || []).find((r) => r.grupo_id === id && r.canal_id === canalId);
       if (tipo === "kit") return (rampasKit || []).find((r) => r.kit_id === id && r.canal_id === canalId);
@@ -214,7 +219,7 @@ function useCalculoCrescimento() {
       return periodoAjustado(p, { pagas, pendentes, cobre: (de, ate) => reais.cobertura.cobre(canal, de, ate), mudancas: mudancasDaRampa(rampaP).filter((d) => d <= hoje) });
     });
     return { ...adsH, periodos };
-  }, [adsH, reais.linhas, reais.cobertura, pedidosPorCanal, canais, itens, soNoGrupo, skuGrupo, grupos, registrosGravados, rampas, rampasGrupo, rampasKit, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [adsH, reais.linhas, reais.cobertura, pedidosPorCanal, canais, itens, soNoGrupo, skuGrupo, grupos, mudancasPorRampa, rampas, rampasGrupo, rampasKit, hoje]); // eslint-disable-line react-hooks/exhaustive-deps
   const vendasDeItens = (canalId, ids) => (de, ate) => {
     let t = 0;
     for (const l of pedidosPorCanal.get(canalId) || []) if (l.data >= de && l.data <= ate && ids.has(l.id_item) && !grupoDoPedido(l)) t += l.q;
@@ -456,6 +461,7 @@ function useCalculoCrescimento() {
   // "Ignorar teto de Ads" por anúncio (22/10/2026): a chave liga/desliga na
   // tela do Ads; ligado = decide como se o teto da loja não existisse.
   const [ignorarTeto] = usePreferencia("ads:ignorar-teto", {});
+  const [crescerCfg] = usePreferencia("ads:crescer", {});
   const linhasAds = useMemo(() => {
     // Fora de rampa: os registros semanais gravados antes + as semanas
     // automáticas (pedidos, Desempenho, CSV do Ads) desde o 1º dia com pedidos.
@@ -672,9 +678,79 @@ function useCalculoCrescimento() {
     };
     // Preço e lucro REAIS por venda (média dos pedidos pagos do período de Ads)
     // pras contas do Ads — mesma conta do Resumo; sem pedidos suficientes, os de hoje.
-    const linhasA = base.map((b) => ({ ...b, ...economiaRealAds(b.periodos, hoje, { preco: b.preco, lucro: b.lucro }) })).map((b) => ({
+    // "Surtiu efeito?" (01/11/2026): a última mudança do anúncio (degrau da
+    // rampa, ligar/ajustar/despausar o Ads) × o que sobrou depois do Ads por dia.
+    const efeitoDaLinha = (b) => {
+      const corte = somarDias(hoje, -28);
+      const muds = [];
+      const rp = (b.rampa || b.rampaGrupo)?.r;
+      for (const d of mudancasDaRampa(rp)) muds.push({ data: d, tipo: "preco", texto: "degrau da rampa" });
+      for (const p of b.periodos || []) {
+        if (p.item_tipo === "loja") continue;
+        if (p.inicio) muds.push({ data: String(p.inicio).slice(0, 10), tipo: "ads", texto: "Ads ligado" });
+        for (const a of Array.isArray(p.ajustes) ? p.ajustes : []) {
+          if (!a?.data || a.tipo === "pausa" || a.tipo === "revisei") continue;
+          muds.push({ data: String(a.data).slice(0, 10), tipo: "ads", texto: a.tipo === "volta" ? "Ads despausado" : "orçamento/meta do Ads" });
+        }
+      }
+      const cr = crescerCfg?.[b.chave];
+      if (cr?.desde) muds.push({ data: cr.desde, tipo: "crescer", texto: "crescer de propósito" });
+      const ult = muds.filter((m) => m.data >= corte && m.data <= hoje).sort((x, y) => x.data.localeCompare(y.data)).pop();
+      if (!ult) return null;
+      const { medir, ultimoDia } = medidorDe(b);
+      const zs = (b.rampa || b.rampaGrupo)?.est.sazonal?.fase;
+      const sazonal = (!!b.sazonal && ["aquecer", "ajustar", "alavancar"].includes(b.sazonal.fase)) || zs === "subindo" || zs === "pico";
+      return efeitoDaMudanca({ mudanca: ult, hoje, ultimoDia, medir, sazonal });
+    };
+    // Mede um anúncio (pedidos pagos + Ads) num intervalo — usado pelo efeito e
+    // pelo crescer de propósito.
+    const medidorDe = (b) => {
+      const canal = b.canal;
+      let casa;
+      if (b.tipo === "grupo") casa = (l) => grupoDoPedido(l)?.grupoId === b.id;
+      else if (b.tipo === "kit") casa = (l) => l.id_item === `k:${b.id}`;
+      else {
+        const ids = new Set([`p:${b.id}`, ...itens.filter((i) => i.id.startsWith("v:") && i.produtoId === b.id).map((i) => i.id)]);
+        casa = (l) => ids.has(l.id_item) && !grupoDoPedido(l);
+      }
+      const ls = (pedidosPorCanal.get(canal.id) || []).filter(casa);
+      const medir = (de, ate) => {
+        const t = { un: 0, pago: 0, lucro: 0, ads: 0, adsDesconhecido: false };
+        for (const l of ls)
+          if (l.data >= de && l.data <= ate) {
+            t.un += Number(l.q) || 0;
+            t.pago += Number(l.pago) || 0;
+            t.lucro += lucroDaLinha(l);
+          }
+        const a = adsDaSemana(b.periodos, de, ate);
+        if (a?.desconhecido) t.adsDesconhecido = true;
+        else if (a) t.ads = Number(a.gasto) || 0;
+        return t;
+      };
+      let ultimoDia = null;
+      for (let i = 1; i <= 16; i++) {
+        const d = somarDias(hoje, -i);
+        if (reais.cobertura.cobre(canal, d, d)) {
+          ultimoDia = d;
+          break;
+        }
+      }
+      return { medir, ultimoDia };
+    };
+    const crescerDe = (b) => {
+      const cfg = crescerCfg?.[b.chave];
+      if (!cfg?.desde) return null;
+      const { medir, ultimoDia } = medidorDe(b);
+      let perda = null;
+      if (ultimoDia) {
+        const t = medir(somarDias(ultimoDia, -6), ultimoDia);
+        if (!t.adsDesconhecido) perda = Math.max(0, t.ads - t.lucro);
+      }
+      return estadoCrescer(cfg, hoje, perda);
+    };
+    const linhasA = base.map((b) => ({ ...b, ...economiaRealAds(b.periodos, hoje, { preco: b.preco, lucro: b.lucro }), efeito: efeitoDaLinha(b), crescer: crescerDe(b) })).map((b) => ({
       ...b,
-      av: avaliarAds({ preco: b.precoAds, lucro: b.lucroAds, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: (b.rampa || b.rampaGrupo)?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: ignorarTeto?.[b.chave] ? null : teto, sazonal: b.sazonal, capacidadeDia: b.capacidadeDia }),
+      av: aplicarCrescer(avaliarAds({ efeito: b.efeito, preco: b.precoAds, lucro: b.lucroAds, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: (b.rampa || b.rampaGrupo)?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: ignorarTeto?.[b.chave] ? null : teto, sazonal: b.sazonal, capacidadeDia: b.capacidadeDia }), b.crescer),
       tetoIgnorado: !!ignorarTeto?.[b.chave],
     }));
     // Lembretes de virada de fase do Ads sazonal (Início): na 1ª semana de cada fase.
@@ -723,7 +799,7 @@ function useCalculoCrescimento() {
       }
     }
     return { loja, teto, sazonal, linhas: linhasA, lojaLinha, lembretesOk: lembretesH.disponivel };
-  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsHv.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos, ignorarTeto]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsHv.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos, ignorarTeto, crescerCfg, mudancasPorRampa]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pedidosValidos = reais.linhas;
   return useMemo(

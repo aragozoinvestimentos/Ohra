@@ -59,7 +59,8 @@ export const REGRAS_ADS = {
   decisaoDias: 7, // depois de cada ajuste: decide de novo em 7 dias (21/10/2026, Gustavo: "20% na semana — 3 dias não é nada")
   metaFator: 1.3, // meta sugerida = equilíbrio × 1,3
   metaAltaFator: 2, // meta > 2× o equilíbrio = alta pra começar
-  escada: { manterAte: 1.2, dobroAte: [2, 3] }, // retorno: < 1,2 manter · < 2 +20% · ≥ 2 +30% (aumentoMax)
+  escada: { manterAte: 1.3, dobroAte: [2, 3] }, // retorno: < 1,3 manter · < 2 +20% · ≥ 2 +30% (aumentoMax) — 1,3 desde 01/11/2026
+  minVendasAumento: 7, // aumentar só com ≥ 7 vendas pagas via Ads por semana (01/11/2026)
   cliquesConversao: 30, // cliques no período pra julgar a conversão
   conversaoMin: 0.01, // vendas ÷ cliques abaixo disso = problema é o anúncio
   constanciaDias: 3, // média de 3 dias × os 3 anteriores
@@ -555,7 +556,7 @@ export function degrauAnterior(periodo, orcamento, regras = REGRAS_ADS) {
 // de data, qualquer formato com vendas/ads_*/data/periodo_inicio).
 // `anuncio` = aviso de Revisar anúncio da Rampa (funil/teste), se houver.
 // `capacidadeDia` = quanto a farm produz por dia deste item (null = sem dado).
-export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodos = [], anuncio = null, hoje, regras = REGRAS_ADS, tetoLoja = null, sazonal = null, capacidadeDia = null }) {
+export function avaliarAds({ efeito = null, preco, lucro, lucroEm = null, semanas = [], periodos = [], anuncio = null, hoje, regras = REGRAS_ADS, tetoLoja = null, sazonal = null, capacidadeDia = null }) {
   const ss = (semanas || []).map(porSemana).sort((a, b) => String(a.data).localeCompare(String(b.data)));
   const empate = roasEmpate(preco, lucro);
   // Régua ÚNICA = o ROAS de equilíbrio, pra todos os produtos (21/10/2026,
@@ -718,6 +719,15 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
           : `A plataforma ainda está aprendendo: não mexa na meta nem no orçamento até ${dm(somarDiasIso(refDecisao, gapDias))}. Envie o CSV do Shopee Ads normalmente.`,
         { numeros, decideEm: somarDiasIso(refDecisao, gapDias) }
       );
+    // "Surtiu efeito?" (01/11/2026): resultado mediano depois da última mudança
+    // → confirma em 14 dias antes de mexer de novo; piorou/prejuízo depois de
+    // mexer no Ads → voltar 1 degrau (a conta é a do efeito.js).
+    if (efeito?.estado === "confirmando" && efeito.confirmaEm > hoje)
+      return sitA("confirmando", "decisao", efeito.titulo, efeito.texto, { numeros, decideEm: efeito.confirmaEm, efeito });
+    if (efeito?.estado === "final" && efeito.mudanca?.tipo === "ads" && (efeito.veredito === "piorou" || efeito.veredito === "prejuizo") && orcamento && orcamento > num(regras.minDiario) + 0.004) {
+      const novoOrc = degrauAnterior(ativo, orcamento, regras);
+      return sitA("voltar-efeito", efeito.veredito === "prejuizo" ? "resolver" : "atencao", `Voltar 1 degrau: ${efeito.titulo}`, `${efeito.texto} Volte o orçamento pra ${moeda(novoOrc)}/dia.`, { numeros, novoOrcamento: novoOrc, efeito });
+    }
     // Queda com o Ads ligado (17/10/2026): últimos 3 dias × os 14 antes.
     {
       // Depois da 1ª semana, só a queda de 7 dias pede ação (os sinais de 3
@@ -821,6 +831,9 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     if (const3 && const3.variacao >= num(regras.constanciaAlta || 0.5) && capacidadeDia != null && const3.agora > capacidadeDia)
       return sitA("segurar-producao", "atencao", "Segurar: a produção não acompanha", `As vendas via Ads subiram ${Math.round(const3.variacao * 100)}% nos últimos 3 dias (${um(const3.agora)}/dia) e a farm faz ~${capacidadeDia} por dia deste item. Mantenha o orçamento até a produção dar conta.${retTxt}`, { numeros: semana });
     const passo = passoDaEscada(retorno, rAum);
+    const vendasSem = m.dias ? (num(m.vendas) * 7) / m.dias : num(m.vendas);
+    if (passo > 0 && !alavancar && vendasSem < num(regras.minVendasAumento ?? 7))
+      return sitA("manter", "ok", "Manter (poucas vendas pra subir)", `ROAS ${um(roas)} ${quando}${retTxt}, mas só ~${Math.round(vendasSem)} venda${Math.round(vendasSem) === 1 ? "" : "s"} paga${Math.round(vendasSem) === 1 ? "" : "s"} via Ads por semana: com tão pouco, o retorno pode ser sorte. Mantenha até passar de ${num(regras.minVendasAumento ?? 7)} vendas/semana.`, { numeros: semana });
     const caiu = const3 && const3.variacao <= -num(regras.constanciaQueda || 0.3);
     const cheio = usoOrc == null || usoOrc >= regras.gastoCheio;
     if (passo > 0 && (cheio || caiu)) {
@@ -839,7 +852,7 @@ export function avaliarAds({ preco, lucro, lucroEm = null, semanas = [], periodo
     }
     if (passo > 0)
       return sitA("manter", "ok", "Manter", `ROAS ${um(roas)} ${quando}${retTxt}, mas a Shopee gastou só ${usoTxt(usoOrc)}: aumentar agora não adianta. Mantenha.`, { numeros: semana });
-    return sitA("manter", "ok", "Manter", `ROAS ${um(roas)} ${quando}, entre ${nomeMin} e 1,2× ele${retTxt}. Mantenha orçamento e meta.`, { numeros: semana });
+    return sitA("manter", "ok", "Manter", `ROAS ${um(roas)} ${quando}, entre ${nomeMin} e 1,3× ele${retTxt}. Mantenha orçamento e meta.`, { numeros: semana });
   }
 
   // ---- Sem Ads ligado ----
@@ -1135,4 +1148,31 @@ export function economiaRealAds(periodos, hoje, { preco, lucro }) {
   const precoReal = (usaDepois ? num(dep.pago) : num(aj.pagoReal)) / un;
   const lucroReal = (usaDepois ? num(dep.lucro) : num(aj.lucroReal)) / un;
   return { precoAds: precoReal, lucroAds: lucroReal, economiaReal: { pagas: un, preco: precoReal, lucro: lucroReal, precoHoje: preco, lucroHoje: lucro, desde: usaDepois ? aj.mudanca.data : String(p.inicio).slice(0, 10), ate: p.parcial.ate, desdeMudanca: !!usaDepois } };
+}
+
+// "Crescer de propósito" (01/11/2026, aprovado pelo Gustavo): EXCEÇÃO por
+// anúncio — aceitar o Ads abaixo do equilíbrio por um tempo pra ganhar vendas,
+// avaliações e posição. Guardado em preferencias_loja `ads:crescer` =
+// { chave da linha: { desde, ate (desde + 14), limiteSemana (R$ de prejuízo
+// aceito por semana), motivo } }. Enquanto vale: os avisos de reduzir/pausar
+// viram "crescendo de propósito"; passou do limite da semana = Resolver; no
+// 7º dia, aviso pra conferir. Vence sozinho em 14 dias (o "Surtiu efeito?"
+// mostra o resultado). perdaSemana = −(lucro bruto − Ads) dos últimos 7 dias.
+export const CRESCER_DIAS = 14;
+const FREIOS_CRESCER = new Set(["reduzir", "pausar", "subir-meta", "queda-ads", "queda-ads-sinal", "inviavel-ativo", "voltar-efeito", "ads-prejuizo", "parou-ads", "confirmando"]);
+export function estadoCrescer(cfg, hoje, perdaSemana = null) {
+  if (!cfg?.desde) return null;
+  const ate = cfg.ate || somarDiasIso(cfg.desde, CRESCER_DIAS);
+  const dia = diasEntre(cfg.desde, hoje) + 1;
+  const limite = num(cfg.limiteSemana);
+  const passou = perdaSemana != null && limite > 0 && perdaSemana > limite;
+  return { ...cfg, ate, dia, ativo: hoje <= ate, vencido: hoje > ate, limite, perdaSemana, passou, conferir: hoje <= ate && dia >= 7 };
+}
+export function aplicarCrescer(av, cr) {
+  if (!av || !cr?.ativo || !av.ativo) return av;
+  const perda = cr.perdaSemana != null ? (cr.perdaSemana > 0 ? `prejuízo de ${moeda(cr.perdaSemana)} nos últimos 7 dias` : `sem prejuízo nos últimos 7 dias`) : "prejuízo dos 7 dias ainda sem dado";
+  if (cr.passou)
+    return { ...av, chave: "crescer-limite", estado: "resolver", titulo: `Crescer de propósito passou do limite — ${moeda(cr.perdaSemana)} em 7 dias`, texto: `Você aceitou até ${moeda(cr.limite)} de prejuízo por semana${cr.motivo ? ` (${cr.motivo})` : ""}, e foi ${moeda(cr.perdaSemana)}. Volte 1 degrau no orçamento, suba a meta ou pause.${av.chave && FREIOS_CRESCER.has(av.chave) ? ` O app diz: ${av.titulo}.` : ""}`, crescer: cr, original: av };
+  if (!FREIOS_CRESCER.has(av.chave)) return { ...av, crescer: cr };
+  return { ...av, chave: "crescer", estado: "decisao", titulo: `Crescendo de propósito até ${dm(cr.ate)} · dia ${cr.dia} de ${CRESCER_DIAS}`, texto: `Sem o crescer de propósito o app diria: "${av.titulo}". Você escolheu aceitar até ${moeda(cr.limite)} de prejuízo por semana${cr.motivo ? ` (${cr.motivo})` : ""} — ${perda}.${cr.conferir ? " Já passou de 7 dias: confira o resultado no Painel do anúncio." : ""}`, crescer: cr, original: av };
 }

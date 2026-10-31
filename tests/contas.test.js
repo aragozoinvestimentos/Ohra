@@ -1,3 +1,5 @@
+import { aplicarCrescer, estadoCrescer } from "../src/lib/ads.js";
+import { efeitoDaMudanca } from "../src/lib/efeito.js";
 import { cascataDoPeriodo, comoEstaALoja, fraseDoResultado, lucroDaLinha, variacaoSegura } from "../src/lib/resumoLoja.js";
 import { aliquotaEfetiva, aliquotaDaVenda, rbt12, dasDoMes } from "../src/lib/simples.js";
 import { fiscalDoItem, sugerirSku, produtosParecidos, faltasDoCadastro } from "../src/lib/revenda.js";
@@ -1021,5 +1023,62 @@ describe("Rampa × Ads: preço mudou no meio do período (A/B/C, 31/10/2026)", (
     expect(av.chave).toBe("aprendendo");
     expect(av.titulo).toMatch(/Preço mudou/);
     expect(av.decideEm).toBe("2026-11-05");
+  });
+});
+
+describe("Surtiu efeito? (antes × depois da mudança)", () => {
+  // medir: antes da mudança (data < 2026-10-20) sobrava `a` por dia; depois `d` por dia.
+  const mk = ({ a, d, unA = 2, unD = 2 }) => (de, ate) => {
+    const n = Math.round((new Date(`${ate}T12:00:00`) - new Date(`${de}T12:00:00`)) / 86400000) + 1;
+    const depois = de > "2026-10-20";
+    return { un: (depois ? unD : unA) * n, pago: (depois ? unD : unA) * n * 20, lucro: (depois ? d : a) * n, ads: 0 };
+  };
+  const mud = { data: "2026-10-20", tipo: "ads" };
+  it("melhorou com vendas suficientes fecha no 7º dia", () => {
+    const ef = efeitoDaMudanca({ mudanca: mud, hoje: "2026-10-28", medir: mk({ a: 10, d: 13 }) });
+    expect(ef.estado).toBe("final");
+    expect(ef.veredito).toBe("melhorou");
+  });
+  it("mediano espera 14 dias", () => {
+    const ef = efeitoDaMudanca({ mudanca: mud, hoje: "2026-10-28", medir: mk({ a: 10, d: 10 }) });
+    expect(ef.estado).toBe("confirmando");
+    expect(ef.confirmaEm).toBe("2026-11-03");
+  });
+  it("prejuízo decide no 7º dia mesmo com poucas vendas", () => {
+    const ef = efeitoDaMudanca({ mudanca: mud, hoje: "2026-10-28", medir: mk({ a: 10, d: -3, unD: 0.2 }) });
+    expect(ef.estado).toBe("final");
+    expect(ef.veredito).toBe("prejuizo");
+  });
+  it("amostra pequena espera 14 mesmo melhorando", () => {
+    const ef = efeitoDaMudanca({ mudanca: mud, hoje: "2026-10-28", medir: mk({ a: 10, d: 13, unD: 0.5 }) });
+    expect(ef.estado).toBe("confirmando");
+  });
+  it("temporada fecha no 7º dia e o antes é de 7 dias", () => {
+    const ef = efeitoDaMudanca({ mudanca: mud, hoje: "2026-10-28", medir: mk({ a: 10, d: 10 }), sazonal: true });
+    expect(ef.estado).toBe("final");
+    expect(ef.antesDe).toBe("2026-10-13");
+  });
+  it("antes do 7º dia só coleta", () => {
+    const ef = efeitoDaMudanca({ mudanca: mud, hoje: "2026-10-24", medir: mk({ a: 10, d: 13 }) });
+    expect(ef.estado).toBe("coletando");
+  });
+});
+
+describe("Crescer de propósito", () => {
+  const av = { ativo: true, chave: "reduzir", estado: "atencao", titulo: "Voltar 1 degrau" };
+  it("dentro do limite troca o freio por 'crescendo'", () => {
+    const cr = estadoCrescer({ desde: "2026-10-20", limiteSemana: 30 }, "2026-10-25", 12);
+    const r = aplicarCrescer(av, cr);
+    expect(r.chave).toBe("crescer");
+    expect(cr.ate).toBe("2026-11-03");
+  });
+  it("passou do limite vira Resolver", () => {
+    const r = aplicarCrescer(av, estadoCrescer({ desde: "2026-10-20", limiteSemana: 30 }, "2026-10-25", 45));
+    expect(r.chave).toBe("crescer-limite");
+    expect(r.estado).toBe("resolver");
+  });
+  it("vence sozinho depois de 14 dias", () => {
+    const r = aplicarCrescer(av, estadoCrescer({ desde: "2026-10-01", limiteSemana: 30 }, "2026-10-25", 0));
+    expect(r.chave).toBe("reduzir");
   });
 });
