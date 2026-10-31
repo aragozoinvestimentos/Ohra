@@ -13,7 +13,7 @@ import { resultadoNoPreco, resolverTaxasNoPreco } from "../src/lib/calc.js";
 import { calcularAnuncio, calcularEscada, configEscada, lucroNoPreco, precoPorMarkup, r5090perto, r90perto, r90up } from "../src/lib/escada.js";
 import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
 import { quebraLucro } from "../src/lib/precoAgora.js";
-import { avaliarAds, degrauAnterior, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas } from "../src/lib/ads.js";
+import { avaliarAds, degrauAnterior, economiaRealAds, numerosDoPeriodo, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas } from "../src/lib/ads.js";
 import { interpretarAds, juntarAds, somarJanelasAds } from "../src/lib/relatorioShopee.js";
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
 import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
@@ -961,5 +961,27 @@ describe("ROAS ajustado — vendas via Ads só as pagas (01/11/2026)", () => {
     const r2 = { ...interpretarAds([["Período", "08/10/2026-14/10/2026"], linhas[1], ["Leão", "111", "Em Andamento", "01/10/2026 10:00", "10", "2", "1", "60", "8"]], "y.csv"), arquivo: "y" };
     expect(somarJanelasAds([{ ...r, arquivo: "x" }, r2]).porItem.get("111")).toMatchObject({ vendas: 7, diretas: 4 });
     expect(juntarAds([{ ...r, arquivo: "x" }, { ...r, arquivo: "x2" }]).porItem.get("111")).toMatchObject({ vendas: 5, diretas: 3 });
+  });
+});
+
+describe("Ads do anúncio inteiro pelos pedidos reais (Conjunto de Natal, 01/11/2026)", () => {
+  it("11 vendas pagas do anúncio (6 + 3 + 2) → ROAS 2,5, equilíbrio ~3,2, retorno 0,78 e −R$ 32,43, igual ao Resumo", () => {
+    const p0 = { id: "nat", inicio: "2026-10-14", parcial: { ate: "2026-10-30", gasto: 149.4, cliques: 2292, vendas: 20, historico: [] } };
+    const p = periodoAjustado(p0, { pagas: () => ({ un: 6 + 3 + 2, pago: 373.7, lucro: 116.97 }), cobre: () => true });
+    expect(p.parcial.vendas).toBe(11);
+    const e = economiaRealAds([p], "2026-10-31", { preco: 39.98, lucro: 14.42 });
+    expect(e.precoAds).toBeCloseTo(33.97, 2);
+    expect(e.lucroAds).toBeCloseTo(10.63, 2);
+    const empate = e.precoAds / e.lucroAds;
+    expect(empate).toBeCloseTo(3.19, 1);
+    const n = numerosDoPeriodo(p, [], e.precoAds, empate);
+    expect(n.vendas).toBe(11);
+    expect(n.roas).toBeCloseTo(2.5, 1);
+    expect(n.retorno).toBeCloseTo(0.78, 2);
+    expect(n.vendas * e.lucroAds - n.gasto).toBeCloseTo(-32.43, 1);
+  });
+  it("menos de 3 vendas pagas: vale o preço e o lucro de hoje", () => {
+    const p = periodoAjustado({ id: "x", inicio: "2026-10-14", parcial: { ate: "2026-10-30", gasto: 20, vendas: 2, historico: [] } }, { pagas: () => ({ un: 2, pago: 60, lucro: 20 }), cobre: () => true });
+    expect(economiaRealAds([p], "2026-10-31", { preco: 30, lucro: 10 })).toMatchObject({ precoAds: 30, lucroAds: 10, economiaReal: null });
   });
 });

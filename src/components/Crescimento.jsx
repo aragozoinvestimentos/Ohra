@@ -1185,7 +1185,7 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
   const adsVivo = av?.ativo ? numerosAds(adsLinha) : null;
   // Sem período ligado: o último período encerrado (histórico — 24/10/2026).
   const ultPer = !av?.ativo ? [...(adsLinha?.periodos || [])].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)))[0] || null : null;
-  const ultNum = ultPer ? numerosDoPeriodo(ultPer, adsLinha.semanas || [], adsLinha.preco, av?.empate ?? e.roasMin) : null;
+  const ultNum = ultPer ? numerosDoPeriodo(ultPer, adsLinha.semanas || [], adsLinha.precoAds ?? adsLinha.preco, av?.empate ?? e.roasMin) : null;
   const hojeAds = hojeISO();
   const ads7 = adsVivo ? adsNaJanela(adsLinha.periodos, adsLinha.semanas, new Date(new Date(`${hojeAds}T12:00:00`).getTime() - 7 * 86400000).toISOString().slice(0, 10), hojeAds) : null;
   const roasV = adsVivo ? adsVivo.roas : e.roas;

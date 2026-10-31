@@ -682,7 +682,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
   const av = l.av;
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
-  const historico = [...l.periodos].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).map((p) => ({ p, r: p.id === av.ativo?.id && av.numeros?.fonte === "andamento" ? { ...numerosDoPeriodo(p, l.semanas, l.preco, av.empate, regrasA), ...av.numeros } : numerosDoPeriodo(p, l.semanas, l.preco, av.empate, regrasA) }));
+  const historico = [...l.periodos].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).map((p) => ({ p, r: p.id === av.ativo?.id && av.numeros?.fonte === "andamento" ? { ...numerosDoPeriodo(p, l.semanas, l.precoAds ?? l.preco, av.empate, regrasA), ...av.numeros } : numerosDoPeriodo(p, l.semanas, l.precoAds ?? l.preco, av.empate, regrasA) }));
   const totalDias = av.ativo?.fim ? diasEntre(av.ativo.inicio, av.ativo.fim) + 1 : null;
   const diaAtual = (n.dias ?? 0) + 1;
   const tomRoas = (r) => (r == null || !av.empate ? "" : r >= av.empate ? " bom" : " ruim");
@@ -789,7 +789,7 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
             // ROAS ajustado (01/11/2026): vendas via Ads = só as pagas deste anúncio.
             const aj = av.ativo.parcial?.ajuste;
             if (!aj || (aj.estado !== "insuficiente" && aj.shopee === (n.vendas || 0))) return null;
-            const roasSh = n.gasto > 0 ? (aj.shopee * l.preco) / n.gasto : null;
+            const roasSh = n.gasto > 0 ? (aj.shopee * (l.precoAds ?? l.preco)) / n.gasto : null;
             return <div className={`muted-cel${aj.estado === "insuficiente" ? " atencao-txt" : ""}`} style={{ marginTop: 2 }}>{textoAjusteAds(aj, roasSh)}</div>;
           })()}
           {(() => {

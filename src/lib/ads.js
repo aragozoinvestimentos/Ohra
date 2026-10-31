@@ -1089,3 +1089,20 @@ export function textoAjusteAds(aj, roasShopee) {
   partes.push(`${aj.pagas} paga${aj.pagas === 1 ? "" : "s"} deste anúncio no período`);
   return `${base} — conta não pagos, cancelados e outros produtos depois do clique · ${partes.join(" · ")}${aj.estado === "provisorio" ? ` · ${aj.pendentes} pedido${aj.pendentes === 1 ? "" : "s"} ainda sem pagamento (provisório)` : ""}`;
 }
+
+// Preço e lucro REAIS por venda pras contas do Ads (01/11/2026): a média dos
+// pedidos PAGOS do anúncio no período de Ads (o que o cliente pagou de verdade,
+// com promo, cupom e o degrau da rampa de cada dia — subiu o degrau, as vendas
+// novas já entram com o preço novo). Retorno = lucro dessas vendas ÷ gasto; o
+// equilíbrio = preço médio ÷ lucro médio. Com menos de MIN_PAGAS_REAL vendas
+// pagas (ou sem os pedidos) valem o preço e o lucro de hoje.
+export const MIN_PAGAS_REAL = 3;
+export function economiaRealAds(periodos, hoje, { preco, lucro }) {
+  const lista = periodos || [];
+  const p = periodoAtivo(lista, hoje) || [...lista].filter((x) => x?.parcial?.ajuste).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)))[0] || null;
+  const aj = p?.parcial?.ajuste;
+  if (!aj || aj.estado === "insuficiente" || !(num(aj.pagas) >= MIN_PAGAS_REAL) || !(num(aj.pagoReal) > 0)) return { precoAds: preco, lucroAds: lucro, economiaReal: null };
+  const precoReal = num(aj.pagoReal) / num(aj.pagas);
+  const lucroReal = num(aj.lucroReal) / num(aj.pagas);
+  return { precoAds: precoReal, lucroAds: lucroReal, economiaReal: { pagas: num(aj.pagas), preco: precoReal, lucro: lucroReal, precoHoje: preco, lucroHoje: lucro, desde: String(p.inicio).slice(0, 10), ate: p.parcial.ate } };
+}

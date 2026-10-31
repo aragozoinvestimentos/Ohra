@@ -29,7 +29,7 @@ export function abrirProduto(itemId, aba = "visao") {
 export function numerosAds(ads) {
   const ativo = ads?.av?.ativo;
   if (!ativo) return null;
-  return numerosDoPeriodo(ativo, ads.semanas || [], ads.preco, ads.av.empate);
+  return numerosDoPeriodo(ativo, ads.semanas || [], ads.precoAds ?? ads.preco, ads.av.empate);
 }
 
 const ESTADO_ADS = { resolver: "resolver", atencao: "atencao", oportunidade: "oportunidade", decisao: "decisao" };
