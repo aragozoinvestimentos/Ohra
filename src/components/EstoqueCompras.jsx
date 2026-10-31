@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { coresDoProduto, textoPorCor, SEM_COR } from "../lib/estoqueCor.js";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { trocarSubAba, useSubAba } from "../lib/subAbas.js";
 import { pegarPedido } from "../lib/navegar.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -98,8 +99,10 @@ function Estoque({ est, onToast }) {
           onSalvar={async () => {
             const p = (produtos || []).find((x) => x.id === novoFab.produtoId);
             if (!p) return onToast?.("Escolha o produto");
-            const r = await marcarEstoquePronto({ lojaId, produto: p, pronto: true, inicial: num(novoFab.inicial), data: novoFab.data });
-            onToast?.(r.error ? r.error.message : `${p.nome}: estoque controlado a partir de ${dm(novoFab.data)}`);
+            const cores = coresDoProduto(p);
+            const porCor = cores.length ? Object.fromEntries(cores.map((c) => [c.nome, num(novoFab.porCor?.[c.nome])])) : null;
+            const r = await marcarEstoquePronto({ lojaId, produto: p, pronto: true, inicial: num(novoFab.inicial), data: novoFab.data, porCor });
+            onToast?.(r.error ? r.error.message : r.aviso || `${p.nome}: estoque controlado a partir de ${dm(novoFab.data)}`);
             if (!r.error) setNovoFab(null);
           }}
         >
@@ -116,10 +119,23 @@ function Estoque({ est, onToast }) {
                 ))}
               </select>
             </label>
-            <label>
-              Quantos prontos você tem hoje
-              <input inputMode="numeric" value={novoFab.inicial} placeholder="0" onChange={(e) => setNovoFab({ ...novoFab, inicial: e.target.value })} />
-            </label>
+            {(() => {
+              const p = (produtos || []).find((x) => x.id === novoFab.produtoId);
+              const cores = coresDoProduto(p);
+              if (!cores.length)
+                return (
+                  <label>
+                    Quantos prontos você tem hoje
+                    <input inputMode="numeric" value={novoFab.inicial} placeholder="0" onChange={(e) => setNovoFab({ ...novoFab, inicial: e.target.value })} />
+                  </label>
+                );
+              return cores.map((c) => (
+                <label key={c.nome}>
+                  Prontos hoje — {c.nome}
+                  <input inputMode="numeric" value={novoFab.porCor?.[c.nome] ?? ""} placeholder="0" onChange={(e) => setNovoFab({ ...novoFab, porCor: { ...(novoFab.porCor || {}), [c.nome]: e.target.value } })} />
+                </label>
+              ));
+            })()}
             <label>
               A partir de
               <input type="date" value={novoFab.data} onChange={(e) => setNovoFab({ ...novoFab, data: e.target.value })} />
@@ -207,7 +223,7 @@ function Estoque({ est, onToast }) {
             </thead>
             <tbody>
               {linhas.map((l) => (
-                <LinhaEstoque key={l.produto.id} l={l} aberto={aberto === l.produto.id} onClick={() => setAberto(aberto === l.produto.id ? null : l.produto.id)} onAjustar={() => setAjuste({ produto: l.produto, qtd: "", sinal: "-", motivo: "Perda / quebra", data: hoje })} onCfg={() => setCfgEdit({ produto: l.produto, fabricado: l.fabricado, prazo: String(l.sit.prazo), folga: String(l.sit.folga) })} onApagar={setApagar} onParar={() => setParar(l.produto)} />
+                <LinhaEstoque key={l.produto.id} l={l} aberto={aberto === l.produto.id} onClick={() => setAberto(aberto === l.produto.id ? null : l.produto.id)} onAjustar={() => setAjuste({ produto: l.produto, cores: l.cores || [], cor: "", qtd: "", sinal: "-", motivo: "Perda / quebra", data: hoje })} onCfg={() => setCfgEdit({ produto: l.produto, fabricado: l.fabricado, prazo: String(l.sit.prazo), folga: String(l.sit.folga) })} onApagar={setApagar} onParar={() => setParar(l.produto)} />
               ))}
             </tbody>
           </table>
@@ -221,8 +237,9 @@ function Estoque({ est, onToast }) {
           onSalvar={async () => {
             const q = num(ajuste.qtd) * (ajuste.sinal === "-" ? -1 : 1);
             if (!q) return onToast?.("Digite a quantidade");
-            const r = await ajustarEstoque({ lojaId, produtoId: ajuste.produto.id, quantidade: q, motivo: ajuste.motivo, data: ajuste.data });
-            onToast?.(r.error ? r.error.message : "Ajuste registrado");
+            if (ajuste.cores.length && !ajuste.cor) return onToast?.("Escolha a cor");
+            const r = await ajustarEstoque({ lojaId, produtoId: ajuste.produto.id, quantidade: q, motivo: ajuste.motivo, data: ajuste.data, cor: ajuste.cor && ajuste.cor !== SEM_COR ? ajuste.cor : null });
+            onToast?.(r.error ? r.error.message : r.aviso || "Ajuste registrado");
             if (!r.error) setAjuste(null);
           }}
         >
@@ -235,6 +252,20 @@ function Estoque({ est, onToast }) {
                 <option value="+">Entrou (+)</option>
               </select>
             </label>
+            {ajuste.cores.length > 0 && (
+              <label>
+                Cor
+                <select value={ajuste.cor} onChange={(e) => setAjuste({ ...ajuste, cor: e.target.value })}>
+                  <option value="">— qual cor? —</option>
+                  {ajuste.cores.map((c) => (
+                    <option key={c.nome} value={c.nome}>
+                      {c.nome}
+                    </option>
+                  ))}
+                  <option value={SEM_COR}>Sem cor (não sei)</option>
+                </select>
+              </label>
+            )}
             <label>
               Quantidade (un)
               <input inputMode="decimal" value={ajuste.qtd} onChange={(e) => setAjuste({ ...ajuste, qtd: e.target.value })} />
@@ -306,14 +337,20 @@ function LinhaEstoque({ l, aberto, onClick, onAjustar, onCfg, onApagar, onParar 
           <b>{p.nome}</b>
           <div className="muted-cel">{[l.fabricado ? "fabricado" : "revenda", p.sku, l.fornecedor?.nome].filter(Boolean).join(" · ")}</div>
         </td>
-        <td>{e.semControle ? "—" : `${fq(e.saldo)} un`}</td>
+        <td>
+          {e.semControle ? "—" : `${fq(e.saldo)} un`}
+          {!e.semControle && l.porCor?.length > 0 && <div className="muted-cel">{textoPorCor(l.porCor)}</div>}
+        </td>
         <td>{e.reservado ? `${fq(e.reservado)} un` : "—"}</td>
         <td>{e.porDia ? e.porDia.toFixed(1).replace(".", ",") : "0"}</td>
         <td>{e.duraDias != null ? `~${Math.floor(e.duraDias)} dias` : "—"}</td>
         <td>{sit.prazo} {sit.prazo === 1 ? "dia" : "dias"}</td>
         <td>{BRL(l.custo)}</td>
         <td>{e.semControle ? "—" : BRL(l.valor)}</td>
-        <td>{sit.tipo === "ok" ? <span className="muted-cel">✓ ok</span> : <Estado tipo={TOM[sit.tipo] || "info"}>{sit.texto}</Estado>}</td>
+        <td>
+          {sit.tipo === "ok" ? <span className="muted-cel">✓ ok</span> : <Estado tipo={TOM[sit.tipo] || "info"}>{sit.texto}</Estado>}
+          {l.semCorPendente && <div className="muted-cel">separe por cor no Inventário</div>}
+        </td>
       </tr>
       {aberto && (
         <tr className="linha-detalhe">
@@ -344,11 +381,46 @@ function LinhaEstoque({ l, aberto, onClick, onAjustar, onCfg, onApagar, onParar 
                   Saiu mais do que tinha entrado — normalmente é {l.fabricado ? "impressão que não foi posta no estoque" : "nota ainda não importada"} ou contagem errada. {l.fabricado ? "Registre a entrada (± Ajustar) ou faça o inventário." : "Importe a nota que falta ou faça o inventário."} O app não bloqueia a venda (o pedido já aconteceu), só avisa.
                 </div>
               )}
+              {l.porCor?.length > 0 && (
+                <>
+                  <b>Por cor</b>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cor</th>
+                        <th>Na prateleira</th>
+                        <th>A enviar</th>
+                        <th>Vende/dia</th>
+                        <th>Dura</th>
+                        <th>Situação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {l.porCor.map((x) => (
+                        <tr key={x.cor}>
+                          <td>{x.semCor ? <i>Sem cor</i> : x.cor}</td>
+                          <td style={{ color: x.est.saldo < 0 ? "var(--bad)" : undefined }}>{fq(x.est.saldo)} un</td>
+                          <td>{x.est.reservado ? `${fq(x.est.reservado)} un` : "—"}</td>
+                          <td>{x.est.porDia ? x.est.porDia.toFixed(1).replace(".", ",") : "0"}</td>
+                          <td>{x.est.duraDias != null ? `~${Math.floor(x.est.duraDias)} dias` : "—"}</td>
+                          <td>{x.semCor ? <span className="muted-cel">distribua pelas cores no Inventário</span> : l.semCorPendente ? <span className="muted-cel">aguardando a contagem por cor</span> : x.sit.tipo === "ok" ? <span className="muted-cel">✓ ok</span> : <Estado tipo={TOM[x.sit.tipo] || "info"}>{x.sit.texto}</Estado>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {l.porCor.some((x) => x.semCor) && (
+                    <p className="muted-cel">
+                      “Sem cor” = o que entrou antes de separar por cor, ou venda cujo SKU não traz a cor (confira o sufixo da cor na Ficha do anúncio). Faça um inventário contando cada cor: o “sem cor” vai a zero sozinho.
+                    </p>
+                  )}
+                </>
+              )}
               {extrato.length ? (
                 <table>
                   <thead>
                     <tr>
                       <th>Data</th>
+                      {l.porCor?.length > 0 && <th>Cor</th>}
                       <th>O quê</th>
                       <th>De onde veio</th>
                       <th>Qtd</th>
@@ -360,6 +432,7 @@ function LinhaEstoque({ l, aberto, onClick, onAjustar, onCfg, onApagar, onParar 
                     {extrato.map((x, i) => (
                       <tr key={x.id || `${x.data}-${i}`}>
                         <td>{dm(x.data)}</td>
+                        {l.porCor?.length > 0 && <td>{x.cor || <span className="muted-cel">sem cor</span>}</td>}
                         <td>{x.tipo === "entrada" ? (x.compraId ? "Entrada — compra" : "Entrada") : x.tipo === "producao" ? "Entrada — impressão" : x.tipo === "venda" ? "Saída — enviado" : x.tipo === "inventario" ? "Inventário" : "Ajuste"}</td>
                         <td>{x.tipo === "venda" ? `${x.pedidos} pedido${x.pedidos === 1 ? "" : "s"} enviado${x.pedidos === 1 ? "" : "s"}` : x.motivo || "—"}</td>
                         <td style={{ color: x.q > 0 ? "var(--good)" : undefined, fontWeight: x.q > 0 ? 700 : undefined }}>{x.q > 0 ? `+${fq(x.q)}` : fq(x.q)}</td>
@@ -909,14 +982,29 @@ function Inventario({ est, onToast }) {
   const [contado, setContado] = useState({});
   const [motivo, setMotivo] = useState({});
   const [salvando, setSalvando] = useState(false);
-  const difs = diferencasInventario(linhas.map((l) => ({ produtoId: l.produto.id, nome: l.produto.nome, saldo: l.est.saldo, custo: l.custo, contado: contado[l.produto.id], motivo: motivo[l.produto.id] })));
-  const contados = linhas.filter((l) => contado[l.produto.id] !== undefined && contado[l.produto.id] !== "").length;
-  const saldoValor = difs.reduce((s, d) => s + d.diferenca * d.custo, 0);
+  // Produto com cores (v74): uma linha por cor; o "sem cor" vai a zero quando alguma cor é contada.
+  const rows = linhas.flatMap((l) =>
+    l.porCor?.length
+      ? l.porCor.filter((x) => !x.semCor).map((x) => ({ key: `${l.produto.id}|${x.cor}`, produtoId: l.produto.id, nome: `${l.produto.nome} — ${x.cor}`, cor: x.cor, saldo: x.est.saldo, custo: l.custo, sku: l.produto.sku }))
+      : [{ key: l.produto.id, produtoId: l.produto.id, nome: l.produto.nome, cor: null, saldo: l.est.saldo, custo: l.custo, sku: l.produto.sku }],
+  );
+  const semCorDe = new Map(linhas.map((l) => [l.produto.id, l.porCor?.find((x) => x.semCor) || null]));
+  const contou = (k) => contado[k] !== undefined && contado[k] !== "";
+  const difs = [
+    ...diferencasInventario(rows.map((r) => ({ ...r, contado: contado[r.key], motivo: motivo[r.key] }))),
+    ...linhas
+      .filter((l) => semCorDe.get(l.produto.id) && rows.some((r) => r.produtoId === l.produto.id && r.cor && contou(r.key)))
+      .map((l) => ({ key: `${l.produto.id}|`, produtoId: l.produto.id, nome: `${l.produto.nome} — sem cor`, cor: null, custo: l.custo, diferenca: -semCorDe.get(l.produto.id).est.saldo, motivo: "distribuído pelas cores", auto: true }))
+      .filter((d) => Math.abs(d.diferenca) > 1e-9),
+  ];
+  const contados = rows.filter((r) => contou(r.key)).length;
+  const difsContadas = difs.filter((d) => !d.auto);
+  const saldoValor = difsContadas.reduce((s, d) => s + d.diferenca * d.custo, 0);
   const ultimo = est.movimentos.filter((m) => m.tipo === "inventario").map((m) => m.data).sort().pop();
   const imprimir = () => {
     const w = window.open("", "_blank");
     if (!w) return;
-    w.document.write(`<html><head><title>Contagem de estoque</title><style>body{font-family:sans-serif;font-size:13px}td,th{border:1px solid #ccc;padding:6px 10px}table{border-collapse:collapse}</style></head><body><h2>Contagem de estoque — ${dmy(est.hoje)}</h2><table><tr><th>Produto</th><th>SKU</th><th>Contei</th></tr>${linhas.map((l) => `<tr><td>${l.produto.nome}</td><td>${l.produto.sku || ""}</td><td style="width:90px"></td></tr>`).join("")}</table></body></html>`);
+    w.document.write(`<html><head><title>Contagem de estoque</title><style>body{font-family:sans-serif;font-size:13px}td,th{border:1px solid #ccc;padding:6px 10px}table{border-collapse:collapse}</style></head><body><h2>Contagem de estoque — ${dmy(est.hoje)}</h2><table><tr><th>Produto</th><th>SKU</th><th>Contei</th></tr>${rows.map((r) => `<tr><td>${r.nome}</td><td>${r.sku || ""}</td><td style="width:90px"></td></tr>`).join("")}</table></body></html>`);
     w.document.close();
     w.print();
   };
@@ -941,23 +1029,26 @@ function Inventario({ est, onToast }) {
               </tr>
             </thead>
             <tbody>
-              {linhas.map((l) => {
-                const d = difs.find((x) => x.produtoId === l.produto.id);
-                const c = contado[l.produto.id];
+              {rows.map((l, idx) => {
+                const d = difs.find((x) => x.key === l.key);
+                const c = contado[l.key];
+                const ultimaDoProduto = rows[idx + 1]?.produtoId !== l.produtoId;
+                const sc = ultimaDoProduto ? semCorDe.get(l.produtoId) : null;
                 return (
-                  <tr key={l.produto.id}>
+                  <Fragment key={l.key}>
+                  <tr>
                     <td>
-                      <b>{l.produto.nome}</b>
+                      <b>{l.nome}</b>
                     </td>
-                    <td>{fq(l.est.saldo)}</td>
+                    <td>{fq(l.saldo)}</td>
                     <td>
-                      <input style={{ width: 80 }} inputMode="decimal" placeholder="não contei" value={c ?? ""} onChange={(e) => setContado({ ...contado, [l.produto.id]: e.target.value })} />
+                      <input style={{ width: 80 }} inputMode="decimal" placeholder="não contei" value={c ?? ""} onChange={(e) => setContado({ ...contado, [l.key]: e.target.value })} />
                     </td>
                     <td style={{ fontWeight: 700, color: d ? (d.diferenca < 0 ? "var(--bad)" : undefined) : "var(--good)" }}>{c === undefined || c === "" ? "—" : d ? (d.diferenca > 0 ? `+${fq(d.diferenca)}` : fq(d.diferenca)) : "✓ bate"}</td>
                     <td>{d ? `${d.diferenca > 0 ? "+" : "−"} ${BRL(Math.abs(d.diferenca * l.custo))}` : "—"}</td>
                     <td>
                       {d && (
-                        <select value={motivo[l.produto.id] || ""} onChange={(e) => setMotivo({ ...motivo, [l.produto.id]: e.target.value })}>
+                        <select value={motivo[l.key] || ""} onChange={(e) => setMotivo({ ...motivo, [l.key]: e.target.value })}>
                           <option value="">Não sei</option>
                           {(d.diferenca < 0 ? ["Perda / quebra", "Brinde / amostra", "Uso próprio", "Venda fora dos marketplaces", "Erro de contagem anterior"] : ["Devolução que não voltou no app", "Nota não importada", "Erro de contagem anterior"]).map((m) => (
                             <option key={m}>{m}</option>
@@ -966,6 +1057,16 @@ function Inventario({ est, onToast }) {
                       )}
                     </td>
                   </tr>
+                  {sc && (
+                    <tr>
+                      <td className="muted-cel">{l.nome.split(" — ")[0]} — sem cor</td>
+                      <td className="muted-cel">{fq(sc.est.saldo)}</td>
+                      <td colSpan={4} className="muted-cel">
+                        de antes de separar por cor — vai a 0 quando você contar as cores deste produto
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -975,8 +1076,8 @@ function Inventario({ est, onToast }) {
       <div className="panel">
         <h3>Resultado</h3>
         <p>
-          {contados} de {linhas.length} itens contados · {contados - difs.length} {contados - difs.length === 1 ? "bate" : "batem"} · {difs.length} {difs.length === 1 ? "diferença" : "diferenças"}
-          {difs.length > 0 && (
+          {contados} de {rows.length} itens contados · {contados - difsContadas.length} {contados - difsContadas.length === 1 ? "bate" : "batem"} · {difsContadas.length} {difsContadas.length === 1 ? "diferença" : "diferenças"}
+          {difsContadas.length > 0 && (
             <>
               {" "}
               · saldo das diferenças: <b>{`${saldoValor < 0 ? "−" : "+"} ${BRL(Math.abs(saldoValor))}`}</b>
@@ -994,9 +1095,9 @@ function Inventario({ est, onToast }) {
             disabled={salvando || !contados}
             onClick={async () => {
               setSalvando(true);
-              const r = await gravarInventario({ lojaId, diferencas: difs.map((d) => ({ produtoId: d.produtoId, diferenca: d.diferenca, motivo: d.motivo })), data: est.hoje });
+              const r = await gravarInventario({ lojaId, diferencas: difs.map((d) => ({ produtoId: d.produtoId, diferenca: d.diferenca, motivo: d.motivo, cor: d.cor })), data: est.hoje });
               setSalvando(false);
-              onToast?.(r.error ? r.error.message : difs.length ? `Inventário gravado: ${difs.length} ${difs.length === 1 ? "ajuste" : "ajustes"}` : "Tudo bate — nada a ajustar");
+              onToast?.(r.error ? r.error.message : r.aviso ? r.aviso : difs.length ? `Inventário gravado: ${difs.length} ${difs.length === 1 ? "ajuste" : "ajustes"}` : "Tudo bate — nada a ajustar");
               if (!r.error) {
                 setContado({});
                 setMotivo({});

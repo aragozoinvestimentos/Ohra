@@ -1121,3 +1121,36 @@ describe("partes prontas de várias mesas", () => {
     expect(partesProntas({ registros, produtoId: "p1", mesas, descontar: ac }).temAlguma).toBe(false);
   });
 });
+
+import { coresDoProduto, corPeloSku, corDaVenda, estoquePorCor, piorCor } from "../src/lib/estoqueCor.js";
+import { estoqueDoProduto as estoqueP } from "../src/lib/revenda.js";
+describe("estoque por cor", () => {
+  const chaveiro = { sku: "CHAV", cores_anuncio: { variacoes: [{ nome: "Cor", opcoes: [{ nome: "Preto", sufixo: "-PT" }, { nome: "Vermelho", sufixo: "-VM" }] }] } };
+  it("acha a cor pelo sufixo do SKU (avulso, variação e anúncio com vários itens)", () => {
+    const cores = coresDoProduto(chaveiro);
+    expect(cores.map((c) => c.nome)).toEqual(["Preto", "Vermelho"]);
+    expect(corPeloSku("CHAV-VM", cores, "CHAV")).toBe("Vermelho");
+    expect(corPeloSku("CHAV-2-PT", cores, "CHAV-2")).toBe("Preto");
+    expect(corPeloSku("CHAV", cores, "CHAV")).toBe(null);
+    expect(corPeloSku("KITNATAL-LN-VM", cores)).toBe("Vermelho");
+    expect(corPeloSku("CHAV-VMX", cores, "CHAV")).toBe(null);
+    expect(corDaVenda({ sku: "CHAV-PT", item: { sku: "CHAV" } }, chaveiro)).toBe("Preto");
+    expect(corDaVenda({ sku: "X" }, { sku: "X" })).toBe(undefined);
+  });
+  it("separa o estoque por cor e a soma bate com o total", () => {
+    const cores = coresDoProduto(chaveiro);
+    const movimentos = [
+      { data: "2026-10-20", tipo: "inventario", quantidade: 19 },
+      { data: "2026-10-25", tipo: "inventario", quantidade: -19, motivo: "distribuído" },
+      { data: "2026-10-25", tipo: "inventario", quantidade: 10, cor: "Preto" },
+      { data: "2026-10-25", tipo: "inventario", quantidade: 9, cor: "Vermelho" },
+    ];
+    const vendas = [{ data: "2026-10-28", unidades: 2, cor: "Preto", saiu: true }, { data: "2026-10-29", unidades: 1, cor: "Vermelho", saiu: false }];
+    const total = estoqueP({ movimentos, vendas, hoje: "2026-10-31" });
+    const pc = estoquePorCor({ movimentos, vendas, hoje: "2026-10-31", cores, inicio: total.inicio, cfg: { fabricado: true } });
+    expect(pc.map((x) => [x.cor, x.est.saldo, x.est.reservado])).toEqual([["Preto", 8, 0], ["Vermelho", 9, 1]]);
+    expect(pc.reduce((t, x) => t + x.est.saldo, 0)).toBe(total.saldo);
+    const zerado = estoquePorCor({ movimentos: movimentos.slice(0, 3), vendas, hoje: "2026-10-31", cores, inicio: total.inicio, cfg: { fabricado: true } });
+    expect(piorCor(zerado).cor).toBe("Vermelho");
+  });
+});

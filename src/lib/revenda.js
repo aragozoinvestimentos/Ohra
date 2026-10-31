@@ -222,21 +222,27 @@ export const ehRevenda = (p) => p?.origem === "revenda";
  * explodindo variação (× quantidade) e kit (× peças daquele produto).
  * saiu = pedido Enviado/Entregue (ou venda física): só esses tiram do estoque físico.
  */
-export function vendasPorProduto(pedidos, itens, soProdutos = null) {
+export function vendasPorProduto(pedidos, itens, soProdutos = null, { corDe = null } = {}) {
   const porId = new Map((itens || []).map((i) => [i.id, i]));
   const out = new Map();
   let saiu = true;
+  let linha = null;
+  let kitId = null;
   const add = (pid, data, u, pedido) => {
     if (!pid || !(u > 0) || (soProdutos && !soProdutos.has(pid))) return;
     if (!out.has(pid)) out.set(pid, []);
-    out.get(pid).push({ data, unidades: u, pedido, saiu });
+    // corDe (estoque por cor, v74): a cor da venda pelo sufixo do SKU (undefined = produto sem cores)
+    const cor = corDe ? corDe(linha, pid, kitId) : undefined;
+    out.get(pid).push({ data, unidades: u, pedido, saiu, ...(cor !== undefined ? { cor } : {}) });
   };
   for (const l of pedidos || []) {
     if (!l.valido || !l.id_item) continue;
     const q = num(l.q ?? l.quantidade) || 1;
     const data = String(l.data || "").slice(0, 10);
     saiu = l.saiu !== false; // sem a marca (dados antigos/testes) = saiu
+    linha = l;
     const id = l.id_item;
+    kitId = id.startsWith("k:") ? id.slice(2) : null;
     if (id.startsWith("p:")) add(id.slice(2), data, q, l.pedido);
     else if (id.startsWith("v:")) {
       const v = porId.get(id);
@@ -258,10 +264,11 @@ export function vendasPorProduto(pedidos, itens, soProdutos = null) {
  * O ritmo (porDia) conta TODAS as vendas válidas — é a procura, enviada ou não.
  * → { inicio, saldo, reservado, disponivel, entradas, ajustes, vendido, porDia, duraDias, ultimaVenda, negativoEm }
  */
-export function estoqueDoProduto({ movimentos = [], vendas = [], hoje }) {
+export function estoqueDoProduto({ movimentos = [], vendas = [], hoje, inicio: inicioFixo = null }) {
   const movs = [...movimentos].sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.criado_em || "").localeCompare(String(b.criado_em || "")));
-  if (!movs.length) return { inicio: null, saldo: 0, reservado: 0, disponivel: 0, entradas: 0, ajustes: 0, vendido: 0, porDia: 0, duraDias: null, ultimaVenda: null, negativoEm: null, semControle: true };
-  const inicio = String(movs[0].data).slice(0, 10);
+  // inicioFixo: estoque de uma COR usa o início do produto (estoqueCor.js)
+  if (!movs.length && !inicioFixo) return { inicio: null, saldo: 0, reservado: 0, disponivel: 0, entradas: 0, ajustes: 0, vendido: 0, porDia: 0, duraDias: null, ultimaVenda: null, negativoEm: null, semControle: true };
+  const inicio = inicioFixo || String(movs[0].data).slice(0, 10);
   const todas = (vendas || []).filter((v) => v.data >= inicio);
   const vds = todas.filter((v) => v.saiu !== false);
   const reservado = todas.filter((v) => v.saiu === false).reduce((s, v) => s + num(v.unidades), 0);
@@ -315,16 +322,17 @@ const fmtQ = (q) => (Number.isInteger(q) ? String(q) : q.toFixed(1).replace(".",
 /** Histórico de um produto (mais novo primeiro) com o saldo depois de cada linha; vendas agrupadas por dia. */
 export function extratoEstoque({ movimentos = [], vendas = [], inicio }) {
   const linhas = [
-    ...movimentos.map((m) => ({ data: String(m.data).slice(0, 10), tipo: m.tipo, q: num(m.quantidade), motivo: m.motivo, compraId: m.compra_id, id: m.id, ordem: 0 })),
+    ...movimentos.map((m) => ({ data: String(m.data).slice(0, 10), tipo: m.tipo, q: num(m.quantidade), motivo: m.motivo, compraId: m.compra_id, id: m.id, cor: m.cor || null, ordem: 0 })),
   ];
   const porDia = new Map();
   for (const v of vendas || []) {
     if (inicio && v.data < inicio) continue;
     if (v.saiu === false) continue; // reservado (ainda não enviado) não mexe no físico
-    const x = porDia.get(v.data) || { data: v.data, tipo: "venda", q: 0, pedidos: new Set(), ordem: 1 };
+    const k = `${v.data}|${v.cor || ""}`;
+    const x = porDia.get(k) || { data: v.data, tipo: "venda", q: 0, pedidos: new Set(), cor: v.cor || null, ordem: 1 };
     x.q -= num(v.unidades);
     if (v.pedido) x.pedidos.add(v.pedido);
-    porDia.set(v.data, x);
+    porDia.set(k, x);
   }
   linhas.push(...[...porDia.values()].map((x) => ({ ...x, pedidos: x.pedidos.size })));
   linhas.sort((a, b) => a.data.localeCompare(b.data) || a.ordem - b.ordem);

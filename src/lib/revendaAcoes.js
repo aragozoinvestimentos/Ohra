@@ -12,6 +12,18 @@ export const SQL_REVENDA = "Rode o supabase/schema_v66.sql no Supabase pra usar 
 const ehFaltaTabela = (e) => !!e && /fornecedor|compras_revenda|estoque_movimentos|origem|compra_revenda_id|schema cache|does not exist/i.test(e.message || "");
 const erro = (e) => ({ message: ehFaltaTabela(e) ? SQL_REVENDA : e?.message || "erro" });
 const cent = (v) => Math.round((Number(v) || 0) * 100) / 100;
+export const SQL_COR = "Rode o supabase/schema_v74.sql no Supabase pra guardar o estoque por cor (gravei sem a cor)";
+const ehFaltaCor = (e) => !!e && /["']?\bcor\b["']?/i.test(e.message || "") && /column|coluna|schema/i.test(e.message || "");
+// Grava movimentos de estoque; sem o v74 (coluna cor) regrava sem a cor e avisa.
+async function inserirMovimentos(linhas) {
+  let r = await supabase.from("estoque_movimentos").insert(linhas);
+  let aviso = null;
+  if (r.error && ehFaltaCor(r.error)) {
+    r = await supabase.from("estoque_movimentos").insert(linhas.map(({ cor: _c, ...x }) => x));
+    aviso = SQL_COR;
+  }
+  return { r, aviso };
+}
 export const SQL_PRODUCAO = "Rode o supabase/schema_v70.sql no Supabase pra ligar a entrada no estoque à impressão (gravei como entrada comum)";
 export const SQL_FISCAL = "Rode o supabase/schema_v69.sql no Supabase pra guardar NCM, CFOP, ST e monofásico";
 const ehFaltaFiscal = (e) => !!e && /ncm|cest|cfop|unidade_com|origem_mercadoria|monofasico|fiscal|cst/i.test(e.message || "");
@@ -194,20 +206,20 @@ export async function excluirNota(compra, itens) {
 }
 
 /** Ajuste de exceção (perda, brinde, amostra, uso…) — quantidade com sinal. */
-export async function ajustarEstoque({ lojaId, produtoId, quantidade, motivo, data }) {
+export async function ajustarEstoque({ lojaId, produtoId, quantidade, motivo, data, cor }) {
   if (!supabase) return { error: { message: "sem banco" } };
-  const { error } = await supabase.from("estoque_movimentos").insert({ loja_id: lojaId || null, produto_id: produtoId, data, tipo: "ajuste", quantidade, motivo: motivo || null });
+  const { r, aviso } = await inserirMovimentos([{ loja_id: lojaId || null, produto_id: produtoId, data, tipo: "ajuste", quantidade, motivo: motivo || null, ...(cor ? { cor } : {}) }]);
   recarregarRevenda();
-  return { error: error ? erro(error) : null };
+  return { error: r.error ? erro(r.error) : null, aviso };
 }
 
 /** Inventário: cada diferença vira um movimento 'inventario' com o motivo. */
 export async function gravarInventario({ lojaId, diferencas, data }) {
   if (!supabase) return { error: { message: "sem banco" } };
   if (!diferencas.length) return { error: null };
-  const { error } = await supabase.from("estoque_movimentos").insert(diferencas.map((d) => ({ loja_id: lojaId || null, produto_id: d.produtoId, data, tipo: "inventario", quantidade: d.diferenca, motivo: `inventário: ${d.motivo || "não sei"}` })));
+  const { r, aviso } = await inserirMovimentos(diferencas.map((d) => ({ loja_id: lojaId || null, produto_id: d.produtoId, data, tipo: "inventario", quantidade: d.diferenca, motivo: `inventário: ${d.motivo || "não sei"}`, ...(d.cor ? { cor: d.cor } : {}) })));
   recarregarRevenda();
-  return { error: error ? erro(error) : null };
+  return { error: r.error ? erro(r.error) : null, aviso };
 }
 
 export async function excluirMovimento(id) {
@@ -250,17 +262,27 @@ export async function salvarEstoqueCfg(produtoId, cfg, anterior = null) {
  * Liga/desliga "tenho estoque pronto" num produto fabricado. Ligar com `inicial` > 0
  * grava o estoque de partida (inventário "estoque inicial") — o controle começa aí.
  */
-export async function marcarEstoquePronto({ lojaId, produto, pronto, inicial = 0, data }) {
+export async function marcarEstoquePronto({ lojaId, produto, pronto, inicial = 0, data, porCor = null }) {
   if (!supabase) return { error: { message: "sem banco" } };
   const { error } = await supabase.from("produtos_cadastro").update({ estoque_cfg: { ...(produto.estoque_cfg || {}), pronto: !!pronto } }).eq("id", produto.id);
   if (error) return { error: erro(error) };
-  if (pronto && Number(inicial) >= 0) {
-    const e2 = await supabase.from("estoque_movimentos").insert({ loja_id: lojaId || null, produto_id: produto.id, data, tipo: "inventario", quantidade: Number(inicial) || 0, motivo: "estoque inicial" });
-    if (e2.error) return { error: erro(e2.error) };
+  let aviso = null;
+  if (pronto) {
+    // porCor = { cor: quantidade } (estoque por cor, v74) — uma linha de estoque inicial por cor
+    const linhas = porCor
+      ? Object.entries(porCor).map(([cor, q]) => ({ loja_id: lojaId || null, produto_id: produto.id, data, tipo: "inventario", quantidade: Number(q) || 0, motivo: "estoque inicial", cor }))
+      : Number(inicial) >= 0
+        ? [{ loja_id: lojaId || null, produto_id: produto.id, data, tipo: "inventario", quantidade: Number(inicial) || 0, motivo: "estoque inicial" }]
+        : [];
+    if (linhas.length) {
+      const x = await inserirMovimentos(linhas);
+      if (x.r.error) return { error: erro(x.r.error) };
+      aviso = x.aviso;
+    }
   }
   recarregarCatalogo();
   recarregarRevenda();
-  return { error: null };
+  return { error: null, aviso };
 }
 
 /**
@@ -272,12 +294,12 @@ export async function entradaDeProducao({ lojaId, registroId, itens, data, nome 
   if (!supabase) return { error: { message: "sem banco" } };
   const linhas = (itens || []).filter((i) => i.produtoId && Number(i.quantidade) > 0);
   if (!linhas.length) return { error: null };
-  const montar = (v70) => linhas.map((i) => ({ loja_id: lojaId || null, produto_id: i.produtoId, data, tipo: v70 ? "producao" : "entrada", quantidade: Number(i.quantidade), motivo: `impressão${nome ? ` — ${nome}` : ""}`, ...(v70 ? { registro_id: registroId || null } : {}) }));
-  let r = await supabase.from("estoque_movimentos").insert(montar(true));
-  let aviso = null;
+  const montar = (v70) => linhas.map((i) => ({ loja_id: lojaId || null, produto_id: i.produtoId, data, tipo: v70 ? "producao" : "entrada", quantidade: Number(i.quantidade), motivo: `impressão${nome ? ` — ${nome}` : ""}`, ...(v70 ? { registro_id: registroId || null } : {}), ...(i.cor ? { cor: i.cor } : {}) }));
+  let { r, aviso } = await inserirMovimentos(montar(true));
   if (r.error && /registro_id|producao|tipo_chk|check constraint/i.test(r.error.message || "")) {
-    r = await supabase.from("estoque_movimentos").insert(montar(false));
-    aviso = SQL_PRODUCAO;
+    const x = await inserirMovimentos(montar(false));
+    r = x.r;
+    aviso = [SQL_PRODUCAO, x.aviso].filter(Boolean).join(" · ");
   }
   recarregarRevenda();
   return { error: r.error ? erro(r.error) : null, aviso };

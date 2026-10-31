@@ -19,6 +19,7 @@ import { usePreferencia } from "../hooks/usePreferencia.js";
 import { entradaDeProducao } from "../lib/revendaAcoes.js";
 import { temEstoquePronto } from "../lib/revenda.js";
 import { hojeSP } from "../lib/datas.js";
+import { coresDoProduto, SEM_COR } from "../lib/estoqueCor.js";
 import { partesProntas, usarConjuntos, acertarPartes, textoPartes } from "../lib/partesMesas.js";
 import { abrirEstoque } from "../lib/estoqueNav.js";
 import EditarDialog from "./EditarDialog.jsx";
@@ -156,7 +157,7 @@ export default function RegistroImpressoes({ onToast }) {
     [produtoSelecionado, mesasDoProduto, registros, partesDesc],
   );
   function perguntaConjuntos(produto, n, registroId) {
-    setPergunta({ registroId, nome: `${produto.nome} (conjunto das mesas)`, conjuntos: { produtoId: produto.id, max: n }, itens: [{ produtoId: produto.id, nome: produto.nome, quantidade: String(n) }] });
+    setPergunta({ registroId, nome: `${produto.nome} (conjunto das mesas)`, conjuntos: { produtoId: produto.id, max: n }, itens: [{ produtoId: produto.id, nome: produto.nome, quantidade: String(n), cores: coresDoProduto(produto), cor: "" }] });
   }
   function consumirConjuntos(produtoId, n) {
     const p = produtos.find((x) => x.id === produtoId);
@@ -249,7 +250,7 @@ export default function RegistroImpressoes({ onToast }) {
         : kitSelecionado
           ? kitProdutos.filter((kp) => kp.kit_id === kitSelecionado.id).map((kp) => ({ produto: produtos.find((p) => p.id === kp.produto_id), quantidade: quantidade * (Number(kp.quantidade) || 1) }))
           : [];
-      const itens = pecas.filter((x) => temEstoquePronto(x.produto)).map((x) => ({ produtoId: x.produto.id, nome: x.produto.nome, quantidade: String(x.quantidade) }));
+      const itens = pecas.filter((x) => temEstoquePronto(x.produto)).map((x) => ({ produtoId: x.produto.id, nome: x.produto.nome, quantidade: String(x.quantidade), cores: coresDoProduto(x.produto), cor: "" }));
       if (itens.length) setPergunta({ registroId: criado?.id || null, nome, itens });
     } else if (form.status === "sucesso" && mesaSel && produtoSelecionado && temEstoquePronto(produtoSelecionado)) {
       // Uma mesa: as partes somam; se fechou conjunto (com as mesas de antes), pergunta.
@@ -482,14 +483,30 @@ export default function RegistroImpressoes({ onToast }) {
               <b>Pôr no estoque de prontos?</b>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
                 {pergunta.itens.map((it, i) => (
-                  <label key={it.produtoId} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <label key={`${it.produtoId}-${i}`} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <span style={{ flex: "1 1 160px" }}>{it.nome} — {pergunta.conjuntos ? "conjuntos completos" : "peças boas"}</span>
+                    {it.cores?.length > 0 && (
+                      <select value={it.cor} onChange={(e) => setPergunta((p) => ({ ...p, itens: p.itens.map((x, j) => (j === i ? { ...x, cor: e.target.value } : x)) }))}>
+                        <option value="">— qual cor? —</option>
+                        {it.cores.map((c) => (
+                          <option key={c.nome} value={c.nome}>
+                            {c.nome}
+                          </option>
+                        ))}
+                        <option value={SEM_COR}>Sem cor (não sei)</option>
+                      </select>
+                    )}
                     <input
                       inputMode="numeric"
                       style={{ width: 90 }}
                       value={it.quantidade}
                       onChange={(e) => setPergunta((p) => ({ ...p, itens: p.itens.map((x, j) => (j === i ? { ...x, quantidade: e.target.value } : x)) }))}
                     />
+                    {it.cores?.length > 0 && (
+                      <button type="button" className="link-btn" onClick={() => setPergunta((p) => ({ ...p, itens: [...p.itens.slice(0, i + 1), { ...it, cor: "", quantidade: "" }, ...p.itens.slice(i + 1)] }))}>
+                        + outra cor
+                      </button>
+                    )}
                   </label>
                 ))}
               </div>
@@ -498,10 +515,11 @@ export default function RegistroImpressoes({ onToast }) {
                   type="button"
                   className="btn primary btn-mini"
                   onClick={async () => {
-                    const r = await entradaDeProducao({ lojaId, registroId: pergunta.registroId, nome: pergunta.nome, data: hojeSP(), itens: pergunta.itens.map((x) => ({ produtoId: x.produtoId, quantidade: Number(String(x.quantidade).replace(",", ".")) || 0 })) });
+                    if (pergunta.itens.some((x) => x.cores?.length && !x.cor && Number(String(x.quantidade).replace(",", ".")) > 0)) return onToast?.("Escolha a cor de cada linha");
+                    const r = await entradaDeProducao({ lojaId, registroId: pergunta.registroId, nome: pergunta.nome, data: hojeSP(), itens: pergunta.itens.map((x) => ({ produtoId: x.produtoId, quantidade: Number(String(x.quantidade).replace(",", ".")) || 0, cor: x.cor && x.cor !== SEM_COR ? x.cor : null })) });
                     onToast?.(r.error ? r.error.message : r.aviso || "No estoque ✓");
                     if (!r.error) {
-                      if (pergunta.conjuntos) consumirConjuntos(pergunta.conjuntos.produtoId, Number(String(pergunta.itens[0]?.quantidade).replace(",", ".")) || 0);
+                      if (pergunta.conjuntos) consumirConjuntos(pergunta.conjuntos.produtoId, pergunta.itens.reduce((t, x) => t + (Number(String(x.quantidade).replace(",", ".")) || 0), 0));
                       setPergunta(null);
                     }
                   }}
@@ -512,7 +530,7 @@ export default function RegistroImpressoes({ onToast }) {
                   type="button"
                   className="btn btn-mini"
                   onClick={() => {
-                    if (pergunta.conjuntos) consumirConjuntos(pergunta.conjuntos.produtoId, Number(String(pergunta.itens[0]?.quantidade).replace(",", ".")) || 0);
+                    if (pergunta.conjuntos) consumirConjuntos(pergunta.conjuntos.produtoId, pergunta.itens.reduce((t, x) => t + (Number(String(x.quantidade).replace(",", ".")) || 0), 0));
                     setPergunta(null);
                   }}
                 >
