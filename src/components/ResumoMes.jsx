@@ -1,11 +1,10 @@
 import { useMemo, useState } from "react";
 import { useCrescimento } from "../hooks/useCrescimento.js";
-import { gastoAdsNaJanela } from "../lib/ads.js";
 import { abrirAnuncio } from "../lib/anuncios.js";
 import { hojeSP } from "../lib/datas.js";
 import { BRL, PCT } from "../lib/format.js";
+import { lucroDaLinha } from "../lib/resumoLoja.js";
 import CanalTag from "./CanalTag.jsx";
-import Kpis from "./Kpis.jsx";
 import CascataLucro from "./CascataLucro.jsx";
 import VistasResultado from "./VistasResultado.jsx";
 
@@ -32,30 +31,14 @@ export default function ResumoMes() {
   const de = `${mes}-01`;
   const ate = fimDoMes(mes) < hoje ? fimDoMes(mes) : hoje;
 
+  // Por anúncio (lucro bruto pela MESMA conta da tabela — lucroDaLinha). Os números do mês
+  // (cards, frase e tabela) vêm todos do CascataLucro (cascataDoPeriodo).
   const r = useMemo(() => {
-    const ls = (cres.pedidosValidos || []).filter((p) => p.valido && String(p.data) >= de && String(p.data) <= ate);
-    const t = { pedidos: new Set(), un: 0, bruto: 0, pago: 0, recebe: 0, taxas: 0, custo: 0, lucro: 0, semCusto: 0 };
-    const porCanal = new Map();
+    const ls = (cres.pedidosValidos || []).filter((p) => p.valido && String(p.data).slice(0, 10) >= de && String(p.data).slice(0, 10) <= ate);
+    let pago = 0;
     const porAnuncio = new Map();
     for (const p of ls) {
-      t.pedidos.add(p.pedido);
-      t.un += num(p.q);
-      t.bruto += num(p.bruto);
-      t.pago += num(p.pago);
-      t.recebe += num(p.recebe);
-      t.taxas += num(p.taxas ?? num(p.pago) - num(p.recebe));
-      t.custo += num(p.custo);
-      if (p.lucro == null) t.semCusto++;
-      t.lucro += num(p.lucro);
-      const kc = p.canal?.id || "fisico";
-      const c = porCanal.get(kc) || { canal: p.canal, un: 0, pago: 0, recebe: 0, taxas: 0, custo: 0, lucro: 0 };
-      c.un += num(p.q);
-      c.pago += num(p.pago);
-      c.recebe += num(p.recebe);
-      c.taxas += num(p.taxas ?? num(p.pago) - num(p.recebe));
-      c.custo += num(p.custo);
-      c.lucro += num(p.lucro);
-      porCanal.set(kc, c);
+      pago += num(p.pago);
       if (p.item && p.canal) {
         const itemId = p.item.produtoId ? `p:${p.item.produtoId}` : p.id_item;
         const nome = p.grupo ? `Anúncio: ${p.grupo.nome}` : p.item.produtoId ? p.item.nome.split(" — ")[0] : p.item.nome;
@@ -63,24 +46,16 @@ export default function ResumoMes() {
         const a = porAnuncio.get(ka) || { itemId: p.grupo ? `g:${p.grupo.id}` : itemId, canal: p.canal, nome, un: 0, pago: 0, taxas: 0, custo: 0, lucro: 0 };
         a.un += num(p.q);
         a.pago += num(p.pago);
-        a.taxas += Math.max(0, num(p.taxas ?? num(p.pago) - num(p.recebe)));
+        a.taxas += Math.max(0, num(p.pago) - num(p.recebe ?? p.pago)) + num(p.imposto);
         a.custo += num(p.custo);
-        a.lucro += num(p.lucro);
+        a.lucro += lucroDaLinha(p);
         porAnuncio.set(ka, a);
       }
     }
-    // Ads do mês: a mesma conta do teto/Vendas do mês (por período, o maior
-    // entre semanas e o CSV, só a parte dentro do mês), inclui a campanha da loja.
-    let ads = 0;
-    const linhasAds = [...(cres.linhasAds?.linhas || []), ...(cres.linhasAds?.lojaLinha ? [cres.linhasAds.lojaLinha] : [])];
-    for (const l of linhasAds) ads += gastoAdsNaJanela(l.periodos || [], l.semanas || [], de, ate);
-    ads = Math.round(ads * 100) / 100;
-    return { t, porCanal: [...porCanal.values()].sort((a, b) => b.pago - a.pago), porAnuncio: [...porAnuncio.values()].sort((a, b) => b.lucro - a.lucro), ads };
-  }, [cres.pedidosValidos, cres.linhasAds, de, ate]);
+    return { t: { pago }, porAnuncio: [...porAnuncio.values()].sort((a, b) => b.lucro - a.lucro) };
+  }, [cres.pedidosValidos, de, ate]);
 
-  const { t, ads } = r;
-  const descontos = Math.max(0, t.bruto - t.pago);
-  const sobra = t.lucro - ads;
+  const { t } = r;
   const [a, m] = mes.split("-").map(Number);
 
   return (
@@ -94,55 +69,16 @@ export default function ResumoMes() {
         <button type="button" className="btn btn-mini" onClick={() => setMes(mudarMes(mes, 1))} disabled={mes >= hoje.slice(0, 7)}>›</button>
         <span className="muted-cel">pedidos importados até {ate.slice(8, 10)}/{ate.slice(5, 7)} · enviados e entregues (sem cancelados)</span>
       </div>
-      <Kpis
-        itens={[
-          { label: "Pedidos · unidades", valor: `${t.pedidos.size} · ${t.un}` },
-          { label: "Faturado (cliente pagou)", valor: BRL(t.pago), sub: descontos > 0 ? `descontos ${BRL(descontos)} (promo, cupom)` : null },
-          { label: "Ads", valor: BRL(ads), sub: "mesma conta do teto" },
-          { label: sobra >= 0 ? "Lucro depois do Ads" : "Prejuízo depois do Ads", valor: BRL(sobra), tom: sobra > 0 ? "good" : sobra < 0 ? "bad" : undefined, sub: t.pago > 0 ? `${PCT(sobra / t.pago)} do faturado · antes das contas fixas` : null },
-        ]}
-      />
       {!(t.pago > 0) && (
         <div className="panel">
           <div className="empty">Sem pedidos importados neste mês — envie o arquivo da Olist em Atualizar dados.</div>
         </div>
       )}
       <CascataLucro pedidos={cres.pedidosValidos || []} linhasAds={cres.linhasAds} mes={mes} hoje={hoje} />
-      {r.porCanal.length > 0 && (
-        <div className="panel">
-          <h3>Por canal</h3>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Canal</th>
-                  <th className="num">Unidades</th>
-                  <th className="num">Faturamento</th>
-                  <th className="num">Taxas</th>
-                  <th className="num">Repor</th>
-                  <th className="num">Lucro antes do Ads</th>
-                </tr>
-              </thead>
-              <tbody>
-                {r.porCanal.map((c, i) => (
-                  <tr key={c.canal?.id || `f${i}`}>
-                    <td>{c.canal ? <CanalTag canal={c.canal} /> : "Venda física"}</td>
-                    <td className="num">{c.un}</td>
-                    <td className="num">{BRL(c.pago)}</td>
-                    <td className="num">{BRL(Math.max(0, c.taxas))}</td>
-                    <td className="num">{BRL(c.custo)}</td>
-                    <td className="num">{BRL(c.lucro)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
       {r.porAnuncio.length > 0 && (
         <div className="panel">
           <h3>
-            Por anúncio <span className="dir">clique pra abrir o painel</span>
+            Por anúncio <span className="dir">lucro bruto = antes do Ads · clique pra abrir o painel</span>
           </h3>
           <div className="table-wrap">
             <table>
@@ -151,9 +87,9 @@ export default function ResumoMes() {
                   <th>Anúncio</th>
                   <th className="num">Unidades</th>
                   <th className="num">Faturamento</th>
-                  <th className="num">Taxas</th>
+                  <th className="num">Taxas e impostos</th>
                   <th className="num">Repor</th>
-                  <th className="num">Lucro antes do Ads</th>
+                  <th className="num">Lucro bruto</th>
                   <th className="num">Margem</th>
                 </tr>
               </thead>

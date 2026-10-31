@@ -33,7 +33,7 @@ import { custoAmostra, padraoDoCanal, sugestoesAfiliado } from "../lib/afiliados
 import { anunciosDaLoja, avisosComissaoLoja, linhasDaLoja, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
 import { agruparPorProduto, ehAvisoDeDados, montarPendencias, notaDoAviso, produtoDoAviso, situacaoDados } from "../lib/inicio.js";
 import { produtosParados } from "../lib/relatorios.js";
-import { comoEstaALoja, produtosDaSemana, variacao } from "../lib/resumoLoja.js";
+import { comoEstaALoja, produtosDaSemana, variacao, variacaoSegura } from "../lib/resumoLoja.js";
 import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { useEscada } from "../hooks/useEscada.js";
 import { publicarUrgentes } from "../lib/urgentes.js";
@@ -417,7 +417,7 @@ export default function Inicio({ onIrPara, onToast }) {
   const carregando = gestao.carregando || rampasH.carregando || dados.carregando;
 
   // --- 1 · Como a loja está (pedidos importados + Ads, mesma conta do Resumo do mês) ---
-  const loja = useMemo(() => comoEstaALoja({ pedidos: pedidosValidos, linhasAds, hoje }), [pedidosValidos, linhasAds, hoje]);
+  const loja = useMemo(() => comoEstaALoja({ pedidos: pedidosValidos, linhasAds, hoje, lancamentos: gestao.lancamentos }), [pedidosValidos, linhasAds, hoje, gestao.lancamentos]);
   const temPedidos = loja.atual.pedidos > 0 || loja.antes.pedidos > 0;
   const aPagar7 = caixa ? caixa.proximos.filter((l) => l.tipo === "saida").reduce((t, l) => t + Number(l.valor || 0), 0) : 0;
 
@@ -474,6 +474,7 @@ export default function Inicio({ onIrPara, onToast }) {
     vendas: loja.atual.vendas,
     pedidos: loja.atual.pedidos,
     depoisAds: loja.atual.depoisAds,
+    liquido: loja.atual.liquido,
     temPedidos,
     caixa: caixa ? caixa.saldoHoje : null,
     metaPct: metaFat > 0 && temPedidos ? loja.atual.vendas / metaFat : null,
@@ -666,12 +667,15 @@ export default function Inicio({ onIrPara, onToast }) {
               ),
             },
             {
-              label: "Lucro depois do Ads",
-              valor: temPedidos ? BRL(loja.atual.depoisAds) : "—",
-              tom: temPedidos && loja.atual.depoisAds < 0 ? "bad" : undefined,
+              // Mesma conta do Resumo do mês (Dinheiro → Resultado): "Sobrou pra você".
+              label: !temPedidos || (loja.atual.liquido ?? loja.atual.depoisAds) >= 0 ? "Sobrou pra você" : "Faltou",
+              valor: temPedidos ? BRL(loja.atual.liquido ?? loja.atual.depoisAds) : "—",
+              tom: temPedidos && (loja.atual.liquido ?? loja.atual.depoisAds) < 0 ? "bad" : undefined,
               sub: temPedidos ? (
                 <>
-                  Ads {BRL(loja.atual.ads)} · <Variacao v={loja.antes.depoisAds > 0 ? variacao(loja.atual.depoisAds, loja.antes.depoisAds) : null} />
+                  lucro bruto {BRL(loja.atual.lucro)} − Ads {BRL(loja.atual.ads)}
+                  {loja.atual.liquido != null && loja.atual.fixas > 0 ? ` − fixas ${BRL(loja.atual.fixas)}` : ""} ·{" "}
+                  <Variacao v={variacaoSegura(loja.atual.liquido ?? loja.atual.depoisAds, loja.antes.liquido ?? loja.antes.depoisAds, loja.antes.vendas)} />
                 </>
               ) : (
                 "pelos pedidos importados"
@@ -696,7 +700,7 @@ export default function Inicio({ onIrPara, onToast }) {
             },
           ]}
         />
-        {loja.atual.semCusto > 0 && <p className="hint" style={{ margin: "6px 0 0" }}>{loja.atual.semCusto} venda(s) sem custo cadastrado ficam fora do lucro.</p>}
+        {loja.atual.semCusto > 0 && <p className="hint" style={{ margin: "6px 0 0" }}>{loja.atual.semCusto} venda(s) sem produto ligado (SKU não cadastrado) entram sem custo.</p>}
       </div>
 
       {/* 2 · Seus dados */}

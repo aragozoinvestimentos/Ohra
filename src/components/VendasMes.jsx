@@ -248,13 +248,16 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
           { label: "Você recebe", valor: t.unidades ? BRL(t.recebe) : "—", sub: "o que os canais repassam, depois das taxas" },
           { label: "Repor a produção", valor: t.unidades ? BRL(t.repor) : "—", sub: "custo das peças vendidas → reserva" },
           {
-            label: "Seu lucro",
+            label: "Lucro bruto",
             valor: t.unidades ? BRL(t.lucro) : "—",
             tom: t.unidades ? (t.lucro >= 0 ? "destaque" : "bad") : undefined,
-            sub: t.unidades ? (t.ads || t.comissao ? `depois de Ads e afiliado: ${BRL(t.sobra)}` : t.faturamento > 0 ? `margem ${PCT(t.lucro / t.faturamento)}` : null) : null,
+            sub: t.unidades ? (t.ads || t.comissao ? `antes do Ads · depois de Ads e afiliado: ${BRL(t.sobra)}` : t.faturamento > 0 ? `antes do Ads · margem ${PCT(t.lucro / t.faturamento)}` : null) : null,
           },
         ]}
       />
+      <p className="hint" style={{ margin: "0 0 8px" }}>
+        Visão por produto. O resultado do mês (com Ads e contas fixas) é o de <b>Do mês</b> — aqui podem entrar semanas estimadas e vendas lançadas à mão, então o total pode ser diferente.
+      </p>
       {!multi && t.unidades > 0 && (() => {
         // Teto de Ads da loja (mesma conta da aba Ads) com os números deste mês.
         const tt = tetoDaLoja({ faturamento: t.faturamento, lucro: t.lucro, gasto: adsMes, regras: regrasAds(cfgLoja) });

@@ -1,4 +1,4 @@
-import { cascataDoPeriodo } from "../src/lib/resumoLoja.js";
+import { cascataDoPeriodo, comoEstaALoja, fraseDoResultado, lucroDaLinha, variacaoSegura } from "../src/lib/resumoLoja.js";
 import { aliquotaEfetiva, aliquotaDaVenda, rbt12, dasDoMes } from "../src/lib/simples.js";
 import { fiscalDoItem, sugerirSku, produtosParecidos, faltasDoCadastro } from "../src/lib/revenda.js";
 import { interpretarDanfe, partesDaChave } from "../src/lib/danfe.js";
@@ -889,5 +889,34 @@ describe("Últimas importações", () => {
     const linhas = Array.from({ length: 12 }, (_, i) => ({ sku: `S${i}`, it: i < 2 ? {} : null }));
     expect(pareceOutraLoja(linhas)).toEqual({ total: 12, ligados: 2 });
     expect(pareceOutraLoja(linhas.map((l) => ({ ...l, it: {} })))).toBeNull();
+  });
+});
+
+describe("dinheiro: uma conta só (31/10/2026)", () => {
+  const ped = [
+    { pedido: "A", data: "2026-10-05", valido: true, item: { id: "p:1" }, q: 1, pago: 100, bruto: 110, recebe: 70, imposto: 0, custo: 40 },
+    // brinde que foi junto (R$ 0): desconta o custo
+    { pedido: "A", data: "2026-10-05", valido: true, item: { id: "p:2" }, q: 1, pago: 0, bruto: 0, recebe: 0, imposto: 0, custo: 5.37 },
+  ];
+  it("lucroDaLinha = pago − plataformas − imposto − custo, brinde desconta o custo", () => {
+    expect(lucroDaLinha(ped[0])).toBe(30);
+    expect(lucroDaLinha(ped[1])).toBeCloseTo(-5.37, 2);
+  });
+  it("Início (comoEstaALoja) e a tabela dão o mesmo número", () => {
+    const lanc = [{ recorrencia: "mensal", tipo: "saida", categoria: "outros", valor: 20, data_prevista: "2026-01-10" }];
+    const c = cascataDoPeriodo({ pedidos: ped, linhasAds: null, lancamentos: lanc, de: "2026-10-01", ate: "2026-10-31" }).total;
+    const l = comoEstaALoja({ pedidos: ped, linhasAds: null, hoje: "2026-10-31", lancamentos: lanc });
+    expect(c.lucroBruto).toBeCloseTo(24.63, 2);
+    expect(l.atual.lucro).toBeCloseTo(c.lucroBruto, 2);
+    expect(l.atual.liquido).toBeCloseTo(c.liquido, 2);
+    expect(c.liquido).toBeCloseTo(4.63, 2);
+  });
+  it("frase do resultado e variação só com base de verdade", () => {
+    const f = fraseDoResultado({ pago: 710.34, lucroBruto: 203.84, ads: 272.04, fixas: 82.05, liquido: -150.25, depoisAds: -68.2 }, "Outubro");
+    expect(f.tom).toBe("ruim");
+    expect(f.titulo).toBe("Outubro: faltaram R$ 150,25");
+    expect(f.texto).toContain("mais que o lucro dos produtos");
+    expect(variacaoSegura(-150.25, 8.78, 14)).toBeNull();
+    expect(variacaoSegura(120, 100, 500)).toBeCloseTo(0.2);
   });
 });

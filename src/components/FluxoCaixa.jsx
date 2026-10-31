@@ -805,7 +805,7 @@ export default function FluxoCaixa({ onToast }) {
                       <th>Mês</th>
                       <th className="num">Entradas</th>
                       <th className="num">Saídas</th>
-                      <th className="num">Resultado</th>
+                      <th className="num" title="Dinheiro: entradas − saídas do mês (não é o lucro das vendas — esse está em Resultado → Do mês)">Entradas − saídas</th>
                       <th className="num">Saldo no fim do mês</th>
                     </tr>
                   </thead>

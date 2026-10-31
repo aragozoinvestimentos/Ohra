@@ -4,7 +4,8 @@ import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
 import { useLembrado } from "../hooks/useLembrado.js";
 import { abrirAnuncio, montarAnuncios } from "../lib/anuncios.js";
-import { analiseCompraMinima, lucroLiquidoDoMes, mesAnterior, pedidosAgrupados, simularTicket } from "../lib/resumoLoja.js";
+import { analiseCompraMinima, lucroLiquidoDoMes, mesAnterior, pedidosAgrupados, simularTicket, variacaoSegura } from "../lib/resumoLoja.js";
+import { irParaAba } from "../lib/navegar.js";
 import { hojeSP } from "../lib/datas.js";
 import { BRL, PCT } from "../lib/format.js";
 import CanalTag from "./CanalTag.jsx";
@@ -80,9 +81,9 @@ export default function AnaliseDiagnostico() {
     return out.sort((a, b) => (peso[a.princ?.estado] ?? 4) - (peso[b.princ?.estado] ?? 4) || (b.l.vendas?.unidades || 0) - (a.l.vendas?.unidades || 0));
   }, [linhas, prio, canalF]);
 
-  const variacao = (a, b) => (b && b > 0 && a != null ? (a - b) / b : null);
-  const vLiq = liq.liquido != null && liqAnt.liquido != null ? variacao(liq.liquido, liqAnt.liquido) : null;
-  const vVendas = variacao(liq.vendas, liqAnt.vendas);
+  // Mês aberto × mês anterior INTEIRO: % só com o mês fechado (senão sempre parece queda).
+  const vLiq = liq.fechado && liq.liquido != null && liqAnt.liquido != null ? variacaoSegura(liq.liquido, liqAnt.liquido, liqAnt.vendas) : null;
+  const vVendas = liq.fechado ? variacaoSegura(liq.vendas, liqAnt.vendas, liqAnt.vendas) : null;
 
   return (
     <div>
@@ -93,15 +94,18 @@ export default function AnaliseDiagnostico() {
           <span className="h3-contagem">
             {nomeMes(mes)} até {dm(liq.ate)} · {nomeMes(liqAnt.mes)} inteiro ao lado
           </span>{" "}
-          <Ajuda texto="Faturamento = o que os clientes pagaram (pedidos importados). Margem de contribuição = o que sobra depois das taxas e de repor o produto (custo de hoje). Depois do Ads = menos o gasto de Ads (mesma conta do teto, inclui a GMV Max da Loja). Lucro líquido = menos as contas fixas do mês (Dinheiro → Contas fixas: recorrentes de saída, sem Ads, material, embalagem e retirada, que já estão em outra conta). Sem conta fixa cadastrada, o lucro líquido fica como dado insuficiente." />
+          <Ajuda texto="A MESMA conta de Dinheiro → Resultado (Do faturamento ao lucro). Faturado = o que os clientes pagaram (pedidos importados). Lucro bruto = depois das taxas, impostos e de repor o produto (custo de hoje). Depois do Ads = menos o gasto de Ads (inclui a GMV Max da Loja). Sobrou pra você = menos as contas fixas do mês. Sem conta fixa cadastrada, fica como dado insuficiente." />
+          <button type="button" className="link-btn" style={{ margin: "0 0 0 8px" }} onClick={() => irParaAba("resumoMes")}>
+            ver a conta inteira →
+          </button>
         </h3>
         <Kpis
           itens={[
-            { label: "Faturamento", valor: BRL(liq.vendas), sub: `${liq.pedidos} pedidos · ${nomeMes(liqAnt.mes)}: ${BRL(liqAnt.vendas)}${vVendas != null ? ` (${vVendas >= 0 ? "↑" : "↓"} ${PCT(Math.abs(vVendas))})` : ""}` },
-            { label: "Margem de contribuição", valor: BRL(liq.contribuicao), sub: liq.vendas ? `${PCT(liq.contribuicao / liq.vendas)} do faturamento · depois das taxas e do custo` : "—" },
+            { label: "Faturado", valor: BRL(liq.vendas), sub: `${liq.pedidos} pedidos · ${nomeMes(liqAnt.mes)}: ${BRL(liqAnt.vendas)}${vVendas != null ? ` (${vVendas >= 0 ? "↑" : "↓"} ${PCT(Math.abs(vVendas))})` : ""}` },
+            { label: "Lucro bruto", valor: BRL(liq.contribuicao), sub: liq.vendas ? `${PCT(liq.contribuicao / liq.vendas)} do faturado · depois de taxas, impostos e custo` : "—" },
             { label: "Depois do Ads", valor: BRL(liq.depoisAds), tom: liq.depoisAds < 0 ? "bad" : undefined, sub: `Ads ${BRL(liq.ads)}` },
             {
-              label: "Lucro líquido",
+              label: "Sobrou pra você",
               valor: liq.liquido != null ? BRL(liq.liquido) : "—",
               tom: liq.liquido != null && liq.liquido < 0 ? "bad" : undefined,
               sub:
@@ -118,7 +122,7 @@ export default function AnaliseDiagnostico() {
             Contas fixas consideradas: {liq.fixas.itens.map((x) => `${x.descricao} ${BRL(x.valor)}`).join(" · ")}. Parcelas de equipamento e retiradas não entram.
           </p>
         )}
-        {liq.semCusto > 0 && <p className="hint" style={{ margin: "4px 0 0" }}>{liq.semCusto} venda(s) sem custo cadastrado ficam fora da margem.</p>}
+        {liq.semCusto > 0 && <p className="hint" style={{ margin: "4px 0 0" }}>{liq.semCusto} venda(s) sem produto ligado (SKU não cadastrado) entram sem custo.</p>}
       </div>
 
       {/* 2. Compra mínima do cupom */}

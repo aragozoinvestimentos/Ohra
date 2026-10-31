@@ -436,7 +436,7 @@ const quandoAprovou = (r) => {
 export function montarPacote({ nomeLoja, hoje, perguntas, consultorias, erros, uso, kpis, aprendizado = [], opinioes = [], atuais = null }) {
   const l = [];
   l.push(`# Consultor da Sede — ${nomeLoja} — ${dm(hoje)}/${hoje.slice(0, 4)}`);
-  if (kpis) l.push(`Mês até hoje: vendas ${BRL(kpis.vendas || 0)} · lucro depois do Ads ${BRL(kpis.depoisAds || 0)} · caixa ${kpis.caixa != null ? BRL(kpis.caixa) : "—"}${kpis.meta ? ` · meta ${BRL(kpis.meta)}` : ""}`);
+  if (kpis) l.push(`Mês até hoje: vendas ${BRL(kpis.vendas || 0)} · lucro depois do Ads ${BRL(kpis.depoisAds || 0)}${kpis.liquido != null ? ` · sobrou pra você (depois das contas fixas) ${BRL(kpis.liquido)}` : ""} · caixa ${kpis.caixa != null ? BRL(kpis.caixa) : "—"}${kpis.meta ? ` · meta ${BRL(kpis.meta)}` : ""}`);
   if (perguntas.length) {
     l.push("", "## Perguntas que eu não soube responder");
     for (const p of perguntas) {

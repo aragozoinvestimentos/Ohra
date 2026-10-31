@@ -27,6 +27,18 @@ export function adsNoPeriodo(linhasAds, de, ate) {
   return Math.round(t * 100) / 100;
 }
 
+/**
+ * Lucro de UMA linha de pedido, a conta ÚNICA do app pro dinheiro (31/10/2026 — o card
+ * "depois do Ads" e a tabela "Do faturamento ao lucro" davam números diferentes):
+ * pago − plataformas (comissão + taxa fixa) − imposto − custo. Linha com valor R$ 0
+ * (brinde/peça que foi junto) desconta o custo; item sem SKU cadastrado fica sem custo
+ * (aviso "sem custo"). Mesma conta do lucroNoPreco quando há item e preço.
+ */
+export function lucroDaLinha(p) {
+  const pago = num(p.pago);
+  return pago - Math.max(0, pago - num(p.recebe ?? pago)) - num(p.imposto) - num(p.custo);
+}
+
 /** Pedidos válidos de de a ate → { pedidos, unidades, vendas (pago), lucro (antes do Ads), semCusto }. */
 export function somaPedidos(linhas, de, ate) {
   const ped = new Set();
@@ -38,8 +50,8 @@ export function somaPedidos(linhas, de, ate) {
     ped.add(p.pedido);
     t.unidades += num(p.q);
     t.vendas += num(p.pago);
-    if (p.lucro == null) t.semCusto++;
-    t.lucro += num(p.lucro);
+    if (!p.item) t.semCusto++;
+    t.lucro += lucroDaLinha(p);
   }
   return { ...t, pedidos: ped.size };
 }
@@ -48,7 +60,7 @@ export function somaPedidos(linhas, de, ate) {
  * Mês até hoje × o mesmo pedaço do mês anterior (dia 1 até o mesmo dia).
  * → { de, ate, atual, antes, ads, adsAntes, ritmo (vendas projetadas no mês) }
  */
-export function comoEstaALoja({ pedidos, linhasAds, hoje }) {
+export function comoEstaALoja({ pedidos, linhasAds, hoje, lancamentos = null }) {
   const mes = hoje.slice(0, 7);
   const de = `${mes}-01`;
   const dia = Number(hoje.slice(8, 10));
@@ -60,13 +72,17 @@ export function comoEstaALoja({ pedidos, linhasAds, hoje }) {
   const ads = adsNoPeriodo(linhasAds, de, hoje);
   const adsAntes = adsNoPeriodo(linhasAds, `${ma}-01`, ateAnt);
   const diasMes = Number(fimDoMes(mes).slice(8, 10));
+  // Contas fixas do mês inteiro (a mesma conta do Resumo do mês → "Sobrou pra você").
+  const fixas = lancamentos ? despesasFixasDoMes(lancamentos, mes).total : null;
+  const fixasAntes = lancamentos ? despesasFixasDoMes(lancamentos, ma).total : null;
+  const liq = (lucro, a, f) => (f == null ? null : Math.round((lucro - a - f) * 100) / 100);
   return {
     de,
     ate: hoje,
     deAntes: `${ma}-01`,
     ateAntes: ateAnt,
-    atual: { ...atual, ads, depoisAds: atual.lucro - ads },
-    antes: { ...antes, ads: adsAntes, depoisAds: antes.lucro - adsAntes },
+    atual: { ...atual, ads, depoisAds: atual.lucro - ads, fixas, liquido: liq(atual.lucro, ads, fixas) },
+    antes: { ...antes, ads: adsAntes, depoisAds: antes.lucro - adsAntes, fixas: fixasAntes, liquido: liq(antes.lucro, adsAntes, fixasAntes) },
     ritmo: dia ? (atual.vendas / dia) * diasMes : 0,
   };
 }
@@ -131,10 +147,11 @@ export function lucroLiquidoDoMes({ pedidos, linhasAds, lancamentos, mes, hoje }
   const de = `${mes}-01`;
   const fim = fimDoMes(mes);
   const ate = fim < hoje ? fim : hoje;
+  // Mesma conta da tabela "Do faturamento ao lucro" (cascataDoPeriodo).
   const p = somaPedidos(pedidos, de, ate);
-  const ads = adsNoPeriodo(linhasAds, de, ate);
+  const c = cascataDoPeriodo({ pedidos, linhasAds, lancamentos, de, ate }).total;
   const fixas = despesasFixasDoMes(lancamentos, mes);
-  return { mes, de, ate, ...p, ads, fixas, contribuicao: p.lucro, depoisAds: p.lucro - ads, liquido: fixas.itens.length ? p.lucro - ads - fixas.total : null, fechado: fim < hoje };
+  return { mes, de, ate, ...p, vendas: c.pago, ads: c.ads, fixas, contribuicao: c.lucroBruto, depoisAds: c.depoisAds, liquido: fixas.itens.length ? c.liquido : null, fechado: fim < hoje };
 }
 export { mesAnterior };
 
@@ -234,7 +251,7 @@ export const LINHAS_CASCATA = [
   { k: "liquido", rot: "= Sobrou pra você (lucro líquido)", total: true, forte: true },
 ];
 export function cascataDoPeriodo({ pedidos = [], linhasAds, lancamentos = [], de, ate }) {
-  const vazio = () => ({ bruto: 0, descontos: 0, pago: 0, taxas: 0, imposto: 0, custo: 0, lucroBruto: 0, ads: 0, depoisAds: 0, fixas: null, liquido: null, pedidos: new Set(), semCusto: 0, devolvido: 0, devolvidos: new Set() });
+  const vazio = () => ({ bruto: 0, descontos: 0, pago: 0, taxas: 0, imposto: 0, custo: 0, lucroBruto: 0, ads: 0, depoisAds: 0, fixas: null, liquido: null, pedidos: new Set(), un: 0, semCusto: 0, devolvido: 0, devolvidos: new Set() });
   const total = vazio();
   const porCanal = new Map();
   for (const p of pedidos) {
@@ -264,7 +281,8 @@ export function cascataDoPeriodo({ pedidos = [], linhasAds, lancamentos = [], de
       x.imposto += num(p.imposto);
       x.custo += num(p.custo);
       x.pedidos.add(p.pedido);
-      if (p.lucro == null) x.semCusto++;
+      x.un += num(p.q);
+      if (!p.item) x.semCusto++;
     }
     porCanal.set(kc, c);
   }
@@ -281,7 +299,9 @@ export function cascataDoPeriodo({ pedidos = [], linhasAds, lancamentos = [], de
     x.lucroBruto = x.pago - x.taxas - x.imposto - x.custo;
     x.depoisAds = x.lucroBruto - x.ads;
     if (comFixas) {
-      x.fixas = mesesEntre(de, ate).reduce((s, m) => s + despesasFixasDoMes(lancamentos, m).total, 0);
+      const fx = mesesEntre(de, ate).map((m) => despesasFixasDoMes(lancamentos, m));
+      x.fixas = fx.reduce((s, f) => s + f.total, 0);
+      x.semFixas = !fx.some((f) => f.itens.length);
       x.liquido = x.depoisAds - x.fixas;
     }
     for (const k of ["bruto", "descontos", "pago", "taxas", "imposto", "custo", "lucroBruto", "ads", "depoisAds", "fixas", "liquido", "devolvido"]) if (x[k] != null) x[k] = Math.round(x[k] * 100) / 100;
@@ -290,4 +310,37 @@ export function cascataDoPeriodo({ pedidos = [], linhasAds, lancamentos = [], de
     return x;
   };
   return { total: fechar(total, true), canais: [...porCanal.values()].filter((c) => c.pedidos.size > 0).map((c) => fechar(c, false)).sort((a, b) => b.pago - a.pago) };
+}
+
+/**
+ * Variação % só quando a base é de verdade (31/10/2026: "↓ 1811%" contra um setembro de
+ * R$ 14). Base pequena (faturado do período antes < R$ 200 ou |valor antes| < R$ 20) = null.
+ */
+export function variacaoSegura(agora, antes, faturadoAntes, { minFaturado = 200, minValor = 20 } = {}) {
+  if (!(num(faturadoAntes) >= minFaturado) || antes == null || Math.abs(num(antes)) < minValor) return null;
+  return (num(agora) - num(antes)) / Math.abs(num(antes));
+}
+
+const brl = (v) => `R$ ${Math.abs(num(v)).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
+/**
+ * Uma frase pra bater o olho no resultado (31/10/2026). t = total do cascataDoPeriodo.
+ * → { tom: "bom"|"ruim"|null, titulo, texto } | null
+ */
+export function fraseDoResultado(t, rotulo) {
+  if (!t || !(num(t.pago) > 0)) return null;
+  const final = t.liquido != null ? num(t.liquido) : num(t.depoisAds);
+  const fixasTxt = t.liquido != null && num(t.fixas) > 0 ? ` e as contas fixas ${brl(t.fixas)}` : "";
+  const ads = num(t.ads);
+  const lb = num(t.lucroBruto);
+  if (final < 0) {
+    let porque;
+    if (lb <= 0) porque = `As vendas não cobriram nem o custo e as taxas (lucro bruto ${lb < 0 ? "−" : ""}${brl(lb)}).`;
+    else if (ads > lb) porque = `Os produtos deram ${brl(lb)} de lucro bruto, mas o Ads custou ${brl(ads)} — mais que o lucro dos produtos${fixasTxt ? `. Contas fixas: ${brl(t.fixas)}` : ""}.`;
+    else porque = `Os produtos deram ${brl(lb)} de lucro bruto${ads > 0 ? `, o Ads custou ${brl(ads)}` : ""}${fixasTxt}.`;
+    return { tom: "ruim", titulo: `${rotulo}: faltaram ${brl(final)}`, texto: porque };
+  }
+  const partes = [`lucro bruto ${brl(lb)}`];
+  if (ads > 0) partes.push(`Ads ${brl(ads)}`);
+  if (t.liquido != null && num(t.fixas) > 0) partes.push(`contas fixas ${brl(t.fixas)}`);
+  return { tom: final > 0 ? "bom" : null, titulo: `${rotulo}: sobraram ${brl(final)} pra você`, texto: `Dos ${brl(t.pago)} faturados: ${partes.join(" − ")}.` };
 }

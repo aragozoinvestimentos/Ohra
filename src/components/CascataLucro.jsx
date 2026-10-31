@@ -2,11 +2,12 @@ import { useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
-import { LINHAS_CASCATA, cascataDoPeriodo } from "../lib/resumoLoja.js";
+import { LINHAS_CASCATA, cascataDoPeriodo, fraseDoResultado, variacaoSegura } from "../lib/resumoLoja.js";
 import { baixarCsvRelatorio, imprimirRelatorio, relatorioDoPeriodo } from "../lib/relatorios.js";
 import { BRL, PCT } from "../lib/format.js";
 import Ajuda from "./Ajuda.jsx";
 import CanalTag from "./CanalTag.jsx";
+import Kpis from "./Kpis.jsx";
 
 // Dinheiro → Resultado → "Do faturamento ao lucro" (28/10/2026, enxuta pela prévia):
 // 8 linhas com % do faturado e o período anterior; cheio/descontos/devoluções numa linha
@@ -67,7 +68,11 @@ export default function CascataLucro({ pedidos, linhasAds, mes, hoje }) {
   const ta = a.total;
   const valor = (x, l) => (x[l.k] == null ? "—" : BRL(l.menos && x[l.k] ? -x[l.k] : x[l.k]));
   const perc = (x, l) => (x[l.k] == null || !(x.pago > 0) ? "" : PCT(x[l.k] / x.pago));
-  const variacao = (l) => (ta.pago > 0 && ta[l.k] ? (t[l.k] - ta[l.k]) / Math.abs(ta[l.k]) : null);
+  const variacao = (l) => (p.aberto ? null : variacaoSegura(t[l.k], ta[l.k], ta.pago)); // mês pela metade × mês inteiro: sem %
+  // Os 4 números de cima e a frase saem da MESMA conta da tabela (31/10/2026).
+  const final = t.liquido != null ? t.liquido : t.depoisAds;
+  const rotulo = per === "mes" ? `${NOMES_MES[Number(mes.slice(5, 7)) - 1].replace(/^./, (x) => x.toUpperCase())}${p.aberto ? ` (até ${p.ate.slice(8, 10)}/${p.ate.slice(5, 7)})` : ""}` : p.titulo;
+  const frase = fraseDoResultado(t, rotulo);
 
   const ctx = () => {
     const nomeDe = (k) => (String(k).startsWith("p:") ? (cat.produtos || []).find((x) => x.id === k.slice(2))?.nome : (cat.kits || []).find((x) => x.id === String(k).slice(2))?.nome);
@@ -86,6 +91,22 @@ export default function CascataLucro({ pedidos, linhasAds, mes, hoje }) {
     : [];
 
   return (
+    <>
+    {t.pago > 0 && (
+      <Kpis
+        itens={[
+          { label: "Faturado", valor: BRL(t.pago), sub: `${t.nPedidos} pedidos · ${t.un} un.` },
+          { label: "Lucro bruto", valor: BRL(t.lucroBruto), tom: t.lucroBruto < 0 ? "bad" : undefined, sub: "depois de taxas, impostos e custo" },
+          { label: "Ads", valor: BRL(t.ads), sub: t.pago > 0 ? `${PCT(t.ads / t.pago)} do faturado` : null },
+          { label: final >= 0 ? "Sobrou pra você" : "Faltou", valor: BRL(final), tom: final > 0 ? "good" : final < 0 ? "bad" : undefined, sub: t.liquido != null ? `depois do Ads e das contas fixas (${BRL(t.fixas)})` : "depois do Ads" },
+        ]}
+      />
+    )}
+    {frase && (
+      <div className={`frase-resultado${frase.tom ? ` frase-${frase.tom}` : ""}`}>
+        <b>{frase.titulo}.</b> {frase.texto}
+      </div>
+    )}
     <div className="panel">
       <h3>
         Do faturamento ao lucro
@@ -100,7 +121,7 @@ export default function CascataLucro({ pedidos, linhasAds, mes, hoje }) {
           ))}
         </div>
         <span className="muted-cel">
-          {dmy(p.de)} a {dmy(p.ate)} · {t.nPedidos} pedidos
+          {dmy(p.de)} a {dmy(p.ate)} · {t.nPedidos} pedidos · pedidos importados, custo e taxas de hoje
         </span>
       </div>
       <div className="table-wrap">
@@ -110,7 +131,7 @@ export default function CascataLucro({ pedidos, linhasAds, mes, hoje }) {
               <th>Conta</th>
               <th className="num">Valor</th>
               <th className="num">% do faturado</th>
-              <th className="num">{p.rotA === "o período antes" ? "Período antes" : p.rotA.charAt(0).toUpperCase() + p.rotA.slice(1)}</th>
+              <th className="num">{p.rotA === "o período antes" ? "Período antes" : p.rotA.charAt(0).toUpperCase() + p.rotA.slice(1)}{p.aberto ? " (inteiro)" : ""}</th>
             </tr>
           </thead>
           <tbody>
@@ -190,7 +211,9 @@ export default function CascataLucro({ pedidos, linhasAds, mes, hoje }) {
           <p className="hint">As contas fixas não se dividem por canal; entram só no total.</p>
         </div>
       )}
+      {t.semFixas && t.pago > 0 && <p className="hint">Nenhuma conta fixa cadastrada neste período (Dinheiro → Contas fixas e parcelas) — "Sobrou pra você" fica igual ao "depois do Ads".</p>}
       {t.semCusto > 0 && <p className="hint">{t.semCusto} item(ns) sem produto ligado (SKU não cadastrado) entram no faturado, mas sem custo.</p>}
     </div>
+    </>
   );
 }

@@ -4,7 +4,7 @@
 // que falta aparece como "aguardando arquivo", nunca como um zero enganoso.
 // SÓ INFORMA: nenhuma decisão sai de um dia só (Rampa e Ads seguem as janelas
 // deles); o que pede ação já está no Pra fazer.
-import { adsNoPeriodo } from "./resumoLoja.js";
+import { adsNoPeriodo, lucroDaLinha } from "./resumoLoja.js";
 import { periodoLigado } from "./ads.js";
 import { ateDoEnvioPedidos } from "./pedidos.js";
 
@@ -43,7 +43,7 @@ export function bomDia({ importacoes = [], pedidos = [], linhasAds = null, perio
   let resumoPedidos = null;
   if (pedidosOk) {
     const dia = (d) => (pedidos || []).filter((p) => p.valido && String(p.data).slice(0, 10) === d);
-    const soma = (ls) => ({ n: new Set(ls.map((p) => p.pedido)).size, vendas: ls.reduce((s, p) => s + num(p.pago), 0), lucro: ls.reduce((s, p) => s + num(p.lucro), 0) });
+    const soma = (ls) => ({ n: new Set(ls.map((p) => p.pedido)).size, vendas: ls.reduce((s, p) => s + num(p.pago), 0), lucro: ls.reduce((s, p) => s + lucroDaLinha(p), 0) });
     const o = soma(dia(ontem));
     let mv = 0;
     let ml = 0;

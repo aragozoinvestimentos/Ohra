@@ -52,7 +52,7 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
         ]}
       />
       <p className="hint" style={{ margin: "0 0 10px" }}>
-        Resultado do negócio até hoje: <b>{p.resultado < 0 ? "− " : ""}{BRL(Math.abs(p.resultado))}</b> (entrou − todo o custo da loja, pago por você ou pelo caixa). Quando ficar positivo e cobrir o que você colocou, o seu dinheiro voltou.
+        Resultado do negócio até hoje: <b>{p.resultado < 0 ? "− " : ""}{BRL(Math.abs(p.resultado))}</b> (dinheiro que entrou − tudo que a loja pagou, por você ou pelo caixa — conta do caixa, não é o lucro das vendas; esse está em Do mês). Quando ficar positivo e cobrir o que você colocou, o seu dinheiro voltou.
         <Ajuda texto="Você já colocou = aporte + saldo inicial + contas pagas do seu bolso (no Caixa, cada saída tem “Pago com: Meu bolso / Caixa da loja”). A loja pagou com o caixa dela = saídas pagas com o dinheiro das vendas. Caixa da loja hoje = o saldo do Caixa (o que você paga do bolso não sai dele). Falta voltar = o que você colocou − o que você já retirou (Retirada / pró-labore). Recarga de Ads conta como custo; o gasto dos CSVs não (seria 2×). Parcela da impressora conta quando é paga." />
       </p>
 

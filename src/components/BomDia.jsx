@@ -25,7 +25,7 @@ export default function BomDia({ d, onAtualizar, compacto = false }) {
           <span>Vendas</span>
           {d.pedidos ? (
             <>
-              {d.pedidos.n} pedido{d.pedidos.n === 1 ? "" : "s"} · {BRL(d.pedidos.vendas)} · lucro {BRL(d.pedidos.lucro)}
+              {d.pedidos.n} pedido{d.pedidos.n === 1 ? "" : "s"} · {BRL(d.pedidos.vendas)} · lucro bruto {BRL(d.pedidos.lucro)} (antes do Ads)
               <small> (normal: {BRL(d.pedidos.mediaVendas)}/dia{vv != null ? ` · ${vv >= 0 ? "+" : ""}${vv}%` : ""})</small>
             </>
           ) : (
