@@ -41,7 +41,7 @@ export default function CrescerProposito({ chave, crescer, ads }) {
       <span className="crescer-proposito ligado" title="Exceção: o app não pede pra reduzir/pausar enquanto o prejuízo da semana ficar dentro do limite.">
         🌱 Crescendo de propósito até {dm(cfg.ate || somar(cfg.desde, CRESCER_DIAS))} · limite R$ {Number(cfg.limiteSemana).toLocaleString("pt-BR")}/semana
         {crescer?.perdaSemana != null && <> · 7 dias: {crescer.perdaSemana > 0 ? `−R$ ${crescer.perdaSemana.toFixed(2).replace(".", ",")}` : "sem prejuízo"}</>}
-        <button type="button" className="btn-link" onClick={desligar}>desligar</button>
+        <button type="button" className="link-btn" onClick={desligar}>desligar</button>
       </span>
     );
   if (!abrindo)

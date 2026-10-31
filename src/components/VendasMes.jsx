@@ -272,7 +272,7 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
       {!multi && (
       <div className="panel">
         <h3 className="section-title">
-          Reserva de produção
+          Giro (antes “Reserva de produção”)
           <Ajuda texto="O dinheiro das vendas que volta pra produção: material, embalagem, energia, máquina, manutenção, falhas e acabamento (tudo que está no custo do produto). Não é uma saída — o dinheiro continua na conta; o caixa só mostra quanto dele está separado e quanto está livre. Separe o “repor” de cada mês e use a reserva quando comprar filamento, peças ou embalagem." />
         </h3>
         {!reserva.disponivel ? (
@@ -663,9 +663,9 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
         </EditarDialog>
       )}
       {usar && (
-        <EditarDialog titulo="Usei da reserva de produção" salvando={salvando} onSalvar={confirmarUsar} onCancelar={() => setUsar(null)} salvarLabel="Registrar">
+        <EditarDialog titulo="Usei do Giro" salvando={salvando} onSalvar={confirmarUsar} onCancelar={() => setUsar(null)} salvarLabel="Registrar">
           <p className="hint" style={{ marginTop: 0 }}>
-            Saldo da reserva: {BRL(res.saldo)}. Lance a compra em si no Caixa (− Saída); aqui só sai da reserva. Dica: no “− Saída” dá pra marcar “pago com a reserva de produção” e fazer os dois de uma vez.
+            Saldo da reserva: {BRL(res.saldo)}. Lance a compra em si no Caixa (− Saída); aqui só sai da reserva. Dica: no “− Saída” dá pra escolher “Sai de uma caixinha? → Giro” e fazer os dois de uma vez.
           </p>
           <div className="row2">
             <div className="field">

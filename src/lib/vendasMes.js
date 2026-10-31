@@ -153,6 +153,8 @@ export function saldoReserva(registros = []) {
   let saldo = 0;
   const porMes = new Map();
   for (const r of registros) {
+    // Caixinhas (v72): esta conta é só a do GIRO (linha sem caixinha = giro).
+    if (r.caixinha && r.caixinha !== "giro") continue;
     const v = num(r.valor);
     if (r.tipo === "usar") saldo -= v;
     else {

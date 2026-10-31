@@ -2937,3 +2937,13 @@ tr.imp-erro td { color: var(--ink-faint); }
 .crescer-proposito { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); }
 .crescer-proposito.ligado { color: var(--accent); font-weight: 700; }
 .crescer-proposito label { display: inline-flex; align-items: center; gap: 6px; }
+/* Caixinhas do Dinheiro (01/11/2026) */
+.caixinhas-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 10px; font-size: 13px; }
+.caixinhas-acoes { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; }
+.caixinhas-pct { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: 13px; margin-bottom: 10px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 10px; }
+.caixinhas-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.caixinha { border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--surface); }
+.caixinha-nome { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+.caixinha-valor { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0; }
+.caixinha-valor.neg, .caixinhas-topo .neg { color: var(--st-resolver); }
+.caixinha-botoes { display: flex; gap: 10px; font-size: 12px; }

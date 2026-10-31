@@ -583,3 +583,21 @@ export function reservaDoItem(item, produtos, materiais) {
   }
   return null;
 }
+
+// Parte "máquina" do custo de UMA unidade do item (01/11/2026, caixinha
+// Equipamentos = o fundo da próxima impressora): produto = roiPeca do
+// detalhamento; variação = do produto × quantidade; kit = peças × qtd. Sem
+// detalhamento (ou revenda) = 0.
+export function maquinaDoItem(item, produtos, materiais) {
+  if (!item?.id) return 0;
+  const umProduto = (pid) => {
+    const p = (produtos || []).find((x) => x.id === pid);
+    if (!p || p.origem === "revenda") return 0;
+    const r = custoProdutoPorPeca(p, materiais);
+    return Number(r?.roiPeca) || 0;
+  };
+  if (item.id.startsWith("p:")) return umProduto(item.id.slice(2));
+  if (item.id.startsWith("v:")) return umProduto(item.produtoId) * (Number(item.pecas || item.quantidade) || 1);
+  if (item.id.startsWith("k:")) return (item.componentes || []).reduce((t, c) => t + umProduto(c.produtoId) * (Number(c.quantidade) || 0), 0);
+  return 0;
+}

@@ -141,7 +141,7 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
             Guardado (saiu do caixa, mas ainda não foi gasto): saldo de Ads na Shopee <b>{BRL(saldoAdsShopee)}</b>
             {reserva > 0 && (
               <>
-                {" "}· reserva de produção <b>{BRL(reserva)}</b> (continua dentro do caixa)
+                {" "}· giro (reserva de produção) <b>{BRL(reserva)}</b> (continua dentro do caixa)
               </>
             )}
             .
