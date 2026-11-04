@@ -1615,6 +1615,8 @@ td.td-com-saude > .ponto-saude { position: absolute; left: 3px; top: 50%; margin
 .ads-rotulo { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); font-weight: 600; }
 .ads-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
 .chip-ads { display: inline-block; font-size: 11.5px; padding: 1px 8px; border-radius: 99px; background: var(--bg-soft, rgba(127,127,127,.1)); color: var(--ink-soft); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.pa-config-ads { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.pa-config-ads .chip-ads { margin-left: 0; }
 .chip-ads.ligado { background: var(--st-decisao-soft); color: var(--st-decisao); }
 .ads-barra { position: relative; height: 6px; border-radius: 99px; background: var(--border); margin-bottom: 14px; }
 .ads-barra > div { height: 100%; border-radius: 99px; background: var(--accent); }

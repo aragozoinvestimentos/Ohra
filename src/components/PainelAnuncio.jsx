@@ -9,7 +9,7 @@ import { comCupomAtivo, cuponsAtivos, textoFaixa } from "../lib/cupomLoja.js";
 import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { irParaAba, pegarPedido } from "../lib/navegar.js";
 import { pedirPasso } from "../lib/passosPreco.js";
-import { adsNaJanela, numerosDoPeriodo, REGRAS_ADS, textoAjusteAds, textoMudancaPreco } from "../lib/ads.js";
+import { adsNaJanela, metaSugerida, numerosDoPeriodo, REGRAS_ADS, textoAjusteAds, textoMudancaPreco, valoresAtuais } from "../lib/ads.js";
 import { acaoDaRampa, proximaConferencia } from "../lib/rampaAgora.js";
 import { estadoDoAlerta, ROTULO_ESTADO } from "../lib/estados.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
@@ -862,6 +862,7 @@ function AbaAds({ l, hoje, ped }) {
   const roasShopee = aj && n?.gasto > 0 ? (aj.shopee * precoAds) / n.gasto : null;
   const lucroAntes = n ? n.vendas * lucroVenda : null;
   const lucroDepois = n ? lucroAntes - n.gasto : null;
+  const vals = av.ativo ? valoresAtuais(av.ativo) : null;
   const tipo = av.estado === "ok" ? "info" : av.estado;
   return (
     <>
@@ -888,6 +889,14 @@ function AbaAds({ l, hoje, ped }) {
               </span>
             </h3>
             <div className="pa-corpo">
+              <div className="pa-config-ads">
+                <span className="ads-rotulo">Configuração atual</span>
+                <span className="chip-ads">{vals?.orcamento ? `${BRL(vals.orcamento)}/dia` : "sem orçamento"}</span>
+                <span className="chip-ads">{vals?.automatico ? "lance automático" : vals?.meta ? `meta ${um(vals.meta)}` : "sem meta"}</span>
+                {av.pausado && <span className="chip-ads">pausado desde {dm(av.pausado.desde)}</span>}
+                {empate ? <span className="chip-ads">equilíbrio {um(empate)}</span> : null}
+                {empate ? <span className="chip-ads">meta sugerida {um(metaSugerida(empate))}</span> : null}
+              </div>
               <Medidor pontos={[{ rot: "período", r: n.retorno }, { rot: "7 dias", r: ret7, ruim: ret7 != null && ret7 < 1 }]} />
               {aj && (aj.estado === "insuficiente" || aj.shopee !== n.vendas) && <p className={`hint${aj.estado === "insuficiente" ? " atencao-txt" : ""}`} style={{ margin: "4px 0 8px" }}>{textoAjusteAds(aj, roasShopee)}</p>}
               {aj?.mudanca && <p className="hint" style={{ margin: "4px 0 8px" }}>{textoMudancaPreco(aj)}</p>}
