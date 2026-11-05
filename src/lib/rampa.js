@@ -795,7 +795,11 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   // do Ads antes de pedir pra arrumar o anúncio por poucas vendas/ROAS — sem
   // venda nenhuma, o aviso do dia 3 do próprio Ads já cobre.
   const adsAprendendo = !!ctx.adsAtivo && diasEntre(ctx.adsAtivo.inicio, hoje) < num(regras.adsAprendizadoDias ?? 7);
+  // Só com Ads LIGADO (05/11/2026, Gustavo: Chaveiro Ore e Confie com o Ads
+  // encerrado em 18/10 ainda gerava "Ads não se paga" — o que já foi desligado
+  // não é mais monitorado; o resultado fica só no histórico).
   const revisarPorAds =
+    !!ctx.adsAtivo &&
     !adsAprendendo &&
     teste.status !== "andamento" &&
     adsForaTeste.length === 2 &&

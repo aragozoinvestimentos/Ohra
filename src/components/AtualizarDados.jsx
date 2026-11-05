@@ -6,6 +6,7 @@ import { usePedidos } from "../hooks/usePedidos.js";
 import { enriquecer } from "../lib/pedidos.js";
 import { hojeSP } from "../lib/datas.js";
 import CentralImportacao from "./CentralImportacao.jsx";
+import AvisosDaTela from "./AvisosDaTela.jsx";
 import { abrirEstoque } from "../lib/estoqueNav.js";
 import { useSubAba } from "../lib/subAbas.js";
 
@@ -23,6 +24,7 @@ export default function AtualizarDados({ onToast }) {
   const linhas = useMemo(() => enriquecer(ped.pedidos, { itens: esc.itens, canais: esc.canais, cfgDoProduto: esc.cfgDoProduto, opcaoDoSku }), [ped.pedidos, esc.itens, esc.canais, esc.cfgDoProduto, opcaoDoSku]);
   return (
     <>
+      {vista === "importar" && <AvisosDaTela chaves={["importar", "analise:importar"]} onToast={onToast} />}
       <CentralImportacao esc={esc} ped={ped} linhas={linhas} linhasAds={cres.linhasAds} cres={cres} hoje={hoje} onToast={onToast} vista={vista} />
       {vista === "importar" && <div className="panel">
         <h3>Nota de compra (XML ou PDF) — revenda</h3>
