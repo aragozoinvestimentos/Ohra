@@ -6,7 +6,7 @@ import { estadoRampa, metricasFunil, referenciaFunilLoja, regrasDaLoja } from ".
 import { linhasComissao, resumoSemana } from "../lib/afiliados.js";
 import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
-import { periodoAjustado, economiaRealAds, aplicarCrescer, estadoCrescer, periodoLigado } from "../lib/ads.js";
+import { periodoAjustado, economiaRealAds, aplicarCrescer, estadoCrescer, periodoLigado, classesDeAds } from "../lib/ads.js";
 import { lucroDaLinha } from "../lib/resumoLoja.js";
 import { adsNaJanela, pausasDoPeriodo, valoresAtuais, avaliarAds, avaliarAdsLoja, capacidadeDoItem, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, roasEmpate, tetoDaLoja } from "../lib/ads.js";
 import { useLembretes } from "./useLembretes.js";
@@ -751,9 +751,26 @@ function useCalculoCrescimento() {
       }
       return estadoCrescer(cfg, hoje, perda);
     };
-    const linhasA = base.map((b) => ({ ...b, ...economiaRealAds(b.periodos, hoje, { preco: b.preco, lucro: b.lucro }), efeito: efeitoDaLinha(b), crescer: crescerDe(b) })).map((b) => ({
+    // Campeão × reserva (05/11/2026, método do Luan): lucro dos pedidos de 90 dias
+    // (curva A) e vendas pagas por dia nos 14 dias — mesma medição do "Surtiu efeito?".
+    const classes = classesDeAds(
+      base.map((b) => {
+        const { medir } = medidorDe(b);
+        return { chave: b.chave, canalId: b.canal.id, lucro90: medir(somarDias(hoje, -90), hoje).lucro, ritmo14: medir(somarDias(hoje, -14), somarDias(hoje, -1)).un / 14 };
+      }),
+      regrasA
+    );
+    // Anúncio com UMA avaliação e ela de 1★ (Luan: "morreu esse anúncio — recrie").
+    const umaEstrelaRuim = (b) => {
+      const est = (b.rampa || b.rampaGrupo)?.est;
+      if (est && num(est.avaliacoesTotal) === 1) return num(est.nota) > 0 && num(est.nota) <= 1;
+      const t = b.tipo === "grupo" ? "grupo" : b.tipo;
+      const ult = [...(avalH.registros || [])].filter((a) => a.item_tipo === t && a.item_id === b.id && a.canal_id === b.canal.id).pop();
+      return !!ult && num(ult.total) === 1 && (num(ult.e1) === 1 || (num(ult.nota) > 0 && num(ult.nota) <= 1));
+    };
+    const linhasA = base.map((b) => ({ ...b, ...economiaRealAds(b.periodos, hoje, { preco: b.preco, lucro: b.lucro }), efeito: efeitoDaLinha(b), crescer: crescerDe(b), classe: classes[b.chave] || null, umaEstrela: umaEstrelaRuim(b) })).map((b) => ({
       ...b,
-      av: aplicarCrescer(avaliarAds({ efeito: b.efeito, preco: b.precoAds, lucro: b.lucroAds, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: (b.rampa || b.rampaGrupo)?.est.anuncio || null, hoje, regras: regrasA, tetoLoja: ignorarTeto?.[b.chave] ? null : teto, sazonal: b.sazonal, capacidadeDia: b.capacidadeDia }), b.crescer),
+      av: aplicarCrescer(avaliarAds({ efeito: b.efeito, preco: b.precoAds, lucro: b.lucroAds, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: (b.rampa || b.rampaGrupo)?.est.anuncio || (b.umaEstrela ? { titulo: "Uma única avaliação, e ela é de 1★", porOnde: "recriar o anúncio do zero (o Luan: \"essa avaliação mata o anúncio\")" } : null), hoje, regras: regrasA, tetoLoja: ignorarTeto?.[b.chave] ? null : teto, sazonal: b.sazonal, capacidadeDia: b.capacidadeDia, classe: classes[b.chave] || null, margemMin: num(cfgDoProduto(b.tipo === "produto" ? b.id : null)?.margemMin) || null }), b.crescer),
       tetoIgnorado: !!ignorarTeto?.[b.chave],
     }));
     // Lembretes de virada de fase do Ads sazonal (Início): na 1ª semana de cada fase.
@@ -802,7 +819,7 @@ function useCalculoCrescimento() {
       }
     }
     return { loja, teto, sazonal, linhas: linhasA, lojaLinha, lembretesOk: lembretesH.disponivel };
-  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsHv.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos, ignorarTeto, crescerCfg, mudancasPorRampa]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsHv.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos, ignorarTeto, crescerCfg, mudancasPorRampa, avalH.registros]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pedidosValidos = reais.linhas;
   return useMemo(

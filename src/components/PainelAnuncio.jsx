@@ -9,7 +9,7 @@ import { comCupomAtivo, cuponsAtivos, textoFaixa } from "../lib/cupomLoja.js";
 import { abrirAnuncio, abrirProduto, montarAnuncios } from "../lib/anuncios.js";
 import { irParaAba, pegarPedido } from "../lib/navegar.js";
 import { pedirPasso } from "../lib/passosPreco.js";
-import { adsNaJanela, metaSugerida, numerosDoPeriodo, REGRAS_ADS, textoAjusteAds, textoMudancaPreco, valoresAtuais } from "../lib/ads.js";
+import { adsNaJanela, numerosDoPeriodo, REGRAS_ADS, textoAjusteAds, textoMudancaPreco, valoresAtuais } from "../lib/ads.js";
 import { acaoDaRampa, proximaConferencia } from "../lib/rampaAgora.js";
 import { estadoDoAlerta, ROTULO_ESTADO } from "../lib/estados.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
@@ -24,6 +24,7 @@ import Estado from "./Estado.jsx";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { CartoesAlvoAgora, DiferencaAlvoAgora } from "./AlvoAgora.jsx";
+import { ReguasRoas, CasosAds } from "./ReguasAds.jsx";
 import { CarrinhoVenda, CartaoDiagnostico, FunilQuatro } from "./Diagnostico.jsx";
 import { configCalendario, proximaCampanha } from "../lib/calendario.js";
 import HistoricoAcoes from "./HistoricoAcoes.jsx";
@@ -897,9 +898,12 @@ function AbaAds({ l, hoje, ped }) {
                 <span className="chip-ads">{vals?.automatico ? "lance automático" : vals?.meta ? `meta ${um(vals.meta)}` : "sem meta"}</span>
                 {av.pausado && <span className="chip-ads">pausado desde {dm(av.pausado.desde)}</span>}
                 {empate ? <span className="chip-ads">equilíbrio {um(empate)}</span> : null}
-                {empate ? <span className="chip-ads">meta sugerida {um(metaSugerida(empate))}</span> : null}
+                {av.reguas ? <span className="chip-ads">mínimo {um(av.reguas.minimo)}</span> : null}
+                {av.reguas?.ideal ? <span className="chip-ads">ideal {um(av.reguas.ideal)}</span> : null}
+                {av.classe ? <span className="chip-ads" title={av.classe.motivo}>{av.classe.classe === "campeao" ? "campeão" : "reserva"}</span> : null}
               </div>
               <Medidor pontos={[{ rot: "período", r: n.retorno }, { rot: "7 dias", r: ret7, ruim: ret7 != null && ret7 < 1 }]} />
+              <ReguasRoas reguas={av.reguas} preco={av.preco} lucro={av.lucro} roasShopee={roasShopee ?? n.roas} roasAjustado={aj && aj.estado !== "insuficiente" ? n.roas : null} />
               {aj && (aj.estado === "insuficiente" || aj.shopee !== n.vendas) && <p className={`hint${aj.estado === "insuficiente" ? " atencao-txt" : ""}`} style={{ margin: "4px 0 8px" }}>{textoAjusteAds(aj, roasShopee)}</p>}
               {aj?.mudanca && <p className="hint" style={{ margin: "4px 0 8px" }}>{textoMudancaPreco(aj)}</p>}
               <Kpis
@@ -910,6 +914,8 @@ function AbaAds({ l, hoje, ped }) {
                   { label: "Últimos 7 dias", valor: ret7 != null ? `${um(ret7)}×` : "—", tom: ret7 != null && ret7 < 1 ? "bad" : undefined, sub: `gasto ${BRL(j7.gasto)}` },
                 ]}
               />
+              <h4 className="pa-sub">A decisão de cada 7 dias</h4>
+              <CasosAds av={av} />
             </div>
           </div>
           <div className="panel">

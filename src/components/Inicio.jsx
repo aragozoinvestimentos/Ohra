@@ -2,7 +2,7 @@ import { comCupomAtivo, cuponsAtivos } from "../lib/cupomLoja.js";
 import { anunciosDaCampanha, situacaoDosAnuncios, avisosCampanhas, campanhaVigente, RESERVA_LIVE_PADRAO } from "../lib/campanhas.js";
 import { vendasPeloComeco } from "../lib/vinculoSku.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
-import { PLATAFORMAS } from "../lib/pedidos.js";
+import { PLATAFORMAS, somarDias } from "../lib/pedidos.js";
 import { revisoesPrecoDireto } from "../lib/revisarPreco.js";
 import { marcarPrecoRevisado } from "../lib/revisarPrecoAcoes.js";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -29,6 +29,7 @@ import { avisosDesgaste } from "../lib/farm.js";
 import { avisosManutencao } from "../lib/manutencao.js";
 import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
+import { ajustarPeriodoAds, encerrarPeriodoAds, iniciarPeriodoAds } from "../lib/adsAcoes.js";
 import { custoAmostra, padraoDoCanal, sugestoesAfiliado } from "../lib/afiliados.js";
 import { anunciosDaLoja, avisosComissaoLoja, linhasDaLoja, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
 import { agruparPorProduto, ehAvisoDeDados, montarPendencias, notaDoAviso, produtoDoAviso, situacaoDados } from "../lib/inicio.js";
@@ -215,6 +216,19 @@ export default function Inicio({ onIrPara, onToast }) {
     }),
     [farmAlteracoes, impressoras, farmConfig, hoje, manutH.disponivel, manutH.carregando, manutH.registros]
   );
+  // 7º dia do lance automático / último dia do teste (05/11/2026): manter ou encerrar.
+  async function manterAds7(a) {
+    let r;
+    if (a.tipo === "teste") {
+      r = await encerrarPeriodoAds(a.periodo, { fim: hoje, motivo: "teste concluído — manteve o Ads", rampa: a.rampa });
+      if (r.ok) r = await iniciarPeriodoAds({ lojaId, tipo: a.item.tipo, id: a.item.id, canalId: a.item.canalId, inicio: somarDias(hoje, 1), orcamento: a.orcamento, meta: a.novaMeta, nota: "depois do teste de lançamento (manteve no 7º dia)" });
+    } else r = await ajustarPeriodoAds(a.periodo, { data: hoje, orcamento: a.orcamento, meta: a.novaMeta, motivo: a.abaixo ? "7º dia: manteve mesmo abaixo do mínimo" : "7º dia: manteve — virou meta de ROAS" });
+    onToast?.(r.ok ? `Ads mantido${a.novaMeta ? ` com meta ${String(a.novaMeta).replace(".", ",")}` : ""} — ajuste igual na Shopee (entre 22h e meia-noite).` : `Não foi possível salvar: ${r.msg}`);
+  }
+  async function encerrarAds7(a) {
+    const r = await encerrarPeriodoAds(a.periodo, { fim: hoje, motivo: a.tipo === "teste" ? "teste concluído — seguir no orgânico" : "7º dia: encerrou", rampa: a.rampa });
+    onToast?.(r.ok ? "Período de Ads encerrado — pause também na Shopee." : `Não foi possível encerrar: ${r.msg}`);
+  }
   async function ciente(c) {
     const { error } = await supabase.from("impressoras").update({ [c.campo]: true }).eq("id", c.impressoraId);
     if (error) onToast?.(`Não foi possível marcar: ${error.message}`);
@@ -569,6 +583,16 @@ export default function Inicio({ onIrPara, onToast }) {
           >
             ✓ revisado, manter o preço
           </button>
+        )}
+        {p.ads7 && (
+          <>
+            <button type="button" className="btn btn-mini primary" onClick={() => manterAds7(p.ads7)} title={p.ads7.tipo === "teste" ? "Conclui o teste e abre um período normal com o mesmo orçamento e a meta mostrada" : "Registra a meta de ROAS — o período continua"}>
+              Manter{p.ads7.novaMeta ? ` (meta ${String(p.ads7.novaMeta).replace(".", ",")})` : ""}
+            </button>
+            <button type="button" className="btn btn-mini" onClick={() => encerrarAds7(p.ads7)} title="Encerra o período de Ads (o histórico fica guardado). Pause na Shopee também.">
+              Encerrar
+            </button>
+          </>
         )}
         {p.ciente && (
           <button type="button" className="link-btn" onClick={() => ciente(p.ciente)} title="Esse aviso não volta mais pra esta impressora.">

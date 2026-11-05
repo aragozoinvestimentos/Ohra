@@ -17,7 +17,7 @@ import { resultadoNoPreco, resolverTaxasNoPreco } from "../src/lib/calc.js";
 import { calcularAnuncio, calcularEscada, configEscada, lucroNoPreco, precoPorMarkup, r5090perto, r90perto, r90up } from "../src/lib/escada.js";
 import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
 import { quebraLucro } from "../src/lib/precoAgora.js";
-import { avaliarAds, degrauAnterior, economiaRealAds, numerosDoPeriodo, textoMudancaPreco, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas } from "../src/lib/ads.js";
+import { avaliarAds, degrauAnterior, economiaRealAds, numerosDoPeriodo, textoMudancaPreco, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas, reguasRoas, sobraDoAds, pegaFimDeMes, classesDeAds } from "../src/lib/ads.js";
 import { interpretarAds, juntarAds, somarJanelasAds } from "../src/lib/relatorioShopee.js";
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
 import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
@@ -138,10 +138,59 @@ describe("Ads", () => {
     expect(passoDaEscada(1.5)).toBe(0.2);
     expect(passoDaEscada(2.5)).toBe(0.3);
   });
-  it("descer por nível: volta pro orçamento anterior, nunca abaixo de R$ 10", () => {
-    expect(degrauAnterior({ orcamento_diario: 10, ajustes: [{ orcamento: 12 }] }, 12)).toBe(10);
-    expect(degrauAnterior({ orcamento_diario: 20, ajustes: [] }, 20)).toBe(16);
-    expect(degrauAnterior({ orcamento_diario: 11, ajustes: [] }, 11)).toBe(10);
+  it("descer por nível: volta pro orçamento anterior, nunca abaixo de R$ 15", () => {
+    expect(degrauAnterior({ orcamento_diario: 15, ajustes: [{ orcamento: 18 }] }, 18)).toBe(15);
+    expect(degrauAnterior({ orcamento_diario: 25, ajustes: [] }, 25)).toBe(20);
+    expect(degrauAnterior({ orcamento_diario: 16, ajustes: [] }, 16)).toBe(15);
+  });
+  it("três réguas de ROAS (calculadora do Luan: margem 46% → 2,18 · 3,23 · 6,26)", () => {
+    const r = reguasRoas(100, 46);
+    expect(r.minimo).toBe(2.18);
+    expect(r.ideal).toBe(3.23);
+    expect(r.excelente).toBe(6.25);
+    const k = reguasRoas(100, 28.5, 0.15);
+    expect(k.minimo).toBe(3.51);
+    expect(k.ideal).toBe(7.41);
+    expect(k.excelente).toBe(null);
+    expect(reguasRoas(100, 12, 0.15).naoIndicado).toBe(true);
+    expect(Math.round(sobraDoAds(100, 46, 3.23).margem * 100)).toBe(15);
+  });
+  it("decisão de 7 dias pelo método do Luan (4 casos + vermelho)", () => {
+    const hoje = "2026-11-20";
+    const mk = (gastoDia, vendasTot, shopeeTot) => {
+      const hist = [];
+      for (let d = 1; d <= 19; d++) {
+        const ate = `2026-11-${String(d).padStart(2, "0")}`;
+        hist.push({ ate, gasto: gastoDia * d, cliques: 30 * d, vendas: Math.round((vendasTot * d) / 19), em: ate });
+      }
+      const last = hist.pop();
+      const p = { id: 1, item_tipo: "produto", item_id: "x", canal_id: "c", inicio: "2026-11-01", tipo: "normal", orcamento_diario: 30, meta_roas: 3.7, ajustes: [], parcial: { ...last, historico: hist } };
+      p.parcialShopee = { ...p.parcial, vendas: shopeeTot, historico: hist.map((h) => ({ ...h, vendas: Math.round((shopeeTot * Number(h.ate.slice(8))) / 19) })) };
+      return p;
+    };
+    const av = (g, v, s) => avaliarAds({ preco: 30.68, lucro: 8.75, periodos: [mk(g, v, s)], hoje, margemMin: 0.15 });
+    const a = av(29, 72, 77);
+    expect(a.chave).toBe("aumentar");
+    expect(a.novoOrcamento).toBe(36);
+    expect(a.novaMeta).toBe(4.5);
+    expect(av(10, 25, 27).chave).toBe("pouca-procura"); // 3,7 − 10% = 3,3 < mínimo 3,51 → não baixa
+    expect(av(29, 54, 55).chave).toBe("abaixo-minimo");
+    expect(av(29, 65, 66).caso.chave).toBe("amarelo");
+    expect(av(12, 27, 27).caso.chave).toBe("teto");
+  });
+  it("fim de mês: dia 25 ao penúltimo dia", () => {
+    expect(pegaFimDeMes("2026-11-20", "2026-11-26")).toBe(true);
+    expect(pegaFimDeMes("2026-11-10", "2026-11-16")).toBe(false);
+    expect(pegaFimDeMes("2026-11-30", "2026-12-06")).toBe(false);
+  });
+  it("campeão × reserva: curva A, ≥ 1/dia e ≥ 3× a média dos outros", () => {
+    const c = classesDeAds([
+      { chave: "a", canalId: 1, lucro90: 500, ritmo14: 3 },
+      { chave: "b", canalId: 1, lucro90: 100, ritmo14: 0.5 },
+      { chave: "c", canalId: 1, lucro90: 50, ritmo14: 0.5 },
+    ]);
+    expect(c.a.classe).toBe("campeao");
+    expect(c.b.classe).toBe("reserva");
   });
   it("teto da loja: R$ 150 fixo até 1 mil; acima, 12% só no pedaço", () => {
     expect(tetoPorFaixas(500)).toBe(150);

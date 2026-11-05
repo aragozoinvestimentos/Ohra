@@ -53,7 +53,7 @@ export const REGRAS_PADRAO = {
   testeMin: 30, // orçamento mínimo (R$)
   testeMax: 100, // orçamento máximo (R$)
   testeDias: 7, // prazo do teste
-  testeMinDiario: 10, // orçamento diário mínimo do Ads na plataforma (R$) — a Shopee exige R$10/dia
+  testeMinDiario: 15, // orçamento diário mínimo do Ads na plataforma (R$) — a Shopee pede R$15/dia (05/11/2026)
   testeCliquesSemVenda: 50, // tantos cliques sem venda = problema é o anúncio
   // Acima do alvo
   acimaDias: 14, // dias no alvo antes de sugerir testar acima / duração do teste acima
@@ -63,8 +63,8 @@ export const REGRAS_PADRAO = {
   // Funil do anúncio (Impressões de Produto → Cliques Por Produto → Pedidos)
   funilDiasMin: 14, // dias desde o início da rampa antes de diagnosticar
   funilVisMin: 300, // impressões de produto em 2 semanas abaixo disso = pouca exibição
-  funilCtrMin: 0.02, // CTR mínimo (referência geral)
-  funilConvMin: 0.01, // taxa de conversão de pedidos mínima (referência geral)
+  funilCtrMin: 0.03, // CTR mínimo (referência geral)
+  funilConvMin: 0.0165, // taxa de conversão de pedidos mínima (referência geral)
   funilVisitasMin: 50, // cliques em 2 semanas pra julgar a conversão
 };
 

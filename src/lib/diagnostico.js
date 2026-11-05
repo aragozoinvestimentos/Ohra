@@ -22,7 +22,7 @@ export const REGRAS_DIAG = {
   impMin: 300, // impressões no período pra opinar sobre a vitrine
   visitMin: 50, // visitantes pra opinar sobre a página
   carrinhoMin: 15, // visitantes que puseram no carrinho pra opinar sobre o pagamento
-  ctrRef: 0.02, // CTR de referência (o mesmo funilCtrMin da Rampa)
+  ctrRef: 0.03, // CTR de referência (o mesmo funilCtrMin da Rampa)
   carrinhoRef: 0.08, // visitantes → carrinho
   pagamentoRef: 0.15, // carrinho → pagou
   convBoa: 0.03, // pedidos ÷ visitantes pra "converte bem"

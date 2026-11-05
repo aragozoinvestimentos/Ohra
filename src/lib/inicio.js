@@ -427,6 +427,22 @@ export function montarPendencias({
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|conferir`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()} do Ads`, texto: `${l.canal.nome} · pra saber se já vendeu (sem venda em 3 dias = parar e arrumar o anúncio)`, ir: { aba: "importar" }, rotulo: "Abrir importação" });
       continue;
     }
+    // 7º dia (05/11/2026, pedido do Gustavo): lance automático ou teste de
+    // lançamento → "manter o Ads ou encerrar?" com os dois botões no próprio aviso.
+    const orcAtual = Number(av.numeros?.orcamento) || Number(av.ativo?.orcamento_diario) || null;
+    const ads7 = (extra) => ({ periodo: av.ativo, item: { tipo: l.tipo, id: l.id, canalId: l.canal.id }, rampa: l.rampa?.r || null, orcamento: orcAtual, ...extra });
+    if (av.chave === "teste" && av.ativo?.fim && av.ativo.fim <= hoje) {
+      const n = av.numeros || {};
+      const roas = n.roas != null ? n.roas.toFixed(1).replace(".", ",") : "—";
+      const metaT = av.reguas ? Math.max(Math.ceil(av.reguas.minimo * 10 - 1e-9) / 10, n.roas ? Math.floor(n.roas * 10) / 10 : 0) : null;
+      add({ valor: valorAds(l, hoje), id: `ads7|${l.chave}|teste|${av.ativo.id}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: hoje é o último dia do teste de lançamento`, texto: `${l.canal.nome} · ${Math.round(Number(n.vendas) || 0)} vendas via Ads · ROAS ${roas} — manter o Ads ou encerrar e seguir no orgânico?`, ir: irL, rotulo: "Abrir Ads", ads7: ads7({ tipo: "teste", novaMeta: metaT }) });
+      continue;
+    }
+    if (av.seteDias && (av.chave === "virar-meta" || av.chave === "abaixo-minimo")) {
+      const metaM = av.novaMeta || (av.reguas ? Math.ceil(av.reguas.minimo * 10 - 1e-9) / 10 : null);
+      add({ valor: valorAds(l, hoje), id: `ads7|${l.chave}|auto`, grupo: av.estado === "oportunidade" ? "oportunidade" : "rotina", ordem: 1, tom: av.estado === "oportunidade" ? "good" : "warn", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · fim dos 7 dias no lance automático — manter o Ads ou encerrar?`, ir: irL, rotulo: "Ver", ads7: ads7({ tipo: "auto", novaMeta: metaM, abaixo: av.chave === "abaixo-minimo" }) });
+      continue;
+    }
     if (av.chave === "virar-meta") {
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|virar-meta`, grupo: av.estado === "oportunidade" ? "oportunidade" : "rotina", ordem: 1, tom: av.estado === "oportunidade" ? "good" : "warn", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · fim dos 7 dias no lance automático`, ir: irL, rotulo: "Ver" });
       continue;
@@ -437,14 +453,20 @@ export function montarPendencias({
     }
     if (av.chave === "pausar-revisar")
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: Ads com cliques sem venda`, texto: `${l.canal.nome} · ${av.titulo}`, ir: irL, rotulo: "Abrir Ads" });
-    else if (["pausar", "reduzir", "inviavel-ativo", "subir-meta", "arrumar-anuncio"].includes(av.chave))
+    else if (av.chave === "pausar")
+      add({ valor: valorAds(l, hoje), id: `ads-desativar|${l.chave}`, grupo: "resolver", ordem: 4, tom: "bad", titulo: `${l.item.nome}: desative o Ads`, texto: `${l.canal.nome} · 2 medições seguidas abaixo do ROAS mínimo (${(av.minimo ?? 0).toFixed(1).replace(".", ",")}) — o Ads está dando prejuízo`, ir: irL, rotulo: "Abrir Ads" });
+    else if (av.chave === "abaixo-minimo")
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|abaixo-minimo`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: Ads abaixo do mínimo — pause e revise`, texto: `${l.canal.nome} · só pagos abaixo do ROAS mínimo (${(av.minimo ?? 0).toFixed(1).replace(".", ",")}); pelo método do Luan, revise antes de continuar investindo`, ir: irL, rotulo: "Abrir Ads" });
+    else if (["amarelo", "teto-anuncio"].includes(av.chave))
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.replace(/^Hoje à noite: /, "")}`, texto: `${l.canal.nome} · ${av.chave === "amarelo" ? "abaixo da meta da Shopee" : "achou o teto do anúncio"} · mude entre 22h e meia-noite`, ir: irL, rotulo: "Abrir Ads" });
+    else if (["reduzir", "inviavel-ativo", "subir-meta", "arrumar-anuncio"].includes(av.chave))
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · Ads abaixo ${av.sazonal && av.minimo !== av.empate ? "do mínimo da temporada" : "do ROAS de equilíbrio"} (${(av.minimo ?? av.empate) ? (av.minimo ?? av.empate).toFixed(1).replace(".", ",") : "—"})`, ir: irL, rotulo: "Abrir Ads" });
     else if (av.chave === "segurar-producao")
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|producao`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: segurar o Ads`, texto: `${l.canal.nome} · as vendas subiram e a produção não acompanha`, ir: irL, rotulo: "Abrir Ads" });
     else if (["pausar-corte", "atualizar-andamento"].includes(av.chave))
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|${av.chave}`, grupo: "rotina", ordem: 1, tom: "warn", titulo: `${l.item.nome}: ${av.titulo.toLowerCase()}`, texto: `${l.canal.nome} · ${av.chave === "pausar-corte" ? "último dia de entrega passou" : "fase Alavancar decide a cada 3–4 dias"}`, ir: irL, rotulo: "Abrir Ads" });
     else if (["aumentar", "meta-alta"].includes(av.chave))
-      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? `retorno ${av.numeros?.retorno != null ? av.numeros.retorno.toFixed(1).replace(".", ",") : "—"}× o equilíbrio` : "a Shopee gastou pouco do orçamento"} · mude entre 22h e meia-noite`, ir: irL, rotulo: "Abrir Ads" });
+      add({ valor: valorAds(l, hoje), id: `ads|${l.chave}`, grupo: "oportunidade", ordem: 1, tom: "good", titulo: `${l.item.nome}: ${av.titulo}`, texto: `${l.canal.nome} · ${av.chave === "aumentar" ? "bateu a meta e gastou o orçamento" : "bateu a meta, mas a Shopee gastou pouco do orçamento"} · mude entre 22h e meia-noite`, ir: irL, rotulo: "Abrir Ads" });
     if (av.avisoMeta)
       add({ valor: valorAds(l, hoje), id: `ads|${l.chave}|meta-alta-inicio`, grupo: "rotina", ordem: 2, tom: "warn", titulo: `${l.item.nome}: meta de ROAS alta pra começar`, texto: `${l.canal.nome} · meta ${av.avisoMeta.meta.toFixed(1).replace(".", ",")} — comece com ${av.avisoMeta.sugerida.toFixed(1).replace(".", ",")}`, ir: irL, rotulo: "Abrir Ads" });
   }
@@ -581,7 +603,7 @@ export function montarPendencias({
     });
   for (const l of rampas) {
     const t = l.est.teste;
-    if (t?.status === "andamento" && t.diasRestantes <= 2)
+    if (t?.status === "andamento" && t.diasRestantes <= 2 && t.diasRestantes > 0)
       add({
         id: `teste-acabando|${l.r.id}`,
         grupo: "rotina",

@@ -29,7 +29,7 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, loja =
     modo: loja ? "meta" : autoPadrao && !comoTeste0 ? "auto" : "meta",
     inicio: hoje,
     orcamento: loja ? "" : virg(comoTeste0 ? teste.orcamentoDia : regrasA.minDiario),
-    meta: loja ? virg(av?.metaSugerida ?? "") : av?.empate ? virg(metaSugerida(av.minimo ?? av.empate, regrasA)) : "",
+    meta: loja ? virg(av?.metaSugerida ?? "") : av?.reguas ? virg(av.reguas.ideal ? Math.ceil(av.reguas.ideal * 10 - 1e-9) / 10 : Math.ceil(av.reguas.minimo * 10 - 1e-9) / 10) : av?.empate ? virg(metaSugerida(av.minimo ?? av.empate, regrasA)) : "",
     fim: comoTeste0 ? somarDiasIso(hoje, teste.dias - 1) : "",
     nota: "",
     comoTeste: comoTeste0,
@@ -46,7 +46,7 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, loja =
   const metaBaixa = !auto && av?.empate && f.meta !== "" && num(f.meta) < av.empate;
   // Meta alta pra começar (> 2× o equilíbrio): a Shopee quase não entrega.
   const refMeta = av?.minimo ?? av?.empate;
-  const metaAlta = !loja && !auto && !f.comoTeste && refMeta && f.meta !== "" && metaAltaDemais(num(f.meta), refMeta, regrasA);
+  const metaAlta = !loja && !auto && !f.comoTeste && refMeta && f.meta !== "" && metaAltaDemais(num(f.meta), refMeta, regrasA) && !(av?.reguas?.ideal && num(f.meta) <= av.reguas.ideal + 0.05);
   const dias = f.fim && f.inicio ? Math.round((new Date(`${f.fim}T12:00:00`) - new Date(`${f.inicio}T12:00:00`)) / 86400000) + 1 : null;
   return (
     <EditarDialog
@@ -91,7 +91,7 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, loja =
           : auto
           ? "Na Shopee: Shopee Ads → Criar → GMV Max – Lance Automático → este produto → orçamento baixo. Dia 3 sem venda = pare e arrume o anúncio; dia 7 = troque pra meta de ROAS."
           : "Registre o que você configurou na plataforma. Os 7 primeiros dias são de aprendizado: o app não sugere mexer."}
-        {av?.empate && !loja ? ` ROAS de equilíbrio: ${um(av.empate)} · meta sugerida ${um(metaSugerida(refMeta, regrasA))} (equilíbrio × 1,3).` : ""}
+        {av?.reguas && !loja ? ` Réguas deste produto: mínimo ${um(av.reguas.minimo)} (empate) · ideal ${av.reguas.ideal ? um(av.reguas.ideal) : "inatingível"} (sobra 15%) · excelente ${av.reguas.excelente ? um(av.reguas.excelente) : "inatingível"} (sobra 30%). Orçamento mínimo ${BRL(regrasA.minDiario)}/dia.` : av?.empate && !loja ? ` ROAS de equilíbrio: ${um(av.empate)}.` : ""}
       </p>
       <div className="grid-auto">
         <div className="field"><label>Início</label><input type="date" value={f.inicio} onChange={set("inicio")} /></div>
@@ -110,6 +110,8 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, loja =
           </button>
         </div>
       )}
+      {!loja && av?.reguas?.naoIndicado && <div className="alerta alerta-warn"><b>Ads não indicado neste produto</b>Margem antes do Ads de {Math.round(av.reguas.margem * 100)}%, abaixo da sua margem mínima ({Math.round(num(av.reguas.margemMin) * 100)}%): o risco de ficar no zero a zero é grande. Pode ligar mesmo assim.</div>}
+      {!loja && av?.classe?.classe === "reserva" && !f.comoTeste && <div className="alerta alerta-info"><b>Produto reserva</b>{av.classe.motivo}. Pelo método do Luan ele vende pela GMV Max da Loja; Ads próprio aqui é "forçar" — pode, se quiser.</div>}
       {num(f.orcamento) > 0 && num(f.orcamento) < regrasA.minDiario && <div className="alerta alerta-warn"><b>Abaixo do mínimo da Shopee</b>A Shopee exige no mínimo {BRL(regrasA.minDiario)}/dia.</div>}
       <div className="field"><label>Observação (opcional)</label><input type="text" value={f.nota} onChange={set("nota")} placeholder="ex.: GMV Max, meta de ROAS" /></div>
     </EditarDialog>

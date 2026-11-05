@@ -188,6 +188,18 @@ export function responderPergunta(pergunta, ctx) {
       numeros: { meta: kpis.meta, vendas: kpis.vendas, ritmo: kpis.ritmo },
     };
   }
+  // 4b) Ads pelo método do Luan (05/11/2026): réguas de ROAS e campeão × reserva.
+  if (/roas|regua|reserva|campe[aã]o.*ads|ads.*campe/.test(t)) {
+    const ls = (linhasAds?.linhas || []).filter((l) => l.av?.reguas);
+    const r1 = (v) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 }));
+    const l = ls.find((x) => t.includes(normalizar(String(x.item?.nome || "").replace(/^Anúncio: /, ""))));
+    if (l) {
+      const g = l.av.reguas;
+      return { entendeu: true, texto: `${l.item.nome} (${l.canal.nome}): ROAS mínimo ${r1(g.minimo)} (empate) · ideal ${g.ideal ? r1(g.ideal) : "inatingível"} (sobra 15%) · excelente ${g.excelente ? r1(g.excelente) : "inatingível"} (sobra 30%). ${l.classe ? `${l.classe.classe === "campeao" ? "Campeão" : "Reserva"}: ${l.classe.motivo}.` : ""} Agora: ${l.av.titulo}.`, numeros: null };
+    }
+    const camp = ls.filter((x) => x.classe?.classe === "campeao").map((x) => x.item.nome);
+    return { entendeu: true, texto: `Campeões (Ads individual): ${camp.length ? camp.join(", ") : "nenhum ainda"}. O resto é reserva e vende pela GMV Max da Loja (meta 30). Pergunte "ROAS do <produto>" pra ver as 3 réguas dele.`, numeros: null };
+  }
   // 5) Ads
   if (/\bads\b|anuncio pago|gastei|gasto/.test(t) && !/lucro/.test(t)) {
     const g = adsNoPeriodo(linhasAds, per.de, per.ate);
@@ -515,6 +527,8 @@ export const CONVERSAS = [
   { prefixo: "analise|avaliacoes", de: "ze", para: "nina", fala: "Chegaram avaliações?", resposta: "Vou conferir", proposta: "Atualizar as avaliações dos anúncios que venderam — a rampa usa a nota pra decidir." },
   { prefixo: "ads|andamento", de: "leo", para: "celia", fala: "O CSV do Ads atrasou", resposta: "Sem ele não meço o ROAS", proposta: "Enviar o CSV do Shopee Ads (atalho “Ontem”) pra medir o retorno de hoje." },
   { prefixo: "ads|recarregar", de: "leo", para: "bia", fala: "Saldo de Ads acabando", resposta: "Separo a recarga", proposta: "Recarregar o Ads na Shopee e lançar como recarga no Caixa." },
+  { prefixo: "ads7|", de: "leo", para: "ceo2", fala: "Hoje é o 7º dia do Ads!", resposta: "Mantém ou encerra?", proposta: "Decidir no Início: manter o Ads (vira meta de ROAS) ou encerrar e seguir no orgânico — os dois botões estão no próprio aviso." },
+  { prefixo: "ads-desativar|", de: "leo", para: "ceo1", fala: "Ads no prejuízo há 2 medições", resposta: "Então desliga", proposta: "Desativar o Ads desse anúncio: 2 medições seguidas abaixo do ROAS mínimo (pelo método do Luan, revise antes de investir de novo)." },
   { prefixo: "ads|teto", de: "bia", para: "leo", fala: "Ads passou do teto", resposta: "Vou rever as campanhas", proposta: "Rever as campanhas que menos retornam até voltar pro teto do mês." },
   { prefixo: "farm-manut|", de: "teo", para: "bia", fala: "Impressora pede manutenção", resposta: "A reserva cobre", proposta: "Fazer a manutenção da lista (Minha farm) — parar a impressora ~1 h evita falha de impressão." },
   { prefixo: "farm|custo", de: "teo", para: "rafa", fala: "O custo da farm subiu", resposta: "Reviso os preços", proposta: "Revisar os produtos que ficaram abaixo do mínimo com o custo novo (ajustar pela promo)." },

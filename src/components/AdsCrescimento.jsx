@@ -18,6 +18,7 @@ import CanalTag from "./CanalTag.jsx";
 import Estado from "./Estado.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import { EncerrarAdsDialog, NAO_RECOMENDA, PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
+import { ReguasRoas, CasosAds } from "./ReguasAds.jsx";
 import { ajustarPeriodoAds, despausarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, reviseiSemVendaAds, salvarAndamentoAds, corrigirSemanaAds } from "../lib/adsAcoes.js";
 import { supabase } from "../lib/supabaseClient.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -60,7 +61,7 @@ function secaoAds(av, l) {
   if (av.estado === "oportunidade") return "oport";
   return av.ativo ? "acomp" : "sem";
 }
-const PAUSAR = new Set(["pausar", "pausar-revisar", "pausar-corte", "inviavel-ativo"]);
+const PAUSAR = new Set(["pausar", "pausar-revisar", "pausar-corte", "inviavel-ativo"]); // "pausar" = desative (2 medições abaixo do mínimo)
 /** Ação da linha: { k: novo|ajuste|encerrar|abrir, botao, ajuste?, depois } */
 function acaoDoAds(av) {
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
@@ -77,13 +78,23 @@ function acaoDoAds(av) {
     if (av.chave === "queda-ads" && av.novoOrcamento)
       return { k: "ajuste", botao: `Reduzi pra ${BRL(av.novoOrcamento)}/dia`, ajuste: { orcamento: av.novoOrcamento, meta: vals.meta, motivo: "reduzi: vendas pelo Ads caíram há 7 dias" }, depois: DEPOIS_AJ };
     if (av.chave === "queda-ads-sinal") return { k: "abrir", botao: "Ver o que conferir", depois: "Só avalie a causa — o app pede pra agir se seguir assim por 7 dias." };
-    if ((av.chave === "aumentar" || av.chave === "reduzir") && av.novoOrcamento)
+    if (av.chave === "aumentar" && av.novoOrcamento)
       return {
         k: "ajuste",
-        botao: `${av.chave === "aumentar" ? "Aumentei" : "Reduzi"} pra ${BRL(av.novoOrcamento)}/dia`,
-        ajuste: { orcamento: av.novoOrcamento, meta: vals.meta, motivo: av.chave === "aumentar" ? `${av.titulo.split(" →")[0].toLowerCase()} (retorno ${um(n.retorno)}×)` : "reduzi: ROAS abaixo do equilíbrio" },
+        botao: `Aumentei: ${BRL(av.novoOrcamento)}/dia${av.novaMeta ? ` · meta ${um(av.novaMeta)}` : ""}`,
+        ajuste: { orcamento: av.novoOrcamento, meta: av.novaMeta || vals.meta, motivo: `bateu a meta e gastou o orçamento: +20% no orçamento e na meta (retorno ${um(n.retorno)}×)` },
         depois: DEPOIS_AJ,
       };
+    if (av.chave === "reduzir" && av.novoOrcamento)
+      return { k: "ajuste", botao: `Reduzi pra ${BRL(av.novoOrcamento)}/dia`, ajuste: { orcamento: av.novoOrcamento, meta: vals.meta, motivo: "reduzi: ROAS abaixo do equilíbrio" }, depois: DEPOIS_AJ };
+    if ((av.chave === "amarelo" || av.chave === "teto-anuncio") && (av.novaMeta || av.novoOrcamento))
+      return {
+        k: "ajuste",
+        botao: `Ajustei: ${av.novaMeta ? `meta ${um(av.novaMeta)}` : ""}${av.novaMeta && av.novoOrcamento ? " · " : ""}${av.novoOrcamento ? `${BRL(av.novoOrcamento)}/dia` : ""}`,
+        ajuste: { orcamento: av.novoOrcamento || vals.orcamento, meta: av.novaMeta || vals.meta, motivo: av.chave === "amarelo" ? "abaixo da meta: meta = o que bateu + 15%, orçamento pela metade" : "achou o teto: meta = o que bateu, orçamento = o que gastou" },
+        depois: DEPOIS_AJ,
+      };
+    if (av.chave === "abaixo-minimo") return { k: "pausar", botao: "Pausei pra revisar", depois: "Pause na Shopee e revise o anúncio, o preço e a oferta; quando religar, marque \"Despausei\"." };
     if (av.chave === "subir-meta") return { k: "ajuste", botao: `Subi a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "subi a meta: ROAS abaixo do equilíbrio no mínimo diário" }, depois: DEPOIS_AJ };
     if (av.chave === "meta-alta") return { k: "ajuste", botao: `Baixei a meta pra ${um(av.novaMeta)}`, ajuste: { orcamento: vals.orcamento, meta: av.novaMeta, motivo: "baixei a meta: a Shopee gastou pouco" }, depois: DEPOIS_AJ };
     if (av.avisoMeta) return { k: "ajuste", botao: `Registrar ajuste: meta ${um(av.avisoMeta.sugerida)}`, ajuste: { orcamento: vals.orcamento, meta: av.avisoMeta.sugerida, motivo: "meta alta pra começar (equilíbrio × 1,3)" }, depois: DEPOIS_AJ };
@@ -91,7 +102,7 @@ function acaoDoAds(av) {
     return { k: "abrir", botao: null };
   }
   if (av.chave === "loja-desligada") return { k: "novo", botao: "+ Ligar campanha da loja", depois: "Depois de ligar na Shopee (GMV Max da Loja, meta alta, orçamento ilimitado): registre aqui." };
-  if (["pode", "ligar-sazonal"].includes(av.chave)) return { k: "novo", botao: "+ Novo período", depois: "Depois de ligar na Shopee: registre o período aqui com o orçamento e a meta que usou." };
+  if (["pode", "ligar-sazonal", "reserva", "nao-indicado"].includes(av.chave)) return { k: "novo", botao: "+ Novo período", depois: "Depois de ligar na Shopee: registre o período aqui com o orçamento e a meta que usou." };
   if (av.chave === "arrumar") return { k: "abrir", botao: null };
   return { k: "abrir", botao: null };
 }
@@ -204,6 +215,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   const fazerLinha = (l) => {
     const a = acaoDoAds(l.av);
     if (a.k === "despausar") rodar(() => despausarPeriodoAds(l.av.ativo, hoje), "Despausado — a conferência recomeça em 3 dias");
+    else if (a.k === "pausar") rodar(() => pausarPeriodoAds(l.av.ativo, hoje), "Pausado pra revisar — o período continua; marque “Despausei” quando religar");
     else if (a.k === "andamento") setAndamentoDlg(true);
     else if (a.k === "ajuste") setAjusteDlg({ linha: l, ...a.ajuste });
     else if (a.k === "encerrar") setEncerrarDlg({ linha: l });
@@ -431,13 +443,14 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
             texto={
               <>
                 Decisão ao vivo pelo andamento (CSV do Shopee Ads) ou pela semana registrada. Ads é investimento: não entra no preço.
-                <br />• <b>ROAS de equilíbrio</b> = preço de agora ÷ lucro por venda (antes do Ads): abaixo dele, o Ads tira lucro. <b>Meta sugerida</b> = equilíbrio × 1,3.
-                <br />• <b>Retorno</b> = ROAS ÷ equilíbrio = quanto de lucro cada R$ 1 investido trouxe.
-                <br />• <b>7 dias de aprendizado</b> no começo do período; depois de cada ajuste, nova decisão em <b>{regrasA.decisaoDias || 7} dias</b> (sobe ou desce no máximo 1× por semana).
-                <br />• Com a Shopee gastando ≥ 80% do orçamento: retorno 1–1,2× → manter; 1,2–2× → <b>+{Math.round(regrasA.aumento * 100)}%</b>; ≥ 2× → <b>+{Math.round((regrasA.aumentoMax || 0.3) * 100)}%</b> no orçamento, a meta fica (máximo — sem estouro de uma vez; sempre dentro do teto da loja e perguntando se a produção dá conta).
-                <br />• Abaixo do equilíbrio: muitos cliques e poucas vendas → arrumar o anúncio; já no mínimo de {BRL(regrasA.minDiario)}/dia → subir a meta (mais seletivo) ou pausar; senão → <b>voltar 1 degrau</b> (o orçamento de antes do último aumento) e esperar 1 semana. A Shopee não gasta o orçamento → baixar a meta (mais alcance).
-                <br />• <b>Produto novo — lance automático</b> (método do Luan): sem meta, orçamento baixo. <b>Alertas de 3 dias, só na 1ª semana</b> (do período ou depois de voltar/revisar): sem nenhuma venda, ou prejuízo forte (ROAS abaixo da metade do equilíbrio) → pare e arrume o anúncio: “Pausei pra revisar” mantém o período e as métricas. <b>Dia 7</b> → troque pra meta de ROAS = o ROAS que bateu (nunca abaixo do equilíbrio).
-                <br />• <b>Loja inteira · GMV Max da Loja</b> (linha fixa no topo): produtos sem Ads próprio, meta alta e orçamento ilimitado — o app compara o ROAS com o equilíbrio da loja.
+                <br />• <b>Três réguas de ROAS</b> (método do Luan), pela margem antes do Ads: <b>mínimo</b> = empate (abaixo dá prejuízo) · <b>ideal</b> = sobra 15% depois do Ads · <b>excelente</b> = sobra 30%.
+                <br />• <b>Duas perguntas</b>: "bateu a meta?" pelo ROAS que a <b>Shopee</b> mostra (conta não pagos — é o que o robô dela persegue); "se paga?" pelo ROAS <b>só dos pedidos pagos</b>, contra o mínimo.
+                <br />• <b>7 dias de aprendizado</b> no começo do período; depois de cada ajuste, nova decisão em <b>{regrasA.decisaoDias || 7} dias</b>.
+                <br />• Na decisão: só pagos abaixo do mínimo → <b>pause e revise</b> (2 medições seguidas = desative) · bateu a meta e gastou o orçamento → <b>+20% no orçamento e na meta</b> · bateu e não gastou → baixe a meta 10% (nunca abaixo do mínimo) · não bateu e gastou → meta = o que bateu + 15% e orçamento pela metade · não bateu e não gastou → achou o teto: meta = o que bateu, orçamento = o que gastou. Orçamento nunca abaixo de {BRL(regrasA.minDiario)}/dia.
+                <br />• <b>Fim de mês</b> (dia 25 ao penúltimo): uma medição ruim nessa janela não reduz nem baixa a meta, a não ser que as vendas caiam mais de 40% ou fique abaixo do mínimo.
+                <br />• <b>Campeão × reserva</b>: campeão = curva A (lucro de 90 dias), ≥ 1 venda paga por dia e ≥ 3× a média dos outros → Ads individual; reserva → GMV Max da Loja (meta 30).
+                <br />• <b>Produto novo — lance automático</b> (método do Luan): sem meta, orçamento baixo. <b>Alertas de 3 dias, só na 1ª semana</b> (do período ou depois de voltar/revisar): sem nenhuma venda, ou prejuízo forte (ROAS abaixo da metade do equilíbrio) → pare e arrume o anúncio: “Pausei pra revisar” mantém o período e as métricas. <b>Dia 7</b> → troque pra meta de ROAS = o ROAS que a Shopee bateu; abaixo do mínimo → pause e revise.
+                <br />• <b>Loja inteira · GMV Max da Loja</b> (linha fixa no topo): produtos reserva, meta 30 e orçamento ilimitado — o app compara o ROAS com o equilíbrio da loja.
                 <br />• <b>Anúncio com vários itens</b> = uma linha só: equilíbrio pelo mix de vendas das opções (sem vendas, pela opção mais exigente).
                 <br />• Sem Ads: o app diz se vale impulsionar, se o anúncio precisa ser arrumado antes ou se o Ads não se paga neste preço.
                 <br />• <b>Produto “só na época de…”</b>: Aquecer (45 dias antes da data-limite, R$ 10/dia) → Ajustar (21 dias antes) → Alavancar (da data-limite em diante: a cada 3 dias pelo andamento, aumento até 30%, só com lucro) → Corte (7 dias antes da data: pausar). A régua do ROAS é o equilíbrio, como nos outros produtos.
@@ -553,7 +566,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                     <Fragment key={l.chave}>
                       <tr className="linha-clicavel" onClick={() => setAberta(aberta === l.chave ? null : l.chave)}>
                         <td>
-                          <b>{l.item.nome}</b> <CanalTag canal={l.canal} />
+                          <b>{l.item.nome}</b> <CanalTag canal={l.canal} />{l.classe && <span className={`chip-ads${l.classe.classe === "campeao" ? " ligado" : ""}`} title={l.classe.motivo}>{l.classe.classe === "campeao" ? "campeão" : l.av.ativo ? "reserva com Ads próprio" : "reserva"}</span>}
                           {l.rampa && <span className="muted-cel"> · em rampa</span>}
                           {l.sazonal && l.sazonal.fase !== "fora" && (
                             <span className="chip-cel decisao" title={l.sazonal.texto}>
@@ -766,7 +779,8 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
                 <span className="chip-ads">{vals.automatico ? "lance automático" : `meta ${um(vals.meta)}`}</span>
                 {av.pausado && <span className="chip-ads">pausado desde {dm(av.pausado.desde)}</span>}
                 <span className="chip-ads">equilíbrio {um(av.empate)}</span>
-                {vals.meta && av.empate ? <span className="chip-ads">meta sugerida {um(Math.ceil(av.empate * 1.3 * 10 - 1e-9) / 10)}</span> : null}
+                {av.reguas ? <span className="chip-ads">mínimo {um(av.reguas.minimo)}</span> : null}
+                {av.reguas?.ideal ? <span className="chip-ads">ideal {um(av.reguas.ideal)}</span> : null}
               </span>
             </div>
             {totalDias ? (
@@ -877,6 +891,12 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
           </>
         )}
       </div>
+      {av.reguas && !av.loja && (
+        <div className="ads-reguas-bloco">
+          <ReguasRoas reguas={av.reguas} preco={av.preco} lucro={av.lucro} roasShopee={av.numeros?.roasShopee ?? null} roasAjustado={av.numeros?.roasSemana ?? null} />
+          {av.ativo && av.ativo.tipo !== "teste" && <CasosAds av={av} />}
+        </div>
+      )}
       {historico.length > 0 && (
         <div className="historico-ads">
           <div className="ads-rotulo">Histórico de períodos</div>
