@@ -17,18 +17,18 @@ export function ReguasRoas({ reguas, preco, lucro, roasShopee = null, roasAjusta
       <div className="reguas-ads-cartoes">
         <div className="regua-ads min">
           <span>ROAS mínimo</span>
-          <b>{um(reguas.minimo)}×</b>
-          <small>abaixo disso o Ads dá prejuízo</small>
+          <b>{reguas.minimo ? `${um(reguas.minimo)}×` : "—"}</b>
+          <small>{reguas.acimaMax?.minimo ? "passa do ROAS máximo da Shopee (30): o Ads não tem como se pagar" : "abaixo disso o Ads dá prejuízo"}</small>
         </div>
         <div className="regua-ads ide">
           <span>ROAS ideal</span>
           <b>{reguas.ideal ? `${um(reguas.ideal)}×` : "—"}</b>
-          <small>{reguas.ideal ? `sobra 15% depois do Ads · ${BRL(reguas.lucroIdeal)} por pedido` : "inatingível: margem abaixo de 15%"}</small>
+          <small>{reguas.ideal ? `sobra 15% depois do Ads · ${BRL(reguas.lucroIdeal)} por pedido` : reguas.acimaMax?.ideal ? "inalcançável: passa do ROAS máximo da Shopee (30)" : "inalcançável: margem abaixo de 15%"}</small>
         </div>
         <div className="regua-ads exc">
           <span>ROAS excelente</span>
           <b>{reguas.excelente ? `${um(reguas.excelente)}×` : "—"}</b>
-          <small>{reguas.excelente ? `sobra 30% depois do Ads · ${BRL(reguas.lucroExcelente)} por pedido` : `inatingível: a margem (${pct(reguas.margem)}) é menor que 30%`}</small>
+          <small>{reguas.excelente ? `sobra 30% depois do Ads · ${BRL(reguas.lucroExcelente)} por pedido` : reguas.acimaMax?.excelente ? "inalcançável: passa do ROAS máximo da Shopee (30)" : `inalcançável: a margem (${pct(reguas.margem)}) é menor que 30%`}</small>
         </div>
       </div>
       {(sS || sA) && (

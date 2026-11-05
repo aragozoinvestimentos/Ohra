@@ -199,15 +199,24 @@ export const metaSugerida = (empate, regras = REGRAS_ADS) => (empate ? Math.ceil
 // = 1 ÷ (margem − 15%) · Excelente = sobra 30% = 1 ÷ (margem − 30%). Arredonda pra
 // cima (2 casas). Margem ≤ 15% / ≤ 30% = ideal / excelente inatingível (null).
 const teto2 = (v) => Math.ceil(v * 100 - 1e-9) / 100;
+export const ROAS_MAX_SHOPEE = 30;
 export function reguasRoas(preco, lucro, margemMin = null) {
   const pr = num(preco);
   const m = pr > 0 ? num(lucro) / pr : 0;
   if (!(m > 0)) return null;
+  // A Shopee aceita meta de ROAS até 30 (05/11/2026): acima disso = inalcançável.
+  const r = (x) => (x > 0 ? teto2(1 / x) : null);
+  const cap = (v) => (v != null && v > ROAS_MAX_SHOPEE ? null : v);
+  const minR = r(m);
+  const ideR = r(m - 0.15);
+  const excR = r(m - 0.3);
   return {
     margem: m,
-    minimo: teto2(1 / m),
-    ideal: m > 0.15 ? teto2(1 / (m - 0.15)) : null,
-    excelente: m > 0.3 ? teto2(1 / (m - 0.3)) : null,
+    minimo: minR, // o empate fica sempre (é a conta do prejuízo)
+    ideal: cap(ideR),
+    excelente: cap(excR),
+    // passou de 30: existe na conta, mas a Shopee não deixa pôr essa meta
+    acimaMax: { minimo: minR != null && minR > ROAS_MAX_SHOPEE, ideal: ideR != null && ideR > ROAS_MAX_SHOPEE, excelente: excR != null && excR > ROAS_MAX_SHOPEE },
     lucroIdeal: pr * 0.15,
     lucroExcelente: pr * 0.3,
     // "Não indicado": margem antes do Ads abaixo da margem mínima (Metas de preço) — só aviso.

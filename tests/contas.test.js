@@ -153,6 +153,10 @@ describe("Ads", () => {
     expect(k.ideal).toBe(7.41);
     expect(k.excelente).toBe(null);
     expect(reguasRoas(100, 12, 0.15).naoIndicado).toBe(true);
+    const alto = reguasRoas(100, 32); // excelente = 1 ÷ 0,02 = 50 → passa do máximo da Shopee (30)
+    expect(alto.excelente).toBe(null);
+    expect(alto.acimaMax.excelente).toBe(true);
+    expect(alto.ideal).toBe(5.89);
     expect(Math.round(sobraDoAds(100, 46, 3.23).margem * 100)).toBe(15);
   });
   it("decisão de 7 dias pelo método do Luan (4 casos + vermelho)", () => {

@@ -195,7 +195,7 @@ export function responderPergunta(pergunta, ctx) {
     const l = ls.find((x) => t.includes(normalizar(String(x.item?.nome || "").replace(/^Anúncio: /, ""))));
     if (l) {
       const g = l.av.reguas;
-      return { entendeu: true, texto: `${l.item.nome} (${l.canal.nome}): ROAS mínimo ${r1(g.minimo)} (empate) · ideal ${g.ideal ? r1(g.ideal) : "inatingível"} (sobra 15%) · excelente ${g.excelente ? r1(g.excelente) : "inatingível"} (sobra 30%). ${l.classe ? `${l.classe.classe === "campeao" ? "Campeão" : "Reserva"}: ${l.classe.motivo}.` : ""} Agora: ${l.av.titulo}.`, numeros: null };
+      return { entendeu: true, texto: `${l.item.nome} (${l.canal.nome}): ROAS mínimo ${r1(g.minimo)} (empate) · ideal ${g.ideal ? r1(g.ideal) : "inalcançável"} (sobra 15%) · excelente ${g.excelente ? r1(g.excelente) : "inalcançável"} (sobra 30%). ${l.classe ? `${l.classe.classe === "campeao" ? "Campeão" : "Reserva"}: ${l.classe.motivo}.` : ""} Agora: ${l.av.titulo}.`, numeros: null };
     }
     const camp = ls.filter((x) => x.classe?.classe === "campeao").map((x) => x.item.nome);
     return { entendeu: true, texto: `Campeões (Ads individual): ${camp.length ? camp.join(", ") : "nenhum ainda"}. O resto é reserva e vende pela GMV Max da Loja (meta 30). Pergunte "ROAS do <produto>" pra ver as 3 réguas dele.`, numeros: null };

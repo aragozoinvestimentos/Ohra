@@ -91,7 +91,7 @@ export function PeriodoAdsDialog({ nome, av, hoje, regrasA, teste = null, loja =
           : auto
           ? "Na Shopee: Shopee Ads → Criar → GMV Max – Lance Automático → este produto → orçamento baixo. Dia 3 sem venda = pare e arrume o anúncio; dia 7 = troque pra meta de ROAS."
           : "Registre o que você configurou na plataforma. Os 7 primeiros dias são de aprendizado: o app não sugere mexer."}
-        {av?.reguas && !loja ? ` Réguas deste produto: mínimo ${um(av.reguas.minimo)} (empate) · ideal ${av.reguas.ideal ? um(av.reguas.ideal) : "inatingível"} (sobra 15%) · excelente ${av.reguas.excelente ? um(av.reguas.excelente) : "inatingível"} (sobra 30%). Orçamento mínimo ${BRL(regrasA.minDiario)}/dia.` : av?.empate && !loja ? ` ROAS de equilíbrio: ${um(av.empate)}.` : ""}
+        {av?.reguas && !loja ? ` Réguas deste produto: mínimo ${um(av.reguas.minimo)} (empate) · ideal ${av.reguas.ideal ? um(av.reguas.ideal) : "inalcançável"} (sobra 15%) · excelente ${av.reguas.excelente ? um(av.reguas.excelente) : "inalcançável"} (sobra 30%). Orçamento mínimo ${BRL(regrasA.minDiario)}/dia.` : av?.empate && !loja ? ` ROAS de equilíbrio: ${um(av.empate)}.` : ""}
       </p>
       <div className="grid-auto">
         <div className="field"><label>Início</label><input type="date" value={f.inicio} onChange={set("inicio")} /></div>
