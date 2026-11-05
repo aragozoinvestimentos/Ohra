@@ -29,6 +29,7 @@ import { avisosDesgaste } from "../lib/farm.js";
 import { avisosManutencao } from "../lib/manutencao.js";
 import { useManutencoes } from "../hooks/useManutencoes.js";
 import { recarregarCatalogo } from "../lib/catalogoStore.js";
+import { useAlertasIgnorados } from "../lib/alertasIgnorados.js";
 import { ajustarPeriodoAds, encerrarPeriodoAds, iniciarPeriodoAds } from "../lib/adsAcoes.js";
 import { custoAmostra, padraoDoCanal, sugestoesAfiliado } from "../lib/afiliados.js";
 import { anunciosDaLoja, avisosComissaoLoja, linhasDaLoja, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
@@ -406,8 +407,17 @@ export default function Inicio({ onIrPara, onToast }) {
     const k = produtoDoAviso(p, nomesCanaisTodos);
     return !!k && anunciosPausados.has(`${k.nome.toLowerCase()}|${k.canal || ""}`);
   };
-  const pendencias = todasPendencias.filter((p) => !pausadaRampa(p) && !(podeAdiar(p) && adiadoAte.get(p.id) > hoje));
-  const adiados = todasPendencias.filter((p) => !pausadaRampa(p) && podeAdiar(p) && adiadoAte.get(p.id) > hoje);
+  // "Ignorar" (05/11/2026): qualquer aviso, até a situação dele mudar.
+  const ign = useAlertasIgnorados();
+  const ehIgnorado = (p) => !p.tarefa && ign.eIgnorado(`inicio|${p.id}`, p.titulo);
+  const pendencias = todasPendencias.filter((p) => !pausadaRampa(p) && !ehIgnorado(p) && !(podeAdiar(p) && adiadoAte.get(p.id) > hoje));
+  const adiados = todasPendencias.filter((p) => !pausadaRampa(p) && !ehIgnorado(p) && podeAdiar(p) && adiadoAte.get(p.id) > hoje);
+  const ignoradosLista = todasPendencias.filter((p) => !pausadaRampa(p) && ehIgnorado(p));
+  const [verIgnorados, setVerIgnorados] = useState(false);
+  function ignorarAviso(p) {
+    ign.ignorar(`inicio|${p.id}`, p.titulo);
+    onToast?.(`Ignorado — “${typeof p.titulo === "string" ? p.titulo : "aviso"}” só volta se a situação mudar`);
+  }
   const [verAdiados, setVerAdiados] = useState(false);
   const [verSemAviso, setVerSemAviso] = useState(false);
   async function adiar30(p) {
@@ -566,6 +576,11 @@ export default function Inicio({ onIrPara, onToast }) {
         </span>
       </div>
       <div className="inicio-aviso-acoes">
+        {!p.tarefa && (
+          <button type="button" className="link-btn" onClick={() => ignorarAviso(p)} title="Some do Início, das bolinhas e da Sede. Só volta se a situação mudar (outro motivo); valores e dias que avançam não fazem ele voltar.">
+            ignorar
+          </button>
+        )}
         {podeAdiar(p) && (
           <button type="button" className="link-btn" onClick={() => adiar30(p)} title="Some do Pra fazer por 30 dias e volta sozinho se ainda valer. Nada mais muda.">
             lembrar em 30 dias
@@ -783,6 +798,9 @@ export default function Inicio({ onIrPara, onToast }) {
                   </span>
                   <b className="inicio-top3-tit">{p.titulo}</b>
                   <span className="inicio-top3-txt">{p.texto}</span>
+                  <button type="button" className="link-btn inicio-top3-ign" onClick={() => ignorarAviso(p)} title="Some do Início, das bolinhas e da Sede até a situação mudar.">
+                    ignorar
+                  </button>
                   {an ? (
                     <button type="button" className={`btn btn-sm${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => abrirAnuncio(an.itemId, an.canalId, abaDoAviso(p))}>
                       Abrir anúncio →
@@ -887,6 +905,25 @@ export default function Inicio({ onIrPara, onToast }) {
               </>
             )}
           </>
+        )}
+        {ignoradosLista.length > 0 && (
+          <div className="tarefas-concluidas">
+            <button type="button" className={`variacoes-toggle${verIgnorados ? " aberto" : ""}`} onClick={() => setVerIgnorados((v) => !v)} aria-expanded={verIgnorados}>
+              <span className="seta">▸</span> Ignorados por você ({ignoradosLista.length})
+            </button>
+            {verIgnorados && (
+              <ul className="inicio-mini">
+                {ignoradosLista.map((p) => (
+                  <li key={p.id}>
+                    <span>{p.titulo}</span>
+                    <button type="button" className="link-btn" onClick={() => ign.voltar(`inicio|${p.id}`)}>
+                      mostrar de novo
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
         {adiados.length > 0 && (
           <div className="tarefas-concluidas">

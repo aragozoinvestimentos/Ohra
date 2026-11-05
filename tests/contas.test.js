@@ -17,6 +17,7 @@ import { resultadoNoPreco, resolverTaxasNoPreco } from "../src/lib/calc.js";
 import { calcularAnuncio, calcularEscada, configEscada, lucroNoPreco, precoPorMarkup, r5090perto, r90perto, r90up } from "../src/lib/escada.js";
 import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
 import { quebraLucro } from "../src/lib/precoAgora.js";
+import { assinaturaAlerta, estaIgnorado } from "../src/lib/alertasIgnorados.js";
 import { avaliarAds, degrauAnterior, economiaRealAds, numerosDoPeriodo, textoMudancaPreco, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas, reguasRoas, sobraDoAds, pegaFimDeMes, classesDeAds } from "../src/lib/ads.js";
 import { interpretarAds, juntarAds, somarJanelasAds } from "../src/lib/relatorioShopee.js";
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
@@ -181,6 +182,12 @@ describe("Ads", () => {
     expect(av(29, 54, 55).chave).toBe("abaixo-minimo");
     expect(av(29, 65, 66).caso.chave).toBe("amarelo");
     expect(av(12, 27, 27).caso.chave).toBe("teto");
+  });
+  it("ignorar alerta: volta só se a situação mudar (números não contam)", () => {
+    expect(assinaturaAlerta("Preço mudou · dia 2 de 7")).toBe(assinaturaAlerta("Preço mudou · dia 5 de 7"));
+    expect(assinaturaAlerta("Ads no prejuízo — R$ 54,84 gastos")).toBe(assinaturaAlerta("Ads no prejuízo — R$ 60,10 gastos"));
+    expect(assinaturaAlerta("Preço mudou · dia 2 de 7")).not.toBe(assinaturaAlerta("Aumentar: orçamento R$ 36,00/dia"));
+    expect(estaIgnorado({ a: { sig: assinaturaAlerta("Preço mudou · dia 2 de 7") } }, "a", "Preço mudou · dia 6 de 7")).toBe(true);
   });
   it("fim de mês: dia 25 ao penúltimo dia", () => {
     expect(pegaFimDeMes("2026-11-20", "2026-11-26")).toBe(true);

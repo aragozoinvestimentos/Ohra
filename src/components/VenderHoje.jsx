@@ -4,6 +4,7 @@ import { assinarSede, lerSede } from "../lib/sedeDados.js";
 import { chaveDoDestino } from "../lib/marcas.js";
 import { produtoDoAviso } from "../lib/inicio.js";
 import { adiarAviso } from "../lib/avisosAcoes.js";
+import { useAlertasIgnorados } from "../lib/alertasIgnorados.js";
 import { irParaAba } from "../lib/navegar.js";
 import { abrirAnuncio, abrirProduto } from "../lib/anuncios.js";
 import { hojeSP } from "../lib/datas.js";
@@ -87,6 +88,7 @@ export default function VenderHoje({ dados, linhas, linhasAds, onToast }) {
   const T = linhasAds?.teto;
   const nAds = (linhasAds?.linhas || []).filter((l) => l.av?.ativo).length;
 
+  const ign = useAlertasIgnorados();
   async function adiar(p) {
     const { error } = await adiarAviso(lojaId, p.id, hojeSP());
     onToast?.(error ? `Não foi possível adiar: ${error.message}` : "Ok — volta em 30 dias (se ainda valer)");
@@ -99,6 +101,9 @@ export default function VenderHoje({ dados, linhas, linhasAds, onToast }) {
       <span className="hoje-txt">
         <b>{noCartao ? semPrefixo(p) : p.titulo}</b> {noCartao ? textoSemCanal(p) : p.texto}
       </span>
+      <button type="button" className="link-btn" onClick={() => ign.ignorar(`inicio|${p.id}`, p.titulo)} title="Some daqui, do Início, da Sede e da bolinha do menu até a situação mudar.">
+        ignorar
+      </button>
       {p.grupo !== "resolver" && (
         <button type="button" className="link-btn" onClick={() => adiar(p)} title="Some daqui, do Início e da bolinha do menu por 30 dias e volta sozinho se ainda valer.">
           lembrar em 30 dias

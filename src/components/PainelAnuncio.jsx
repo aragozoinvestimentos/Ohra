@@ -25,6 +25,7 @@ import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { CartoesAlvoAgora, DiferencaAlvoAgora } from "./AlvoAgora.jsx";
 import { ReguasRoas, CasosAds } from "./ReguasAds.jsx";
+import { useAlertasIgnorados } from "../lib/alertasIgnorados.js";
 import { CarrinhoVenda, CartaoDiagnostico, FunilQuatro } from "./Diagnostico.jsx";
 import { configCalendario, proximaCampanha } from "../lib/calendario.js";
 import HistoricoAcoes from "./HistoricoAcoes.jsx";
@@ -317,8 +318,11 @@ function irPara(ir, irAba) {
 }
 
 function AbaResumo({ l, v, vAnt, adsJ, pedP, de, hoje, dias, irAba, cfgLoja }) {
-  const acoes = acoesDoAnuncio(l);
-  const top = acoes.find((a) => a.tipo !== "info") || acoes[0] || null;
+  // "Ignorar" (05/11/2026): o aviso some daqui até a situação mudar.
+  const ign = useAlertasIgnorados();
+  const idDe = (a) => `painel|${l.itemId}|${l.canal?.id}|${a.area}`;
+  const acoes = acoesDoAnuncio(l).map((a) => ({ ...a, ignorado: a.tipo !== "info" && ign.eIgnorado(idDe(a), a.titulo) }));
+  const top = acoes.find((a) => a.tipo !== "info" && !a.ignorado) || null;
   const var_ = (a, b) => (b > 0 ? (a - b) / b : null);
   const dv = var_(v.un, vAnt.un);
   const pub = l.anunciado;
@@ -330,9 +334,14 @@ function AbaResumo({ l, v, vAnt, adsJ, pedP, de, hoje, dias, irAba, cfgLoja }) {
           <Estado tipo={top.tipo}>{`${top.area} · ${ROTULO_ESTADO[top.tipo]}`}</Estado>
           <h4>{top.titulo}</h4>
           {top.porque && <p>{top.porque}</p>}
-          <button type="button" className="btn btn-mini primary" onClick={() => irPara(top.ir, irAba)}>
-            {top.botao}
-          </button>
+          <div className="pa-agora-acoes">
+            <button type="button" className="btn btn-mini primary" onClick={() => irPara(top.ir, irAba)}>
+              {top.botao}
+            </button>
+            <button type="button" className="link-btn" onClick={() => ign.ignorar(idDe(top), top.titulo)} title="Some daqui até a situação mudar (outro motivo). Nada mais muda.">
+              ignorar este alerta
+            </button>
+          </div>
         </div>
       ) : (
         <div className="pa-agora">
@@ -349,7 +358,26 @@ function AbaResumo({ l, v, vAnt, adsJ, pedP, de, hoje, dias, irAba, cfgLoja }) {
               {acoes.map((a) => (
                 <tr key={a.area} className="linha-clicavel" onClick={() => irPara(a.ir, irAba)}>
                   <td>{a.area}</td>
-                  <td>{a.tipo === "info" ? <span className="muted-cel">{a.titulo}</span> : <Estado tipo={a.tipo}>{a.titulo}</Estado>}</td>
+                  <td>
+                    {a.tipo === "info" || a.ignorado ? <span className="muted-cel">{a.titulo}</span> : <Estado tipo={a.tipo}>{a.titulo}</Estado>}
+                    {a.ignorado && (
+                      <>
+                        {" "}
+                        <span className="muted-cel">· ignorado</span>{" "}
+                        <button type="button" className="link-btn" onClick={(ev) => (ev.stopPropagation(), ign.voltar(idDe(a)))}>
+                          mostrar de novo
+                        </button>
+                      </>
+                    )}
+                    {!a.ignorado && a.tipo !== "info" && a !== top && (
+                      <>
+                        {" "}
+                        <button type="button" className="link-btn" onClick={(ev) => (ev.stopPropagation(), ign.ignorar(idDe(a), a.titulo))}>
+                          ignorar
+                        </button>
+                      </>
+                    )}
+                  </td>
                 </tr>
               ))}
               {!acoes.some((a) => a.area === "Preço") && (
@@ -841,6 +869,7 @@ function Medidor({ pontos }) {
 }
 
 function AbaAds({ l, hoje, ped }) {
+  const ign = useAlertasIgnorados();
   const ads = l.ads;
   if (!ads)
     return (
@@ -866,13 +895,21 @@ function AbaAds({ l, hoje, ped }) {
   const lucroAntes = n ? n.vendas * lucroVenda : null;
   const lucroDepois = n ? lucroAntes - n.gasto : null;
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
-  const tipo = av.estado === "ok" ? "info" : av.estado;
+  const tipo0 = av.estado === "ok" ? "info" : av.estado;
+  const idAds = `painel|${l.itemId}|${l.canal?.id}|Ads`;
+  const ignorado = tipo0 !== "info" && ign.eIgnorado(idAds, av.titulo);
+  const tipo = ignorado ? "info" : tipo0;
   return (
     <>
       <div className={`pa-agora st-borda-${tipo}`}>
-        <Estado tipo={tipo}>{`Ads · ${ROTULO_ESTADO[tipo] || "situação"}`}</Estado>
+        <Estado tipo={tipo}>{ignorado ? "Ads · alerta ignorado" : `Ads · ${ROTULO_ESTADO[tipo] || "situação"}`}</Estado>
         <h4>{av.titulo}</h4>
-        {av.texto && <p>{av.texto}</p>}
+        {av.texto && !ignorado && <p>{av.texto}</p>}
+        {tipo0 !== "info" && (
+          <button type="button" className="link-btn" onClick={() => (ignorado ? ign.voltar(idAds) : ign.ignorar(idAds, av.titulo))} title="Ignorado = some do Resumo e do detalhe do Ads até a situação mudar.">
+            {ignorado ? "mostrar o alerta de novo" : "ignorar este alerta"}
+          </button>
+        )}
         <ComoMediuOrcamento uso={av.numeros?.usoOrcamento} />
         <div className="pa-agora-acoes">
           <button type="button" className="btn btn-mini primary" onClick={abrir}>Abrir no Ads (ajustar, pausar, novo período)</button>

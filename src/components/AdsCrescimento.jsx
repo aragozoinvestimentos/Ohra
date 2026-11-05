@@ -19,6 +19,7 @@ import Estado from "./Estado.jsx";
 import EditarDialog from "./EditarDialog.jsx";
 import { EncerrarAdsDialog, NAO_RECOMENDA, PeriodoAdsDialog } from "./AdsPeriodoDialogs.jsx";
 import { ReguasRoas, CasosAds } from "./ReguasAds.jsx";
+import { useAlertasIgnorados } from "../lib/alertasIgnorados.js";
 import { ajustarPeriodoAds, despausarPeriodoAds, encerrarPeriodoAds, estenderPeriodoAds, excluirPeriodoAds, iniciarPeriodoAds, pausarPeriodoAds, reviseiSemVendaAds, salvarAndamentoAds, corrigirSemanaAds } from "../lib/adsAcoes.js";
 import { supabase } from "../lib/supabaseClient.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
@@ -694,6 +695,9 @@ function passosSemVenda(l) {
 
 function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, onCorrigir, onFazer, onPausar, onDespausar, onRevisei, onSemAds, onAndamento }) {
   const av = l.av;
+  // "Ignorar este alerta" (05/11/2026) — o MESMO id do Painel do anúncio → Ads.
+  const ign = useAlertasIgnorados();
+  const idAds = `painel|${l.item?.id}|${l.canal?.id}|Ads`;
   const n = av.numeros || {};
   const vals = av.ativo ? valoresAtuais(av.ativo) : null;
   const historico = [...l.periodos].sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).map((p) => ({ p, r: p.id === av.ativo?.id && av.numeros?.fonte === "andamento" ? { ...numerosDoPeriodo(p, l.semanas, l.precoAds ?? l.preco, av.empate, regrasA), ...av.numeros } : numerosDoPeriodo(p, l.semanas, l.precoAds ?? l.preco, av.empate, regrasA) }));
@@ -707,14 +711,23 @@ function Detalhe({ l, regrasA, hoje, onNovo, onAjuste, onEncerrar, onExcluir, on
     <div className="detalhe-cel ads-det">
       {(() => {
         const ac = acaoDoAds(av);
-        const tipo = av.estado === "ok" ? "info" : av.estado;
-        const ROT = { resolver: "Resolver agora", atencao: "Atenção", oportunidade: "Oportunidade — mais lucro", decisao: "Decisão sua em andamento", info: "Nada a fazer agora" };
+        const tipo0 = av.estado === "ok" ? "info" : av.estado;
+        const ignorado = tipo0 !== "info" && ign.eIgnorado(idAds, av.titulo);
+        const tipo = ignorado ? "info" : tipo0;
+        const ROT = { resolver: "Resolver agora", atencao: "Atenção", oportunidade: "Oportunidade — mais lucro", decisao: "Decisão sua em andamento", info: ignorado ? "Alerta ignorado por você" : "Nada a fazer agora" };
         return (
-          <AgoraRampa
-            acao={{ tipo, rotulo: ROT[tipo], titulo: av.titulo, porque: av.texto, acao: ac.botao ? ac.k : null, botao: ac.botao, depois: ac.depois }}
-            proxima={proximaAds(av, hoje)}
-            onAcao={onFazer}
-          />
+          <>
+            <AgoraRampa
+              acao={{ tipo, rotulo: ROT[tipo], titulo: av.titulo, porque: ignorado ? null : av.texto, acao: ac.botao ? ac.k : null, botao: ac.botao, depois: ignorado ? null : ac.depois }}
+              proxima={proximaAds(av, hoje)}
+              onAcao={onFazer}
+            />
+            {tipo0 !== "info" && (
+              <button type="button" className="link-btn" onClick={() => (ignorado ? ign.voltar(idAds) : ign.ignorar(idAds, av.titulo))} title="Ignorado = some daqui e do Painel do anúncio até a situação mudar.">
+                {ignorado ? "mostrar o alerta de novo" : "ignorar este alerta"}
+              </button>
+            )}
+          </>
         );
       })()}
       <div className="pa-agora-acoes">

@@ -652,6 +652,11 @@ Plano fechado com o Gustavo (vídeo "Ads não é milagre, é método", @luanalve
 - **Ads encerrado não avisa** (05/11/2026, Chaveiro Ore e Confie): `estadoRampa` → `revisarPorAds` ("Ads não se paga há 2 semanas") só com `ctx.adsAtivo` (período ligado); o "Surtiu efeito?" já ignorava período encerrado. Atualizar dados tem `AvisosDaTela` (destinos `importar`/`analise:importar`) explicando a bolinha.
 - Telas: `components/ReguasAds.jsx` (`ReguasRoas` cartões + sobra, `CasosAds` tabela com "● você está aqui" e o de → para) no Painel do anúncio → Ads (Medidor) e no detalhe da linha do Ads; chips mínimo/ideal/classe na configuração atual. Consultor: Leo/CEO conversam sobre `ads7|` e `ads-desativar|`; pergunta "ROAS do <produto>" / "campeões".
 
+## Ignorar qualquer alerta (05/11/2026, pedido do Gustavo, sem SQL)
+
+- Conta ÚNICA `src/lib/alertasIgnorados.js`: `preferencias_loja` `alertas:ignorados` = { id: { sig, em, titulo } }; `assinaturaAlerta(titulo)` = título sem números/valores/datas → o alerta volta SÓ quando a situação muda (outro texto), não quando o "dia N de 7" avança. Hook `useAlertasIgnorados` → `eIgnorado`, `ignorar`, `voltar`.
+- Onde: Início (`inicio|<id da pendência>` — todo aviso automático, urgente inclusive; filtra antes de marcas/Sede/AvisosDaTela; "Ignorados por você (N)" com "mostrar de novo"; botão "ignorar" no aviso e no top 3), Vender mais → Hoje e AvisosDaTela (mesmo id), Painel do anúncio → Resumo (`painel|<itemId>|<canal>|<área>`: o cartão de cima pula pro próximo; na tabela "ignorado · mostrar de novo") e → Ads + detalhe da linha na aba Ads (mesmo id `painel|…|Ads`, o cartão vira "Alerta ignorado por você"). Nada mais muda: ignorar não grava em Ads/Rampa/preço.
+
 ## Pendências combinadas com o Gustavo (não esquecer)
 
 - **PACOTE EM DEFINIÇÃO (01/11/2026, nada implementado — Gustavo responde a proposta consolidada antes)**:
