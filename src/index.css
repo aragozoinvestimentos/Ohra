@@ -2959,3 +2959,8 @@ tr.imp-erro td { color: var(--ink-faint); }
 .cad-rodape { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .cad-pronto { text-align: center; padding: 18px 8px; }
 .cad-pronto-titulo { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+
+/* Carrinho × venda (Painel do anúncio → Resumo) */
+.carrinho-venda { margin: 8px 0 10px; padding: 8px 12px; border-radius: 10px; background: var(--bg-soft, rgba(127,127,127,.08)); font-size: 13px; }
+.carrinho-venda.baixo { background: var(--st-atencao-soft); }
+.carrinho-venda .muted-cel { margin-top: 2px; }

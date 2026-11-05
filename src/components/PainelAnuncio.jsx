@@ -24,7 +24,8 @@ import Estado from "./Estado.jsx";
 import Kpis from "./Kpis.jsx";
 import Ajuda from "./Ajuda.jsx";
 import { CartoesAlvoAgora, DiferencaAlvoAgora } from "./AlvoAgora.jsx";
-import { CartaoDiagnostico, FunilQuatro } from "./Diagnostico.jsx";
+import { CarrinhoVenda, CartaoDiagnostico, FunilQuatro } from "./Diagnostico.jsx";
+import { configCalendario, proximaCampanha } from "../lib/calendario.js";
 import HistoricoAcoes from "./HistoricoAcoes.jsx";
 import SurtiuEfeito from "./SurtiuEfeito.jsx";
 
@@ -250,7 +251,7 @@ export default function PainelAnuncio({ onToast }) {
         ))}
       </div>
 
-      {abaV === "resumo" && <AbaResumo l={l} v={v} vAnt={vAnt} adsJ={adsJ} pedP={pedP} de={de} hoje={hoje} dias={dias} irAba={setAba} />}
+      {abaV === "resumo" && <AbaResumo l={l} v={v} vAnt={vAnt} adsJ={adsJ} pedP={pedP} de={de} hoje={hoje} dias={dias} irAba={setAba} cfgLoja={lojaCfg} />}
       {abaV === "vendas" && <AbaVendas l={l} v={v} vAnt={vAnt} pedP={pedP} de={de} hoje={hoje} dias={dias} esc={esc} />}
       {abaV === "preco" && <AbaPreco l={l} esc={esc} />}
       {abaV === "rampa" && <AbaRampa l={l} cfgLoja={lojaCfg} />}
@@ -314,7 +315,7 @@ function irPara(ir, irAba) {
   else if (ir.aba) irAba(ir.aba);
 }
 
-function AbaResumo({ l, v, vAnt, adsJ, pedP, de, hoje, dias, irAba }) {
+function AbaResumo({ l, v, vAnt, adsJ, pedP, de, hoje, dias, irAba, cfgLoja }) {
   const acoes = acoesDoAnuncio(l);
   const top = acoes.find((a) => a.tipo !== "info") || acoes[0] || null;
   const var_ = (a, b) => (b > 0 ? (a - b) / b : null);
@@ -429,6 +430,7 @@ function AbaResumo({ l, v, vAnt, adsJ, pedP, de, hoje, dias, irAba }) {
         </h3>
         <div className="pa-corpo">
           {l.funil && <FunilQuatro funil={l.funil} d={l.desempenho} referencia={l.refFunil} />}
+          {l.canal?.tipo === "shopee" && <CarrinhoVenda funil={l.funil} d={l.desempenho} referencia={l.refFunil} campanha={proximaCampanha(configCalendario(cfgLoja), hoje)} />}
           {(l.diagnosticos || []).length ? (
             (l.diagnosticos || []).map((d, i) => <CartaoDiagnostico key={d.chave} d={d} aberto={i === 0 && d.estado !== "info"} onIr={(ir) => irDiag(ir, irAba)} />)
           ) : (

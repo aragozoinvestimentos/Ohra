@@ -635,6 +635,11 @@ Plano fechado com o Gustavo (vídeo "Ads não é milagre, é método", @luanalve
 - **Saúde do dinheiro e Saldo de filamento SAÍRAM no mesmo dia** (Gustavo: "a gente viajou", o fôlego do caixa contava só as contas recorrentes e esquecia as PARCELAS; saldo de filamento por cor era só um exemplo, ele não quer esse controle). O v73 foi apagado do repositório; se rodou, a tabela `insumos_contagem` fica sem uso (SQL pra apagar foi passado). Lição: "conta fixa" pro Gustavo = recorrentes + parcelas do mês.
 - **Telas que você não abriu** (`src/lib/telasSemUso.js` PURA: `definirTelas` — o App manda a lista do MENU (sem as ocultas e o Início) —, `telasSemUso` pelo uso do consultor (`consultor_registros` tipo 'uso', chave `dia|aba`, por loja; por ABA), `DIAS_SEM_USO` 30; enquanto o registro tem menos de 30 dias mostra só as nunca abertas); tela `TelasSemUso.jsx` em Configuração → Regras (última seção): Concordo / Não concordo → `preferencias_loja` `app:telas-sem-uso`; nada some sozinho — os votos saem no pacote "Levar pro Claude".
 
+## Medidor do Ads e Carrinho × venda (05/11/2026, sem SQL)
+
+- Painel do anúncio → Ads: o Medidor mostra "Configuração atual" (chips orçamento/dia, meta ou lance automático, pausado, equilíbrio, meta sugerida — `valoresAtuais`, a mesma da aba Ads).
+- Painel do anúncio → Resumo → Diagnóstico comercial: `CarrinhoVenda` (Diagnostico.jsx), só Shopee, embaixo do funil: carrinho → pedidos do último Desempenho, taxa × referência (`refFunil.pagamento`) e uma leitura (normal / campanha da loja em ≤ 7 dias = "esperando a campanha, não mexa" / senão conferir frete na finalização, prazo e variação). SÓ acompanhamento: sem aviso no Início nem bolinha.
+
 ## Pendências combinadas com o Gustavo (não esquecer)
 
 - **PACOTE EM DEFINIÇÃO (01/11/2026, nada implementado — Gustavo responde a proposta consolidada antes)**:

@@ -92,3 +92,36 @@ export function FunilQuatro({ funil, d, referencia: ref }) {
     </div>
   );
 }
+
+/**
+ * Carrinho × venda (05/11/2026, só acompanhamento — sem aviso no Início): quantos foram
+ * ao carrinho e quantos pagaram no último Desempenho, × a referência, com uma leitura.
+ * `campanha` = proximaCampanha(calendário da loja) — perto dela muita gente espera o preço.
+ */
+export function CarrinhoVenda({ funil, d, referencia: ref, campanha = null }) {
+  if (!d || !funil) return <div className="carrinho-venda muted-cel">Carrinho × venda: suba o Desempenho da Shopee pra ver.</div>;
+  if (funil.carrinho == null) return <div className="carrinho-venda muted-cel">Carrinho × venda: o Desempenho guardado não tem a coluna de carrinho — reenvie o arquivo.</div>;
+  const pct = (v) => (v == null ? "—" : `${(v * 100).toFixed(v < 0.1 ? 1 : 0).replace(".", ",")}%`);
+  const dm = (x) => `${String(x).slice(8, 10)}/${String(x).slice(5, 7)}`;
+  const car = Number(funil.carrinho) || 0;
+  const ped = Number(funil.pedidos) || 0;
+  const taxa = funil.taxaPagamento;
+  const refP = ref?.pagamento ?? null;
+  const baixa = taxa != null && refP != null && taxa < refP;
+  let leitura;
+  if (car < 5) leitura = "Poucos carrinhos ainda — só acompanhar.";
+  else if (!baixa) leitura = "✓ Dentro do normal — só acompanhar.";
+  else if (campanha && campanha.dias >= 0 && campanha.dias <= 7)
+    leitura = `Muita gente pode estar esperando a ${campanha.nome} (${campanha.dias === 0 ? "hoje" : `em ${campanha.dias} dia${campanha.dias === 1 ? "" : "s"}`}) — acompanhe, não mexa ainda.`;
+  else leitura = "Pagamento baixo: confira o frete na finalização (muitas vezes é o frete caro pra região), o prazo de envio e se a variação que vai pro carrinho é a certa.";
+  return (
+    <div className={`carrinho-venda${baixa && car >= 5 ? " baixo" : ""}`}>
+      <b>Carrinho × venda</b>{" "}
+      <span>
+        Desempenho {dm(d.de)} a {dm(d.ate)}: {car.toLocaleString("pt-BR")} no carrinho → {ped} pedido{ped === 1 ? "" : "s"} ({pct(taxa)})
+        {refP != null ? ` · referência ${pct(refP)}` : ""}
+      </span>
+      <div className="muted-cel">{leitura}</div>
+    </div>
+  );
+}
