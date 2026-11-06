@@ -74,7 +74,7 @@ export default function Payoff({ lancamentos, hoje, saldoAds, reservaRegistros }
         {p.origem.nDuplicadas > 0 && (
           <div className="alerta alerta-warn" style={{ margin: "8px 14px" }}>
             <b>{p.origem.nDuplicadas} venda{p.origem.nDuplicadas === 1 ? "" : "s"} lançada{p.origem.nDuplicadas === 1 ? "" : "s"} à mão ({BRL(p.origem.duplicadas)}) parece{p.origem.nDuplicadas === 1 ? "" : "m"} repetir os pedidos importados</b>
-            São da mesma semana (e canal) de uma entrada “lançado pela aba Análise”. Ficaram fora daqui; no Caixa elas ainda somam no saldo — confira e exclua as repetidas em 1 · Caixa.
+            São da mesma semana (e canal) de uma entrada “lançado pela aba Análise”. Ficaram fora daqui; no Caixa elas ainda somam no saldo — confira e exclua as repetidas em Dinheiro → Lançamentos.
           </div>
         )}
       </div>

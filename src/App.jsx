@@ -174,9 +174,11 @@ const MENU = [
         sub: "Resultado do mês, caixa, contas, fiscal, metas e retorno por item",
         abas: [
           // Resultado (28/10/2026) = Resumo do mês + Vendas do mês + Payoff (3 vistas, VistasResultado)
+          // Resumo (06/11/2026) = quanto a loja tem e de quem é cada parte (ResumoDinheiro)
+          { tab: "caixa", s: "resumo", label: "Resumo" },
+          { tab: "caixa", s: "caixa", label: "Lançamentos" },
+          { tab: "caixa", s: "contas", label: "Contas a pagar" },
           { tab: "resumoMes", label: "Resultado", tambemSub: [["caixa", "vendas"], ["caixa", "payoff"]] },
-          { tab: "caixa", s: "caixa", label: "Caixa" },
-          { tab: "caixa", s: "contas", label: "Contas fixas e parcelas" },
           { tab: "fiscal", label: "Fiscal" },
           { tab: "caixa", s: "vendas", label: "Vendas do mês", oculta: true },
           { tab: "caixa", s: "payoff", label: "Payoff", oculta: true },
@@ -300,7 +302,7 @@ export default function App() {
   const [configSub, setConfigSub] = useState("lojas");
   const [cadastrosSub] = useSubAba(SUB_CHAVE.cadastros, "catalogo", ["catalogo", "produtos", "kits"]);
   const [crescimentoSub] = useSubAba(SUB_CHAVE.crescimento, "rampa");
-  const [caixaSub] = useSubAba(SUB_CHAVE.caixa, "caixa");
+  const [caixaSub] = useSubAba(SUB_CHAVE.caixa, "resumo");
   const [analiseSub] = useSubAba(SUB_CHAVE.analise, "abc", ["abc", "xyz", "evolucao"]);
   const [insumosSub] = useSubAba(SUB_CHAVE.insumos, "materiais", ["materiais", "embalagens"]);
   const [importarSub] = useSubAba(SUB_CHAVE.importar, "importar", ["importar", "historico"]);

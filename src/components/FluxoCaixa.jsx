@@ -1,5 +1,5 @@
 import { usePreferencia } from "../hooks/usePreferencia.js";
-import { useSubAba } from "../lib/subAbas.js";
+import { useSubAba, trocarSubAba } from "../lib/subAbas.js";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -37,7 +37,7 @@ import { recarregarReserva, useReservaProducao } from "../hooks/useReservaProduc
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { saldoAds } from "../lib/saldoAds.js";
 import SaldoAdsCaixa from "./SaldoAdsCaixa.jsx";
-import CaixinhasCaixa from "./CaixinhasCaixa.jsx";
+import ResumoDinheiro from "./ResumoDinheiro.jsx";
 import { saldosCaixinhas } from "../lib/caixinhas.js";
 import CarteirasCaixa, { TransferirDialog } from "./CarteirasCaixa.jsx";
 import { useExtratoCarteira } from "../hooks/useExtratoCarteira.js";
@@ -52,7 +52,8 @@ const IGNORAR_COMPRA_KEY = "ohra:caixa:ignorar-compra";
 
 // Sub-abas (out/2026): o dia a dia, o que repete/parcela, e o resultado das vendas.
 const SUBABAS_CAIXA = [
-  { key: "caixa", label: "1 · Caixa" },
+  { key: "resumo", label: "Resumo" },
+  { key: "caixa", label: "Lançamentos" },
   { key: "contas", label: "2 · Contas fixas e parcelas" },
   { key: "vendas", label: "3 · Vendas do mês" },
   { key: "payoff", label: "4 · Payoff" },
@@ -129,7 +130,7 @@ export default function FluxoCaixa({ onToast }) {
   const [horizonte, setHorizonte] = useState(12);
   // Estimativas da projeção: no banco (preferencias_loja, v59) — iguais em todo aparelho.
   const [estimativas, setEstimativas] = usePreferencia("caixa:estimativas", { vendas: "", custos: "" }, { legado: () => loadEstimativas(lojaId), legadoPorLoja: true });
-  const [sub] = useSubAba("ohra:caixa:sub", "caixa", SUBABAS_CAIXA.map((x) => x.key));
+  const [sub] = useSubAba("ohra:caixa:sub", "resumo", SUBABAS_CAIXA.map((x) => x.key));
   // Período de Vendas do mês (navegação — fica no aparelho).
   const [periodoVendas, setPeriodoVendas] = useState(() => {
     try {
@@ -147,6 +148,23 @@ export default function FluxoCaixa({ onToast }) {
     }
   };
   const [verConfig, setVerConfig] = useState(false);
+  // Projeção e gráfico recolhidos (06/11/2026, "muita informação") — lembrado no aparelho.
+  const [verProj, setVerProj] = useState(() => {
+    try {
+      return localStorage.getItem("ohra:caixa:ver-projecao") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const alternarProj = () =>
+    setVerProj((v) => {
+      try {
+        localStorage.setItem("ohra:caixa:ver-projecao", v ? "0" : "1");
+      } catch {
+        // sem problema
+      }
+      return !v;
+    });
   // Carteiras (v67): Geral = a loja inteira; cada carteira = onde o dinheiro está.
   // Carteira escolhida: SÓ nesta visita — a tela sempre abre no Geral (26/10/2026:
   // ficava guardada no aparelho e o Caixa parecia ter perdido os lançamentos).
@@ -340,9 +358,13 @@ export default function FluxoCaixa({ onToast }) {
     setForm({ ...novoForm(tipo), carteira: cartSel !== "geral" ? cartSel : CARTEIRA_LOJA });
   }
 
-  function abrirRecargaAds() {
-    const shopee = (canais || []).find((c) => c.tipo === "shopee");
-    setForm({ ...novoForm("saida"), descricao: "Recarga de Ads (Shopee)", categoria: "anuncios", canal_id: shopee?.id || "", realizado: true });
+  // Recarga/aporte de Ads (06/11/2026: botão no cartão de cada marketplace no Resumo
+  // e no topo de Lançamentos). carteira = { id, tipo, nome } da plataforma; sem = Shopee.
+  function abrirRecargaAds(carteira = null) {
+    const tipo = carteira?.tipo || carteira?.id || "shopee";
+    const canal = (canais || []).find((c) => c.tipo === tipo) || (canais || []).find((c) => c.tipo === "shopee");
+    const nome = carteira?.nome || canal?.nome || "Shopee";
+    setForm({ ...novoForm("saida"), descricao: `Recarga de Ads (${nome})`, categoria: "anuncios", canal_id: canal?.id || "", realizado: true, carteira: CARTEIRA_LOJA });
   }
 
   function abrirSaldoInicial() {
@@ -576,7 +598,6 @@ export default function FluxoCaixa({ onToast }) {
   const mesesFiltro = Array.from({ length: 25 }, (_, i) => somarMeses(mesAtual, i - 12));
   const iMesSel = mesesFiltro.indexOf(mesFiltro);
   // Reserva de produção (schema v51): parte do saldo que está separada pra repor a produção.
-  const livre = saldoAtual - saldosCx.total;
   // Pendências do caixa numa linha só (saldo inicial + compras de material sem dados).
   const faltaSaldoInicial = !temSaldoInicial && lancamentos.length > 0;
   const nPendencias = (faltaSaldoInicial ? 1 : 0) + pendentesCompra.length;
@@ -625,6 +646,9 @@ export default function FluxoCaixa({ onToast }) {
             ⇄ Transferir (saque)
           </button>
         )}
+        <button type="button" className="btn so-pc" onClick={() => abrirRecargaAds()} title="Recarga/aporte de Ads — vira uma saída (Anúncios) no caixa">
+          + Recarga de Ads
+        </button>
         <button type="button" className="btn" onClick={() => abrirNovo("saida")}>
           − Saída
         </button>
@@ -635,7 +659,7 @@ export default function FluxoCaixa({ onToast }) {
 
       {(sub === "vendas" || sub === "payoff") && <VistasResultado atual={sub} />}
       <div className="caixa-cabecalho">
-        {sub !== "contas" && sub !== "payoff" && (sub !== "vendas" || periodoVendas === "mes") && seletorMes}
+        {sub !== "resumo" && sub !== "contas" && sub !== "payoff" && (sub !== "vendas" || periodoVendas === "mes") && seletorMes}
         {sub === "vendas" && (
           <select className="seletor-periodo" value={periodoVendas} onChange={(e) => trocarPeriodoVendas(e.target.value)} aria-label="Período das vendas">
             <option value="mes">Mês escolhido</option>
@@ -647,6 +671,19 @@ export default function FluxoCaixa({ onToast }) {
           </select>
         )}
       </div>
+
+      {sub === "resumo" && (
+        <ResumoDinheiro
+          lancamentos={lancamentos}
+          resumoCart={resumoCart}
+          hoje={hoje}
+          caixinhaAntiga={saldosCx.insumos}
+          onTransferir={(de) => setTransferir({ de })}
+          onRecargaAds={abrirRecargaAds}
+          onNovo={(tipo) => setForm({ ...novoForm(tipo), carteira: CARTEIRA_LOJA })}
+          onVerLancamentos={() => trocarSubAba("ohra:caixa:sub", "caixa")}
+        />
+      )}
 
       {sub === "caixa" && (
         <>
@@ -668,7 +705,7 @@ export default function FluxoCaixa({ onToast }) {
                   label: geral ? "Saldo atual" : `Saldo atual · ${nomeCarteira(cartSel)}`,
                   valor: BRL(saldoAtual),
                   tom: saldoAtual >= 0 ? "destaque" : "bad",
-                  sub: reserva.disponivel && geral && saldosCx.total > 0 ? `livre ${BRL(livre)} · caixinha Insumos ${BRL(saldosCx.insumos)}` : "dinheiro da loja (o pago do seu bolso não sai daqui)",
+                  sub: "dinheiro da loja (o pago do seu bolso não sai daqui)",
                 },
                 {
                   label: `Entradas de ${rotuloMes(mesFiltro)}`,
@@ -699,7 +736,6 @@ export default function FluxoCaixa({ onToast }) {
             />
           </ResumoFixo>
 
-          {geral && <CaixinhasCaixa registros={reserva.registros} disponivel={reserva.disponivel} caixa={saldoAtual} hoje={hoje} onToast={onToast} />}
           <SaldoAdsCaixa s={saldoDeAds} hoje={hoje} onRecarga={abrirRecargaAds} nomeDe={nomeDoPeriodoAds} />
 
           {nPendencias > 0 && (
@@ -751,11 +787,23 @@ export default function FluxoCaixa({ onToast }) {
                 Projeção de caixa
                 <Ajuda texto="Os 3 meses antes do atual mostram só o que de fato caiu/saiu (realizado). Do mês atual em diante, o saldo soma o que já caiu/saiu, os lançamentos previstos (atrasados entram no mês atual), as contas fixas e parcelas e, nos meses futuros, a estimativa de vendas e custos por mês (⚙ Projeção). Clique num mês pra ver ele no topo e nos lançamentos." />
               </span>
-              <button type="button" className={`btn btn-mini${verConfig ? " primary" : ""}`} onClick={() => setVerConfig((x) => !x)}>
-                ⚙ Projeção
-              </button>
+              <span>
+                {verProj && (
+                  <button type="button" className={`btn btn-mini${verConfig ? " primary" : ""}`} onClick={() => setVerConfig((x) => !x)}>
+                    ⚙ Projeção
+                  </button>
+                )}{" "}
+                <button type="button" className="btn btn-mini" onClick={alternarProj}>
+                  {verProj ? "esconder" : "ver projeção"}
+                </button>
+              </span>
             </h3>
-            {verConfig && (
+            {!verProj && (
+              <div className="grafico-sel">
+                {menor && menor.saldoFinal < 0 ? `⚠ O saldo fica negativo em ${rotuloMes(menor.mes)} (${BRL(menor.saldoFinal)}).` : `Menor saldo nos próximos ${horizonte} meses: ${BRL(menor?.saldoFinal || 0)} em ${rotuloMes(menor?.mes || mesAtual)}.`}
+              </div>
+            )}
+            {verProj && verConfig && (
               <div className="grid-auto caixa-config">
                 <div className="field">
                   <label>Horizonte</label>
@@ -787,7 +835,7 @@ export default function FluxoCaixa({ onToast }) {
                 </div>
               </div>
             )}
-            {!verConfig && (usandoMediaVendas || usandoMediaCustos) && (
+            {verProj && !verConfig && (usandoMediaVendas || usandoMediaCustos) && (
               <div className="grafico-sel">
                 Meses futuros com estimativa pela média {textoMeses}
                 {usandoMediaVendas ? ` (vendas ${BRL(mediaVendas)}/mês)` : ""}
@@ -796,14 +844,14 @@ export default function FluxoCaixa({ onToast }) {
               </div>
             )}
 
-            <GraficoProjecao linhas={linhasProjecao} iAtual={iMesAtual} selecionado={mesFiltro} onSelecionar={setMesFiltro} />
+            {verProj && <GraficoProjecao linhas={linhasProjecao} iAtual={iMesAtual} selecionado={mesFiltro} onSelecionar={setMesFiltro} />}
 
-            <div className="tabela-toggle">
+            {verProj && <div className="tabela-toggle">
               <button type="button" className={`variacoes-toggle${verTabela ? " aberto" : ""}`} onClick={alternarTabela}>
                 <span className="seta">▸</span> {verTabela ? "Esconder" : "Ver"} mês a mês
               </button>
-            </div>
-            {verTabela && (
+            </div>}
+            {verProj && verTabela && (
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -855,7 +903,7 @@ export default function FluxoCaixa({ onToast }) {
             <h3 className="section-title h3-split">
               <span>
                 Lançamentos de {rotuloMes(mesFiltro)}
-                <Ajuda texto="Entradas e saídas do mês escolhido, por dia. “Previsto” é o que ainda vai cair/sair (ex.: repasse da Shopee que só libera depois da entrega) — marque como recebido/pago quando acontecer. Linhas com ↻ são contas fixas: “Confirmar” grava o valor real daquele mês. Contas fixas e parcelas ficam na 2ª sub-aba." />
+                <Ajuda texto="Entradas e saídas do mês escolhido, por dia. “Previsto” é o que ainda vai cair/sair (ex.: repasse da Shopee que só libera depois da entrega) — marque como recebido/pago quando acontecer. Linhas com ↻ são contas fixas: “Confirmar” grava o valor real daquele mês. Contas fixas e parcelas ficam em Contas a pagar." />
               </span>
               <span className="toolbar-info">
                 <span style={{ color: "var(--good)" }}>+{BRL(totalMesEntradas)}</span> · <span>−{BRL(totalMesSaidas)}</span>
@@ -1217,12 +1265,6 @@ export default function FluxoCaixa({ onToast }) {
               ))}
               <Ajuda texto="Meu bolso = você pagou com o seu dinheiro: não sai do saldo da loja e conta no Payoff como dinheiro que você colocou. Caixa da loja = pago com o dinheiro das vendas. O resultado do negócio conta os dois." />
             </div>
-          )}
-          {!form.id && !form.modeloId && form.tipo === "saida" && !form.recorrente && reserva.disponivel && (
-            <label className="check-linha" title="Filamento, material ou embalagem: sai também da caixinha Insumos">
-              <input type="checkbox" checked={!!form.usarReserva} onChange={(e) => setForm((p) => ({ ...p, usarReserva: e.target.checked }))} />
-              Pago com a caixinha Insumos {saldosCx.insumos > 0 ? `(saldo ${BRL(saldosCx.insumos)})` : ""}
-            </label>
           )}
           {!form.modeloId && !form.parcelado && (
             <label className="check-linha">

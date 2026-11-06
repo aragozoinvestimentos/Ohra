@@ -112,7 +112,6 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
   const caixaHoje = useMemo(() => saldoRealizado((lancCaixa || []).filter((l) => !ehTransferencia(l)), hoje), [lancCaixa, hoje]);
   const livreHoje = caixaHoje - res.saldo;
   const jaSeparado = res.porMes.get(mes) || 0;
-  const falta = Math.max(0, Math.round((v.total.repor - jaSeparado) * 100) / 100);
   const t = v.total;
   // Ads do mês AO VIVO (16/10/2026, mesma conta do teto da aba Ads): por
   // período, o maior entre as semanas registradas e o andamento (CSV) —
@@ -276,8 +275,8 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
       {!multi && (
       <div className="panel">
         <h3 className="section-title">
-          Caixinha Insumos (antes “Reserva de produção”)
-          <Ajuda texto="O dinheiro das vendas que volta pra produção: material, embalagem, energia, máquina, manutenção, falhas e acabamento (tudo que está no custo do produto). Não é uma saída — o dinheiro continua na conta; o caixa só mostra quanto dele está separado e quanto está livre. Separe o “repor” de cada mês e use a reserva quando comprar filamento, peças ou embalagem." />
+          Caixinha Insumos (histórico)
+          <Ajuda texto="Desde 06/11/2026 o app não pede mais pra separar: Dinheiro → Resumo mostra sozinho quanto do dinheiro da loja é pra repor material (pelas vendas e pelas compras lançadas). O que você separou antes fica aqui como histórico." />
         </h3>
         {!reserva.disponivel ? (
           <div className="alerta alerta-warn">
@@ -297,23 +296,11 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
             <div className="reserva-mes">
               <small>{rotuloMes(mes)}</small>
               <span>
-                repor {BRL(t.repor)} · separado {BRL(jaSeparado)}
-                {falta > 0 ? (
-                  <>
-                    {" "}· <b>falta {BRL(falta)}</b>
-                  </>
-                ) : t.repor > 0 ? (
-                  " · ✓ separado"
-                ) : null}
+                repor {BRL(t.repor)} — o “Separar” saiu: o que falta repor agora é calculado sozinho em{" "}
+                <button type="button" className="link-btn" onClick={() => irParaAba("caixa", { sub: "resumo" })}>Dinheiro → Resumo</button>
               </span>
             </div>
             <div className="reserva-acoes">
-              <button type="button" className="btn btn-mini primary" disabled={!(falta > 0)} onClick={() => setSeparar(falta.toFixed(2))}>
-                Separar {falta > 0 ? BRL(falta) : ""} na reserva
-              </button>
-              <button type="button" className="btn btn-mini" onClick={() => setUsar({ valor: "", descricao: "" })}>
-                Usei da reserva
-              </button>
               {reserva.registros.length > 0 && (
                 <button type="button" className="link-btn" onClick={() => setVerHistorico((x) => !x)}>
                   {verHistorico ? "esconder movimentos" : `movimentos (${reserva.registros.length})`}

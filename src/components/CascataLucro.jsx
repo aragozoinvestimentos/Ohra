@@ -211,7 +211,7 @@ export default function CascataLucro({ pedidos, linhasAds, mes, hoje }) {
           <p className="hint">As contas fixas não se dividem por canal; entram só no total.</p>
         </div>
       )}
-      {t.semFixas && t.pago > 0 && <p className="hint">Nenhuma conta fixa cadastrada neste período (Dinheiro → Contas fixas e parcelas) — "Sobrou pra você" fica igual ao "depois do Ads".</p>}
+      {t.semFixas && t.pago > 0 && <p className="hint">Nenhuma conta fixa cadastrada neste período (Dinheiro → Contas a pagar) — "Sobrou pra você" fica igual ao "depois do Ads".</p>}
       {t.semCusto > 0 && <p className="hint">{t.semCusto} item(ns) sem produto ligado (SKU não cadastrado) entram no faturado, mas sem custo.</p>}
     </div>
     </>

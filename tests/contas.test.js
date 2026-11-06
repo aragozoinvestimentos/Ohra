@@ -1236,3 +1236,44 @@ describe("teto de Ads por mês (tetoDoMes)", () => {
     expect(t.passaria(1)).toBe(true);
   });
 });
+
+import { reposicao, contasAte, partesDoTotal, proximosDias } from "../src/lib/dinheiroResumo.js";
+describe("Dinheiro → Resumo", () => {
+  const produtos = [{ id: "a" }, { id: "r", origem: "revenda" }];
+  const itens = [{ id: "p:a", custoProducao: 3, embalagem: 1 }, { id: "p:r", custoProducao: 10, embalagem: 0.5 }];
+  it("repor material = vendido − compras lançadas; revenda separada", () => {
+    const pedidos = [
+      { valido: true, data: "2026-10-01", q: 2, item: { id: "p:a", custoProducao: 3, embalagem: 1 } },
+      { valido: true, data: "2026-10-02", q: 1, item: { id: "p:r", custoProducao: 10, embalagem: 0.5 } },
+      { valido: true, data: "2026-10-03", q: 1, item: { id: "k:x", componentes: [{ produtoId: "a", quantidade: 2 }], embalagem: 2 } },
+      { valido: false, data: "2026-10-03", q: 5, item: { id: "p:a", custoProducao: 3, embalagem: 1 } },
+    ];
+    const lancamentos = [
+      { tipo: "saida", categoria: "filamento", valor: 5, data_prevista: "2026-10-05", data_realizada: "2026-10-05" },
+      { tipo: "saida", categoria: "mercadoria", valor: 4, data_prevista: "2026-10-05", data_realizada: "2026-10-05" },
+      { tipo: "saida", categoria: "filamento", valor: 7, data_prevista: "2026-12-05", parcela_grupo: "g" },
+      { tipo: "saida", categoria: "outros", valor: 99, data_prevista: "2026-10-05", data_realizada: "2026-10-05" },
+    ];
+    const r = reposicao({ pedidos, lancamentos, produtos, itens, materiais: [], hoje: "2026-11-06" });
+    // material: 2×(3+1) + 0,5 (embalagem da revenda) + kit (2×3 + 2) = 16,5; compras 5 + 7 (parcela) = 12
+    expect(r.material.vendido).toBe(16.5);
+    expect(r.material.falta).toBe(4.5);
+    expect(r.revenda.vendido).toBe(10);
+    expect(r.revenda.falta).toBe(6);
+    expect(r.desde).toBe("2026-10-01");
+  });
+  it("contas dos 30 dias com recorrente e imposto à parte; livre = total − partes", () => {
+    const lancamentos = [
+      { id: "m", tipo: "saida", categoria: "energia", valor: 100, recorrencia: "mensal", data_prevista: "2026-01-10" },
+      { id: "d", tipo: "saida", categoria: "taxas", valor: 81, data_prevista: "2026-11-20" },
+      { id: "x", tipo: "saida", categoria: "outros", valor: 50, data_prevista: "2027-01-20" },
+      { id: "t", tipo: "saida", categoria: "transferencia", valor: 500, data_prevista: "2026-11-08" },
+    ];
+    const c = contasAte(lancamentos, "2026-11-06", 30);
+    expect(c.contas).toBe(100); // só 10/11 (10/12 passa do limite de 06/12)
+    expect(c.impostos).toBe(81);
+    const d = partesDoTotal({ total: 1000, repor: { material: { falta: 300 }, revenda: { falta: -20 } }, contas: c });
+    expect(d.livre).toBe(519);
+    expect(proximosDias(lancamentos, "2026-11-06", 7).map((l) => l.data_prevista)).toEqual(["2026-11-10"]);
+  });
+});
