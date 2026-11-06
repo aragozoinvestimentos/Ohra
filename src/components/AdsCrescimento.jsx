@@ -5,7 +5,7 @@ import CrescerProposito from "./CrescerProposito.jsx";
 import { Fragment, useMemo, useState } from "react";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { BRL } from "../lib/format.js";
-import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, numerosDoPeriodo, retornoAds, textoAjusteAds, textoMudancaPreco, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS, HORARIO_ADS } from "../lib/ads.js";
+import { andamentoValido, capacidadeDoItem, origemDoGasto, faseDaLoja, periodoLigado, numerosDoPeriodo, retornoAds, textoAjusteAds, textoMudancaPreco, textoRetorno, tetoPorFaixas, valoresAtuais, REGRAS_ADS, HORARIO_ADS, nomeMesTeto, textoBaseTeto } from "../lib/ads.js";
 import { porSemana } from "../lib/rampa.js";
 import { useCatalogo } from "../hooks/useCatalogo.js";
 import { adsPorItemApp, valoresDoPeriodo, cruzarGrupos, lerRelatorio } from "../lib/relatorioShopee.js";
@@ -116,7 +116,7 @@ function proximaAds(av, hoje) {
   return { texto: `Atualizar o andamento em ${dm(somarDias(ult, 3))}` };
 }
 
-// "ver por produto" do teto (16/10/2026): onde foi o gasto dos 30 dias,
+// "ver por produto" do teto (16/10/2026): onde foi o gasto do mês (dia 1º até hoje),
 // curto — até 5 linhas + "outros". Retorno = lucro que cada R$ 1 trouxe;
 // etiqueta cinza quando a Shopee não gasta nem metade do orçamento/dia.
 function GastoPorItem({ T, onAbrir, onCorrigir }) {
@@ -127,7 +127,7 @@ function GastoPorItem({ T, onAbrir, onCorrigir }) {
   return (
     <div className="panel gasto-por-item">
       <h3>
-        Onde foi o gasto · 30 dias <span className="dir">{T.ate ? `pelo CSV até ${dm(T.ate)}` : ""}</span>
+        Onde foi o gasto · {nomeMesTeto(T) || "mês"} <span className="dir">{T.ate ? `pelo CSV até ${dm(T.ate)}` : ""}</span>
       </h3>
       <table className="tabela-mini">
         <tbody>
@@ -229,7 +229,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
   const adsTodos = useAdsPeriodos();
   const confAds = useMemo(() => conferenciaAds({ lancamentos: caixaL.lancamentos, periodos: adsTodos.periodos || [], conf: confSaldo }), [caixaL.lancamentos, adsTodos.periodos, confSaldo]);
   const L = linhasAds.loja;
-  const T = linhasAds.teto; // teto de Ads da loja (30 dias, tabela progressiva + metade do lucro)
+  const T = linhasAds.teto; // teto de Ads da loja (mês corrente, dia 1º até hoje — tetoDoMes)
   const [verTabela, setVerTabela] = useState(false);
   const [verPorItem, setVerPorItem] = useState(false);
 
@@ -371,7 +371,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
             sub: L.fonte === "csv" ? `últimos 7 dias · pelo CSV até ${dm(L.ate)}` : L.fonte === "semanas" ? "últimos 7 dias · semanas registradas" : "últimos 7 dias",
           },
           {
-            label: "Teto de Ads (30 dias)",
+            label: T?.mes ? `Teto de Ads (${nomeMesTeto(T)})` : "Teto de Ads (mês)",
             valor: (
               <span className="kpi-v-com-acao">
                 <span>
@@ -386,7 +386,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
               </span>
             ),
             tom: T?.acimaTeto ? "bad" : undefined,
-            sub: T ? `fase ${T.fase} · faturamento ${BRL(T.faturamento)}${T.limitadoPelaTrava ? " · limitado pela metade do lucro" : ""}` : "",
+            sub: T ? `do dia 1º até hoje · fase ${T.fase} · ${textoBaseTeto(T)}${T.limitadoPelaTrava ? " · limitado pela metade do lucro" : ""}${T.noRitmo != null && !T.acimaTeto && T.noRitmo > T.teto ? ` · no ritmo chega a ${BRL(T.noRitmo)}` : ""}` : "",
             extra: T?.porItem?.length ? (
               <button type="button" className="btn btn-mini kpi-acao" onClick={() => setVerPorItem((v) => !v)}>
                 {verPorItem ? "esconder por produto" : "ver por produto"}
@@ -414,7 +414,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
       ) : null}
       {T?.acimaTeto && (
         <div className="alerta alerta-warn">
-          <b>Ads acima do teto da loja</b>Nos últimos 30 dias o Ads gastou {BRL(T.gasto)}; o teto é {BRL(T.teto)} (fase {T.fase}). Antes de aumentar algum produto, reduza os que estão abaixo do mínimo.
+          <b>Ads acima do teto da loja</b>Em {nomeMesTeto(T)} (do dia 1º até hoje) o Ads gastou {BRL(T.gasto)}; o teto do mês é {BRL(T.teto)} (fase {T.fase}). Zera no dia 1º do mês que vem. Antes de aumentar algum produto, reduza os que estão abaixo do mínimo.
         </div>
       )}
       {verPorItem && T?.porItem?.length > 0 && (
@@ -455,7 +455,7 @@ export default function AdsCrescimento({ linhasAds, adsH, regrasA, regras, hoje,
                 <br />• <b>Anúncio com vários itens</b> = uma linha só: equilíbrio pelo mix de vendas das opções (sem vendas, pela opção mais exigente).
                 <br />• Sem Ads: o app diz se vale impulsionar, se o anúncio precisa ser arrumado antes ou se o Ads não se paga neste preço.
                 <br />• <b>Produto “só na época de…”</b>: Aquecer (45 dias antes da data-limite, R$ 10/dia) → Ajustar (21 dias antes) → Alavancar (da data-limite em diante: a cada 3 dias pelo andamento, aumento até 30%, só com lucro) → Corte (7 dias antes da data: pausar). A régua do ROAS é o equilíbrio, como nos outros produtos.
-                <br />• <b>Teto da loja</b>: tabela progressiva pelo faturamento dos últimos 30 dias (cada % vale só pro pedaço da faixa) e nunca mais que metade do lucro do período.
+                <br />• <b>Teto da loja</b>: por mês (do dia 1º ao último dia; virou o mês, zera) — tabela progressiva pelo faturamento (o maior entre o mês anterior e o ritmo deste mês; cada % vale só pro pedaço da faixa) e nunca mais que metade do lucro do período.
               </>
             }
           />
@@ -1421,7 +1421,7 @@ function AndamentoDialog({ linhas, todas = [], hoje, salvando, onCancelar, onSal
 }
 
 // Teto de Ads da loja (out/2026): tabela progressiva — cada % vale só pro
-// pedaço do faturamento (últimos 30 dias) dentro da faixa — e nunca mais que
+// pedaço do faturamento do mês (tetoDoMes) dentro da faixa — e nunca mais que
 // metade do lucro do período. Percentuais editáveis (lojas.config_escada.ads.faixasTeto).
 function TabelaTeto({ regrasA, T, salvando, onSalvar }) {
   const faixas = regrasA.faixasTeto || REGRAS_ADS.faixasTeto;
@@ -1435,13 +1435,13 @@ function TabelaTeto({ regrasA, T, salvando, onSalvar }) {
     <div className="panel">
       <h3 className="section-title">
         Teto de Ads da loja — fase {faseDaLoja(T.faturamento)}
-        <Ajuda texto="O Ads é acelerador, a loja é orgânica. Até R$ 1.000 vale um valor fixo (loja começando). Acima disso, cada percentual vale só pro pedaço do faturamento dentro da faixa (como imposto de renda), então vender mais nunca diminui a verba — e o teto nunca passa de metade do lucro dos últimos 30 dias (já sem custo de produção e taxas), sem cair abaixo do valor fixo. É teto, não meta: quem decide aumentar é o lucro de cada produto." />
+        <Ajuda texto="O Ads é acelerador, a loja é orgânica. Até R$ 1.000 vale um valor fixo (loja começando). Acima disso, cada percentual vale só pro pedaço do faturamento dentro da faixa (como imposto de renda), então vender mais nunca diminui a verba — e o teto nunca passa de metade do lucro do mês (já sem custo de produção e taxas), sem cair abaixo do valor fixo. É teto, não meta: quem decide aumentar é o lucro de cada produto. Vale por mês: do dia 1º ao último dia, e zera na virada. A faixa usa o maior entre o faturamento do mês anterior e o ritmo deste mês (a partir do dia 7), pra loja não ficar sem verba no começo do mês." />
       </h3>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Faixa do faturamento (30 dias)</th>
+              <th>Faixa do faturamento (mês)</th>
               <th className="num">Quanto pode</th>
               <th>Fase</th>
             </tr>
@@ -1473,7 +1473,7 @@ function TabelaTeto({ regrasA, T, salvando, onSalvar }) {
         </table>
       </div>
       <div className="pad-painel">
-        Últimos 30 dias: faturamento {BRL(T.faturamento)} · pela tabela {BRL(tetoTabela)} · metade do lucro {BRL(T.pelaTrava)} → <b>teto {BRL(T.teto)}</b> · gasto {BRL(T.gasto)}
+        {textoBaseTeto(T)} · pela tabela {BRL(tetoTabela)} · metade do lucro {BRL(T.pelaTrava)} → <b>teto {BRL(T.teto)}</b> · gasto em {nomeMesTeto(T)} {BRL(T.gasto)}
         {edit && (
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <button type="button" className="btn btn-mini primary" disabled={salvando} onClick={() => onSalvar(comoNum)}>{salvando ? "Salvando…" : "Salvar tabela"}</button>

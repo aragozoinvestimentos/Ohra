@@ -154,6 +154,56 @@ export function tetoDaLoja({ faturamento = 0, lucro = 0, gasto = 0, regras = REG
   };
 }
 
+// Teto do MÊS (06/11/2026, pedido do Gustavo: "do dia 1º ao último dia do mês;
+// virou o mês, zera"). Gasto = Ads do dia 1º até hoje. Faturamento que escolhe a
+// faixa = o MAIOR entre o mês anterior inteiro e o mês atual (projetado pro mês
+// inteiro a partir do 7º dia — antes disso, o que já faturou); o lucro da trava
+// vem da mesma base. Ninguém fica sem verba no dia 1º.
+export function tetoDoMes({ hoje, atual = {}, anterior = {}, regras = REGRAS_ADS }) {
+  const mes = String(hoje).slice(0, 7);
+  const [a, m] = mes.split("-").map(Number);
+  const diasNoMes = new Date(Date.UTC(a, m, 0)).getUTCDate();
+  const dia = Number(String(hoje).slice(8, 10)) || 1;
+  const fatMes = num(atual.faturamento);
+  const lucroMes = num(atual.lucro);
+  const proj = dia >= 7 ? diasNoMes / dia : 1;
+  const fatProj = fatMes * proj;
+  const usaAnterior = num(anterior.faturamento) > fatProj;
+  const base = usaAnterior
+    ? { faturamento: num(anterior.faturamento), lucro: num(anterior.lucro), origem: "anterior" }
+    : { faturamento: fatProj, lucro: lucroMes * proj, origem: dia >= 7 ? "projetado" : "mes" };
+  const t = tetoDaLoja({ faturamento: base.faturamento, lucro: base.lucro, gasto: num(atual.gasto), regras });
+  const diasRestantes = diasNoMes - dia + 1; // hoje incluso
+  return {
+    ...t,
+    mes,
+    de: `${mes}-01`,
+    diasNoMes,
+    diasRestantes,
+    base: base.origem,
+    fatMes,
+    lucroMes,
+    fatAnterior: num(anterior.faturamento),
+    pct: fatMes > 0 ? num(atual.gasto) / fatMes : null,
+    // ritmo: o gasto de hoje em diante no mesmo passo chega a quanto no fim do mês?
+    noRitmo: dia > 0 ? (num(atual.gasto) / dia) * diasNoMes : null,
+    // um aumento de X/dia vale pros dias que faltam do mês (não 30), em cima do ritmo de hoje
+    passaria: (extraPorDia) => num(atual.gasto) + (num(atual.gasto) / dia) * (diasRestantes - 1) + num(extraPorDia) * diasRestantes > t.teto,
+  };
+}
+
+const MESES_TETO = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+export const nomeMesTeto = (T) => (T?.mes ? MESES_TETO[Number(T.mes.slice(5, 7)) - 1] || T.mes : "");
+// "faixa pelo faturamento de outubro (R$ X)" / "pelo ritmo de novembro (R$ X no mês)".
+export function textoBaseTeto(T) {
+  if (!T?.mes) return "";
+  const ant = MESES_TETO[(Number(T.mes.slice(5, 7)) + 10) % 12];
+  const r = (v) => `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (T.base === "anterior") return `faixa pelo faturamento de ${ant} (${r(T.faturamento)})`;
+  if (T.base === "projetado") return `faixa pelo ritmo de ${nomeMesTeto(T)} (${r(T.faturamento)} no mês)`;
+  return `faixa pelo faturado em ${nomeMesTeto(T)} (${r(T.faturamento)})`;
+}
+
 // Fase do Ads sazonal hoje (infoSazonal de calendario.js; só tipo "epoca").
 // → { fase: fora|aquecer|ajustar|alavancar|corte|depois, nome, evento, limite, inicio, fim, titulo, texto } ou null.
 export const FASES_ADS = {
@@ -909,7 +959,7 @@ export function avaliarAds({ efeito = null, preco, lucro, lucroEm = null, semana
       const p = alavancar ? Math.max(num(regras.aumentoMeta) || 0.2, num(rAum.aumento) || 0.2) : num(regras.aumentoMeta) || 0.2;
       const novo = orcN(num(orcamento) * (1 + p));
       const novaMeta = meta ? Math.ceil(num(meta) * (1 + (num(regras.aumentoMeta) || 0.2)) * 10 - 1e-9) / 10 : null;
-      if (tetoLoja && tetoLoja.passaria((novo - orcamento) * 30))
+      if (tetoLoja && (tetoLoja.diasRestantes != null ? tetoLoja.passaria(novo - orcamento) : tetoLoja.passaria((novo - orcamento) * 30)))
         return sitA("teto", "info", "Bom resultado, mas no teto da loja", `Bateu a meta e gastou o orçamento${retTxt}, mas aumentar passaria do teto de Ads da loja (${moeda(tetoLoja.teto)} no mês, fase ${tetoLoja.fase}). Mantenha ${moeda(orcamento)}/dia.`, { numeros: semanaC, caso: { chave: "aumentar", ...ctx, segurado: true } });
       return sitA(
         "aumentar",

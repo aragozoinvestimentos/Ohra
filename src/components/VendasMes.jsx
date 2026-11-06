@@ -11,7 +11,7 @@ import BuscaItem from "./BuscaItem.jsx";
 import { EmbalagemOrganicoVenda } from "./EmbalagemOrganico.jsx";
 import { juntarMeses, mesesDoPeriodo, saldoReserva, vendasDoMes } from "../lib/vendasMes.js";
 import { useVendasReais } from "../hooks/useVendasReais.js";
-import { gastoAdsNaJanela, regrasAds, tetoDaLoja } from "../lib/ads.js";
+import { gastoAdsNaJanela, regrasAds, tetoDoMes, textoBaseTeto } from "../lib/ads.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { hojeISO, mesDe, rotuloMes, saldoRealizado } from "../lib/fluxoCaixa.js";
 import { ehTransferencia } from "../lib/carteiras.js";
@@ -260,11 +260,15 @@ export default function VendasMes({ mes, periodo = "mes", onToast }) {
       </p>
       {!multi && t.unidades > 0 && (() => {
         // Teto de Ads da loja (mesma conta da aba Ads) com os números deste mês.
-        const tt = tetoDaLoja({ faturamento: t.faturamento, lucro: t.lucro, gasto: adsMes, regras: regrasAds(cfgLoja) });
+        // Mesma conta da aba Ads (tetoDoMes): faixa pelo maior entre o mês anterior e o ritmo deste mês.
+        const [ay, am] = mes.split("-").map(Number);
+        const mesAnt = `${am === 1 ? ay - 1 : ay}-${String(am === 1 ? 12 : am - 1).padStart(2, "0")}`;
+        const ant = vendasDoMes({ mes: mesAnt, rampas, rampasGrupo, rampaRegistros: registros, afRegistros: af.registros, organicas: org.registros, itens, canais, cfgDoProduto, pedidos: reais.linhas, cobertura: reais.cobertura, itemNoCanal }).total;
+        const tt = tetoDoMes({ hoje: fimDoMes(mes) < hoje ? fimDoMes(mes) : hoje, atual: { faturamento: t.faturamento, lucro: t.lucro, gasto: adsMes }, anterior: { faturamento: ant.faturamento, lucro: ant.lucro }, regras: regrasAds(cfgLoja) });
         return (
           <div className={`linha-info${tt.acimaTeto ? " atencao-txt" : ""}`}>
             Ads do mês: <b>{BRL(adsMes)}</b> de {BRL(tt.teto)} (teto da fase {tt.fase}
-            {tt.limitadoPelaTrava ? ", limitado pela metade do lucro" : ""}){tt.acimaTeto ? " — acima do teto" : ""}
+            {tt.limitadoPelaTrava ? ", limitado pela metade do lucro" : ""} · {textoBaseTeto(tt)}){tt.acimaTeto ? " — acima do teto" : ""}
           </div>
         );
       })()}

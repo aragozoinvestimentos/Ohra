@@ -122,7 +122,7 @@ export default function VenderHoje({ dados, linhas, linhasAds, onToast }) {
           { label: "Pra fazer hoje", valor: `${cartoes.length - nOpo} ${cartoes.length - nOpo === 1 ? "anúncio" : "anúncios"}`, sub: nRes ? `${nRes} urgente${nRes > 1 ? "s" : ""}` : "nada urgente", tom: nRes ? "bad" : null },
           { label: "Oportunidades", valor: String(nOpo), sub: "subir degrau, aumentar Ads, afiliado…" },
           { label: "Lucro · últimos 7 dias", valor: temLucro ? BRL(lucro7) : "—", sub: "anúncios em rampa, depois do Ads" },
-          { label: "Ads · 30 dias", valor: T ? BRL(T.gasto) : "—", sub: T ? `de ${BRL(T.teto)} do teto${nAds ? ` · ${nAds} ligado${nAds > 1 ? "s" : ""}` : ""}` : "sem Ads" },
+          { label: "Ads no mês", valor: T ? BRL(T.gasto) : "—", sub: T ? `de ${BRL(T.teto)} do teto do mês${nAds ? ` · ${nAds} ligado${nAds > 1 ? "s" : ""}` : ""}` : "sem Ads" },
         ]}
       />
       <div className="panel">

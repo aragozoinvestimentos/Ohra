@@ -8,7 +8,7 @@ import { hojeISO } from "../lib/fluxoCaixa.js";
 import { useAdsPeriodos } from "./useAdsPeriodos.js";
 import { periodoAjustado, economiaRealAds, aplicarCrescer, estadoCrescer, periodoLigado, classesDeAds } from "../lib/ads.js";
 import { lucroDaLinha } from "../lib/resumoLoja.js";
-import { adsNaJanela, pausasDoPeriodo, valoresAtuais, avaliarAds, avaliarAdsLoja, capacidadeDoItem, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, roasEmpate, tetoDaLoja } from "../lib/ads.js";
+import { adsNaJanela, pausasDoPeriodo, valoresAtuais, avaliarAds, avaliarAdsLoja, capacidadeDoItem, faseAdsSazonal, periodoAtivo, periodosDoItem, regrasAds, roasEmpate, tetoDoMes } from "../lib/ads.js";
 import { useLembretes } from "./useLembretes.js";
 import { usePreferencia } from "./usePreferencia.js";
 import { useLoja } from "../lib/LojaContext.jsx";
@@ -577,9 +577,11 @@ function useCalculoCrescimento() {
       const dias = Math.round((new Date(`${par.ate}T12:00:00`) - new Date(`${at.inicio}T12:00:00`)) / 86400000) + 1 - pausasDoPeriodo(at, par.ate).diasPausados;
       return dias >= 3 ? num(par.gasto) / dias / orcamento : null;
     };
-    const janela = (dias) => {
-      const desde = somarDias(hoje, -dias);
+    // janela(dias) = últimos N dias até hoje; janela(null, de, ate) = de..ate (inclusive).
+    const janela = (dias, deFixo = null, ateFixo = null) => {
+      const desde = deFixo ? somarDias(deFixo, -1) : somarDias(hoje, -dias);
       const de = somarDias(desde, 1);
+      const ateJ = ateFixo || hoje;
       let fat = 0;
       let lucro = 0;
       let unidades = 0;
@@ -590,20 +592,21 @@ function useCalculoCrescimento() {
       for (const b of base) {
         for (const s of b.semanas) {
           if (!(String(s.data).slice(0, 10) > desde)) continue;
+          if (ateFixo && somarDias(String(s.data).slice(0, 10), -1) > ateJ) continue;
           if (b.semFaturamento || reais.cobertura.cobre(b.canal, somarDias(String(s.data).slice(0, 10), -1))) continue;
           const p = num(s.preco) || b.preco;
           fat += num(s.vendas) * p;
           lucro += num(s.vendas) * (b.lucroEm(p) ?? 0);
           unidades += num(s.vendas);
         }
-        const a = adsNaJanela(b.periodos, b.semanas, de, hoje);
+        const a = adsNaJanela(b.periodos, b.semanas, de, ateJ);
         gasto += a.gasto;
         vendasAds += a.vendas;
         if (a.ate && (!ate || a.ate > ate)) ate = a.ate;
         if (a.gasto > 0) porItem.push({ chave: b.chave, nome: b.item.nome, canal: b.canal, ...a, retorno: (() => { const lr = economiaRealAds(b.periodos, hoje, { preco: b.preco, lucro: b.lucro }).lucroAds; return lr > 0 ? (a.vendas * lr) / a.gasto : null; })(), orcamentoUso: usoDoOrcamento(b.periodos) });
       }
       for (const o of organicasH.registros || []) {
-        if (!(String(o.data).slice(0, 10) > desde)) continue;
+        if (!(String(o.data).slice(0, 10) > desde) || String(o.data).slice(0, 10) > ateJ) continue;
         const it = itens.find((i) => i.id === `${PRE[o.item_tipo] || "p"}:${o.item_id}`);
         const canal = canais.find((c) => c.id === o.canal_id);
         if (!it || !canal || reais.cobertura.cobre(canal, String(o.data).slice(0, 10))) continue;
@@ -614,7 +617,7 @@ function useCalculoCrescimento() {
         lucro += un * (lucroNoPreco(canal, p, it.custoTotal, it.peso, cfgDoProduto(it.produtoId || (o.item_tipo === "produto" ? o.item_id : null))) ?? 0);
       }
       for (const p of reais.linhas) {
-        if (!p.valido || !(String(p.data) > desde) || String(p.data) > hoje) continue;
+        if (!p.valido || !(String(p.data) > desde) || String(p.data) > ateJ) continue;
         fat += p.pago;
         lucro += p.lucro ?? 0;
         unidades += num(p.q);
@@ -622,11 +625,13 @@ function useCalculoCrescimento() {
       return { desde, de, fat, lucro, unidades, gasto, vendasAds, ate, porItem };
     };
     const j7 = janela(7);
-    const j30 = janela(30);
-    const desde30 = j30.desde;
-    const fat30 = j30.fat;
-    const lucro30 = j30.lucro;
-    let gasto30 = j30.gasto;
+    const desde30 = somarDias(hoje, -30); // equilíbrio da GMV Max da Loja (ritmo, não limite)
+    // Teto de Ads = do dia 1º do mês até hoje (06/11/2026, "virou o mês, zera");
+    // o mês anterior inteiro só entra pra escolher a faixa (tetoDoMes).
+    const iniMes = `${hoje.slice(0, 7)}-01`;
+    const jMes = janela(null, iniMes, hoje);
+    const fimAnt = somarDias(iniMes, -1);
+    const jAnt = janela(null, `${fimAnt.slice(0, 7)}-01`, fimAnt);
     // GMV Max da Loja (v57, item_tipo 'loja'): linha fixa no topo da aba Ads.
     // Equilíbrio da loja = faturamento ÷ lucro antes do Ads dos pedidos dos
     // últimos 30 dias (sem pedidos: mediana do equilíbrio das linhas).
@@ -648,17 +653,17 @@ function useCalculoCrescimento() {
         origemEq = "média dos produtos (sem pedidos importados)";
       }
       const periodosL = periodosDoItem(adsHv.periodos, "loja", lojaId, canalLoja.id);
-      const aL30 = adsNaJanela(periodosL, [], j30.de, hoje);
+      const aL30 = adsNaJanela(periodosL, [], jMes.de, hoje);
       const aL7 = adsNaJanela(periodosL, [], j7.de, hoje);
-      gasto30 += aL30.gasto;
+      jMes.gasto += aL30.gasto;
       j7.gasto += aL7.gasto;
       j7.vendasAds += aL7.vendas;
       const recL = num(periodoAtivo(periodosL, hoje)?.parcial?.receita);
       const nomeL = "Loja inteira · GMV Max da Loja";
-      if (aL30.gasto > 0) j30.porItem.push({ chave: `loja|${lojaId}|${canalLoja.id}`, nome: nomeL, canal: canalLoja, loja: true, ...aL30, retorno: equilibrio && recL > 0 && num(periodoAtivo(periodosL, hoje)?.parcial?.gasto) > 0 ? recL / num(periodoAtivo(periodosL, hoje).parcial.gasto) / equilibrio : null, orcamentoUso: null });
+      if (aL30.gasto > 0) jMes.porItem.push({ chave: `loja|${lojaId}|${canalLoja.id}`, nome: nomeL, canal: canalLoja, loja: true, ...aL30, retorno: equilibrio && recL > 0 && num(periodoAtivo(periodosL, hoje)?.parcial?.gasto) > 0 ? recL / num(periodoAtivo(periodosL, hoje).parcial.gasto) / equilibrio : null, orcamentoUso: null });
       lojaLinha = { chave: `loja|${lojaId}|${canalLoja.id}`, tipo: "loja", id: lojaId, canal: canalLoja, item: { id: `loja:${lojaId}`, nome: "Loja inteira · GMV Max da Loja" }, periodos: periodosL, semanas: [], equilibrio, origemEq, av: avaliarAdsLoja({ periodos: periodosL, equilibrio, hoje, regras: regrasA }) };
     }
-    const teto = { ...tetoDaLoja({ faturamento: fat30, lucro: lucro30, gasto: gasto30, regras: regrasA }), porItem: j30.porItem.sort((a, b) => b.gasto - a.gasto), ate: j30.porItem.reduce((m, x) => (x.ate && x.ate > m ? x.ate : m), "") || null };
+    const teto = { ...tetoDoMes({ hoje, atual: { faturamento: jMes.fat, lucro: jMes.lucro, gasto: jMes.gasto }, anterior: { faturamento: jAnt.fat, lucro: jAnt.lucro }, regras: regrasA }), porItem: jMes.porItem.sort((a, b) => b.gasto - a.gasto), ate: jMes.porItem.reduce((m, x) => (x.ate && x.ate > m ? x.ate : m), "") || null };
     // "Ads na semana" e "Vendas via Ads" (7 dias, ao vivo): mesma conta do teto.
     // Vendas via Ads (CSV) ÷ unidades vendidas nos MESMOS dias (o CSV costuma ir só até ontem/anteontem).
     const ateAds = j7.porItem.reduce((m, x) => (x.ate && x.ate > m ? x.ate : m), "") || hoje;

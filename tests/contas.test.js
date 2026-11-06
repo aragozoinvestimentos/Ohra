@@ -18,7 +18,7 @@ import { calcularAnuncio, calcularEscada, configEscada, lucroNoPreco, precoPorMa
 import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
 import { quebraLucro } from "../src/lib/precoAgora.js";
 import { assinaturaAlerta, estaIgnorado } from "../src/lib/alertasIgnorados.js";
-import { avaliarAds, degrauAnterior, economiaRealAds, numerosDoPeriodo, textoMudancaPreco, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas, reguasRoas, sobraDoAds, pegaFimDeMes, classesDeAds } from "../src/lib/ads.js";
+import { avaliarAds, degrauAnterior, economiaRealAds, numerosDoPeriodo, textoMudancaPreco, passoDaEscada, periodoAjustado, primeiroDiaFraco, tetoPorFaixas, reguasRoas, sobraDoAds, pegaFimDeMes, classesDeAds, tetoDoMes } from "../src/lib/ads.js";
 import { interpretarAds, juntarAds, somarJanelasAds } from "../src/lib/relatorioShopee.js";
 import { BACKUP_DIAS, TABELAS_BACKUP, estadoBackup } from "../src/lib/backup.js";
 import { revisoesPrecoDireto } from "../src/lib/revisarPreco.js";
@@ -1212,5 +1212,27 @@ describe("estoque por cor", () => {
     expect(pc.reduce((t, x) => t + x.est.saldo, 0)).toBe(total.saldo);
     const zerado = estoquePorCor({ movimentos: movimentos.slice(0, 3), vendas, hoje: "2026-10-31", cores, inicio: total.inicio, cfg: { fabricado: true } });
     expect(piorCor(zerado).cor).toBe("Vermelho");
+  });
+});
+
+describe("teto de Ads por mês (tetoDoMes)", () => {
+  it("dia 1º zera o gasto e usa o mês anterior pra faixa", () => {
+    const t = tetoDoMes({ hoje: "2026-11-01", atual: { faturamento: 50, lucro: 10, gasto: 5 }, anterior: { faturamento: 3000, lucro: 1000 } });
+    expect(t.gasto).toBe(5);
+    expect(t.base).toBe("anterior");
+    expect(t.teto).toBeCloseTo(150 + 2000 * 0.12, 2); // 390, trava 500
+    expect(t.acimaTeto).toBe(false);
+    expect(t.diasRestantes).toBe(30);
+  });
+  it("do dia 7 em diante projeta o mês e vale o maior", () => {
+    const t = tetoDoMes({ hoje: "2026-11-10", atual: { faturamento: 2000, lucro: 600, gasto: 100 }, anterior: { faturamento: 3000, lucro: 900 } });
+    expect(t.base).toBe("projetado"); // 2000 × 30/10 = 6000
+    expect(t.faturamento).toBeCloseTo(6000, 2);
+  });
+  it("passaria usa os dias que faltam do mês, sobre o ritmo de hoje", () => {
+    const t = tetoDoMes({ hoje: "2026-11-21", atual: { faturamento: 700, lucro: 400, gasto: 105 }, anterior: { faturamento: 0, lucro: 0 } });
+    // teto 150; ritmo 5/dia → 105 + 5×9 = 150; +1/dia × 10 dias passa
+    expect(t.passaria(0)).toBe(false);
+    expect(t.passaria(1)).toBe(true);
   });
 });
