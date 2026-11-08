@@ -1,6 +1,7 @@
 import { PASSOS } from "./lib/passosPreco.js";
 import { trocarSubAba, useSubAba } from "./lib/subAbas.js";
-import { pegarPedido, pegarPedidoSemConsumir } from "./lib/navegar.js";
+import { pegarPedido, pegarPedidoSemConsumir, irParaAba } from "./lib/navegar.js";
+import AvisosDaTela from "./components/AvisosDaTela.jsx";
 import { definirTelas } from "./lib/telasSemUso.js";
 import { assinarMarcas, lerMarcas, somarMarcas } from "./lib/marcas.js";
 import { CrescimentoProvider } from "./hooks/useCrescimento.js";
@@ -617,6 +618,17 @@ export default function App() {
           </div>
         )}
         <div className="content">
+        {(() => {
+          // "Avisos desta tela" em toda tela com bolinha (08/11/2026: a bolinha de Dinheiro →
+          // Lançamentos não dizia o quê). Telas que já listam os avisos delas ficam de fora.
+          const COM_LISTA_PROPRIA = ["inicio", "sede", "historico", "anuncios", "anuncio", "importar", "crescimento", "tutorial"];
+          if (COM_LISTA_PROPRIA.includes(tab)) return null;
+          const SUB = { caixa: caixaSub, analise: analiseSub };
+          const chave = tab === "canal" && canalSub === "publicar" ? "canal:publicar" : SUB[tab] ? `${tab}:${SUB[tab]}` : tab;
+          // Resumo do Dinheiro mostra também os de Lançamentos (contas, recarga do Ads) — é a tela que abre primeiro.
+          const chaves = chave === "caixa:resumo" ? [chave, "caixa:caixa"] : [chave];
+          return <AvisosDaTela key={chave} chaves={chaves} onToast={showToast} soComPedido onVer={(p) => irParaAba(p.ir.aba, p.ir.pedido)} />;
+        })()}
         <section className={`view ${tab === "inicio" ? "active" : ""}`}>
           {visitadas.has("inicio") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>

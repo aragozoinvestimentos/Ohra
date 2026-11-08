@@ -13,7 +13,7 @@ import Estado from "./Estado.jsx";
 // tela faz com o pedido do aviso) e "lembrar em 30 dias" (urgente não some).
 const ESTADO = { resolver: "resolver", rotina: "atencao", oportunidade: "oportunidade" };
 
-export default function AvisosDaTela({ chaves, onVer, onToast }) {
+export default function AvisosDaTela({ chaves, onVer, onToast, soComPedido = false }) {
   const { lojaId } = useLoja();
   const sede = useSyncExternalStore(assinarSede, lerSede, lerSede);
   const lista = (sede.pendencias || []).filter((p) => chaves.includes(chaveDoDestino(p.ir)));
@@ -34,7 +34,7 @@ export default function AvisosDaTela({ chaves, onVer, onToast }) {
             <Estado tipo={ESTADO[p.grupo] || "atencao"}>{p.grupo === "resolver" ? "resolver" : p.grupo === "oportunidade" ? "oportunidade" : "atenção"}</Estado>
             <b>{p.titulo}</b>
             {p.texto && <span className="avisos-tela-txt"> {p.texto}</span>}
-            {onVer && (
+            {onVer && (!soComPedido || p.ir?.pedido) && (
               <button type="button" className="link-btn" onClick={() => onVer(p)}>
                 ver
               </button>
