@@ -248,6 +248,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-11-08", texto: "Ficha do anúncio com vários itens ganhou o ✎ no SKU de cada linha (igual à Ficha de um item): muda o SKU do item da opção (produto, variação ou kit) e vale em todo o app; não deixa repetir o SKU de outro item." },
   { data: "2026-11-08", texto: "Excluir um anúncio com vários itens agora pergunta quais kits dele saem junto: os criados pelo Montar combinações, sem venda e fora de outro anúncio, já vêm marcados; produtos e variações nunca saem por aí." },
   { data: "2026-11-08", texto: "Toda tela com bolinha no menu agora mostra no topo a faixa \"Avisos desta tela\" com os avisos que geram a bolinha (ignorar, lembrar em 30 dias e \"ver\" quando o aviso leva a um lugar específico). O Resumo do Dinheiro mostra também os de Lançamentos (contas atrasadas, contas dos próximos 7 dias, recarregar o Ads)." },
   { data: "2026-11-08", texto: "Aviso que é só informação (ex.: \"Surtiu efeito: melhorou\") ganhou \"✓ visto\": no Início e no cartão Surtiu efeito? do Painel do anúncio. Marcar tira o aviso do Início, das bolinhas e da Sede; só volta com um resultado novo." },

@@ -20,6 +20,7 @@ import ConfirmDialog from "./ConfirmDialog.jsx";
 import MontarCombinacoes from "./MontarCombinacoes.jsx";
 import PromoAviso from "./PromoAviso.jsx";
 import { excluirItemCompleto } from "../lib/excluirItem.js";
+import { recarregarCatalogo } from "../lib/catalogoStore.js";
 
 // 3º Ficha do anúncio — modo "Anúncio com vários itens" (schema v46): um
 // anúncio que junta itens diferentes numa variação ("Conjunto", "Tamanho"),
@@ -41,6 +42,23 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
   const [limpar, setLimpar] = useState(() => new Set()); // kits marcados pra sair junto do anúncio
   const [salvando, setSalvando] = useState(false);
   const [copiado, setCopiado] = useState(null);
+  const [skuEdit, setSkuEdit] = useState(null); // { itemId, linha, valor }
+  // SKU do item da opção (produto, variação ou kit) direto na tabela — o mesmo ✎ da Ficha de um item.
+  async function salvarSku() {
+    const e = skuEdit;
+    setSkuEdit(null);
+    if (!e || !supabase) return;
+    const it = itens.find((i) => i.id === e.itemId);
+    const novo = String(e.valor).trim().toUpperCase();
+    if (!it || novo === String(it.sku || "").toUpperCase()) return;
+    const repetido = novo && itens.find((i) => i.id !== it.id && String(i.sku || "").toUpperCase() === novo);
+    if (repetido) return onToast?.(`O SKU ${novo} já é de “${repetido.nome}” — escolha outro`);
+    const tabela = e.itemId.startsWith("k:") ? "kits" : e.itemId.startsWith("v:") ? "produto_variacoes" : "produtos_cadastro";
+    const { error } = await supabase.from(tabela).update({ sku: novo || null }).eq("id", e.itemId.slice(2));
+    if (error) return onToast?.(`Não foi possível salvar o SKU: ${error.message}`);
+    recarregarCatalogo();
+    onToast?.(novo ? `SKU salvo: ${novo} — vale pra esse item em todo o app` : "SKU removido");
+  }
   const grupo = grupos.find((g) => g.id === grupoId) || null;
 
   // "Qual opção vende": vendas do anúncio pelos pedidos importados (SKU de cada
@@ -386,11 +404,35 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
                       {ficha.linhas.map((l) => (
                         <tr key={l.chave}>
                           <td className="ficha-sku">
-                            {l.semSku ? <span style={{ color: "var(--warn)" }}>sem SKU{l.sufixos}</span> : l.sku}
-                            {!l.semSku && (
-                              <button type="button" className={`link-btn ficha-copiar${copiado === `sku|${l.chave}` ? " ok" : ""}`} title="Copiar SKU" onClick={() => copiarValor(l.sku, `sku|${l.chave}`)}>
-                                {copiado === `sku|${l.chave}` ? "✓" : "⧉"}
-                              </button>
+                            {skuEdit?.linha === l.chave ? (
+                              <span className="ficha-sku-edit">
+                                <input
+                                  autoFocus
+                                  value={skuEdit.valor}
+                                  onChange={(e) => setSkuEdit({ ...skuEdit, valor: e.target.value })}
+                                  onBlur={salvarSku}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") e.target.blur();
+                                    if (e.key === "Escape") setSkuEdit(null);
+                                  }}
+                                />
+                                {l.sufixos}
+                                {l.sufixos && <span className="muted-cel"> (o “{l.sufixos}” vem da opção do anúncio)</span>}
+                              </span>
+                            ) : (
+                              <>
+                                {l.semSku ? <span style={{ color: "var(--warn)" }}>sem SKU{l.sufixos}</span> : l.sku}
+                                {!l.semSku && (
+                                  <button type="button" className={`link-btn ficha-copiar${copiado === `sku|${l.chave}` ? " ok" : ""}`} title="Copiar SKU" onClick={() => copiarValor(l.sku, `sku|${l.chave}`)}>
+                                    {copiado === `sku|${l.chave}` ? "✓" : "⧉"}
+                                  </button>
+                                )}
+                                {l.item && (
+                                  <button type="button" className="link-btn ficha-sku-btn" title={`Editar o SKU de ${l.item.nome} (vale pra esse item em todo o app)`} onClick={() => setSkuEdit({ itemId: l.item.id, linha: l.chave, valor: l.item.sku || "" })}>
+                                    ✎
+                                  </button>
+                                )}
+                              </>
                             )}
                             <div className="muted-cel">{l.item ? l.item.nome : "item não encontrado"}</div>
                           </td>
