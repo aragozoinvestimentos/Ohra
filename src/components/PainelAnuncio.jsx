@@ -349,7 +349,13 @@ function AbaResumo({ l, v, vAnt, adsJ, pedP, de, hoje, dias, irAba, cfgLoja }) {
           <p>Preço, rampa e Ads deste anúncio estão em dia.</p>
         </div>
       )}
-      {l.ads?.efeito && <SurtiuEfeito ef={l.ads.efeito} />}
+      {l.ads?.efeito && (() => {
+        // "✓ Visto" (08/11/2026): o MESMO id do aviso do Início — marcar aqui tira o aviso de lá, das bolinhas e da Sede.
+        const ef = l.ads.efeito;
+        const idV = `inicio|efeito|${l.ads.chave}|${ef.mudanca?.data}`;
+        const titV = `${l.ads.item?.nome}: ${ef.titulo}`;
+        return <SurtiuEfeito ef={ef} visto={ef.estado === "final" ? { feito: ign.eIgnorado(idV, titV), marcar: () => ign.ignorar(idV, titV), desfazer: () => ign.voltar(idV) } : null} />;
+      })()}
       <div className="pa-grid2">
         <div className="panel">
           <h3>Tudo que o app está olhando neste anúncio</h3>

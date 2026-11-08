@@ -377,6 +377,7 @@ export function montarPendencias({
       texto: `${l.canal.nome} · ${ef.acao ? `${ef.acao} — ` : ""}sobrou ${ef.depois?.sobrouDia != null ? `R$ ${ef.depois.sobrouDia.toFixed(2).replace(".", ",")}` : "—"}/dia depois × R$ ${(ef.antes?.sobrouDia ?? 0).toFixed(2).replace(".", ",")}/dia antes`,
       ir: { aba: "anuncio", pedido: { itemId, canalId: l.canal.id, aba: "resumo" } },
       rotulo: "Ver o resultado",
+      soInfo: !ef.acao, // só informação: o botão vira "✓ visto"
     });
   }
   for (const l of [...(ads?.lojaLinha ? [ads.lojaLinha] : []), ...(ads?.linhas || [])]) {

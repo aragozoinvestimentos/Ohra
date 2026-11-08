@@ -8,7 +8,7 @@ const TIPO = { coletando: "info", confirmando: "decisao" };
 const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 const n1 = (x) => (x == null ? "—" : x.toFixed(1).replace(".", ","));
 
-export default function SurtiuEfeito({ ef }) {
+export default function SurtiuEfeito({ ef, visto = null }) {
   if (!ef) return null;
   const tipo = ef.estado === "final" ? ef.grupo || "info" : TIPO[ef.estado] || "info";
   const linhas = ef.depois
@@ -26,7 +26,20 @@ export default function SurtiuEfeito({ ef }) {
         Surtiu efeito?{" "}
         <Ajuda texto="Compara, por dia, o que sobrou depois do Ads (lucro bruto dos pedidos pagos − Ads) antes e depois da última mudança no anúncio. Lê no 7º dia: melhorou (≥ 110%) ou piorou (< 75%) já decide; resultado parecido ou poucas vendas confirma em 14 dias. Produto em temporada decide no 7º. Enquanto não sai, não mude outra coisa no anúncio." />
       </h3>
-      <Estado tipo={tipo}>{ef.titulo}</Estado>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <Estado tipo={tipo}>{ef.titulo}</Estado>
+        {visto && !visto.feito && (
+          <button type="button" className="btn btn-mini" onClick={visto.marcar} title="Tira o aviso do Início, das bolinhas e da Sede. Só volta com um resultado novo.">
+            {ef.acao ? "ignorar o aviso" : "✓ Visto — tirar o aviso"}
+          </button>
+        )}
+        {visto?.feito && (
+          <span className="faint">
+            ✓ visto · aviso fora do Início{" "}
+            <button type="button" className="link-btn" onClick={visto.desfazer}>mostrar de novo</button>
+          </span>
+        )}
+      </div>
       <p className="hint" style={{ margin: "6px 0" }}>{ef.texto}</p>
       {linhas.length > 0 && (
         <div className="table-wrap">

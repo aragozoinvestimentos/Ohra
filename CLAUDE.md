@@ -667,6 +667,7 @@ Plano fechado com o Gustavo (vídeo "Ads não é milagre, é método", @luanalve
 ## Ignorar qualquer alerta (05/11/2026, pedido do Gustavo, sem SQL)
 
 - Conta ÚNICA `src/lib/alertasIgnorados.js`: `preferencias_loja` `alertas:ignorados` = { id: { sig, em, titulo } }; `assinaturaAlerta(titulo)` = título sem números/valores/datas → o alerta volta SÓ quando a situação muda (outro texto), não quando o "dia N de 7" avança. Hook `useAlertasIgnorados` → `eIgnorado`, `ignorar`, `voltar`.
+- **"✓ visto"** (08/11/2026): aviso só informativo (`soInfo` — hoje o "Surtiu efeito?" final sem `acao`) mostra "✓ visto" no lugar de "ignorar" no Início; o cartão `SurtiuEfeito` do Painel do anúncio → Resumo tem o botão ("✓ Visto — tirar o aviso", ou "ignorar o aviso" quando há ação) com o MESMO id do Início (`inicio|efeito|<chave do Ads>|<data>`) + "mostrar de novo".
 - Onde: Início (`inicio|<id da pendência>` — todo aviso automático, urgente inclusive; filtra antes de marcas/Sede/AvisosDaTela; "Ignorados por você (N)" com "mostrar de novo"; botão "ignorar" no aviso e no top 3), Vender mais → Hoje e AvisosDaTela (mesmo id), Painel do anúncio → Resumo (`painel|<itemId>|<canal>|<área>`: o cartão de cima pula pro próximo; na tabela "ignorado · mostrar de novo") e → Ads + detalhe da linha na aba Ads (mesmo id `painel|…|Ads`, o cartão vira "Alerta ignorado por você"). Nada mais muda: ignorar não grava em Ads/Rampa/preço.
 
 ## Pendências combinadas com o Gustavo (não esquecer)

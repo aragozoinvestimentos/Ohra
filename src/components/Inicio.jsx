@@ -578,7 +578,7 @@ export default function Inicio({ onIrPara, onToast }) {
       <div className="inicio-aviso-acoes">
         {!p.tarefa && (
           <button type="button" className="link-btn" onClick={() => ignorarAviso(p)} title="Some do Início, das bolinhas e da Sede. Só volta se a situação mudar (outro motivo); valores e dias que avançam não fazem ele voltar.">
-            ignorar
+            {p.soInfo ? "✓ visto" : "ignorar"}
           </button>
         )}
         {podeAdiar(p) && (
@@ -799,7 +799,7 @@ export default function Inicio({ onIrPara, onToast }) {
                   <b className="inicio-top3-tit">{p.titulo}</b>
                   <span className="inicio-top3-txt">{p.texto}</span>
                   <button type="button" className="link-btn inicio-top3-ign" onClick={() => ignorarAviso(p)} title="Some do Início, das bolinhas e da Sede até a situação mudar.">
-                    ignorar
+                    {p.soInfo ? "✓ visto" : "ignorar"}
                   </button>
                   {an ? (
                     <button type="button" className={`btn btn-sm${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => abrirAnuncio(an.itemId, an.canalId, abaDoAviso(p))}>
