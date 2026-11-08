@@ -1277,3 +1277,22 @@ describe("Dinheiro → Resumo", () => {
     expect(proximosDias(lancamentos, "2026-11-06", 7).map((l) => l.data_prevista)).toEqual(["2026-11-10"]);
   });
 });
+
+import { kitsParaLimpar } from "../src/lib/anunciosGrupo.js";
+describe("kitsParaLimpar (excluir anúncio com vários itens)", () => {
+  const grupo = { id: "g1", opcoes: [{ item_tipo: "produto", item_id: "arv" }, { item_tipo: "kit", item_id: "k1" }, { item_tipo: "kit", item_id: "k2" }, { item_tipo: "kit", item_id: "k3" }] };
+  const kits = [
+    { id: "k1", nome: "Árvore + Presépio", observacao: "Criado em Montar combinações (Ficha do anúncio)" },
+    { id: "k2", nome: "Árvore + LED", observacao: "Criado em Montar combinações (Ficha do anúncio)" },
+    { id: "k3", nome: "Kit antigo", observacao: "" },
+  ];
+  const grupos = [grupo, { id: "g2", nome: "Outro", opcoes: [{ item_tipo: "kit", item_id: "k2" }] }];
+  it("só kits; sugere os do Montar combinações sem venda e fora de outro anúncio", () => {
+    const r = kitsParaLimpar({ grupo, grupos, kits, pedidos: [{ item: { id: "k:k3" }, q: 2 }] });
+    expect(r.map((k) => k.kitId)).toEqual(["k1", "k2", "k3"]);
+    expect(r.find((k) => k.kitId === "k1").sugerido).toBe(true);
+    expect(r.find((k) => k.kitId === "k2").emOutro).toEqual(["Outro"]);
+    expect(r.find((k) => k.kitId === "k2").sugerido).toBe(false);
+    expect(r.find((k) => k.kitId === "k3")).toMatchObject({ criadoAqui: false, vendas: 2, sugerido: false });
+  });
+});

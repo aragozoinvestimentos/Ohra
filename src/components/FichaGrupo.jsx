@@ -8,7 +8,7 @@ import { useAnunciosGrupo } from "../hooks/useAnunciosGrupo.js";
 import { BRL, PCT } from "../lib/format.js";
 import { nomeCanal } from "../lib/canais.js";
 import { gruposDoSeletor } from "../lib/variacoes.js";
-import { LIMITE_NOME_OPCAO, MIN_VENDAS_SUGESTAO, fichaDoGrupo, idDoItemOpcao, opcoesDoGrupo, sugestaoVariacao2, variacao2DoGrupo, vendasPorOpcao } from "../lib/anunciosGrupo.js";
+import { LIMITE_NOME_OPCAO, MIN_VENDAS_SUGESTAO, fichaDoGrupo, idDoItemOpcao, kitsParaLimpar, opcoesDoGrupo, sugestaoVariacao2, variacao2DoGrupo, vendasPorOpcao } from "../lib/anunciosGrupo.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { hojeSP } from "../lib/datas.js";
 import BuscaItem from "./BuscaItem.jsx";
@@ -19,6 +19,7 @@ import EditarDialog from "./EditarDialog.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import MontarCombinacoes from "./MontarCombinacoes.jsx";
 import PromoAviso from "./PromoAviso.jsx";
+import { excluirItemCompleto } from "../lib/excluirItem.js";
 
 // 3º Ficha do anúncio — modo "Anúncio com vários itens" (schema v46): um
 // anúncio que junta itens diferentes numa variação ("Conjunto", "Tamanho"),
@@ -37,6 +38,7 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
   const { grupos, disponivel } = useAnunciosGrupo();
   const [editar, setEditar] = useState(null); // {} novo | { grupo }
   const [excluir, setExcluir] = useState(null);
+  const [limpar, setLimpar] = useState(() => new Set()); // kits marcados pra sair junto do anúncio
   const [salvando, setSalvando] = useState(false);
   const [copiado, setCopiado] = useState(null);
   const grupo = grupos.find((g) => g.id === grupoId) || null;
@@ -94,14 +96,31 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
     onToast?.(`Anúncio “${linha.nome}” salvo`);
   }
 
+  // Kits das opções que podem sair junto (os criados pelo Montar combinações vêm marcados).
+  const kitsDoExcluir = useMemo(() => (excluir ? kitsParaLimpar({ grupo: excluir, grupos, kits, itens, pedidos: pedidosValidos }) : []), [excluir, grupos, kits, itens, pedidosValidos]);
+  function pedirExcluir(g) {
+    const lista = kitsParaLimpar({ grupo: g, grupos, kits, itens, pedidos: pedidosValidos });
+    setLimpar(new Set(lista.filter((k) => k.sugerido).map((k) => k.id)));
+    setExcluir(g);
+  }
   async function confirmarExcluir() {
     const g = excluir;
+    const sair = kitsDoExcluir.filter((k) => limpar.has(k.id) && !k.emOutro.length);
     setExcluir(null);
     const { error } = await supabase.from("anuncios_grupo").delete().eq("id", g.id);
     if (error) return onToast?.(`Não foi possível excluir: ${error.message}`);
+    let apagados = 0;
+    const falhas = [];
+    for (const k of sair) {
+      const item = itens.find((i) => i.id === k.id) || { id: k.id };
+      const r = await excluirItemCompleto(item, itens);
+      if (r.ok) apagados += 1;
+      else falhas.push(k.nome);
+    }
     window.dispatchEvent(new Event("focus"));
     if (grupoId === g.id) onGrupo("");
-    onToast?.(`Anúncio “${g.nome}” excluído (os itens e preços continuam)`);
+    if (falhas.length) onToast?.(`Anúncio “${g.nome}” excluído, mas não deu pra apagar: ${falhas.join(", ")}`);
+    else onToast?.(`Anúncio “${g.nome}” excluído${apagados ? ` com ${apagados} ${apagados === 1 ? "kit" : "kits"}` : " (os itens e preços continuam)"}`);
   }
 
   async function copiarValor(texto, chave) {
@@ -168,7 +187,7 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
                     {g.nome} <span className="muted-cel">· {g.variacao_nome} ({opcoesDoGrupo(g).length})</span>
                   </button>
                   <button type="button" className="btn-icone" title="Editar" onClick={() => setEditar({ grupo: g })}>✎</button>
-                  <button type="button" className="btn-icone" title="Excluir este anúncio (os itens e preços continuam)" onClick={() => setExcluir(g)}>×</button>
+                  <button type="button" className="btn-icone" title="Excluir este anúncio (pergunta se os kits dele saem junto)" onClick={() => pedirExcluir(g)}>×</button>
                 </span>
               ))}
             </div>
@@ -462,12 +481,43 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
       {excluir && (
         <ConfirmDialog
           titulo={`Excluir o anúncio “${excluir.nome}”?`}
-          mensagem="Só o agrupamento é apagado: os itens, preços salvos e marcações da Anunciar continuam."
-          confirmarLabel="Excluir anúncio"
+          mensagem={kitsDoExcluir.length ? "Os produtos (e as variações deles) continuam. Escolha quais kits deste anúncio saem junto — o kit sai por completo, com o preço salvo e as marcações da Anunciar." : "Só o agrupamento é apagado: os itens, preços salvos e marcações da Anunciar continuam."}
+          confirmarLabel={limpar.size ? `Excluir anúncio e ${limpar.size} ${limpar.size === 1 ? "kit" : "kits"}` : "Excluir anúncio"}
           perigo
+          larga={kitsDoExcluir.length > 0}
           onConfirm={confirmarExcluir}
           onCancel={() => setExcluir(null)}
-        />
+        >
+          {kitsDoExcluir.length > 0 && (
+            <div className="field" style={{ marginBottom: 14 }}>
+              {kitsDoExcluir.map((k) => (
+                <label key={k.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6, fontWeight: 400 }}>
+                  <input
+                    type="checkbox"
+                    disabled={k.emOutro.length > 0}
+                    checked={limpar.has(k.id)}
+                    onChange={() =>
+                      setLimpar((s0) => {
+                        const n = new Set(s0);
+                        if (n.has(k.id)) n.delete(k.id);
+                        else n.add(k.id);
+                        return n;
+                      })
+                    }
+                  />
+                  <span>
+                    {k.nome}
+                    <small className="hint" style={{ display: "block", margin: 0 }}>
+                      {k.emOutro.length
+                        ? `fica: também no anúncio ${k.emOutro.join(", ")}`
+                        : [k.criadoAqui ? "criado pelo Montar combinações" : "kit cadastrado antes", k.vendas ? `⚠ já vendeu ${k.vendas} — apagar tira essas vendas do kit` : "sem venda"].join(" · ")}
+                    </small>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </ConfirmDialog>
       )}
     </>
   );

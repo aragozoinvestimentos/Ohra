@@ -234,3 +234,26 @@ export function sugestaoVariacao2({ opcoes, itens, observados, v2opcoes = [] }) 
   }
   return listaCores.length || sufixos.length ? { cores: listaCores, sufixos } : null;
 }
+
+/**
+ * Excluir um anúncio com vários itens: quais KITS das opções podem sair junto
+ * (08/11/2026 — os kits criados pelo Montar combinações ficavam como lixo).
+ * Produtos e variações NUNCA saem por aqui (são do cadastro). PURO.
+ * → [{ id (k:), kitId, nome, criadoAqui, emOutro: [nomes], vendas, sugerido }]
+ * sugerido = criado pelo Montar combinações, sem venda e fora de outro anúncio.
+ */
+export function kitsParaLimpar({ grupo, grupos = [], kits = [], itens = [], pedidos = [] }) {
+  const out = [];
+  const vistos = new Set();
+  for (const o of opcoesDoGrupo(grupo)) {
+    if (o.item_tipo !== "kit" || vistos.has(o.item_id)) continue;
+    vistos.add(o.item_id);
+    const kit = kits.find((k) => k.id === o.item_id);
+    const item = itens.find((i) => i.id === `k:${o.item_id}`);
+    const emOutro = grupos.filter((g) => g.id !== grupo.id && opcoesDoGrupo(g).some((x) => x.item_tipo === "kit" && x.item_id === o.item_id)).map((g) => g.nome);
+    const vendas = pedidos.filter((p) => p.item?.id === `k:${o.item_id}`).reduce((t, p) => t + (Number(p.q) || 0), 0);
+    const criadoAqui = /Montar combina/i.test(String(kit?.observacao || ""));
+    out.push({ id: `k:${o.item_id}`, kitId: o.item_id, nome: item?.nome || kit?.nome || o.rotulo || "kit", criadoAqui, emOutro, vendas, sugerido: criadoAqui && !emOutro.length && vendas === 0 });
+  }
+  return out;
+}
