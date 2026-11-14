@@ -1296,3 +1296,14 @@ describe("kitsParaLimpar (excluir anúncio com vários itens)", () => {
     expect(r.find((k) => k.kitId === "k3")).toMatchObject({ criadoAqui: false, vendas: 2, sugerido: false });
   });
 });
+
+import { estadoTeste as estadoTesteAf } from "../src/lib/comissaoLoja.js";
+describe("estadoTeste do afiliado (respostas no cartão)", () => {
+  const t = { pct: 0.07, inicio: "2026-10-30" };
+  it("15 dias sem resposta = avaliar; ninguém = subir 1 ponto; manter = mantido", () => {
+    expect(estadoTesteAf(t, "2026-11-14", 12).estado).toBe("avaliar");
+    expect(estadoTesteAf({ ...t, resposta: "nao" }, "2026-11-14", 12)).toMatchObject({ estado: "subir", proximo: 8 });
+    expect(estadoTesteAf({ ...t, resposta: "nao" }, "2026-11-14", 7).estado).toBe("maximo");
+    expect(estadoTesteAf({ ...t, resposta: "manter" }, "2026-11-14", 12).estado).toBe("mantido");
+  });
+});

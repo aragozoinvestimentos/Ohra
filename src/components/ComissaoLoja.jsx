@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { usePreferencia } from "../hooks/usePreferencia.js";
 import { useAcoesComerciais } from "../hooks/useAcoesComerciais.js";
@@ -146,13 +146,33 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
     setTestes(t);
   }
 
+  // "Subi pra X% na Shopee" do Acompanhamento: grava o % novo (loja ou do anúncio) e recomeça o teste.
+  function subirTeste(chave, proximo) {
+    if (chave.startsWith("loja|")) return salvarNaShopee(proximo / 100);
+    const l = linhas.find((x) => `item|${x.tipo}|${x.id}|${canal.id}` === chave);
+    if (l) return salvarPropria(l, proximo / 100);
+  }
+  // Com teste pra responder, o Acompanhamento sobe pro topo da aba.
+  const temTestePendente = Object.entries(testes || {}).some(([k, t]) => {
+    if (!canal || !k.endsWith(`|${canal.id}`)) return false;
+    const ehLoja = k.startsWith("loja|");
+    const l = ehLoja ? null : linhas.find((x) => `item|${x.tipo}|${x.id}|${canal.id}` === k);
+    const atual = ehLoja ? naShopee : l?.propria;
+    if (!atual || Math.round(atual * 100) !== Math.round(Number(t.pct) * 100)) return false;
+    const e = estadoTeste(t, hoje, ehLoja ? sug.sugerida : maxSeguroDoItem(l));
+    return e?.estado === "avaliar" || e?.estado === "subir";
+  });
+
   if (!canal) return <div className="panel"><div className="empty">Nenhum marketplace cadastrado.</div></div>;
+
+  const acompanhamento = <AcompanhamentoAfiliados testes={testes} linhas={linhas} canal={canal} comissaoLoja={naShopee} sugerida={sug.sugerida} hoje={hoje} onResponder={responderTeste} onSubir={subirTeste} />;
 
   const inicial = sug.sugerida ? (sug.sugerida >= minPct ? minPct : null) : null;
   const naoAguenta = sug.decide > 0 && sug.sugerida != null && sug.sugerida < minPct;
 
   return (
     <>
+      {temTestePendente && acompanhamento}
       <div className="panel">
         <h3 className="section-title">
           <span>
@@ -350,7 +370,7 @@ export default function ComissaoLoja({ dados, linhasAf, config, pedidos, registr
           Uma linha por anúncio (a Shopee põe a comissão no anúncio inteiro): com mais de uma variação, lucro, afiliado ganha e você fica são a média — clique no anúncio pra ver cada variação. A comissão sai do lucro — o preço não muda por causa de afiliado. Anúncio que não aguenta: ponha um % próprio menor nele (se a Shopee deixar) ou deixe a comissão da loja mais baixa. O marketplace desconta a comissão do repasse: não lance no Fluxo de Caixa.
         </p>
       </div>
-      <AcompanhamentoAfiliados testes={testes} linhas={linhas} canal={canal} comissaoLoja={naShopee} sugerida={sug.sugerida} hoje={hoje} onResponder={responderTeste} />
+      {!temTestePendente && acompanhamento}
       <PropostaAfiliado linhas={linhas} canal={canal} lojaId={lojaId} hoje={hoje} onToast={onToast} />
       <ResultadoAfiliados registros={registros} mapaAf={mapaAf} hoje={hoje} />
     </>
@@ -459,8 +479,36 @@ function somar(iso, n) {
 
 // Acompanhamento: um teste de 15 dias por comissão registrada (loja e própria de anúncio) +
 // o histórico das mudanças (acoes_comerciais, tipo "afiliado").
-function AcompanhamentoAfiliados({ testes, linhas, canal, comissaoLoja, sugerida, hoje, onResponder }) {
+function AcompanhamentoAfiliados({ testes, linhas, canal, comissaoLoja, sugerida, hoje, onResponder, onSubir }) {
   const { acoes } = useAcoesComerciais();
+  // "Ver em Afiliados" do cartão do Início / Vender mais → Hoje: rola até o teste e destaca.
+  const [destaque, setDestaque] = useState(() => {
+    try {
+      return sessionStorage.getItem("ohra:af-teste") || null;
+    } catch {
+      return null;
+    }
+  });
+  const painel = useRef(null);
+  useEffect(() => {
+    const ouvir = (ev) => setDestaque(ev.detail || null);
+    window.addEventListener("ohra:af-teste", ouvir);
+    return () => window.removeEventListener("ohra:af-teste", ouvir);
+  }, []);
+  useEffect(() => {
+    if (!destaque) return;
+    try {
+      sessionStorage.removeItem("ohra:af-teste");
+    } catch {
+      /* sem sessão */
+    }
+    const t = setTimeout(() => painel.current?.querySelector(`[data-teste="${CSS.escape(destaque)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+    const fim = setTimeout(() => setDestaque(null), 6000);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(fim);
+    };
+  }, [destaque]);
   const hist = (acoes || []).filter((a) => a.tipo === "afiliado" && a.canal_id === canal.id).sort((a, b) => String(b.data).localeCompare(String(a.data)) || String(b.criado_em || "").localeCompare(String(a.criado_em || "")));
   const nomeItem = (id) => linhas.find((l) => l.id === id)?.item.nome;
   const lista = Object.entries(testes || {})
@@ -479,10 +527,11 @@ function AcompanhamentoAfiliados({ testes, linhas, canal, comissaoLoja, sugerida
     subir: (e) => <Estado tipo="oportunidade">↑ testar {e.proximo}%</Estado>,
     maximo: () => <span className="muted-cel">já no máximo seguro — manter</span>,
     ok: () => <Estado tipo="oportunidade">✓ teve afiliado — manter e acompanhar</Estado>,
+    mantido: () => <span className="muted-cel">mantido por você — o app não pergunta mais neste %</span>,
   };
   if (!lista.length && !hist.length) return null;
   return (
-    <div className="panel">
+    <div className="panel" ref={painel}>
       <h3 className="section-title">
         <span>
           Acompanhamento
@@ -503,7 +552,7 @@ function AcompanhamentoAfiliados({ testes, linhas, canal, comissaoLoja, sugerida
             </thead>
             <tbody>
               {lista.map(({ k, t, nome, e }) => (
-                <tr key={k}>
+                <tr key={k} data-teste={k} className={destaque === k ? "linha-destaque" : undefined}>
                   <td>{nome}</td>
                   <td className="num">{pctTxt(Number(t.pct))}</td>
                   <td>
@@ -521,7 +570,21 @@ function AcompanhamentoAfiliados({ testes, linhas, canal, comissaoLoja, sugerida
                         </button>
                       </span>
                     )}
-                    {e.estado === "subir" && <span className="muted-cel">suba na Shopee e registre o % novo aqui</span>}
+                    {e.estado === "subir" && (
+                      <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+                        <button type="button" className="btn btn-mini primary" onClick={() => onSubir(k, e.proximo)} title={`Registra ${e.proximo}% e recomeça o teste de ${DIAS_TESTE} dias — ponha o mesmo % na Shopee`}>
+                          Subi pra {e.proximo}% na Shopee
+                        </button>
+                        <button type="button" className="btn btn-mini" onClick={() => onResponder(k, "manter")} title="Fica nesse % e o app para de perguntar até você mudar a comissão">
+                          Manter {pctTxt(Number(t.pct))}
+                        </button>
+                      </span>
+                    )}
+                    {e.estado === "maximo" && (
+                      <button type="button" className="btn btn-mini" onClick={() => onResponder(k, "manter")} title="O app para de mostrar este teste">
+                        ok, manter
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

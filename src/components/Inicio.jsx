@@ -32,6 +32,8 @@ import { recarregarCatalogo } from "../lib/catalogoStore.js";
 import { useAlertasIgnorados } from "../lib/alertasIgnorados.js";
 import { ajustarPeriodoAds, encerrarPeriodoAds, iniciarPeriodoAds } from "../lib/adsAcoes.js";
 import { custoAmostra, padraoDoCanal, sugestoesAfiliado } from "../lib/afiliados.js";
+import RespostaTesteAfiliado from "./RespostaTesteAfiliado.jsx";
+import { mostrarTesteAfiliado } from "../lib/afiliadoTesteAcoes.js";
 import { anunciosDaLoja, avisosComissaoLoja, linhasDaLoja, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
 import { agruparPorProduto, ehAvisoDeDados, montarPendencias, notaDoAviso, produtoDoAviso, situacaoDados } from "../lib/inicio.js";
 import { produtosParados } from "../lib/relatorios.js";
@@ -609,12 +611,20 @@ export default function Inicio({ onIrPara, onToast }) {
             </button>
           </>
         )}
+        {p.afTeste && <RespostaTesteAfiliado a={p.afTeste} onToast={onToast} />}
         {p.ciente && (
           <button type="button" className="link-btn" onClick={() => ciente(p.ciente)} title="Esse aviso não volta mais pra esta impressora.">
             ok, ciente
           </button>
         )}
-        <button type="button" className={`btn btn-mini${p.grupo === "resolver" ? " primary" : ""}`} onClick={() => ir(p.ir)}>
+        <button
+          type="button"
+          className={`btn btn-mini${p.grupo === "resolver" ? " primary" : ""}`}
+          onClick={() => {
+            if (p.afTeste) mostrarTesteAfiliado(p.afTeste.chave);
+            ir(p.ir);
+          }}
+        >
           {p.rotulo}
         </button>
       </div>

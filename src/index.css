@@ -3024,3 +3024,6 @@ tr.imp-erro td { color: var(--ink-faint); }
 .dr-prox li:last-child { border-bottom: 0; }
 .dr-prox b { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dr-ent { color: var(--st-oportunidade); }
+
+/* Teste de afiliado aberto pelo "Ver em Afiliados" do Início/Hoje (14/11/2026) */
+tr.linha-destaque > td { background: var(--st-atencao-soft); transition: background .3s; }

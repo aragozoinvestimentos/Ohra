@@ -12,6 +12,8 @@ import { BRL } from "../lib/format.js";
 import Kpis from "./Kpis.jsx";
 import Estado from "./Estado.jsx";
 import CanalTag from "./CanalTag.jsx";
+import RespostaTesteAfiliado from "./RespostaTesteAfiliado.jsx";
+import { mostrarTesteAfiliado } from "../lib/afiliadoTesteAcoes.js";
 
 // Vender mais → Hoje (28/10/2026, aprovado pela prévia): UM cartão por anúncio (item × canal)
 // juntando o que a Rampa, o Ads, os Afiliados e o cupom pedem pra ele. SÓ LÊ: são os
@@ -109,7 +111,15 @@ export default function VenderHoje({ dados, linhas, linhasAds, onToast }) {
           lembrar em 30 dias
         </button>
       )}
-      <button type="button" className={`btn btn-mini${p.grupo !== "rotina" ? " primary" : ""}`} onClick={() => ir(p)}>
+      {p.afTeste && <RespostaTesteAfiliado a={p.afTeste} onToast={onToast} />}
+      <button
+        type="button"
+        className={`btn btn-mini${p.grupo !== "rotina" && !p.afTeste ? " primary" : ""}`}
+        onClick={() => {
+          if (p.afTeste) mostrarTesteAfiliado(p.afTeste.chave);
+          ir(p);
+        }}
+      >
         {p.rotulo || "Abrir"}
       </button>
     </div>

@@ -369,6 +369,7 @@ export function estadoTeste(t, hoje, maxSeguro, dias = DIAS_TESTE) {
   if (d < dias && !t.resposta) return { estado: "andamento", dias: d, avaliarEm, proximo };
   if (!t.resposta) return { estado: "avaliar", dias: d, avaliarEm, proximo };
   if (t.resposta === "sim") return { estado: "ok", dias: d, avaliarEm, proximo };
+  if (t.resposta === "manter") return { estado: "mantido", dias: d, avaliarEm, proximo };
   return maxSeguro && proximo <= maxSeguro ? { estado: "subir", dias: d, avaliarEm, proximo } : { estado: "maximo", dias: d, avaliarEm, proximo };
 }
 
@@ -406,10 +407,14 @@ export function avisosComissaoLoja({ linhas, canal, comissao, resultado, testes 
     const max = ehLoja ? sugestaoComissaoLoja(linhas).sugerida : maxSeguroDoItem(l);
     const e = estadoTeste(t, hoje, max);
     const quem = ehLoja ? "Comissão da loja" : `${l.item.nome}`;
+    const pctAtual = Math.round(num(t.pct) * 100);
+    // Dados pra responder direto no cartão (Início / Vender mais → Hoje) — 14/11/2026.
+    const afTeste = { chave: k, canalId: canal.id, pct: pctAtual, proximo: e?.proximo, estado: e?.estado, nome: quem, loja: ehLoja, itemTipo: ehLoja ? null : l.tipo, itemId: ehLoja ? null : l.id };
+    const irTeste = { aba: "crescimento", pedido: { sub: "afiliados", afTeste: k } };
     if (e?.estado === "avaliar")
-      out.push({ id: `af|teste|${k}`, grupo: "rotina", ordem: 3, tom: "warn", titulo: `${quem}: ${e.dias} dias com afiliado a ${Math.round(num(t.pct) * 100)}% — alguém se afiliou ou vendeu?`, texto: `${canal.nome} · confira no painel da Shopee (Afiliados) e responda no app`, ir, rotulo: "Responder" });
+      out.push({ id: `af|teste|${k}`, grupo: "rotina", ordem: 3, tom: "warn", titulo: `${quem}: faz ${e.dias} dias com ${pctAtual}% de comissão — teve afiliado ou venda?`, texto: `${canal.nome} · confira em Shopee → Marketing → Afiliados e responda aqui`, ir: irTeste, rotulo: "Ver em Afiliados", afTeste });
     else if (e?.estado === "subir")
-      out.push({ id: `af|subir|${k}`, grupo: "oportunidade", ordem: 4, tom: "good", titulo: `${quem}: testar a comissão de afiliado em ${e.proximo}%`, texto: `${canal.nome} · ninguém se afiliou em ${DIAS_TESTE} dias e ${e.proximo}% ainda deixa metade do lucro com você`, ir, rotulo: "Abrir Afiliados" });
+      out.push({ id: `af|subir|${k}`, grupo: "oportunidade", ordem: 4, tom: "good", titulo: `${quem}: testar a comissão de afiliado em ${e.proximo}%`, texto: `${canal.nome} · ninguém se afiliou em ${DIAS_TESTE} dias e ${e.proximo}% ainda deixa metade do lucro com você`, ir: irTeste, rotulo: "Ver em Afiliados", afTeste });
   }
   return out;
 }

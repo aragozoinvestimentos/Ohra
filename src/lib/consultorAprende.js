@@ -248,6 +248,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-11-14", texto: "Teste de 15 dias da comissão de afiliado agora se responde no próprio cartão (Início e Vender mais → Hoje): \"Ninguém se afiliou nem vendeu\" / \"Teve afiliado ou venda\"; depois \"Subi pra X% na Shopee\" (grava e recomeça o teste) ou \"Manter X%\" (para de perguntar). Na aba Afiliados o Acompanhamento sobe pro topo quando tem teste pra responder, e o \"Ver em Afiliados\" rola até o anúncio." },
   { data: "2026-11-08", texto: "Ficha do anúncio com vários itens ganhou o ✎ no SKU de cada linha (igual à Ficha de um item): muda o SKU do item da opção (produto, variação ou kit) e vale em todo o app; não deixa repetir o SKU de outro item." },
   { data: "2026-11-08", texto: "Excluir um anúncio com vários itens agora pergunta quais kits dele saem junto: os criados pelo Montar combinações, sem venda e fora de outro anúncio, já vêm marcados; produtos e variações nunca saem por aí." },
   { data: "2026-11-08", texto: "Toda tela com bolinha no menu agora mostra no topo a faixa \"Avisos desta tela\" com os avisos que geram a bolinha (ignorar, lembrar em 30 dias e \"ver\" quando o aviso leva a um lugar específico). O Resumo do Dinheiro mostra também os de Lançamentos (contas atrasadas, contas dos próximos 7 dias, recarregar o Ads)." },

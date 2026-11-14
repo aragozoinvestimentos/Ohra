@@ -5,7 +5,7 @@ let assinatura = "";
 const ouvintes = new Set();
 
 export function publicarSede({ pendencias, kpis }) {
-  const leves = (pendencias || []).filter((p) => !p.tarefa).map((p) => ({ id: p.id, grupo: p.grupo, titulo: typeof p.titulo === "string" ? p.titulo : "", texto: typeof p.texto === "string" ? p.texto : "", ir: p.ir ? { aba: p.ir.aba, pedido: p.ir.pedido } : null, rotulo: typeof p.rotulo === "string" ? p.rotulo : null }));
+  const leves = (pendencias || []).filter((p) => !p.tarefa).map((p) => ({ id: p.id, grupo: p.grupo, titulo: typeof p.titulo === "string" ? p.titulo : "", texto: typeof p.texto === "string" ? p.texto : "", ir: p.ir ? { aba: p.ir.aba, pedido: p.ir.pedido } : null, rotulo: typeof p.rotulo === "string" ? p.rotulo : null, afTeste: p.afTeste || null }));
   const s = JSON.stringify([leves, kpis]);
   if (s === assinatura) return;
   assinatura = s;
