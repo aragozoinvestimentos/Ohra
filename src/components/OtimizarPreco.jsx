@@ -7,7 +7,10 @@ import Portal from "./Portal.jsx";
 import Estado from "./Estado.jsx";
 import { useLoja } from "../lib/LojaContext.jsx";
 import { hojeISO } from "../lib/fluxoCaixa.js";
-import { precoTxt, REGUA_OTIMIZAR, linhaDaRegua, REGRAS_OTIMIZAR } from "../lib/otimizarPreco.js";
+import { precoTxt, REGUA_OTIMIZAR, linhaDaRegua, REGRAS_OTIMIZAR, previaDoPasso } from "../lib/otimizarPreco.js";
+import { anuncioDaRampa, anuncioDaRampaKit } from "../lib/rampaAnuncio.js";
+import { precosDoDegrau } from "../lib/grupoRampa.js";
+import PromoAviso from "./PromoAviso.jsx";
 import { ligarOtimizar, passoOtimizar, manterOtimizar, desligarOtimizar, atualizarSalvoOtimizar } from "../lib/otimizarAcoes.js";
 import { valoresAtuais } from "../lib/ads.js";
 import { useEscada } from "../hooks/useEscada.js";
@@ -241,6 +244,7 @@ function ConfirmaOtim({ confirma, grupo, b, salvando, onCancelar, onOk }) {
                 ? `O preço de agora (${pt(op.atual)}) volta pra ${pt(e.novo)}, que vira o preço bom. O app não sugere subir de novo por ${REGRAS_OTIMIZAR.bloqueioDias} dias.`
                 : `${pt(op.atual)} → ${pt(e.novo)}${lucroNovo != null ? ` · lucro por venda ${BRL(b.lucroEm(op.atual))} → ${BRL(lucroNovo)}` : ""}. A medição começa amanhã e decide com ${REGRAS_OTIMIZAR.leituraDias} dias e ${REGRAS_OTIMIZAR.minVendas} vendas pagas.`}
           </p>
+          {tipo !== "salvo" && e?.novo > 0 && <PreviaPasso b={b} de={op.atual} para={e.novo} />}
           {tipo !== "salvo" && <p className="modal-msg">Na plataforma: troque só a promo (o preço cheio fica fixo). A Anunciar mostra o ↻ com a promo nova{grupo ? " em cada opção do anúncio" : ""}.</p>}
           {tipo === "confirmar" && <p className="modal-msg">Você já subiu {Math.round((e.acumulado || 0) * 100)}% desde que ligou. Confirmando, o app só pede de novo a cada +{Math.round(REGRAS_OTIMIZAR.confirmarCada * 100)}%.</p>}
           <div className="modal-actions">
@@ -250,6 +254,74 @@ function ConfirmaOtim({ confirma, grupo, b, salvando, onCancelar, onOk }) {
         </div>
       </div>
     </Portal>
+  );
+}
+
+/** Linhas do "O que digitar" do anúncio num preço (produto/kit em R$, grupo em %). */
+function linhasNoPreco(b, preco, esc) {
+  const op = b.otimizar;
+  const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal } = esc;
+  if (!(num(preco) > 0)) return [];
+  if (b.tipo === "grupo") {
+    return precosDoDegrau({ ops: b.ops || [], pct: preco, canal: b.canal, itens, produtos, kits, publicacoes: publicacoesCanal }).map((l) => ({
+      itemId: `${l.idx}|${l.itemId}`,
+      nome: l.rotulo || l.item?.nome,
+      real: l.real,
+      original: l.an?.original,
+      promo: l.an?.promo,
+      clientePaga: l.an?.clientePaga,
+      riscadoFixo: !!l.fixo,
+      acimaDoRiscado: !!l.an?.acimaDoRiscado,
+      lucro: l.lucro,
+    }));
+  }
+  if (b.tipo === "kit") {
+    const kitItem = itens.find((i) => i.id === `k:${b.id}`);
+    if (!kitItem) return [];
+    return anuncioDaRampaKit({ kitItem, canal: b.canal, preco, alvo: op.alvo, cfg: cfgDoProduto(null), itens, produtos, kits, publicacoes: publicacoesCanal }).linhas;
+  }
+  const res = anuncioDaRampa({ produtoId: b.id, canal: b.canal, preco, alvo: op.alvo, cfg: cfgDoProduto(b.id), itens, produtos, kits, precos, precosRampa: precos, concorrentes, cfgDoProduto, publicacoes: publicacoesCanal });
+  // Só o anúncio do avulso: ele e as variações anunciadas neste canal (kit de produtos diferentes é outro anúncio).
+  return res.linhas.filter((l) => l.id === "avulso" || (l.itemId?.startsWith("v:") && anunciadoNoCanal(itens.find((i) => i.id === l.itemId), b.canal)));
+}
+
+/** "De quanto pra quanto" em cada item do anúncio num passo do Otimizar. */
+export function PreviaPasso({ b, de, para }) {
+  const esc = useEscada();
+  const linhas = previaDoPasso(linhasNoPreco(b, de, esc), linhasNoPreco(b, para, esc));
+  if (!linhas.length) return null;
+  const sobe = num(para) > num(de);
+  const soma = (k) => linhas.reduce((t, l) => t + num(l[k]), 0);
+  return (
+    <div className="otim-previa">
+      <div className="otim-sub">Em cada item do anúncio ({b.canal?.nome})</div>
+      <div className="table-wrap">
+        <table className="otim-tab">
+          <thead>
+            <tr><th>Item</th><th>Preço</th><th>Na plataforma</th><th>Cliente paga</th><th>Lucro por venda</th></tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.itemId}>
+                <td>{l.nome}</td>
+                <td>{BRL(l.de)} → <b>{BRL(l.para)}</b>{l.pct != null && <small>{l.pct >= 0 ? "+" : ""}{(Math.round(l.pct * 1000) / 10).toFixed(1).replace(".", ",")}%</small>}</td>
+                <td>
+                  {l.promoDe === l.promoPara ? `promo ${l.promoPara ?? 0}%` : <>promo {l.promoDe ?? 0}% → <b>{l.promoPara ?? 0}%</b></>} <PromoAviso canal={b.canal} promo={l.promoPara} />
+                  <small>preço cheio {BRL(l.original)}{l.fixo ? " (fixo)" : ""}</small>
+                  {l.acimaDoRiscado && <small className="otim-ruim">passa do preço cheio — precisaria subir o riscado</small>}
+                </td>
+                <td>{BRL(l.pagaDe)} → {BRL(l.pagaPara)}</td>
+                <td>{BRL(l.lucroDe)} → <b>{BRL(l.lucroPara)}</b>{l.lucroDe != null && l.lucroPara != null && <small>{l.lucroPara - l.lucroDe >= 0 ? "+" : ""}{BRL(l.lucroPara - l.lucroDe)}</small>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="otim-faint otim-nota">
+        {sobe ? "Na plataforma só a promo muda; o preço cheio fica igual." : "Na plataforma só a promo aumenta; o preço cheio fica igual."}
+        {linhas.length > 1 && soma("lucroDe") > 0 ? ` Vendendo 1 de cada: lucro ${BRL(soma("lucroDe"))} → ${BRL(soma("lucroPara"))}.` : ""}
+      </div>
+    </div>
   );
 }
 
@@ -294,6 +366,7 @@ export function LigarOtimizarDialog({ b, salvando, onCancelar, onLigar }) {
               <div className="otim-txt">{ini.bloqueio ? ini.bloqueio.texto : ini.motivos.filter((m) => m.bloqueia).map((m) => m.texto).join(" · ")} Ligue mesmo assim: o app avisa no Início quando enquadrar.</div>
             </div>
           )}
+          {pode && <PreviaPasso b={b} de={op.atual} para={ini.novo} />}
           <div className="otim-sub">O que o app olhou (pedidos importados)</div>
           <ul className="otim-lista">
             {ini.motivos.map((m, k) => (

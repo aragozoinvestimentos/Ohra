@@ -1383,3 +1383,15 @@ describe("Variação acima do alvo", () => {
     expect(precoVariacaoAcima({ alvo: 19.9, fator: 0.9, separado: 40 }).preco).toBe(19.9);
   });
 });
+
+import { previaDoPasso } from "../src/lib/otimizarPreco.js";
+describe("Otimizar — prévia do passo por item", () => {
+  it("junta antes e depois pelo item, riscado fixo e promo mudando", () => {
+    const antes = [{ itemId: "p:1", nome: "Avulso", real: 10.49, original: 15, promo: 30, clientePaga: 10.5, lucro: 3, riscadoFixo: true }, { itemId: "v:2", nome: "Kit 2", real: 18.9, original: 27, promo: 30, clientePaga: 18.9, lucro: 7 }];
+    const depois = [{ itemId: "p:1", nome: "Avulso", real: 10.99, original: 15, promo: 26, clientePaga: 11.1, lucro: 3.4, riscadoFixo: true }, { itemId: "v:2", nome: "Kit 2", real: 19.85, original: 27, promo: 26, clientePaga: 19.98, lucro: 7.7 }];
+    const p = previaDoPasso(antes, depois);
+    expect(p).toHaveLength(2);
+    expect(p[0]).toMatchObject({ de: 10.49, para: 10.99, promoDe: 30, promoPara: 26, fixo: true, lucroPara: 3.4 });
+    expect(p[1].pct).toBeCloseTo(0.05, 2);
+  });
+});

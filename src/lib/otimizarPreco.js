@@ -278,3 +278,37 @@ export function faseDoPrecoDinamico(est, ot) {
   if (est && !est.noAlvo && !est.acimaAtivo) return z === "subindo" || z === "pico" ? "Temporada" : "Lançamento";
   return "No alvo";
 }
+
+/**
+ * Prévia de um passo do Otimizar por item do anúncio (18/11/2026): junta as
+ * linhas do "O que digitar" no preço de AGORA e no preço NOVO pelo itemId.
+ * antes/depois = [{ itemId, nome, real, original, promo, clientePaga, lucro, riscadoFixo?, acimaDoRiscado? }]
+ * → [{ itemId, nome, de, para, pct, original, fixo, promoDe, promoPara, pagaDe, pagaPara, lucroDe, lucroPara, acimaDoRiscado }]
+ */
+export function previaDoPasso(antes = [], depois = []) {
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  return depois
+    .map((d) => {
+      const a = antes.find((x) => x.itemId === d.itemId);
+      if (!a) return null;
+      const de = n(a.real);
+      const para = n(d.real);
+      return {
+        itemId: d.itemId,
+        nome: d.nome,
+        de,
+        para,
+        pct: de > 0 && para != null ? para / de - 1 : null,
+        original: n(d.original),
+        fixo: !!d.riscadoFixo,
+        promoDe: n(a.promo),
+        promoPara: n(d.promo),
+        pagaDe: n(a.clientePaga),
+        pagaPara: n(d.clientePaga),
+        lucroDe: n(a.lucro),
+        lucroPara: n(d.lucro),
+        acimaDoRiscado: !!d.acimaDoRiscado,
+      };
+    })
+    .filter(Boolean);
+}

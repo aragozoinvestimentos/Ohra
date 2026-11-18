@@ -3057,3 +3057,6 @@ tr.linha-destaque > td { background: var(--st-atencao-soft); transition: backgro
 .otim-lista li span { display: inline-block; width: 16px; }
 .fase-pd { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid var(--border-strong); color: var(--ink-soft); white-space: nowrap; }
 @media (max-width: 760px) { .otim-dois { grid-template-columns: minmax(0, 1fr); } .otim-kv { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.otim-previa { margin: 10px 0; }
+.otim-previa .otim-tab td { vertical-align: top; }
+.otim-previa .otim-nota { font-size: 12px; margin-top: 6px; }
