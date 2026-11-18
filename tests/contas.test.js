@@ -1370,3 +1370,16 @@ describe("Otimizar preço", () => {
     expect(e.chave).toBe("parado");
   });
 });
+
+// Otimizar preço: variação do mesmo anúncio sobe no mesmo % do avulso (18/11/2026)
+import { precoVariacaoAcima } from "../src/lib/rampaAnuncio.js";
+describe("Variação acima do alvo", () => {
+  it("avulso +5% → kit 2 salvo a R$ 19,90 vai a R$ 20,90", () => {
+    const r = precoVariacaoAcima({ alvo: 19.9, fator: 31.49 / 29.99, separado: 2 * 31.49 });
+    expect(r.preco).toBe(20.9);
+    expect(r.economia).toBeGreaterThan(0.66);
+  });
+  it("nunca abaixo do salvo", () => {
+    expect(precoVariacaoAcima({ alvo: 19.9, fator: 0.9, separado: 40 }).preco).toBe(19.9);
+  });
+});

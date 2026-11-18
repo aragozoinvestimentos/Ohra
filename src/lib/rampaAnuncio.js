@@ -104,6 +104,16 @@ export function precoKitNaRampa({ alvo, separado, curva }) {
 }
 
 /**
+ * Variação do anúncio quando o avulso está ACIMA do alvo (Otimizar preço):
+ * mesmo % do avulso sobre o preço salvo da variação, no centavo.
+ */
+export function precoVariacaoAcima({ alvo, fator, separado }) {
+  const preco = cent(num(alvo) * Math.max(1, num(fator)));
+  const sep = num(separado);
+  return { preco, economia: sep > 0 ? 1 - preco / sep : null, naoCompensa: sep > 0 && preco >= sep - 0.004, limitado: false, motivo: null, acima: true };
+}
+
+/**
  * Linhas do "O que digitar no canal" pra um produto em rampa num canal.
  * preco = degrau atual; alvo = preço salvo (ou o último degrau).
  * → { linhas: [{ id ("avulso" | "v:…" | "k:…"), itemId, nome, original, promo, clientePaga, real, lucro,
@@ -121,11 +131,15 @@ export function anuncioDaRampa({ produtoId, canal, preco, alvo, cfg, itens, prod
   const noAlvo = escadaDoProduto({ produtoId, canal, itens, precos, concorrentes, cfg, p1Override: alvo });
   const noDegrau = escadaDoProduto({ produtoId, canal, itens, precos: precosRampa, concorrentes, cfg, p1Override: preco, emRampa: true });
   const lucroAvulsoAgora = itemPai ? lucroNoPreco(canal, preco, num(itemPai.custoTotal), num(itemPai.peso), cfg) : null;
+  const acima = num(alvo) > 0 && num(preco) > num(alvo) + 0.004;
   for (const l of noAlvo?.escada?.linhas || []) {
     if (l.base || !l.cadastrada) continue;
     const alvoV = l.salvo ?? l.sugerido;
     const ld = noDegrau?.escada?.linhas.find((x) => x.n === l.n) || null;
-    const k = precoKitNaRampa({ alvo: alvoV, separado: l.n * preco, curva: ld });
+    // Acima do alvo (Preço dinâmico → Otimizar preço, 18/11/2026): as variações
+    // do MESMO anúncio sobem no mesmo % do avulso, cada uma sobre o próprio
+    // preço salvo (antes ficavam presas no alvo delas).
+    const k = acima && num(alvoV) > 0 ? precoVariacaoAcima({ alvo: alvoV, fator: preco / alvo, separado: l.n * preco }) : precoKitNaRampa({ alvo: alvoV, separado: l.n * preco, curva: ld });
     const a = anuncioDoItem({ itemId: l.itemId, canal, real: k.preco, alvo: alvoV, desconto: desc, publicacoes });
     if (a)
       out.push({

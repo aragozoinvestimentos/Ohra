@@ -819,6 +819,18 @@ function useCalculoCrescimento() {
         const { desconto } = descontoDoItem(b.item.id, b.canal, { itens, produtos, kits });
         const an = anuncioDoItem({ itemId: b.item.id, canal: b.canal, real: atual, alvo, desconto, publicacoes: publicacoesCanal });
         if (an?.original > 0) espacoRiscado = Math.max(0, an.original / atual - 1);
+        // Variações do mesmo anúncio sobem no mesmo % (rampaAnuncio.precoVariacaoAcima):
+        // o espaço do anúncio é o da mais apertada.
+        if (b.tipo === "produto" && alvo > 0) {
+          const f = Math.max(1, atual / alvo);
+          for (const v of itens.filter((i) => i.id.startsWith("v:") && i.produtoId === b.id)) {
+            const sv = precos.find((p) => p.item_tipo === "variacao" && p.item_id === v.id.slice(2) && p.canal_id === b.canal.id);
+            if (!(num(sv?.preco) > 0)) continue;
+            const real = num(sv.preco) * f;
+            const av = anuncioDoItem({ itemId: v.id, canal: b.canal, real, alvo: num(sv.preco), desconto, publicacoes: publicacoesCanal });
+            if (av?.original > 0) espacoRiscado = Math.min(espacoRiscado ?? Infinity, Math.max(0, av.original / real - 1));
+          }
+        }
       }
       const t14 = ultimoDia ? medir(somarDias(ultimoDia, -13), ultimoDia).un / 14 : 0;
       const capacidadeUso = b.capacidadeDia > 0 && t14 > 0 ? t14 / b.capacidadeDia : null;
