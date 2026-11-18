@@ -362,9 +362,28 @@ export function montarPendencias({
     }
   }
   // "Surtiu efeito?" (01/11/2026) — veredito de cada mudança no anúncio (lib/efeito.js decide).
+  // Preço dinâmico → Otimizar preço (lib/otimizarPreco.js decide; aqui só lê).
+  for (const l of ads?.linhas || []) {
+    const oe = l.otimizar?.estado;
+    const rid = l.otimizar?.rampaLinha?.r?.id;
+    if (!oe || !rid || !["pronto", "subir", "confirmar", "voltar", "voltar-ja", "manter", "menos-trabalho", "pouca-venda"].includes(oe.chave)) continue;
+    const grupo = oe.tipo === "resolver" ? "resolver" : oe.tipo === "oportunidade" ? "oportunidade" : "rotina";
+    add({
+      id: `otimizar|${l.chave}|${oe.chave}|${oe.med?.data || l.otimizar.ot?.desde || ""}`,
+      grupo,
+      ordem: 2,
+      tom: grupo === "resolver" ? "bad" : grupo === "oportunidade" ? "good" : "warn",
+      titulo: `${l.item.nome}: ${oe.titulo}`,
+      texto: `${l.canal.nome} · Otimizar preço · ${oe.texto}`,
+      ir: { aba: "crescimento", pedido: { sub: "rampa", rampaId: rid } },
+      rotulo: "Abrir no Preço dinâmico",
+    });
+  }
   for (const l of ads?.linhas || []) {
     const ef = l.efeito;
     if (!ef || ef.estado !== "final" || !efeitoVisivel(ef, hoje)) continue;
+    // Mudança de preço do Otimizar: o veredito é o dele (acima), não repete.
+    if (ef.mudanca?.tipo === "preco" && l.otimizar?.ot?.ligado) continue;
     if (ef.veredito === "igual") continue;
     const grupo = ef.veredito === "prejuizo" ? "resolver" : ef.grupo === "oportunidade" ? "oportunidade" : "rotina";
     const itemId = l.item.id;

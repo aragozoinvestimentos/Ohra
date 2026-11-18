@@ -3027,3 +3027,33 @@ tr.imp-erro td { color: var(--ink-faint); }
 
 /* Teste de afiliado aberto pelo "Ver em Afiliados" do Início/Hoje (14/11/2026) */
 tr.linha-destaque > td { background: var(--st-atencao-soft); transition: background .3s; }
+
+/* Preço dinâmico → Otimizar preço (18/11/2026) */
+.otim-cartao { display: grid; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); margin-bottom: 10px; }
+.otim-desligado .otim-topo { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.otim-agora { border-radius: 12px; padding: 10px 14px; display: grid; gap: 5px; }
+.st-borda-info { border: 1.5px solid var(--border-strong); background: var(--surface-2); }
+.otim-rot { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-faint); }
+.otim-tit { font-weight: 800; font-size: 16px; color: var(--ink); }
+.otim-txt { font-size: 13px; color: var(--ink-soft); }
+.otim-faint { color: var(--ink-faint); }
+.otim-ok { color: var(--st-oportunidade); font-weight: 700; }
+.otim-ruim { color: var(--st-resolver); font-weight: 700; }
+.otim-botoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; align-items: center; }
+.otim-desligar { margin-left: auto; }
+.otim-dois { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.otim-sub { font-weight: 800; margin-bottom: 6px; font-size: 13px; }
+.otim-tab td small { display: block; color: var(--ink-faint); font-size: 12px; }
+.otim-tab tr.otim-aqui > td { background: var(--st-oportunidade-soft); }
+.otim-kv { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.otim-kv > div { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; display: grid; gap: 1px; }
+.otim-kv span { font-size: 11px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+.otim-kv b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.otim-kv small { font-size: 12px; color: var(--ink-soft); }
+.otim-amostra { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; margin-top: 8px; }
+.otim-barra { height: 8px; border-radius: 99px; background: var(--border); overflow: hidden; margin-top: 4px; }
+.otim-barra i { display: block; height: 100%; background: var(--accent); }
+.otim-lista { margin: 0 0 8px; padding-left: 0; list-style: none; display: grid; gap: 3px; font-size: 13px; }
+.otim-lista li span { display: inline-block; width: 16px; }
+.fase-pd { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid var(--border-strong); color: var(--ink-soft); white-space: nowrap; }
+@media (max-width: 760px) { .otim-dois { grid-template-columns: minmax(0, 1fr); } .otim-kv { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

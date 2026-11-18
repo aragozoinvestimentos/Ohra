@@ -825,7 +825,12 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
   const salto = (ok) => ok && vendasDesde >= num(regras.saltoVendas) * regras.vendas && i + 2 <= degraus.length - 1 && !(degraus[i + 2] > alvo + 0.004);
   const podeSubir = !alertaNota && (portoesOk || !!atalho?.ok);
   let sugestao;
-  if (acimaAtivo) {
+  // Preço dinâmico → Otimizar preço ligado (18/11/2026): no alvo ou acima, quem
+  // decide é lib/otimizarPreco.js (lucro do dia) — a rampa só mostra a fase.
+  const otimizarLigado = !!rampa.checklist?.otimizar?.ligado;
+  if (otimizarLigado && (noAlvo || acimaAtivo)) {
+    sugestao = { chave: "otimizar", tom: "neu", rotulo: "Otimizar preço" };
+  } else if (acimaAtivo) {
     sugestao = acima?.aprovado
       ? { chave: "acima-aprovado", tom: "good", rotulo: "Acima aprovado" }
       : acima?.reprovado
@@ -840,13 +845,13 @@ export function estadoRampa(rampa, registros, regras, ctx, hoje) {
         : { chave: "segurar", tom: "neu", rotulo: z.espera ? "Depois da data: aguarde" : z.noPiso ? "No piso da entressafra" : z.naoAjudou ? "Estacionado" : "Entressafra" };
     else if (z.fase === "aguardando") sugestao = { chave: "segurar", tom: "neu", rotulo: `Aguardando a temporada (${dm(z.inicioTemporada)})` };
     else if (noAlvo)
-      sugestao = acima?.sazonal && acima.pronto ? { chave: "testar-acima", tom: "good", rotulo: "Vendendo muito — testar +5%" } : { chave: "alvo", tom: "good", rotulo: `No alvo · ${z.nome}` };
+      sugestao = { chave: "alvo", tom: "good", rotulo: `No alvo · ${z.nome}` };
     else if (z.voltar) sugestao = { chave: "voltar", tom: "bad", rotulo: "Voltar degrau" };
     else if (revisar) sugestao = { chave: "revisar", tom: "bad", rotulo: "Revisar anúncio" };
     else if (z.subir && !alertaNota) sugestao = { chave: "subir", tom: "good", rotulo: z.pelaPressa ? "Subir degrau (vendendo rápido)" : "Subir degrau (cronograma)", saltos: 1 };
     else if (z.atrasado) sugestao = { chave: "atrasado", tom: "warn", rotulo: "Atrasado no cronograma" };
     else sugestao = { chave: "segurar", tom: "neu", rotulo: z.proximaData ? `No cronograma · próximo ${dm(z.proximaData)}` : "Segurar" };
-  } else if (noAlvo) sugestao = acima?.pronto ? { chave: "testar-acima", tom: "good", rotulo: "Testar acima do alvo" } : { chave: "alvo", tom: "good", rotulo: "No alvo" };
+  } else if (noAlvo) sugestao = { chave: "alvo", tom: "good", rotulo: "No alvo" }; // "testar acima do alvo" saiu: agora é o Otimizar preço (você liga)
   else if (lucroCheck?.status === "voltar") sugestao = { chave: "voltar", tom: "bad", rotulo: "Voltar degrau" };
   else if (revisar) sugestao = { chave: "revisar", tom: "bad", rotulo: "Revisar anúncio" };
   else if (semVenda) sugestao = { chave: "sem-venda", tom: "warn", rotulo: `${semVenda.dias} dias sem venda` };

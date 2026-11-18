@@ -141,10 +141,10 @@ const MENU = [
         key: "m-vender",
         label: "Vender mais",
         icone: "crescimento",
-        sub: "Rampa de preço, Ads, afiliados, promoções e atacado",
+        sub: "Preço dinâmico, Ads, afiliados, promoções e atacado",
         abas: [
           { tab: "crescimento", s: "hoje", label: "Hoje" },
-          { tab: "crescimento", s: "rampa", label: "Rampa de preço" },
+          { tab: "crescimento", s: "rampa", label: "Preço dinâmico" },
           { tab: "crescimento", s: "ads", label: "Ads" },
           { tab: "crescimento", s: "afiliados", label: "Afiliados" },
           SEP,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { OtimizarCartao } from "./OtimizarPreco.jsx";
 import ComoMediuOrcamento from "./ComoMediuOrcamento.jsx";
 import ChaveTeto from "./ChaveTeto.jsx";
 import CrescerProposito from "./CrescerProposito.jsx";
@@ -255,7 +256,7 @@ export default function PainelAnuncio({ onToast }) {
 
       {abaV === "resumo" && <AbaResumo l={l} v={v} vAnt={vAnt} adsJ={adsJ} pedP={pedP} de={de} hoje={hoje} dias={dias} irAba={setAba} cfgLoja={lojaCfg} />}
       {abaV === "vendas" && <AbaVendas l={l} v={v} vAnt={vAnt} pedP={pedP} de={de} hoje={hoje} dias={dias} esc={esc} />}
-      {abaV === "preco" && <AbaPreco l={l} esc={esc} />}
+      {abaV === "preco" && <AbaPreco l={l} esc={esc} onToast={onToast} />}
       {abaV === "rampa" && <AbaRampa l={l} cfgLoja={lojaCfg} />}
       {abaV === "ads" && <AbaAds l={l} hoje={hoje} ped={ped} />}
       {abaV === "anuncio" && <AbaAnuncio l={l} esc={esc} cres={cres} />}
@@ -662,7 +663,7 @@ function ReguaConcorrencia({ l }) {
   );
 }
 
-function AbaPreco({ l, esc }) {
+function AbaPreco({ l, esc, onToast }) {
   const pid = l.tipo === "produto" ? l.itemId.slice(2) : null;
   const d = pid ? esc.escada(pid, l.canal) : null;
   const linhasE = (d?.escada?.linhas || []).filter((x) => x.cadastrada !== false || x.salvo);
@@ -673,6 +674,7 @@ function AbaPreco({ l, esc }) {
   };
   return (
     <>
+      {l.ads?.otimizar && <OtimizarCartao b={l.ads} onToast={onToast} />}
       <div className="pa-grid2">
         <div className="panel">
           <h3>Preço alvo e preço agora</h3>

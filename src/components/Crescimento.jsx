@@ -1,4 +1,6 @@
 import { trocarSubAba, useSubAba } from "../lib/subAbas.js";
+import { OtimizarCartao, LigarOtimizar, EscolherOtimizarDialog } from "./OtimizarPreco.jsx";
+import { faseDoPrecoDinamico } from "../lib/otimizarPreco.js";
 import VenderHoje from "./VenderHoje.jsx";
 import { canalDireto } from "../lib/canais.js";
 import { rampaNoCanal } from "../lib/rampaCanal.js";
@@ -186,12 +188,22 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
   const pendDe = () => null;
   const { lembretes } = useLembretes();
   const pausas = useMemo(() => pausasDeRampa(lembretes), [lembretes]);
+  // Linha do Ads do anúncio (tem o Otimizar preço: linhasAds.linhas[].otimizar).
+  const adsLinhaDe = (l, grupo) => linhasAds?.linhas.find((x) => x.chave === (grupo ? `grupo|${l.r.grupo_id}|${l.r.canal_id}` : l.ehKit ? `kit|${l.r.kit_id}|${l.r.canal_id}` : `produto|${l.r.produto_id}|${l.r.canal_id}`)) || null;
+  const otimizarDe = (l, grupo) => adsLinhaDe(l, grupo)?.otimizar || null;
+  const [escolherOtim, setEscolherOtim] = useState(false);
+  const [ligarOtim, setLigarOtim] = useState(null); // linha do Ads
   // Lista única "Em rampa" (out/2026): produtos + anúncios com vários itens,
   // separada pelo que pedir ação — a ação vem de lib/rampaAgora.js (só lê o
   // que a rampa decidiu). Semana pendente sem outra ação = "Registrar a semana".
   const itensLista = useMemo(() => {
     const um = (l, grupo) => {
-      const acao = acaoDaRampa(l.est, { canal: l.canal.nome, grupo, checklist: l.r.checklist || {}, pctDe: grupo ? l.g?.pctDe : null });
+      let acao = acaoDaRampa(l.est, { canal: l.canal.nome, grupo, checklist: l.r.checklist || {}, pctDe: grupo ? l.g?.pctDe : null });
+      // Otimizar preço ligado (no alvo ou acima): quem decide é lib/otimizarPreco.js.
+      const op = otimizarDe(l, grupo);
+      const oe = op?.estado;
+      if (oe && oe.chave !== "espera-alvo")
+        acao = { tipo: oe.tipo, titulo: oe.titulo, porque: oe.texto, acao: oe.acao ? "otimizar" : null, botao: oe.acao ? (oe.acao === "voltar" ? "↓ Ver e voltar" : oe.acao === "manter" ? "Ver e decidir" : "↑ Ver e subir") : null, otimizar: true };
       const pend = pendDe(l);
       const doGrupo = !grupo && l.soNoGrupo;
       let secao = doGrupo ? "acomp" : ["resolver", "atencao"].includes(acao.tipo) ? "fazer" : acao.tipo === "oportunidade" ? "subir" : pend ? "fazer" : "acomp";
@@ -199,11 +211,12 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
       // prazo acabar (lib/pausaRampa.js). Urgente (resolver) continua aparecendo.
       const pausa = doGrupo ? null : pausaAtiva(pausas.get(l.r.id), l.est, hoje);
       if (pausa && acao.tipo !== "resolver") secao = "pausa";
-      return { l, grupo, acao, pend, secao, pausa, podePausar: !doGrupo && secao !== "acomp" && acao.tipo !== "resolver", proxima: proximaConferencia(l.est, { pendente: pend }) };
+      const proxima = oe?.decideEm ? { texto: `Decide em ${dataBR(oe.decideEm)} (com os pedidos importados)`, data: oe.decideEm } : proximaConferencia(l.est, { pendente: pend });
+      return { l, grupo, acao, pend, secao, pausa, podePausar: !doGrupo && secao !== "acomp" && acao.tipo !== "resolver", proxima, fase: faseDoPrecoDinamico(l.est, op?.ot) };
     };
     return [...linhas.map((l) => um(l, false)), ...linhasGrupo.map((l) => um(l, true))];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linhas, linhasGrupo, pausas, hoje]);
+  }, [linhas, linhasGrupo, pausas, hoje, linhasAds]);
   const [verPausadas, setVerPausadas] = useState(false);
   async function pausar(x, dias) {
     const r = await pausarRampa({ lojaId, rampaId: x.l.r.id, dias, vendasTotal: x.l.est.vendasTotal, hoje });
@@ -495,6 +508,9 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
   return (
     <>
       <TopbarAcoes aba="crescimento">
+        <button type="button" className="btn" onClick={() => setEscolherOtim(true)} title="Liga o Otimizar preço num anúncio que já está no preço salvo: o app sobe aos poucos (só pela promo) enquanto o lucro do dia deixa">
+          + Otimizar preço
+        </button>
         <button type="button" className="btn" onClick={() => setIniciar({})}>
           + Iniciar rampa
         </button>
@@ -529,7 +545,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
             sub: itensLista.filter((x) => x.secao === "subir").map((x) => x.l.produto.nome).join(", ") || "—",
           },
           {
-            label: "Em rampa",
+            label: "No preço dinâmico",
             valor: String(linhas.length + linhasGrupo.length),
             sub: `${linhas.length} produto${linhas.length === 1 ? "" : "s"}${linhasGrupo.length ? ` · ${linhasGrupo.length} anúncio${linhasGrupo.length > 1 ? "s" : ""} com vários itens` : ""}`,
           },
@@ -546,8 +562,8 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
       <div className="panel">
         <h3 className="section-title">
           <span>
-            Em rampa
-            <Ajuda texto="Rampa de preço: o produto (ou o anúncio com vários itens inteiro) entra perto do 0 a 0 pra ganhar vendas e avaliações no orgânico e sobe em degraus pequenos até o PREÇO ALVO — o preço salvo em Produtos precificados, que não muda. A lista mostra primeiro o que pede ação agora, depois o que está pronto pra subir e por último o que só está sendo acompanhado. Clique numa linha pra ver o detalhe embaixo. Nada aqui muda o cadastro." />
+            Anúncios no preço dinâmico
+            <Ajuda texto="Preço dinâmico — fases: Lançamento (abaixo do alvo, sobe pelos portões de avaliação), No alvo, Otimizar preço (você liga; sobe e desce pela régua do lucro do dia, sem teto), Temporada e Entressafra. Rampa de preço: o produto (ou o anúncio com vários itens inteiro) entra perto do 0 a 0 pra ganhar vendas e avaliações no orgânico e sobe em degraus pequenos até o PREÇO ALVO — o preço salvo em Produtos precificados, que não muda. A lista mostra primeiro o que pede ação agora, depois o que está pronto pra subir e por último o que só está sendo acompanhado. Clique numa linha pra ver o detalhe embaixo. Nada aqui muda o cadastro." />
           </span>
           <span className="h3-contagem">semana de {dataBR(hoje)}</span>
         </h3>
@@ -586,7 +602,7 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
                   <thead>
                     <tr>
                       <th>Produto / anúncio</th>
-                      <th>Degrau agora → alvo</th>
+                      <th>Fase · degrau agora → alvo</th>
                       <th>O que fazer</th>
                       <th>Próxima conferência</th>
                     </tr>
@@ -623,8 +639,9 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
                               }}
                               onAcao={() => {
                                 const k = x.acao.acao;
-                                if (x.grupo || !k) {
+                                if (x.grupo || !k || k === "otimizar") {
                                   setSelId(x.l.r.id);
+                                  if (detalheRecolhido === "1") setDetalheRecolhido("0");
                                   return;
                                 }
                                 if (k === "subir") setMudar({ linha: x.l, dir: 1 });
@@ -653,7 +670,20 @@ function RampaPreco({ dados, linhasAds, onVerAds, rampasH, regras, linhas, linha
         )}
       </div>
 
+      {selEhGrupo && (() => {
+        const lg = linhasGrupo.find((g) => g.r.id === selId);
+        const b = lg ? adsLinhaDe(lg, true) : null;
+        return b ? <OtimizarCartao b={b} onToast={onToast} /> : null;
+      })()}
       <RampaGrupo linhasGrupo={linhasGrupo} dados={dados} hoje={hoje} onToast={onToast} selId={selId} setSelId={setSelId} linhasAds={linhasAds} onVerAds={onVerAds} soDetalhe />
+
+      {sel && adsLinhaDe(sel, false) && (sel.est.noAlvo || sel.est.acimaAtivo || sel.r.checklist?.otimizar?.ligado) && <OtimizarCartao b={adsLinhaDe(sel, false)} onToast={onToast} />}
+      {escolherOtim && <EscolherOtimizarDialog linhas={linhasAds?.linhas || []} onCancelar={() => setEscolherOtim(false)} onEscolher={(b) => (setEscolherOtim(false), setLigarOtim(b.chave))} />}
+      {ligarOtim && (() => {
+        const b = linhasAds?.linhas.find((x) => x.chave === ligarOtim);
+        if (!b) return null;
+        return <LigarOtimizar b={b} onToast={onToast} onFechar={() => setLigarOtim(null)} />;
+      })()}
 
       {sel && (
         <Detalhe
@@ -1104,8 +1134,8 @@ function LinhaEmRampa({ x, atual, onAbrir, onAcao, onPausar, onRetomar }) {
           ))}
         </div>
         <div className="sub-num">
-          {e.fase.rotulo}
-          {e.fase.chave !== "acima" ? ` · ${e.i + 1} de ${e.degraus.length}` : ""} · lucro {BRL(e.lucroAtual)}
+          {x.fase && <span className="fase-pd">{x.fase}</span>} {x.fase?.startsWith("Otimizar") ? "" : e.fase.rotulo}
+          {e.fase.chave !== "acima" && !x.fase?.startsWith("Otimizar") ? ` · ${e.i + 1} de ${e.degraus.length}` : ""} · lucro {BRL(e.lucroAtual)}
         </div>
       </td>
       <td className="o-que-fazer">

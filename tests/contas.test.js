@@ -1307,3 +1307,66 @@ describe("estadoTeste do afiliado (respostas no cartão)", () => {
     expect(estadoTesteAf({ ...t, resposta: "manter" }, "2026-11-14", 12).estado).toBe("mantido");
   });
 });
+
+// Preço dinâmico → Otimizar preço (18/11/2026)
+import { estadoOtimizar, decisaoInicial, proximoPreco, otimizarDepois } from "../src/lib/otimizarPreco.js";
+describe("Otimizar preço", () => {
+  // vendas/dia e lucro por venda constantes por janela: antes (até 14/11) × depois (≥ 16/11)
+  const medidor = ({ vAntes, lAntes, vDepois, lDepois, ads = 0 }) => (de, ate) => {
+    const d = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000) + 1;
+    const n = d(de, ate);
+    const depois = de >= "2026-11-16";
+    const v = (depois ? vDepois : vAntes) * n;
+    return { un: v, lucro: v * (depois ? lDepois : lAntes), ads: ads * n };
+  };
+  const ot = (passos = []) => ({ ligado: true, desde: "2026-11-01", base: 30, passos, precoBom: null, bloqueadoAte: null, confirmadoAte: null });
+  const sub = [{ data: "2026-11-15", tipo: "subir", de: 30, para: 31.49 }];
+  it("próximo preço: finais ,49/,99 e % inteiro no anúncio com vários itens", () => {
+    expect(proximoPreco(30, 0.05)).toBe(31.49);
+    expect(proximoPreco(100, 0.05, true)).toBe(105);
+  });
+  it("ao ligar: 15 vendas em 14 dias e ritmo estável → pode subir +5%", () => {
+    const r = decisaoInicial({ atual: 30, medir: medidor({ vAntes: 3, lAntes: 6, vDepois: 3, lDepois: 6 }), hoje: "2026-11-14", ultimoDia: "2026-11-13" });
+    expect(r.pode).toBe(true);
+    expect(r.novo).toBe(31.49);
+  });
+  it("ao ligar: Ads mudou há 3 dias → espera", () => {
+    const r = decisaoInicial({ atual: 30, medir: medidor({ vAntes: 3, lAntes: 6, vDepois: 3, lDepois: 6 }), hoje: "2026-11-14", ultimoDia: "2026-11-13", adsMudouEm: "2026-11-11" });
+    expect(r.pode).toBe(false);
+    expect(r.bloqueio.ate).toBe("2026-11-18");
+  });
+  it("antes de 7 dias: medindo", () => {
+    const e = estadoOtimizar({ ot: ot(sub), atual: 31.49, alvo: 30, hoje: "2026-11-20", ultimoDia: "2026-11-19", medir: medidor({ vAntes: 8, lAntes: 6, vDepois: 7, lDepois: 7.5 }) });
+    expect(e.chave).toBe("medindo");
+  });
+  it("lucro do dia ≥ 100% e vendas caindo menos de 10% → subir +8%", () => {
+    const e = estadoOtimizar({ ot: ot(sub), atual: 31.49, alvo: 30, hoje: "2026-11-24", ultimoDia: "2026-11-23", medir: medidor({ vAntes: 8, lAntes: 6, vDepois: 7.5, lDepois: 7.5 }) });
+    expect(e.chave).toBe("subir");
+    expect(e.passo).toBe(0.08);
+  });
+  it("lucro do dia ≥ 100% com vendas caindo 12% → subir +5%", () => {
+    const e = estadoOtimizar({ ot: ot(sub), atual: 31.49, alvo: 30, hoje: "2026-11-24", ultimoDia: "2026-11-23", medir: medidor({ vAntes: 8, lAntes: 6, vDepois: 7, lDepois: 7.5 }) });
+    expect(e.chave).toBe("subir");
+    expect(e.passo).toBe(0.05);
+  });
+  it("lucro do dia < 85% → voltar pro preço de antes", () => {
+    const e = estadoOtimizar({ ot: ot(sub), atual: 31.49, alvo: 30, hoje: "2026-11-24", ultimoDia: "2026-11-23", medir: medidor({ vAntes: 8, lAntes: 6, vDepois: 5, lDepois: 7.5 }) });
+    expect(e.chave).toBe("voltar");
+    expect(e.novo).toBe(30);
+  });
+  it("meio (85–100%): espera até 14 dias, depois 'trabalha menos e ganha quase igual'", () => {
+    const m = medidor({ vAntes: 4, lAntes: 6, vDepois: 3.1, lDepois: 7.5 }); // 23,25/24 = 97%, vendas −22%
+    expect(estadoOtimizar({ ot: ot(sub), atual: 31.49, alvo: 30, hoje: "2026-11-24", ultimoDia: "2026-11-23", medir: m }).chave).toBe("medindo");
+    expect(estadoOtimizar({ ot: ot(sub), atual: 31.49, alvo: 30, hoje: "2026-11-30", ultimoDia: "2026-11-29", medir: m }).chave).toBe("menos-trabalho");
+  });
+  it("emergência: prejuízo depois do Ads a partir do 3º dia → voltar já", () => {
+    const e = estadoOtimizar({ ot: ot(sub), atual: 31.49, alvo: 30, hoje: "2026-11-19", ultimoDia: "2026-11-18", medir: medidor({ vAntes: 8, lAntes: 6, vDepois: 1, lDepois: 7.5, ads: 0 }) });
+    expect(e.chave).toBe("voltar-ja");
+  });
+  it("depois de voltar: preço bom e 30 dias sem sugerir subir", () => {
+    const o = otimizarDepois(ot(sub), { tipo: "voltar", de: 31.49, para: 30, hoje: "2026-11-24" });
+    expect(o.precoBom).toBe(30);
+    const e = estadoOtimizar({ ot: o, atual: 30, alvo: 30, hoje: "2026-11-25", ultimoDia: "2026-11-24", medir: medidor({ vAntes: 8, lAntes: 6, vDepois: 8, lDepois: 6 }) });
+    expect(e.chave).toBe("parado");
+  });
+});
