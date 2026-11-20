@@ -679,6 +679,7 @@ export default function FluxoCaixa({ onToast }) {
           lancamentos={lancamentos}
           resumoCart={resumoCart}
           hoje={hoje}
+          saldoDeAds={saldoDeAds}
           caixinhaAntiga={saldosCx.insumos}
           onTransferir={(de) => setTransferir({ de })}
           onRecargaAds={abrirRecargaAds}

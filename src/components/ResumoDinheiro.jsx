@@ -3,7 +3,7 @@ import { BRL } from "../lib/format.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { cascataDoPeriodo } from "../lib/resumoLoja.js";
-import { reposicao, contasAte, proximosDias, partesDoTotal, livreXLucro, sugestaoSaque } from "../lib/dinheiroResumo.js";
+import { reposicao, contasAte, proximosDias, partesDoTotal, livreXLucro, sugestaoSaque, giroFuturo } from "../lib/dinheiroResumo.js";
 import { irParaAba } from "../lib/navegar.js";
 import { payoff } from "../lib/payoff.js";
 import { rotuloMes, somarMeses, rotuloCategoria } from "../lib/fluxoCaixa.js";
@@ -24,9 +24,11 @@ const PARTES = {
   revenda: { rot: "Recompra de revenda", cor: "var(--c-tiktok)", exp: "Custo dos produtos de revenda vendidos (média das notas) menos as compras de mercadoria já lançadas." },
   contas: { rot: "Contas dos próximos 30 dias", cor: "var(--st-atencao)", exp: "Contas fixas, parcelas e contas a pagar até {limite} (atrasadas entram aqui)." },
   impostos: { rot: "Impostos e taxas", cor: "var(--ink-faint)", exp: "Lançamentos de impostos/taxas a pagar até {limite} (ex.: DAS)." },
+  proximas: { rot: "Material das próximas vendas", cor: "var(--c-shopee)", exp: "Enquanto o dinheiro de uma venda não volta ({dias} dias: entrega + a plataforma segurar), você continua comprando material e embalagem pras próximas. Pelo ritmo dos últimos {base} dias." },
+  ads: { rot: "Ads dos próximos {dias} dias", cor: "var(--c-ml)", exp: "Recarga que ainda falta pra manter o Ads no ritmo de hoje ({adsDia}/dia), descontando o saldo que já está na plataforma ({adsSaldo})." },
 };
 
-export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinhaAntiga = 0, onTransferir, onRecargaAds, onNovo, onVerLancamentos }) {
+export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, saldoDeAds = null, caixinhaAntiga = 0, onTransferir, onRecargaAds, onNovo, onVerLancamentos }) {
   const cres = useCrescimento();
   const { produtos, itens, materiais } = useRankingData();
   const [verConta, setVerConta] = useState(false);
@@ -36,7 +38,8 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
   const contas = useMemo(() => contasAte(lancamentos, hoje, 30), [lancamentos, hoje]);
   const prox = useMemo(() => proximosDias(lancamentos, hoje, 7), [lancamentos, hoje]);
   const total = resumoCart?.total || 0;
-  const div = partesDoTotal({ total, repor, contas });
+  const giro = useMemo(() => giroFuturo({ pedidos, produtos, itens, materiais, hoje, ads: saldoDeAds }), [pedidos, produtos, itens, materiais, hoje, saldoDeAds]);
+  const div = partesDoTotal({ total, repor, contas, giro });
 
   // Lucro mês a mês (mesma conta do Resultado → Do mês), do 1º mês com pedido até agora.
   const meses = useMemo(() => {
@@ -53,13 +56,20 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
   }, [pedidos, cres.linhasAds, lancamentos, hoje]);
   const soma = (k) => meses.reduce((t, x) => t + (x.c[k] || 0), 0);
   const po = useMemo(() => payoff({ lancamentos, hoje }), [lancamentos, hoje]);
-  const ponte = livreXLucro({ livre: div.livre, payoff: po, lucroAcumulado: meses.length ? soma("liquido") : 0 });
+  const ponte = livreXLucro({ livre: div.livreSemGiro, payoff: po, lucroAcumulado: meses.length ? soma("liquido") : 0 });
   const mesAtual = meses.find((x) => x.parcial) || null;
 
   const carteiras = resumoCart?.carteiras || [];
   const ordem = [...carteiras].sort((a, b) => (a.plataforma ? 1 : 0) - (b.plataforma ? 1 : 0));
   const largura = (v) => (div.comprometido + Math.max(0, div.livre) > 0 ? (v / (div.comprometido + Math.max(0, div.livre))) * 100 : 0);
-  const exp = (k) => PARTES[k].exp.replace("{limite}", dm(contas.limite));
+  const exp = (k) =>
+    PARTES[k].exp
+      .replace("{limite}", dm(contas.limite))
+      .replaceAll("{dias}", giro.dias)
+      .replace("{base}", giro.diasBase)
+      .replace("{adsDia}", BRL(giro.adsDia))
+      .replace("{adsSaldo}", BRL(giro.adsSaldo || 0));
+  const rot = (k) => PARTES[k].rot.replace("{dias}", giro.dias);
   // Frase do topo (20/11/2026, prévia "Dinheiro em 3 abas"): quanto tem e onde está.
   const lojaC = carteiras.find((c) => !c.plataforma);
   const plats = carteiras.filter((c) => c.plataforma && Math.abs(c.saldo || 0) >= 0.005);
@@ -142,32 +152,47 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
       <div className="panel">
         <h3 className="section-title h3-split">
           <span>
-            Desse dinheiro, quanto já tem dono
-            <Ajuda texto="O app calcula sozinho, sem precisar separar: o que precisa voltar pro estoque (pelas vendas e pelas compras lançadas desde o início), as contas que vencem nos próximos 30 dias e os impostos. O resto é o que fica livre NO CAIXA. Atenção: não é lucro — entra aí o dinheiro que você colocou na loja e o que você pagou do seu bolso. O lucro está na aba 2 · Estou ganhando?" />
+            Capital de giro: quanto desse dinheiro já tem dono
+            <Ajuda texto="Capital de giro = o dinheiro que a loja precisa ter pra continuar rodando: repor o material das peças já vendidas, pagar as contas dos próximos 30 dias e os impostos, e bancar o material e o Ads das próximas vendas enquanto o dinheiro delas não volta (entrega + a plataforma segurar). O app calcula sozinho, sem precisar separar. O que passar disso é a folga. Atenção: não é lucro — entra aí o dinheiro que você colocou na loja e o que pagou do seu bolso. O lucro está na aba 2 · Estou ganhando?" />
           </span>
-          <span className="faint">calculado pelas vendas e compras</span>
+          <span className="faint">calculado pelas vendas, compras e contas</span>
         </h3>
+        <div className={`dr-giro${div.livre < 0 ? " dr-giro-falta" : ""}`}>
+          <div>
+            <span>Capital de giro necessário</span>
+            <b>{BRL(div.comprometido)}</b>
+          </div>
+          <div>
+            <span>Você tem</span>
+            <b className={total < 0 ? "neg" : ""}>{BRL(total)}</b>
+          </div>
+          <div>
+            <span>{div.livre >= 0 ? "Folga além do giro" : "Falta pro giro"}</span>
+            <b className={div.livre < 0 ? "neg" : "dr-ent"}>{BRL(Math.abs(div.livre))}</b>
+          </div>
+        </div>
         <div className="dr-barra" role="img" aria-label="Divisão do total da loja">
           {div.partes.filter((p) => p.valor > 0).map((p) => (
-            <span key={p.chave} style={{ width: `${largura(p.valor)}%`, background: PARTES[p.chave].cor }} title={`${PARTES[p.chave].rot}: ${BRL(p.valor)}`} />
+            <span key={p.chave} style={{ width: `${largura(p.valor)}%`, background: PARTES[p.chave].cor }} title={`${rot(p.chave)}: ${BRL(p.valor)}`} />
           ))}
-          {div.livre > 0 && <span style={{ width: `${largura(div.livre)}%`, background: "var(--st-oportunidade)" }} title={`Livre: ${BRL(div.livre)}`} />}
+          {div.livre > 0 && <span style={{ width: `${largura(div.livre)}%`, background: "var(--st-oportunidade)" }} title={`Folga: ${BRL(div.livre)}`} />}
         </div>
         <table className="dr-partes">
           <tbody>
             {div.partes.map((p) =>
-              p.chave === "revenda" && !(repor.revenda.vendido > 0 || repor.revenda.comprado > 0) ? null : p.chave === "impostos" && !contas.nImpostos ? null : (
+              p.chave === "revenda" && !(repor.revenda.vendido > 0 || repor.revenda.comprado > 0) ? null : p.chave === "impostos" && !contas.nImpostos ? null : p.chave === "proximas" && !(p.valor > 0) ? null : p.chave === "ads" && (giro.semAds || !(giro.adsDia > 0)) ? null : (
                 <tr key={p.chave}>
                   <td>
                     <div className="dr-rot">
                       <i style={{ background: PARTES[p.chave].cor }} />
-                      {PARTES[p.chave].rot}
+                      {rot(p.chave)}
                     </div>
                     <div className="dr-exp">
                       {exp(p.chave)}
                       {p.chave === "material" && repor.material.falta < 0 && ` Você comprou ${BRL(-repor.material.falta)} a mais do que vendeu — material à frente, não tira nada do livre.`}
                       {p.chave === "revenda" && repor.revenda.falta < 0 && ` Mercadoria à frente: ${BRL(-repor.revenda.falta)}.`}
                       {p.chave === "contas" && contas.nContas > 0 && ` ${contas.nContas} conta${contas.nContas > 1 ? "s" : ""}.`}
+                      {p.chave === "ads" && p.valor === 0 && " O saldo que já está lá cobre esse período."}
                     </div>
                   </td>
                   <td className="num">{BRL(p.valor)}</td>
@@ -176,8 +201,8 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
             )}
             <tr className={div.livre >= 0 ? "dr-livre" : "dr-livre neg"}>
               <td>
-                <div className="dr-rot">{div.livre >= 0 ? "Livre no caixa" : "Falta dinheiro"}</div>
-                <div className="dr-exp">{div.livre >= 0 ? "O dinheiro que sobra no caixa depois de repor e pagar o que vence. NÃO é o lucro — veja embaixo por que os dois são diferentes." : `Faltam ${BRL(div.falta)} pra cobrir a reposição e as contas dos próximos 30 dias.`}</div>
+                <div className="dr-rot">{div.livre >= 0 ? "Folga além do giro" : "Falta pro giro"}</div>
+                <div className="dr-exp">{div.livre >= 0 ? "O que sobra depois de garantir o giro (repor, contas e as próximas vendas). É o dinheiro que dá pra usar sem apertar a loja — mas NÃO é o lucro: veja embaixo por que os dois são diferentes." : `Faltam ${BRL(div.falta)} pra cobrir o giro (reposição, contas dos 30 dias e as próximas vendas). Não é emergência se as vendas a liberar e a caminho entrarem — mas evite gastos novos.`}</div>
               </td>
               <td className="num">{BRL(div.livre >= 0 ? div.livre : -div.falta)}</td>
             </tr>
@@ -185,10 +210,10 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
         </table>
         {meses.length > 0 && (
           <details className="dr-ponte-det">
-            <summary>por que o livre no caixa é diferente do lucro?</summary>
+            <summary>por que esse dinheiro é diferente do lucro?</summary>
           <div className="dr-ponte">
             <div className="dr-ponte-tit">
-              Por que tem {BRL(div.livre)} livre no caixa{mesAtual ? ` se ${rotuloMes(mesAtual.mes).toLowerCase()} está em ${BRL(mesAtual.c.liquido || 0)}` : ""}?
+              Por que sobram {BRL(div.livreSemGiro)} depois de repor e pagar as contas{mesAtual ? ` se ${rotuloMes(mesAtual.mes).toLowerCase()} está em ${BRL(mesAtual.c.liquido || 0)}` : ""}?
             </div>
             <table className="dr-conta-tab">
               <tbody>
@@ -214,8 +239,8 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
                   <td className="num">{BRL(ponte.tempo)}</td>
                 </tr>
                 <tr>
-                  <td><b>= Livre no caixa</b></td>
-                  <td className="num"><b>{BRL(div.livre)}</b></td>
+                  <td><b>= Sobra depois de repor e das contas</b></td>
+                  <td className="num"><b>{BRL(div.livreSemGiro)}</b></td>
                 </tr>
               </tbody>
             </table>
@@ -223,8 +248,8 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
               {ponte.lucro < 0
                 ? `A loja ainda não deu lucro (${BRL(ponte.lucro)} somando os meses): o caixa está positivo porque tem dinheiro seu lá dentro. Retirar esse valor seria tirar o seu próprio dinheiro de volta, não lucro.`
                 : ponte.colocado + ponte.doBolso > 0
-                  ? `Dos ${BRL(div.livre)} livres, só ${BRL(Math.max(0, Math.min(div.livre, ponte.lucro)))} vieram de lucro; o resto é dinheiro seu (aba 2 → Seu dinheiro de volta).`
-                  : "O livre no caixa vem do lucro dos meses e das diferenças de tempo."}
+                  ? `Desses ${BRL(div.livreSemGiro)}, só ${BRL(Math.max(0, Math.min(div.livreSemGiro, ponte.lucro)))} vieram de lucro; o resto é dinheiro seu (aba 2 → Seu dinheiro de volta).`
+                  : "Essa sobra vem do lucro dos meses e das diferenças de tempo."}
             </div>
           </div>
           </details>
@@ -261,8 +286,18 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
                   </>
                 )}
                 <tr>
+                  <td>Próximas vendas: {giro.unidades} un. vendidas em {giro.diasBase} dias → material/embalagem{giro.revenda > 0 ? " e mercadoria" : ""} de {giro.dias} dias</td>
+                  <td className="num">{BRL(giro.material + giro.revenda)}</td>
+                </tr>
+                {!giro.semAds && giro.adsDia > 0 && (
+                  <tr>
+                    <td>Ads: {BRL(giro.adsDia)}/dia × {giro.dias} dias − saldo na plataforma ({BRL(giro.adsSaldo || 0)})</td>
+                    <td className="num">{BRL(giro.ads)}</td>
+                  </tr>
+                )}
+                <tr>
                   <td colSpan={2} className="faint">
-                    Conta com o custo de hoje de cada produto. Energia, máquina, manutenção e acabamento não entram (energia já está nas contas; a máquina é o fundo da próxima impressora). Compra de material lançada como “outras saídas” não é reconhecida — lance como Filamento/material ou Embalagem.
+                    O dinheiro “a caminho” (pedidos pagos e não entregues) não entra no que você tem — fica de folga extra. Conta com o custo de hoje de cada produto. Energia, máquina, manutenção e acabamento não entram (energia já está nas contas; a máquina é o fundo da próxima impressora). Compra de material lançada como “outras saídas” não é reconhecida — lance como Filamento/material ou Embalagem.
                     {repor.semCusto > 0 ? ` ${repor.semCusto} venda${repor.semCusto > 1 ? "s" : ""} sem produto cadastrado ficaram de fora.` : ""}
                     {caixinhaAntiga > 0 ? ` Os ${BRL(caixinhaAntiga)} que você tinha separado na caixinha Insumos ficam no histórico, sem somar de novo.` : ""}
                   </td>

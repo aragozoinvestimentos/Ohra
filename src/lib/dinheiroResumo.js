@@ -136,11 +136,66 @@ export function proximosDias(lancamentos = [], hoje, dias = 7) {
   return [...reais, ...virt].sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista)));
 }
 
+/** Dias que o dinheiro de uma venda demora pra voltar (entrega + a Shopee segurar). */
+export const DIAS_GIRO = 14;
+/** Janela pra medir o ritmo de vendas do giro. */
+export const BASE_GIRO = 30;
+
+/**
+ * Capital de giro das próximas vendas (20/11/2026, pedido do Gustavo: "o livre seria
+ * tipo um capital de giro?"): enquanto o dinheiro de uma venda não volta (DIAS_GIRO),
+ * a loja continua comprando material/embalagem (e mercadoria) pras próximas e
+ * pagando o Ads. Ritmo = pedidos válidos dos últimos BASE_GIRO dias (desde o 1º
+ * pedido, se a loja é mais nova, mín. 7). Ads = gasto/dia × dias − saldo já
+ * recarregado na plataforma (a recarga já saiu do caixa). ads = saldoAds() | null.
+ */
+export function giroFuturo({ pedidos = [], produtos = [], itens = [], materiais = [], hoje, dias = DIAS_GIRO, base = BASE_GIRO, ads = null }) {
+  const cache = new Map();
+  const fracao = (p) => {
+    if (!p) return 1;
+    if (!cache.has(p.id)) cache.set(p.id, fracaoMaterial(p, materiais));
+    return cache.get(p.id);
+  };
+  const de = somarDias(hoje, -(base - 1));
+  let vMat = 0;
+  let vRev = 0;
+  let primeiro = null;
+  let n = 0;
+  for (const p of pedidos) {
+    const d = String(p.data).slice(0, 10);
+    if (!p.valido || !p.item || d > hoje) continue;
+    if (!primeiro || d < primeiro) primeiro = d;
+    if (d < de) continue;
+    const r = reposicaoDoItem(p.item, { produtos, itens, fracao });
+    vMat += r.material * num(p.q);
+    vRev += r.revenda * num(p.q);
+    n += num(p.q);
+  }
+  const desdeInicio = primeiro ? Math.round((new Date(`${hoje}T12:00:00`) - new Date(`${primeiro}T12:00:00`)) / 864e5) + 1 : 0;
+  const diasBase = Math.max(7, Math.min(base, desdeInicio || base));
+  const gastoDia = num(ads?.gastoDia);
+  const adsPrecisa = ads ? Math.max(0, gastoDia * dias - Math.max(0, num(ads.saldo))) : 0;
+  return {
+    dias,
+    diasBase,
+    unidades: n,
+    material: r2((vMat / diasBase) * dias),
+    revenda: r2((vRev / diasBase) * dias),
+    ads: r2(adsPrecisa),
+    adsDia: r2(gastoDia),
+    adsSaldo: ads ? r2(ads.saldo) : null,
+    semAds: !ads,
+  };
+}
+
 /**
  * Divide o total da loja: repor material, recompra de revenda, contas dos 30 dias,
- * impostos e o que sobra livre. Partes negativas (comprou mais do que vendeu) não tiram nada.
+ * impostos e — com `giro` (giroFuturo) — o material e o Ads das próximas vendas.
+ * comprometido = capital de giro necessário; livre = a folga acima dele.
+ * livreSemGiro = total − repor − contas (o "livre" antigo, base da ponte livre × lucro).
+ * Partes negativas (comprou mais do que vendeu) não tiram nada.
  */
-export function partesDoTotal({ total, repor, contas }) {
+export function partesDoTotal({ total, repor, contas, giro = null }) {
   const material = Math.max(0, num(repor?.material?.falta));
   const revenda = Math.max(0, num(repor?.revenda?.falta));
   const partes = [
@@ -149,9 +204,14 @@ export function partesDoTotal({ total, repor, contas }) {
     { chave: "contas", valor: r2(num(contas?.contas)) },
     { chave: "impostos", valor: r2(num(contas?.impostos)) },
   ];
+  const semGiro = partes.reduce((t, p) => t + p.valor, 0);
+  if (giro) {
+    partes.push({ chave: "proximas", valor: r2(num(giro.material) + num(giro.revenda)) });
+    partes.push({ chave: "ads", valor: r2(num(giro.ads)) });
+  }
   const comprometido = partes.reduce((t, p) => t + p.valor, 0);
   const livre = r2(num(total) - comprometido);
-  return { partes, comprometido: r2(comprometido), livre, falta: livre < 0 ? r2(-livre) : 0 };
+  return { partes, comprometido: r2(comprometido), livre, falta: livre < 0 ? r2(-livre) : 0, livreSemGiro: r2(num(total) - semGiro) };
 }
 
 /**

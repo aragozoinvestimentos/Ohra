@@ -1463,3 +1463,27 @@ describe("Dinheiro em 3 abas (20/11/2026)", () => {
     expect(despesasFixasDoMes(l, "2026-11").total).toBe(80);
   });
 });
+
+import { giroFuturo, partesDoTotal as partesGiro } from "../src/lib/dinheiroResumo.js";
+describe("capital de giro (giroFuturo)", () => {
+  const item = { id: "p:1", produtoId: "1", custoProducao: 3, embalagem: 1 };
+  const pedidos = [
+    { valido: true, item, q: 10, data: "2026-11-10" },
+    { valido: true, item, q: 5, data: "2026-11-15" },
+    { valido: false, item, q: 99, data: "2026-11-15" },
+  ];
+  it("material das próximas 14 dias pelo ritmo e Ads menos o saldo", () => {
+    // loja com pedidos desde 10/11 → 11 dias de base; 15 un. × R$4 = 60 → 60/11 × 14
+    const g = giroFuturo({ pedidos, produtos: [], itens: [], materiais: [], hoje: "2026-11-20", ads: { gastoDia: 10, saldo: 50 } });
+    expect(g.diasBase).toBe(11);
+    expect(g.material).toBeCloseTo((60 / 11) * 14, 1);
+    expect(g.ads).toBe(90);
+    const d = partesGiro({ total: 500, repor: { material: { falta: 20 }, revenda: { falta: 0 } }, contas: { contas: 100, impostos: 0 }, giro: g });
+    expect(d.livreSemGiro).toBe(380);
+    expect(d.comprometido).toBeCloseTo(120 + g.material + 90, 1);
+    expect(d.livre).toBeCloseTo(500 - d.comprometido, 1);
+  });
+  it("saldo de Ads que cobre o período não pede nada", () => {
+    expect(giroFuturo({ pedidos, hoje: "2026-11-20", ads: { gastoDia: 5, saldo: 200 } }).ads).toBe(0);
+  });
+});
