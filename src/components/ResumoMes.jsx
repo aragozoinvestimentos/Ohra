@@ -7,6 +7,12 @@ import { lucroDaLinha } from "../lib/resumoLoja.js";
 import CanalTag from "./CanalTag.jsx";
 import CascataLucro from "./CascataLucro.jsx";
 import VistasResultado from "./VistasResultado.jsx";
+import LucroMesAMes from "./LucroMesAMes.jsx";
+import Kpis from "./Kpis.jsx";
+import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
+import { payoff } from "../lib/payoff.js";
+import { trocarSubAba } from "../lib/subAbas.js";
+import { irParaAba } from "../lib/navegar.js";
 
 // Dinheiro → Resumo do mês (remap 21/10/2026, do vídeo "Consolidador
 // financeiro"): o mês em blocos — pra onde foi cada real que o cliente pagou.
@@ -56,6 +62,8 @@ export default function ResumoMes() {
   }, [cres.pedidosValidos, de, ate]);
 
   const { t } = r;
+  const { lancamentos } = useLancamentosCaixa();
+  const po = useMemo(() => payoff({ lancamentos, hoje }), [lancamentos, hoje]);
   const [a, m] = mes.split("-").map(Number);
 
   return (
@@ -75,6 +83,35 @@ export default function ResumoMes() {
         </div>
       )}
       <CascataLucro pedidos={cres.pedidosValidos || []} linhasAds={cres.linhasAds} mes={mes} hoje={hoje} />
+      <div className="resultado-dois">
+        <LucroMesAMes pedidos={cres.pedidosValidos || []} linhasAds={cres.linhasAds} lancamentos={lancamentos} hoje={hoje} />
+        <div className="panel">
+          <h3 className="section-title h3-split">
+            <span>Seu dinheiro na loja</span>
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => {
+                trocarSubAba("ohra:caixa:sub", "payoff");
+                irParaAba("caixa");
+              }}
+            >
+              ver tudo →
+            </button>
+          </h3>
+          <Kpis
+            itens={[
+              { label: "Você colocou", valor: BRL(po.colocado) },
+              { label: "Já voltou pra você", valor: BRL(po.retiradas) },
+              { label: "Falta voltar", valor: BRL(po.faltaBruta) },
+            ]}
+          />
+          <div className="muted-cel">
+            Aporte, saldo inicial e contas pagas do seu bolso, menos o que você já retirou.{" "}
+            {po.previsao?.status === "volta" ? `No ritmo dos últimos meses, volta em ~${po.previsao.meses} ${po.previsao.meses === 1 ? "mês" : "meses"}.` : po.previsao?.status === "voltou" ? "O seu dinheiro já voltou." : "Quando o lucro do mês ficar positivo, o app mostra em quantos meses ele volta."}
+          </div>
+        </div>
+      </div>
       {r.porAnuncio.length > 0 && (
         <div className="panel">
           <h3>

@@ -3,7 +3,8 @@ import { BRL } from "../lib/format.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { cascataDoPeriodo } from "../lib/resumoLoja.js";
-import { reposicao, contasAte, proximosDias, partesDoTotal, livreXLucro } from "../lib/dinheiroResumo.js";
+import { reposicao, contasAte, proximosDias, partesDoTotal, livreXLucro, sugestaoSaque } from "../lib/dinheiroResumo.js";
+import { irParaAba } from "../lib/navegar.js";
 import { payoff } from "../lib/payoff.js";
 import { rotuloMes, somarMeses, rotuloCategoria } from "../lib/fluxoCaixa.js";
 import CanalTag from "./CanalTag.jsx";
@@ -59,13 +60,38 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
   const ordem = [...carteiras].sort((a, b) => (a.plataforma ? 1 : 0) - (b.plataforma ? 1 : 0));
   const largura = (v) => (div.comprometido + Math.max(0, div.livre) > 0 ? (v / (div.comprometido + Math.max(0, div.livre))) * 100 : 0);
   const exp = (k) => PARTES[k].exp.replace("{limite}", dm(contas.limite));
+  // Frase do topo (20/11/2026, prévia "Dinheiro em 3 abas"): quanto tem e onde está.
+  const lojaC = carteiras.find((c) => !c.plataforma);
+  const plats = carteiras.filter((c) => c.plataforma && Math.abs(c.saldo || 0) >= 0.005);
+  const fraseTotal = (
+    <>
+      Você tem <b className={total < 0 ? "neg" : ""}>{BRL(total)}</b>
+      {plats.length ? (
+        <>
+          : {BRL(lojaC?.saldo || 0)} no banco da loja
+          {plats.map((c, i) => (
+            <span key={c.id}>
+              {i === plats.length - 1 ? " e " : ", "}
+              {BRL(c.saldo)} dentro da {c.nome}
+              {c.extrato && c.liberado != null ? ` (${BRL(c.liberado)} já liberado pra sacar)` : ""}
+            </span>
+          ))}
+          .
+        </>
+      ) : (
+        " no banco da loja."
+      )}
+    </>
+  );
+  const sug = sugestaoSaque({ carteiras, lancamentos, hoje });
 
   return (
     <div className="dr">
       <div className="panel">
+        <p className="dr-frase">{fraseTotal}</p>
         <h3 className="section-title h3-split">
-          <span>Quanto dinheiro a loja tem hoje</span>
-          <span className="faint">a soma das contas abaixo</span>
+          <span>Onde está o dinheiro</span>
+          <span className="faint">sacar só troca de lugar, não muda o total</span>
         </h3>
         <div className="dr-total">
           <div className="dr-grande">
@@ -116,8 +142,8 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
       <div className="panel">
         <h3 className="section-title h3-split">
           <span>
-            Desse total, de quem é cada parte
-            <Ajuda texto="O app calcula sozinho, sem precisar separar: o que precisa voltar pro estoque (pelas vendas e pelas compras lançadas desde o início), as contas que vencem nos próximos 30 dias e os impostos. O resto é o que fica livre NO CAIXA. Atenção: não é lucro — entra aí o dinheiro que você colocou na loja e o que você pagou do seu bolso. O lucro está em “Lucro mês a mês”." />
+            Desse dinheiro, quanto já tem dono
+            <Ajuda texto="O app calcula sozinho, sem precisar separar: o que precisa voltar pro estoque (pelas vendas e pelas compras lançadas desde o início), as contas que vencem nos próximos 30 dias e os impostos. O resto é o que fica livre NO CAIXA. Atenção: não é lucro — entra aí o dinheiro que você colocou na loja e o que você pagou do seu bolso. O lucro está na aba 2 · Estou ganhando?" />
           </span>
           <span className="faint">calculado pelas vendas e compras</span>
         </h3>
@@ -158,6 +184,8 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
           </tbody>
         </table>
         {meses.length > 0 && (
+          <details className="dr-ponte-det">
+            <summary>por que o livre no caixa é diferente do lucro?</summary>
           <div className="dr-ponte">
             <div className="dr-ponte-tit">
               Por que tem {BRL(div.livre)} livre no caixa{mesAtual ? ` se ${rotuloMes(mesAtual.mes).toLowerCase()} está em ${BRL(mesAtual.c.liquido || 0)}` : ""}?
@@ -165,7 +193,7 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
             <table className="dr-conta-tab">
               <tbody>
                 <tr>
-                  <td>Lucro de verdade, somando todos os meses (tabela “Lucro mês a mês”)</td>
+                  <td>Lucro de verdade, somando todos os meses (aba 2 → Mês a mês)</td>
                   <td className={`num${ponte.lucro < 0 ? " neg" : ""}`}>{BRL(ponte.lucro)}</td>
                 </tr>
                 <tr>
@@ -195,10 +223,11 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
               {ponte.lucro < 0
                 ? `A loja ainda não deu lucro (${BRL(ponte.lucro)} somando os meses): o caixa está positivo porque tem dinheiro seu lá dentro. Retirar esse valor seria tirar o seu próprio dinheiro de volta, não lucro.`
                 : ponte.colocado + ponte.doBolso > 0
-                  ? `Dos ${BRL(div.livre)} livres, só ${BRL(Math.max(0, Math.min(div.livre, ponte.lucro)))} vieram de lucro; o resto é dinheiro seu (Dinheiro → Resultado → Seu dinheiro de volta).`
+                  ? `Dos ${BRL(div.livre)} livres, só ${BRL(Math.max(0, Math.min(div.livre, ponte.lucro)))} vieram de lucro; o resto é dinheiro seu (aba 2 → Seu dinheiro de volta).`
                   : "O livre no caixa vem do lucro dos meses e das diferenças de tempo."}
             </div>
           </div>
+          </details>
         )}
         <div className="dr-conta">
           <button type="button" className="link-btn" onClick={() => setVerConta((v) => !v)}>
@@ -244,56 +273,32 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
         </div>
       </div>
 
-      {meses.length > 0 && (
-        <div className="panel">
-          <h3 className="section-title h3-split">
-            <span>Lucro mês a mês</span>
-            <span className="faint">mesma conta do Resultado → Do mês</span>
-          </h3>
-          <div className="table-wrap">
-            <table className="dr-meses">
-              <thead>
-                <tr>
-                  <th>Mês</th>
-                  <th className="num">Faturado</th>
-                  <th className="num">Plataformas e impostos</th>
-                  <th className="num">Custo</th>
-                  <th className="num">Ads</th>
-                  <th className="num">Contas fixas</th>
-                  <th className="num">Sobrou pra você</th>
-                </tr>
-              </thead>
-              <tbody>
-                {meses.map(({ mes, parcial, c }) => (
-                  <tr key={mes}>
-                    <td>
-                      {rotuloMes(mes)}
-                      {parcial && <span className="dr-parcial">parcial</span>}
-                    </td>
-                    <td className="num">{BRL(c.pago)}</td>
-                    <td className="num faint">− {BRL(c.taxas + c.imposto)}</td>
-                    <td className="num faint">− {BRL(c.custo)}</td>
-                    <td className="num faint">− {BRL(c.ads)}</td>
-                    <td className="num faint">− {BRL(c.fixas || 0)}</td>
-                    <td className={`num dr-sobrou${(c.liquido || 0) < 0 ? " neg" : ""}`}>{BRL(c.liquido || 0)}</td>
-                  </tr>
-                ))}
-                {meses.length > 1 && (
-                  <tr className="dr-tot">
-                    <td>Total</td>
-                    <td className="num">{BRL(soma("pago"))}</td>
-                    <td className="num">− {BRL(soma("taxas") + soma("imposto"))}</td>
-                    <td className="num">− {BRL(soma("custo"))}</td>
-                    <td className="num">− {BRL(soma("ads"))}</td>
-                    <td className="num">− {BRL(soma("fixas"))}</td>
-                    <td className={`num dr-sobrou${soma("liquido") < 0 ? " neg" : ""}`}>{BRL(soma("liquido"))}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+
+      <div className="panel">
+        <h3 className="section-title">O que fazer com o dinheiro agora</h3>
+        {sug.estado === "sem-contas" ? (
+          <div className="dr-sug">Nenhuma conta vence nos próximos 7 dias — <b>não precisa sacar nada agora.</b></div>
+        ) : sug.estado === "ok" ? (
+          <div className="dr-sug">
+            As contas dos próximos 7 dias somam <b>{BRL(sug.contas)}</b> e o banco tem <b>{BRL(sug.banco)}</b>: <b>não precisa sacar agora.</b>
           </div>
-        </div>
-      )}
+        ) : sug.estado === "sacar" ? (
+          <div className="dr-sug dr-sug-acao">
+            <span>
+              As contas dos próximos 7 dias somam <b>{BRL(sug.contas)}</b> e o banco tem <b>{BRL(sug.banco)}</b>: <b>saque {BRL(sug.saque.valor)} da {sug.saque.nome}</b>.
+            </span>
+            <button type="button" className="btn btn-mini primary" onClick={() => onTransferir(sug.saque.id)}>
+              ⇄ Sacar da {sug.saque.nome}
+            </button>
+          </div>
+        ) : (
+          <div className="dr-sug dr-sug-falta">
+            As contas dos próximos 7 dias somam <b>{BRL(sug.contas)}</b> e o banco tem <b>{BRL(sug.banco)}</b>: faltam <b>{BRL(sug.falta)}</b>
+            {sug.saque ? ` — mesmo sacando ${BRL(sug.saque.valor)} da ${sug.saque.nome}, não cobre tudo.` : " e não tem dinheiro liberado nas plataformas."}
+          </div>
+        )}
+        <div className="dr-exp">O lucro das vendas (se a loja está ganhando) fica na aba <button type="button" className="link-btn" onClick={() => irParaAba("resumoMes")}>2 · Estou ganhando? →</button></div>
+      </div>
 
       <div className="panel">
         <h3 className="section-title h3-split">

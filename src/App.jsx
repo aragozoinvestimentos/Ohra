@@ -1,4 +1,5 @@
 import { PASSOS } from "./lib/passosPreco.js";
+import VistasResultado from "./components/VistasResultado.jsx";
 import { trocarSubAba, useSubAba } from "./lib/subAbas.js";
 import { pegarPedido, pegarPedidoSemConsumir, irParaAba } from "./lib/navegar.js";
 import AvisosDaTela from "./components/AvisosDaTela.jsx";
@@ -172,20 +173,21 @@ const MENU = [
         key: "m-dinheiro",
         label: "Dinheiro",
         icone: "caixa",
-        sub: "Resultado do mês, caixa, contas, fiscal, metas e retorno por item",
+        sub: "Quanto eu tenho · estou ganhando? · lançamentos e contas",
         abas: [
-          // Resultado (28/10/2026) = Resumo do mês + Vendas do mês + Payoff (3 vistas, VistasResultado)
-          // Resumo (06/11/2026) = quanto a loja tem e de quem é cada parte (ResumoDinheiro)
-          { tab: "caixa", s: "resumo", label: "Resumo" },
-          { tab: "caixa", s: "caixa", label: "Lançamentos" },
-          { tab: "caixa", s: "contas", label: "Contas a pagar" },
-          { tab: "resumoMes", label: "Resultado", tambemSub: [["caixa", "vendas"], ["caixa", "payoff"]] },
-          { tab: "fiscal", label: "Fiscal" },
+          // Dinheiro em 3 abas (20/11/2026, aprovado pela prévia "Dinheiro em 3 abas"): cada
+          // aba responde UMA pergunta. 1 = caixa (ResumoDinheiro), 2 = lucro (ResumoMes +
+          // Por produto, Seu dinheiro de volta, Metas, Ranking, Fiscal — VistasResultado),
+          // 3 = Lançamentos + Contas a pagar (VistasLancamentos). As chaves não mudaram.
+          { tab: "caixa", s: "resumo", label: "1 · Quanto eu tenho" },
+          { tab: "resumoMes", label: "2 · Estou ganhando?", tambemSub: [["caixa", "vendas"], ["caixa", "payoff"]], tambem: ["fiscal", "metas", "ranking"] },
+          { tab: "caixa", s: "caixa", label: "3 · Lançamentos e contas", tambemSub: [["caixa", "contas"]] },
+          { tab: "caixa", s: "contas", label: "Contas a pagar", oculta: true },
           { tab: "caixa", s: "vendas", label: "Vendas do mês", oculta: true },
           { tab: "caixa", s: "payoff", label: "Payoff", oculta: true },
-          SEP,
-          { tab: "metas", label: "Metas" },
-          { tab: "ranking", label: "Ranking por retorno" },
+          { tab: "fiscal", label: "Fiscal", oculta: true },
+          { tab: "metas", label: "Metas", oculta: true },
+          { tab: "ranking", label: "Ranking por retorno", oculta: true },
         ],
       },
       {
@@ -498,7 +500,7 @@ export default function App() {
   const tituloAtual = tab === "tutorial" ? TUTORIAL.label : menuAtual?.label;
   const subtituloAtual = tab === "tutorial" ? TUTORIAL.sub : menuAtual?.sub;
   const subDaAba = { canal: canalSub, config: configSub, cadastros: cadastrosSub, crescimento: crescimentoSub, caixa: caixaSub, analise: analiseSub, live: liveSub, insumos: insumosSub, estoque: estoqueSub, importar: importarSub };
-  const abaAtiva = (a) => (a.tab === tab && (!a.s || a.s === subDaAba[a.tab])) || (a.tambem && a.tambem === tab) || (a.tambemSub || []).some(([t, s]) => t === tab && subDaAba[t] === s);
+  const abaAtiva = (a) => (a.tab === tab && (!a.s || a.s === subDaAba[a.tab])) || (Array.isArray(a.tambem) ? a.tambem.includes(tab) : a.tambem === tab) || (a.tambemSub || []).some(([t, s]) => t === tab && subDaAba[t] === s);
   // Vai pra uma sub-aba do cabeçalho: troca a aba e a sub-aba dela.
   function irParaEntrada(a) {
     setVoltaSede(false);
@@ -751,6 +753,7 @@ export default function App() {
         <section className={`view ${tab === "metas" ? "active" : ""}`}>
           {visitadas.has("metas") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <VistasResultado atual="metas" />
               <Metas onToast={showToast} />
             </Suspense>
           )}
@@ -759,6 +762,7 @@ export default function App() {
         <section className={`view ${tab === "ranking" ? "active" : ""}`}>
           {visitadas.has("ranking") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <VistasResultado atual="ranking" />
               <Ranking />
             </Suspense>
           )}
@@ -823,6 +827,7 @@ export default function App() {
         <section className={`view ${tab === "fiscal" ? "active" : ""}`}>
           {visitadas.has("fiscal") && (
             <Suspense fallback={<div className="empty">Carregando…</div>}>
+              <VistasResultado atual="fiscal" />
               <Fiscal key={lojaId || "sem-loja"} onToast={showToast} />
             </Suspense>
           )}

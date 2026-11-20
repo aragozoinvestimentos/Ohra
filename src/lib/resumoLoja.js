@@ -124,10 +124,15 @@ export function produtosDaSemana(pedidos, hoje, n = 6) {
 // ---- Análise → Diagnóstico (24/10/2026) ----
 
 const CATS_FORA_FIXAS = ["anuncios", "filamento", "mercadoria", "embalagem", "retirada", "aporte", "saldo_inicial"];
+// Parcela de impressora/equipamento também fica fora: a máquina já entra no custo de
+// cada peça (custo/hora pela vida útil) — contar a parcela descontaria duas vezes.
+const CATS_FORA_PARCELAS = [...CATS_FORA_FIXAS, "equipamento", "transferencia"];
 /**
  * Despesas FIXAS do mês = contas recorrentes (Dinheiro → Contas fixas) de saída
- * ativas no mês. Ads (vem dos CSVs), material/embalagem (já no custo) e
- * retirada ficam fora — senão contaria duas vezes. → { total, itens: [{ descricao, valor }] }
+ * ativas no mês + as PARCELAS que vencem no mês (20/11/2026, Gustavo: "parcelas são
+ * despesas"). Ads (vem dos CSVs), material/embalagem/mercadoria (já no custo),
+ * impressora e retirada ficam fora — senão contaria duas vezes.
+ * → { total, itens: [{ descricao, valor, parcela? }] }
  */
 export function despesasFixasDoMes(lancamentos, mes) {
   const ini = `${mes}-01`;
@@ -138,6 +143,12 @@ export function despesasFixasDoMes(lancamentos, mes) {
     if (String(l.data_prevista).slice(0, 10) > fim) continue;
     if (l.recorrencia_ate && String(l.recorrencia_ate).slice(0, 10) < ini) continue;
     itens.push({ descricao: l.descricao || l.categoria || "conta fixa", valor: num(l.valor) });
+  }
+  for (const l of lancamentos || []) {
+    if (!l.parcela_grupo || l.recorrencia === "mensal" || l.tipo !== "saida" || CATS_FORA_PARCELAS.includes(l.categoria)) continue;
+    const d = String(l.data_prevista).slice(0, 10);
+    if (d < ini || d > fim) continue;
+    itens.push({ descricao: l.descricao || "parcela", valor: num(l.valor), parcela: true });
   }
   return { total: itens.reduce((t, x) => t + x.valor, 0), itens };
 }

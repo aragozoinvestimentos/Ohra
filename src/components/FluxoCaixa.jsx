@@ -33,6 +33,7 @@ import { dividirParcelas, linhasParceladas } from "../lib/comprasMaterial.js";
 import Estado from "./Estado.jsx";
 import VendasMes from "./VendasMes.jsx";
 import VistasResultado from "./VistasResultado.jsx";
+import VistasLancamentos from "./VistasLancamentos.jsx";
 import { recarregarReserva, useReservaProducao } from "../hooks/useReservaProducao.js";
 import { useAdsPeriodos } from "../hooks/useAdsPeriodos.js";
 import { saldoAds } from "../lib/saldoAds.js";
@@ -52,9 +53,9 @@ const IGNORAR_COMPRA_KEY = "ohra:caixa:ignorar-compra";
 
 // Sub-abas (out/2026): o dia a dia, o que repete/parcela, e o resultado das vendas.
 const SUBABAS_CAIXA = [
-  { key: "resumo", label: "Resumo" },
+  { key: "resumo", label: "Quanto eu tenho" },
   { key: "caixa", label: "Lançamentos" },
-  { key: "contas", label: "2 · Contas fixas e parcelas" },
+  { key: "contas", label: "Contas a pagar" },
   { key: "vendas", label: "3 · Vendas do mês" },
   { key: "payoff", label: "4 · Payoff" },
 ];
@@ -658,6 +659,7 @@ export default function FluxoCaixa({ onToast }) {
       </TopbarAcoes>
 
       {(sub === "vendas" || sub === "payoff") && <VistasResultado atual={sub} />}
+      {(sub === "caixa" || sub === "contas") && <VistasLancamentos atual={sub} />}
       <div className="caixa-cabecalho">
         {sub !== "resumo" && sub !== "contas" && sub !== "payoff" && (sub !== "vendas" || periodoVendas === "mes") && seletorMes}
         {sub === "vendas" && (

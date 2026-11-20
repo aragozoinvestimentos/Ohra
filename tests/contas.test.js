@@ -1434,3 +1434,32 @@ describe("Dinheiro → livre no caixa × lucro (20/11/2026)", () => {
     expect(p.tempo).toBeCloseTo(391.58 + 38 - 500 - 120, 2);
   });
 });
+
+import { sugestaoSaque } from "../src/lib/dinheiroResumo.js";
+import { despesasFixasDoMes } from "../src/lib/resumoLoja.js";
+describe("Dinheiro em 3 abas (20/11/2026)", () => {
+  const cart = [
+    { id: "loja", plataforma: false, saldo: 167.21 },
+    { id: "shopee", nome: "Shopee", plataforma: true, saldo: 409.94, liberado: 312.1, extrato: { n: 1 } },
+  ];
+  it("banco cobre as contas da semana = não precisa sacar", () => {
+    const l = [{ id: 1, tipo: "saida", categoria: "energia", valor: 45.9, data_prevista: "2026-11-24" }];
+    expect(sugestaoSaque({ carteiras: cart, lancamentos: l, hoje: "2026-11-20" }).estado).toBe("ok");
+  });
+  it("banco não cobre = sacar a diferença do liberado", () => {
+    const l = [{ id: 1, tipo: "saida", categoria: "outros", valor: 200, data_prevista: "2026-11-24" }];
+    const s = sugestaoSaque({ carteiras: cart, lancamentos: l, hoje: "2026-11-20" });
+    expect(s.estado).toBe("sacar");
+    expect(s.saque).toMatchObject({ id: "shopee", valor: 32.79 });
+  });
+  it("contas fixas do mês contam as parcelas (fora filamento e impressora)", () => {
+    const l = [
+      { tipo: "saida", recorrencia: "mensal", categoria: "energia", valor: 30, data_prevista: "2026-01-10" },
+      { tipo: "saida", parcela_grupo: "a", categoria: "outros", valor: 50, data_prevista: "2026-11-15" },
+      { tipo: "saida", parcela_grupo: "b", categoria: "filamento", valor: 13.5, data_prevista: "2026-11-19" },
+      { tipo: "saida", parcela_grupo: "c", categoria: "equipamento", valor: 200, data_prevista: "2026-11-05" },
+      { tipo: "saida", parcela_grupo: "a", categoria: "outros", valor: 50, data_prevista: "2026-12-15" },
+    ];
+    expect(despesasFixasDoMes(l, "2026-11").total).toBe(80);
+  });
+});

@@ -3066,3 +3066,13 @@ tr.linha-destaque > td { background: var(--st-atencao-soft); transition: backgro
 .dr-ponte { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line, var(--border)); border-radius: 10px; background: var(--st-info-soft); }
 .dr-ponte-tit { font-weight: 700; margin-bottom: 6px; }
 .dr-ponte .neg { color: var(--st-resolver); }
+/* Dinheiro em 3 abas (20/11/2026) */
+.dr-frase { font-size: 17px; line-height: 1.45; margin: 0 0 4px; text-wrap: pretty; }
+.dr-frase b { font-weight: 800; }
+.dr-sug { background: var(--st-info-soft); border-radius: 10px; padding: 9px 12px; }
+.dr-sug-acao { background: var(--st-oportunidade-soft); display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.dr-sug-falta { background: var(--st-atencao-soft); }
+.dr-ponte-det { margin-top: 8px; }
+.dr-ponte-det > summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13px; }
+.resultado-dois { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 10px; align-items: start; }
+.resultado-dois > * { min-width: 0; }

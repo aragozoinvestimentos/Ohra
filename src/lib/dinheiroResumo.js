@@ -167,3 +167,27 @@ export function livreXLucro({ livre, payoff: po, lucroAcumulado }) {
   const lucro = r2(lucroAcumulado);
   return { lucro, colocado, doBolso, retiradas: r2(po?.retiradas), tempo: r2(num(livre) - lucro - colocado - doBolso) };
 }
+
+/**
+ * "O que fazer com o dinheiro agora" (20/11/2026, prévia "Dinheiro em 3 abas"): o banco
+ * cobre as contas da semana? Se não, quanto sacar e de qual plataforma (pelo liberado
+ * do extrato; sem extrato, pelo saldo). carteiras = resumoCarteiras().carteiras.
+ * → { estado ok|sacar|falta|sem-contas, contas, banco, falta, saque: { id, nome, valor } | null }
+ */
+export function sugestaoSaque({ carteiras = [], lancamentos = [], hoje, dias = 7 }) {
+  const c = contasAte(lancamentos, hoje, dias);
+  const contas = r2(num(c.contas) + num(c.impostos));
+  const loja = carteiras.find((x) => !x.plataforma);
+  const banco = r2(num(loja?.saldo));
+  if (!(contas > 0)) return { estado: "sem-contas", contas, banco, falta: 0, saque: null };
+  if (banco >= contas) return { estado: "ok", contas, banco, falta: 0, saque: null };
+  const falta = r2(contas - banco);
+  const plats = carteiras
+    .filter((x) => x.plataforma)
+    .map((x) => ({ id: x.id, nome: x.nome, livre: r2(x.extrato ? num(x.liberado) : num(x.saldo)) }))
+    .filter((x) => x.livre > 0)
+    .sort((a, b) => b.livre - a.livre);
+  const p = plats[0];
+  if (!p) return { estado: "falta", contas, banco, falta, saque: null };
+  return { estado: p.livre >= falta ? "sacar" : "falta", contas, banco, falta, saque: { id: p.id, nome: p.nome, valor: r2(Math.min(falta, p.livre)) } };
+}
