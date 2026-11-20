@@ -155,11 +155,11 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
   const tsvVariacoes = () => ["Variação\tOpções", ...ficha.tabelaVar.map((v) => `${v.nome}\t${v.opcoes.join(", ")}`)].join("\n");
   const tsvProdutos = () =>
     [
-      ["SKU", ...colunas, "Preço original", "Promoção %", "Cliente paga"].join("\t"),
+      ["SKU", ...colunas, "Preço original", "Desconto %", "Preço da promoção"].join("\t"),
       ...ficha.linhas.map((l) => [l.sku, ...valores(l), l.an ? num2(l.an.original) : "", l.an ? String(l.an.promo) : "", l.an ? num2(l.an.clientePaga) : ""].join("\t")),
     ].join("\n");
   function exportarCsv() {
-    const rows = [["Anúncio", "SKU", ...colunas, "Item", "Preço original", "Promoção %", "Cliente paga"]];
+    const rows = [["Anúncio", "SKU", ...colunas, "Item", "Preço original", "Desconto %", "Preço da promoção"]];
     ficha.linhas.forEach((l) => rows.push([grupo.nome, l.sku, ...valores(l), l.item?.nome || "", l.an ? num2(l.an.original) : "", l.an ? String(l.an.promo) : "", l.an ? num2(l.an.clientePaga) : ""]));
     const csv = rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
@@ -395,8 +395,8 @@ export default function FichaGrupo({ canal, canais, onCanal, grupoId, onGrupo, o
                           <th key={c}>{c}</th>
                         ))}
                         <th className="num">Preço original</th>
-                        <th className="num">Promo</th>
-                        <th className="num">Cliente paga</th>
+                        <th className="num" title="O % que a plataforma mostra no anúncio (calculado sobre o preço cheio)">Desconto</th>
+                        <th className="num" title="O preço que você digita na promoção da plataforma — é o que o cliente paga">Preço da promoção (digite)</th>
                           <th className="num" title="Lucro pelo que o cliente paga: recebe − repor o produto">Lucro</th>
                       </tr>
                     </thead>

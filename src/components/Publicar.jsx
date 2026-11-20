@@ -232,7 +232,7 @@ export default function Publicar({ onToast, onSub }) {
     const c = canais.find((x) => x.id === canalId);
     if (!c) return;
     const num = (v) => (v == null ? "" : String(Number(v).toFixed(2)).replace(".", ","));
-    const cab = ["Item", "SKU", "Preço original", "Promoção %", "Cliente paga", "Situação"];
+    const cab = ["Item", "SKU", "Preço original", "Desconto %", "Preço da promoção", "Situação"];
     const rows = linhas
       .filter((l) => l.porCanal[c.id])
       .map((l) => {
@@ -286,10 +286,10 @@ export default function Publicar({ onToast, onSub }) {
             <b>{BRL(x.original)}</b>
             <span>riscado · clique pra copiar</span>
           </button>
-          <button type="button" className="kv-cel kv-copiar" onClick={() => copiar(String(x.promo), "Promo")} title="Clique pra copiar">
-            <small>Promo</small>
-            <b>{x.promo}%</b>
-            <span>clique pra copiar</span>
+          <button type="button" className="kv-cel kv-copiar" onClick={() => copiar(x.clientePaga.toFixed(2).replace(".", ","), "Preço da promoção")} title="Clique pra copiar">
+            <small>Preço da promoção</small>
+            <b>{BRL(x.clientePaga)}</b>
+            <span>digite este preço · a plataforma mostra −{x.promo}% · clique pra copiar</span>
             <PromoAviso canal={c} promo={x.promo} texto />
           </button>
           <div className="kv-cel">
@@ -496,13 +496,13 @@ export default function Publicar({ onToast, onSub }) {
       </div>
     )}
     <div className="aviso-fluxo">
-      Os preços vêm de <b>Precificação</b> (1º Avulso / 2º Por quantidade). Aqui você só confere o que digitar em cada plataforma — o <b>preço original</b> (“de”) e a <b>promo</b> — e marca “feito” depois de atualizar.
+      Os preços vêm de <b>Precificação</b> (1º Avulso / 2º Por quantidade). Aqui você só confere o que digitar em cada plataforma — o <b>preço original</b> (“de”) e o <b>preço da promoção</b> — e marca “feito” depois de atualizar.
     </div>
     <div className="panel">
       <h3 className="section-title h3-split">
         <span>
           O que digitar em cada plataforma
-          <Ajuda texto="Preço original = o valor cheio (riscado) que você digita no anúncio; promo = o % de desconto a lançar na plataforma. Com isso o cliente paga o preço real salvo em Produtos precificados (ou, no máximo, alguns centavos a mais, porque a promoção é um % inteiro). O desconto exibido é o padrão do canal (Configuração → Canais) — clique no “desconto X%” de uma célula pra dar um desconto próprio a um produto (vale pras variações dele) ou kit; * = desconto próprio. ↻ = o preço mudou desde a última vez que você marcou “feito” naquela plataforma." />
+          <Ajuda texto="Preço original = o valor cheio (riscado) que você digita no anúncio; promo = o % de desconto a lançar na plataforma. Na promoção você digita o PREÇO (o cliente paga exatamente ele); o % é só o que a plataforma mostra. O desconto exibido é o padrão do canal (Configuração → Canais) — clique no “desconto X%” de uma célula pra dar um desconto próprio a um produto (vale pras variações dele) ou kit; * = desconto próprio. ↻ = o preço mudou desde a última vez que você marcou “feito” naquela plataforma." />
         </span>
         <span className="acoes-cab">
           <button type="button" className="btn btn-sm" onClick={() => setVerTodos((v) => !v)}>
@@ -525,7 +525,7 @@ export default function Publicar({ onToast, onSub }) {
         <div className="legenda-tabela">
           <span className="legenda-tit">Legenda</span>
           <span><b>R$ 17,00</b> preço original (riscado) a digitar</span>
-          <span><b>promo 30%</b> a digitar</span>
+          <span><b>R$ 11,90</b> preço da promoção a digitar (a plataforma mostra o %)</span>
           <span><Estado tipo="oportunidade">✓ em dia</Estado> feito</span>
           <span><Estado tipo="atencao">↻ atualizar</Estado> o anúncio está diferente</span>
           <span><Estado tipo="decisao" icone={null}>rampa</Estado> use a promo da Rampa · <b>agora</b> × <b>alvo</b> = cliente paga hoje × no preço salvo</span>

@@ -190,11 +190,11 @@ export default function LiveAoVivo({ esc, lv, atual, setAtualId, ctxDaLive, linh
               <div className="live-digitar faint">Preço da loja — nada pra mudar no anúncio; o desconto é o cupom.</div>
             ) : ef.anuncio ? (
               <div className="live-digitar">
-                Digitar: promo{" "}
-                <button type="button" className="live-copiar" title="copiar" onClick={() => copiar(ef.anuncio.promo)}>
-                  {ef.anuncio.promo}%
+                Digitar na promoção:{" "}
+                <button type="button" className="live-copiar" title="copiar" onClick={() => copiar(v2(ef.anuncio.clientePaga))}>
+                  {v2(ef.anuncio.clientePaga)}
                 </button>{" "}
-                sobre o original {BRL(ef.anuncio.original)} → cliente paga {BRL(ef.anuncio.clientePaga)}
+                · preço cheio {BRL(ef.anuncio.original)} (a plataforma mostra −{ef.anuncio.promo}%)
                 {ef.anuncio.acimaDoRiscado && <span className="warn"> · acima do riscado</span>}
                 <PromoAviso canal={canal} promo={ef.anuncio.promo} texto />
               </div>

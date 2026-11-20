@@ -1395,3 +1395,32 @@ describe("Otimizar — prévia do passo por item", () => {
     expect(p[1].pct).toBeCloseTo(0.05, 2);
   });
 });
+
+import { precoAtraente } from "../src/lib/precoAtraente.js";
+import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
+import { anuncioMudou } from "../src/lib/escada.js";
+describe("Preço que atrai + preço da promoção digitado (20/11/2026)", () => {
+  it("+5% do anúncio da Árvore vai pros finais ,49/,90", () => {
+    expect(precoAtraente(17.9 * 1.05, { acima: 17.9 })).toBe(18.9);
+    expect(precoAtraente(22.9 * 1.05, { acima: 22.9 })).toBe(23.9);
+    expect(precoAtraente(29.9 * 1.05, { acima: 29.9 })).toBe(31.49);
+    expect(precoAtraente(34.9 * 1.05, { acima: 34.9 })).toBe(36.49);
+    expect(precoAtraente(39.9 * 1.05, { acima: 39.9 })).toBe(41.9);
+  });
+  it("não passa da dezena à toa e sempre sobe/desce de verdade", () => {
+    expect(precoAtraente(40.4)).toBe(39.9);
+    expect(precoAtraente(18.0, { acima: 17.9 })).toBe(18.49);
+    expect(precoAtraente(17.5, { abaixo: 17.9 })).toBe(17.49);
+  });
+  it("cliente paga exatamente o preço digitado; % é só informação", () => {
+    const a = anuncioNoRiscado(18.9, 24.25);
+    expect(a.clientePaga).toBe(18.9);
+    expect(a.promo).toBe(22);
+  });
+  it("↻ só quando o preço da promoção muda (linha antiga pelo % inteiro não conta)", () => {
+    const antiga = { preco_original: 24.25, promo: 22, cliente_paga: 18.92 };
+    expect(anuncioMudou(antiga, { original: 24.25, promo: 22, clientePaga: 18.9 })).toBe(false);
+    const nova = { preco_original: 24.25, promo: 22, cliente_paga: 18.9 };
+    expect(anuncioMudou(nova, { original: 24.25, promo: 22, clientePaga: 19.0 })).toBe(true);
+  });
+});

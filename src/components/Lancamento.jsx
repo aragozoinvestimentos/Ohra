@@ -87,7 +87,7 @@ export default function Lancamento({ onToast, onSub }) {
             <span>{a.riscadoFixo ? "já anunciado (fixo)" : "riscado a cadastrar"}</span>
           </div>
           <div className="kv-cel">
-            <small>Promo</small>
+            <small>Desconto</small>
             <b>{a.promo}%</b>
             <span>{ra ? "a do degrau de agora" : "no alvo"}</span>
             <PromoAviso canal={canal} promo={a.promo} texto />
@@ -154,8 +154,8 @@ export default function Lancamento({ onToast, onSub }) {
                   <tr>
                     <th>Opção</th>
                     <th className="num">Preço de cadastro</th>
-                    <th className="num">Promo</th>
-                    <th className="num">Cliente paga</th>
+                    <th className="num" title="O % que a plataforma mostra no anúncio (calculado sobre o preço cheio)">Desconto</th>
+                    <th className="num" title="O preço que você digita na promoção da plataforma — é o que o cliente paga">Preço da promoção (digite)</th>
                     <th>Rampa</th>
                   </tr>
                 </thead>

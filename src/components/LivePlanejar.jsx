@@ -453,7 +453,7 @@ export default function LivePlanejar({ esc, lv, atual, setAtualId, canaisLive, c
                     <span className="faint">preço da loja — nada muda no anúncio; o desconto vem do cupom</span>
                   ) : an && (
                     <span className="faint">
-                      digitar: original {BRL(an.original)} · promo {an.promo}% → cliente paga {BRL(an.clientePaga)}
+                      digitar: preço cheio {BRL(an.original)} · promoção {BRL(an.clientePaga)} (−{an.promo}%)
                       {an.acimaDoRiscado && " (acima do riscado)"}
                       <PromoAviso canal={canal} promo={an.promo} />
                     </span>

@@ -498,7 +498,9 @@ export function calcularAnuncio(real, desconto) {
   if (d < 0.005) return { original: r, promo: 0, clientePaga: r, real: r, desconto: 0 };
   const original = centavoAcima(r / (1 - d));
   const promo = Math.max(0, Math.floor((1 - r / original) * 100 + 1e-9));
-  const clientePaga = centavos(original * (1 - promo / 100));
+  // 20/11/2026: o preço da promoção é DIGITADO na plataforma — o cliente paga
+  // exatamente o real; o % (pra baixo) é só o que a plataforma vai mostrar.
+  const clientePaga = centavos(r);
   return { original, promo, clientePaga, real: r, desconto: d };
 }
 
@@ -506,7 +508,13 @@ export function calcularAnuncio(real, desconto) {
 export function anuncioMudou(salvo, atual) {
   if (!atual) return false;
   if (!salvo) return true;
-  return Math.abs(num(salvo.preco_original) - atual.original) >= 0.01 || num(salvo.promo) !== atual.promo;
+  if (Math.abs(num(salvo.preco_original) - atual.original) >= 0.01 || num(salvo.promo) !== atual.promo) return true;
+  // Preço digitado (20/11/2026): mudou o preço da promoção com o mesmo %. Linha
+  // marcada antes, pelo % inteiro (cliente_paga = original × (1 − promo)), não conta.
+  const pago = num(salvo.cliente_paga);
+  if (!(pago > 0) || !(atual.clientePaga > 0) || Math.abs(pago - atual.clientePaga) < 0.01) return false;
+  const pelaPromo = Math.round(num(salvo.preco_original) * (1 - num(salvo.promo) / 100) * 100) / 100;
+  return Math.abs(pago - pelaPromo) >= 0.01;
 }
 
 // Campanha temporária a partir do preço anunciado (a campanha SUBSTITUI a

@@ -48,11 +48,11 @@ function useAcoesOtimizar(b, onToast) {
   };
   return {
     salvando,
-    subir: (e, confirmar = false) => rodar(() => passoOtimizar({ lojaId, r, tipo: "subir", novo: e.novo, passo: e.passo, hoje, grupo, confirmar }), `${nome}: agora ${precoTxt(e.novo, grupo)} — troque só a promo na plataforma (Anunciar mostra o ↻)`),
+    subir: (e, confirmar = false) => rodar(() => passoOtimizar({ lojaId, r, tipo: "subir", novo: e.novo, passo: e.passo, hoje, grupo, confirmar }), `${nome}: agora ${precoTxt(e.novo, grupo)} — digite o preço da promoção novo na plataforma (Anunciar mostra o ↻)`),
     voltar: (novo) => rodar(() => passoOtimizar({ lojaId, r, tipo: "voltar", novo, hoje, grupo }), `${nome}: de volta a ${precoTxt(novo, grupo)} — ele vira o preço bom por ${REGRAS_OTIMIZAR.bloqueioDias} dias`),
     manter: () => rodar(() => manterOtimizar({ r, hoje }), `${nome}: preço mantido — o app volta a analisar em ${REGRAS_OTIMIZAR.bloqueioDias} dias`),
     desligar: (modo, preco) => rodar(() => desligarOtimizar({ lojaId, r, modo, preco, hoje, grupo }), `${nome}: Otimizar preço desligado`),
-    ligar: (subir) => rodar(() => ligarOtimizar({ lojaId, b, hoje, vendasIniciais: b?.otimizar?.inicial?.()?.v14 || 0, subir }), subir ? `${nome}: Otimizar ligado e preço em ${precoTxt(subir.novo, grupo)} — troque só a promo na plataforma` : `${nome}: Otimizar preço ligado — o app avisa quando der pra subir`),
+    ligar: (subir) => rodar(() => ligarOtimizar({ lojaId, b, hoje, vendasIniciais: b?.otimizar?.inicial?.()?.v14 || 0, subir }), subir ? `${nome}: Otimizar ligado e preço em ${precoTxt(subir.novo, grupo)} — digite o preço da promoção novo na plataforma` : `${nome}: Otimizar preço ligado — o app avisa quando der pra subir`),
     atualizarSalvo: () => {
       const salvo = precos.find((p) => p.item_tipo === b.tipo && p.item_id === b.id && p.canal_id === b.canal.id);
       const preco = b.otimizar.atual;
@@ -245,7 +245,7 @@ function ConfirmaOtim({ confirma, grupo, b, salvando, onCancelar, onOk }) {
                 : `${pt(op.atual)} → ${pt(e.novo)}. A medição começa amanhã e decide com ${REGRAS_OTIMIZAR.leituraDias} dias e ${REGRAS_OTIMIZAR.minVendas} vendas pagas.`}
           </p>
           {tipo !== "salvo" && e?.novo > 0 && <PreviaPasso b={b} de={op.atual} para={e.novo} />}
-          {tipo !== "salvo" && <p className="modal-msg">Na plataforma: troque só a promo (o preço cheio fica fixo). A Anunciar mostra o ↻ com a promo nova{grupo ? " em cada opção do anúncio" : ""}.</p>}
+          {tipo !== "salvo" && <p className="modal-msg">Na plataforma: digite o preço da promoção novo (o preço cheio fica fixo). A Anunciar mostra o ↻ com o preço novo{grupo ? " de cada opção do anúncio" : ""}.</p>}
           {tipo === "confirmar" && <p className="modal-msg">Você já subiu {Math.round((e.acumulado || 0) * 100)}% desde que ligou. Confirmando, o app só pede de novo a cada +{Math.round(REGRAS_OTIMIZAR.confirmarCada * 100)}%.</p>}
           <div className="modal-actions">
             <button className="btn" onClick={onCancelar}>Cancelar</button>
@@ -262,8 +262,7 @@ function linhasNoPreco(b, preco, esc) {
   const op = b.otimizar;
   const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal } = esc;
   if (!(num(preco) > 0)) return [];
-  // A promo é % inteiro sobre o preço cheio fixo: o cliente paga alguns centavos a mais
-  // que o preço calculado. O lucro mostrado é o desse valor (o que entra de verdade).
+  // Lucro pelo que o cliente paga (= o preço da promoção digitado; acima do riscado, o riscado).
   const lucroPago = (l, cfg) => {
     const it = itens.find((i) => i.id === l.itemId);
     const v = num(l.clientePaga) > 0 ? num(l.clientePaga) : num(l.real);
@@ -304,7 +303,6 @@ export function PreviaPasso({ b, de, para }) {
   const linhas = previaDoPasso(linhasNoPreco(b, de, esc), linhasNoPreco(b, para, esc));
   if (!linhas.length) return null;
   const soma = (k) => linhas.reduce((t, l) => t + num(l[k]), 0);
-  const centavos = linhas.some((l) => l.pagaPara != null && l.para != null && Math.abs(l.pagaPara - l.para) > 0.004);
   return (
     <div className="otim-previa">
       <div className="otim-sub">O que muda em cada item do anúncio ({b.canal?.nome})</div>
@@ -314,37 +312,31 @@ export function PreviaPasso({ b, de, para }) {
             <tr>
               <th>Item</th>
               <th>Preço cheio<small>não mexe</small></th>
-              <th>O que você muda: a promo</th>
-              <th>Cliente paga</th>
+              <th>Preço da promoção<small>o que você digita</small></th>
+              <th>Desconto<small>a plataforma mostra</small></th>
               <th>Seu lucro por venda</th>
             </tr>
           </thead>
           <tbody>
-            {linhas.map((l) => {
-              const pagaPct = l.pagaDe > 0 && l.pagaPara != null ? l.pagaPara / l.pagaDe - 1 : null;
-              const dif = l.pagaPara != null && l.para != null ? l.pagaPara - l.para : 0;
-              return (
-                <tr key={l.itemId}>
-                  <td><b>{l.nome}</b></td>
-                  <td>{BRL(l.original)}{l.fixo ? <small>já anunciado (fixo)</small> : null}</td>
-                  <td>
-                    {l.promoDe === l.promoPara ? <>promo {l.promoPara ?? 0}% <small>não muda</small></> : <>promo {l.promoDe ?? 0}% → <b className="otim-destaque">{l.promoPara ?? 0}%</b></>} <PromoAviso canal={b.canal} promo={l.promoPara} />
-                    {l.acimaDoRiscado && <small className="otim-ruim">passa do preço cheio — precisaria subir o riscado</small>}
-                  </td>
-                  <td>
-                    {BRL(l.pagaDe)} → <b>{BRL(l.pagaPara)}</b>
-                    <small>{pctTxt(pagaPct)}{Math.abs(dif) > 0.004 ? ` · ${BRL(Math.abs(dif))} ${dif > 0 ? "acima" : "abaixo"} do preço do app (${BRL(l.para)})` : ""}</small>
-                  </td>
-                  <td>{BRL(l.lucroDe)} → <b>{BRL(l.lucroPara)}</b>{l.lucroDe != null && l.lucroPara != null && <small>{l.lucroPara - l.lucroDe >= 0 ? "+" : "−"}{BRL(Math.abs(l.lucroPara - l.lucroDe))} por venda</small>}</td>
-                </tr>
-              );
-            })}
+            {linhas.map((l) => (
+              <tr key={l.itemId}>
+                <td><b>{l.nome}</b></td>
+                <td>{BRL(l.original)}{l.fixo ? <small>já anunciado (fixo)</small> : null}</td>
+                <td>
+                  {BRL(l.pagaDe)} → <b className="otim-destaque">{BRL(l.pagaPara)}</b>
+                  <small>{pctTxt(l.pagaDe > 0 && l.pagaPara != null ? l.pagaPara / l.pagaDe - 1 : null)}</small>
+                  {l.acimaDoRiscado && <small className="otim-ruim">passa do preço cheio — precisaria subir o riscado</small>}
+                </td>
+                <td>{l.promoDe === l.promoPara ? `${l.promoPara ?? 0}%` : `${l.promoDe ?? 0}% → ${l.promoPara ?? 0}%`} <PromoAviso canal={b.canal} promo={l.promoPara} /></td>
+                <td>{BRL(l.lucroDe)} → <b>{BRL(l.lucroPara)}</b>{l.lucroDe != null && l.lucroPara != null && <small>{l.lucroPara - l.lucroDe >= 0 ? "+" : "−"}{BRL(Math.abs(l.lucroPara - l.lucroDe))} por venda</small>}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
       <ul className="otim-faint otim-nota">
-        <li>Na plataforma você só troca a <b>promo</b> de cada item; o preço cheio continua igual.</li>
-        {centavos && <li>A promo é um % inteiro, então o cliente paga alguns centavos a mais que o preço calculado pelo app. O lucro já está pelo que o cliente paga.</li>}
+        <li>Na plataforma você digita o <b>preço da promoção</b> de cada item; o preço cheio continua igual.</li>
+        <li>O app arredonda pro final que atrai (,49 ou ,90, sem passar de dezena à toa), então cada item sobe um pouco mais ou menos que o passo — a decisão é pelo lucro do anúncio inteiro.</li>
         {linhas.length > 1 && soma("lucroDe") > 0 && <li>Vendendo 1 de cada: lucro {BRL(soma("lucroDe"))} → {BRL(soma("lucroPara"))}.</li>}
       </ul>
     </div>
@@ -400,7 +392,7 @@ export function LigarOtimizarDialog({ b, salvando, onCancelar, onLigar }) {
             ))}
             {ini.hist && <li><span className="otim-faint">i</span> Últimos {ini.hist.dias} dias: {n1(ini.hist.vendasDia)} vendas/dia · sobrou {BRL(ini.hist.sobrouDia)}/dia depois do Ads</li>}
           </ul>
-          <p className="modal-msg otim-faint">Subir muda o preço de agora pela rampa: na plataforma só a promo muda (o preço cheio fica fixo). A medição começa no dia seguinte.</p>
+          <p className="modal-msg otim-faint">Subir muda o preço de agora pela rampa: na plataforma você digita o preço da promoção novo (o preço cheio fica fixo). A medição começa no dia seguinte.</p>
           <div className="modal-actions">
             <button className="btn" onClick={onCancelar}>Cancelar</button>
             {pode && <button className="btn" disabled={salvando} onClick={() => onLigar(null)}>Só ligar, sem subir agora</button>}

@@ -14,7 +14,7 @@ import { adsNaJanela, numerosDoPeriodo, REGRAS_ADS, textoAjusteAds, textoMudanca
 import { acaoDaRampa, proximaConferencia } from "../lib/rampaAgora.js";
 import { estadoDoAlerta, ROTULO_ESTADO } from "../lib/estados.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
-import { descontoDoItem } from "../lib/escada.js";
+import { descontoDoItem, anuncioMudou } from "../lib/escada.js";
 import { resolverTaxasNoPreco } from "../lib/calc.js";
 import { rampaNoCanal } from "../lib/rampaCanal.js";
 import { canalDireto } from "../lib/canais.js";
@@ -1080,14 +1080,14 @@ function AbaAnuncio({ l, esc, cres }) {
               <tr>
                 <th>Item</th>
                 <th className="num">Preço original</th>
-                <th className="num">Promo</th>
-                <th className="num">Cliente paga</th>
+                <th className="num" title="O % que a plataforma mostra no anúncio (calculado sobre o preço cheio)">Desconto</th>
+                <th className="num" title="O preço que você digita na promoção da plataforma — é o que o cliente paga">Preço da promoção (digite)</th>
                 <th>No canal</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(({ it, an, pub, rampa }) => {
-                const mudou = pub && an && (Math.abs(num(pub.promo) - num(an.promo)) > 0.4 || Math.abs(num(pub.cliente_paga) - num(an.clientePaga)) > 0.009);
+                const mudou = pub && an && anuncioMudou(pub, an);
                 return (
                   <tr key={it.id}>
                     <td>

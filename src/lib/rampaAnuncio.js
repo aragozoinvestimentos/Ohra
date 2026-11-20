@@ -5,6 +5,7 @@
 // sugestaoKit com as peças em rampa no preço do degrau.
 import { descontoDoItem, escadaDoProduto, sugestaoKit, lucroNoPreco, calcularAnuncio } from "./escada.js";
 import { itemTipoDoId } from "./variacoes.js";
+import { precoAtraente } from "./precoAtraente.js";
 
 const num = (v) => {
   const x = Number(String(v ?? "").replace(",", "."));
@@ -25,7 +26,7 @@ export function anuncioFixo(real, alvo, desconto) {
   if (!(desconto > 0.005) || !(alvo > 0)) return { original: real, promo: 0, clientePaga: real, real };
   const original = centavoAcima(Math.max(alvo, real) / (1 - desconto));
   const promo = Math.max(0, Math.floor((1 - real / original) * 100 + 1e-9));
-  return { original, promo, clientePaga: cent(original * (1 - promo / 100)), real };
+  return { original, promo, clientePaga: cent(real), real };
 }
 
 // ---- Riscado (preço original) FIXO depois de anunciado (out/2026) ----
@@ -49,7 +50,7 @@ export function anuncioNoRiscado(real, riscado) {
   if (!(r > 0) || !(o > 0)) return null;
   if (r > o + 0.004) return { original: o, promo: 0, clientePaga: o, real: r, riscadoFixo: true, acimaDoRiscado: true };
   const promo = Math.max(0, Math.floor((1 - r / o) * 100 + 1e-9));
-  return { original: o, promo, clientePaga: cent(o * (1 - promo / 100)), real: r, riscadoFixo: true };
+  return { original: o, promo, clientePaga: cent(r), real: r, riscadoFixo: true };
 }
 
 /**
@@ -108,7 +109,8 @@ export function precoKitNaRampa({ alvo, separado, curva }) {
  * mesmo % do avulso sobre o preço salvo da variação, no centavo.
  */
 export function precoVariacaoAcima({ alvo, fator, separado }) {
-  const preco = cent(num(alvo) * Math.max(1, num(fator)));
+  const f = Math.max(1, num(fator));
+  const preco = f > 1.0005 ? precoAtraente(num(alvo) * f, { acima: num(alvo) }) : cent(num(alvo));
   const sep = num(separado);
   return { preco, economia: sep > 0 ? 1 - preco / sep : null, naoCompensa: sep > 0 && preco >= sep - 0.004, limitado: false, motivo: null, acima: true };
 }

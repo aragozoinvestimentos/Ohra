@@ -1680,8 +1680,8 @@ function Detalhe({ l, pend = null, abaPedida = null, recolhido = false, onAltern
                 <tr>
                   <th>Item</th>
                   <th className="num">Preço original</th>
-                  <th className="num">Promo</th>
-                  <th className="num">Cliente paga</th>
+                  <th className="num" title="O % que a plataforma mostra no anúncio (calculado sobre o preço cheio)">Desconto</th>
+                  <th className="num" title="O preço que você digita na promoção da plataforma — é o que o cliente paga">Preço da promoção (digite)</th>
                   <th className="num">Lucro</th>
                   {anuncio?.faixas?.length > 0 && (
                     <th className="num" title={`Cupons ativos da loja: ${anuncio.faixas.map(textoFaixa).join(" · ")} (Configuração → Regras). Pedido de 1 unidade — o pior caso.`}>

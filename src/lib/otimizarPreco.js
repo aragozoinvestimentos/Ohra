@@ -1,4 +1,5 @@
 // Preço dinâmico → fase "Otimizar preço" (18/11/2026, aprovado pelo Gustavo pela
+import { precoAtraente } from "./precoAtraente.js";
 // prévia). Conta ÚNICA, PURA. É a "escada do Ads" no preço: sobe enquanto o
 // LUCRO DO DIA (o que sobrou depois do Ads, por dia) deixa; desce quando cai.
 // Sem teto — o resultado é o freio. Decide pela AMOSTRA, não pelo calendário.
@@ -46,7 +47,6 @@ export const REGRAS_OTIMIZAR = {
 };
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-const cent = (v) => Math.round(v * 100) / 100;
 export const somarDias = (iso, n) => {
   const d = new Date(`${String(iso).slice(0, 10)}T12:00:00`);
   d.setDate(d.getDate() + n);
@@ -58,17 +58,13 @@ const BRL = (v) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { styl
 const pctTxt = (r) => `${Math.round(r * 100)}%`;
 
 // Finais ,49/,99 (os da Rampa) pra produto/kit; % inteiro pro anúncio com vários itens.
-const finalAbaixo = (v) => cent(Math.floor((v + 0.01 + 1e-9) * 2) / 2 - 0.01);
-const finalAcima = (v) => cent(Math.ceil((v + 0.01 - 1e-9) * 2) / 2 - 0.01);
 
 /** Próximo preço com o passo (+5%/+8%). grupo = unidade em %. */
 export function proximoPreco(atual, passo, grupo = false) {
   const a = num(atual);
   if (!(a > 0)) return null;
   if (grupo) return Math.max(Math.round(a * (1 + passo)), Math.round(a) + 1);
-  let v = finalAbaixo(a * (1 + passo));
-  if (v <= a + 0.004) v = finalAcima(a + 0.02);
-  return v;
+  return precoAtraente(a * (1 + passo), { acima: a });
 }
 
 /** Texto de um preço na unidade da linha. */

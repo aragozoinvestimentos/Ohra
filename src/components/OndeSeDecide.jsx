@@ -29,7 +29,7 @@ export default function OndeSeDecide() {
         <span className="onde-decide-sep">·</span>
         <b>Preço de agora</b> = {link("crescimento", "Crescimento")} (produtos em rampa)
         <span className="onde-decide-sep">·</span>
-        <b>O que digitar</b> = {link("publicar", "Anunciar")} (só muda a promo; o preço original fica fixo)
+        <b>O que digitar</b> = {link("publicar", "Anunciar")} (você digita o preço da promoção; o preço original fica fixo)
       </span>
     </div>
   );

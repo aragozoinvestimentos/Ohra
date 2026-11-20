@@ -16,6 +16,7 @@ import { calcularAnuncio, descontoDoItem, lucroNoPreco } from "./escada.js";
 import { anuncioFixo, riscadoFixoDe, anuncioNoRiscado } from "./rampaAnuncio.js";
 import { idDoItemOpcao, opcoesDoGrupo, vendasPorOpcao, vitrineDaOpcao, gruposPorItem, RAZAO_MAX_SHOPEE } from "./anunciosGrupo.js";
 import { estadoRampa } from "./rampa.js";
+import { precoAtraente } from "./precoAtraente.js";
 import { itemTipoDoId } from "./variacoes.js";
 
 const num = (v) => {
@@ -100,7 +101,8 @@ export function precosDoDegrau({ ops, pct, canal, itens, produtos, kits, publica
   const shopee = canal?.tipo === "shopee" || canal?.tipo === "tiktok";
   const piso4x = shopee && linhas.length > 1 ? centavoAcima(maisCaro / RAZAO_MAX_SHOPEE) : 0;
   return linhas.map((l) => {
-    let real = cent(l.base * f);
+    // Fora do 100% o preço vai pro final que atrai (,49/,90), sem passar pro outro lado do salvo.
+    let real = Math.abs(f - 1) < 0.0005 ? cent(l.base) : precoAtraente(l.base * f, f > 1 ? { acima: l.base } : { abaixo: l.base });
     const pelo4x = real < piso4x - 0.004;
     if (pelo4x) real = piso4x;
     const an = l.fixo ? anuncioNoRiscado(real, l.fixo) : anuncioFixo(real, l.base, l.desconto);

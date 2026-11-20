@@ -385,8 +385,8 @@ function DetalheGrupo({ l, linhaAds, onVerAds, onMudar, onEncerrar, comAgora = f
                 <th>Opção</th>
                 <th className="num">Preço salvo</th>
                 <th className="num">Preço original</th>
-                <th className="num">Promo</th>
-                <th className="num">Cliente paga</th>
+                <th className="num" title="O % que a plataforma mostra no anúncio (calculado sobre o preço cheio)">Desconto</th>
+                <th className="num" title="O preço que você digita na promoção da plataforma — é o que o cliente paga">Preço da promoção (digite)</th>
                 <th className="num">Lucro</th>
               </tr>
             </thead>

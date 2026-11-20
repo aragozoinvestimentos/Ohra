@@ -286,13 +286,13 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
   const tsvVariacoes = (a) => ["Variação\tOpções", ...a.tabelaVar.map((v) => `${v.nome}\t${v.opcoes.join(", ")}`)].join("\n");
   const tsvProdutos = (a) =>
     [
-      ["SKU", ...ficha.colunasAttr, ...(a.temQtdColuna ? ["Quantidade"] : []), "Preço original", "Promoção %", "Cliente paga"].join("\t"),
+      ["SKU", ...ficha.colunasAttr, ...(a.temQtdColuna ? ["Quantidade"] : []), "Preço original", "Desconto %", "Preço da promoção"].join("\t"),
       ...a.linhas.map((l) => [l.sku, ...ficha.valoresAttr(l), ...(a.temQtdColuna ? [l.qtd] : []), l.an ? num(l.an.original) : "", l.an ? String(l.an.promo) : "", l.an ? num(l.an.clientePaga) : ""].join("\t")),
     ].join("\n");
 
   function exportarCsv() {
     if (!ficha) return;
-    const rows = [["Anúncio", "SKU", ...ficha.colunasAttr, "Quantidade", "Preço original", "Promoção %", "Cliente paga"]];
+    const rows = [["Anúncio", "SKU", ...ficha.colunasAttr, "Quantidade", "Preço original", "Desconto %", "Preço da promoção"]];
     ficha.anuncios.forEach((a) => a.linhas.forEach((l) => rows.push([a.titulo, l.sku, ...ficha.valoresAttr(l), l.qtd || "", l.an ? num(l.an.original) : "", l.an ? String(l.an.promo) : "", l.an ? num(l.an.clientePaga) : ""])));
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
@@ -523,8 +523,8 @@ export default function FichaAnuncio({ onToast, onIrPara }) {
                           ))}
                           {a.temQtdColuna && <th>Qtd.</th>}
                           <th className="num">Preço original</th>
-                          <th className="num">Promo</th>
-                          <th className="num">Cliente paga</th>
+                          <th className="num" title="O % que a plataforma mostra no anúncio (calculado sobre o preço cheio)">Desconto</th>
+                          <th className="num" title="O preço que você digita na promoção da plataforma — é o que o cliente paga">Preço da promoção (digite)</th>
                           <th className="num" title="Lucro pelo que o cliente paga: recebe − repor o produto">Lucro</th>
                         </tr>
                       </thead>

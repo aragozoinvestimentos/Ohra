@@ -248,6 +248,7 @@ export function placarIdeias(registros) {
 // REGRA (CLAUDE.md): toda tela, ajuste ou regra nova entra aqui e, quando der,
 // nas perguntas (responderPergunta), consultorias e conversas da equipe.
 export const NOVIDADES_CONSULTOR = [
+  { data: "2026-11-20", texto: "Na promoção agora se digita o PREÇO (não o %): o cliente paga exatamente o preço do app e o desconto é só o que a plataforma mostra. Os preços novos do Otimizar, da rampa do anúncio inteiro e das variações que sobem junto vão pro final que atrai (,49 ou ,90, sem passar de dezena à toa)." },
   { data: "2026-11-20", texto: "Prévia do Otimizar preço mais clara: mostra o preço cheio (não muda), a promo que você troca e o que o cliente paga de verdade — a promo é % inteiro, então o cliente paga alguns centavos acima do preço calculado, e o lucro já é por esse valor." },
   { data: "2026-11-18", texto: "Otimizar preço mostra \"de quanto pra quanto\" em cada item do anúncio antes de subir ou voltar (no Ligar e subir +5% e na confirmação do Subir/Voltar): preço, a promo que muda na plataforma (preço cheio fixo), o que o cliente paga e o lucro por venda de cada um — avulso e variações, ou cada opção do anúncio com vários itens." },
   { data: "2026-11-18", texto: "Otimizar preço num produto com variações: quando o avulso sobe acima do preço salvo, o kit 2, kit 3… do mesmo anúncio sobem no mesmo % (cada um sobre o próprio preço salvo) — o \"+5%\" vale pro anúncio todo. Kits de produtos diferentes são outro anúncio e não sobem junto." },
