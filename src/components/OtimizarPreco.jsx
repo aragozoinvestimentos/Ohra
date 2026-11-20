@@ -11,6 +11,7 @@ import { precoTxt, REGUA_OTIMIZAR, linhaDaRegua, REGRAS_OTIMIZAR, previaDoPasso 
 import { anuncioDaRampa, anuncioDaRampaKit } from "../lib/rampaAnuncio.js";
 import { precosDoDegrau } from "../lib/grupoRampa.js";
 import PromoAviso from "./PromoAviso.jsx";
+import { lucroNoPreco } from "../lib/escada.js";
 import { ligarOtimizar, passoOtimizar, manterOtimizar, desligarOtimizar, atualizarSalvoOtimizar } from "../lib/otimizarAcoes.js";
 import { valoresAtuais } from "../lib/ads.js";
 import { useEscada } from "../hooks/useEscada.js";
@@ -231,18 +232,17 @@ function ConfirmaOtim({ confirma, grupo, b, salvando, onCancelar, onOk }) {
   const op = b.otimizar;
   const pt = (v) => precoTxt(v, grupo);
   const titulo = tipo === "salvo" ? `Atualizar o preço salvo pra ${BRL(op.atual)}?` : tipo === "voltar" ? `Voltar pra ${pt(e.novo)}?` : `Subir pra ${pt(e.novo)}?`;
-  const lucroNovo = !grupo && b.lucroEm ? b.lucroEm(e?.novo) : null;
   return (
     <Portal>
       <div className="modal-overlay" onClick={onCancelar}>
-        <div className="modal-box modal-box-larga" onClick={(x) => x.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="modal-box modal-box-larga modal-box-xl" onClick={(x) => x.stopPropagation()} role="dialog" aria-modal="true">
           <h3>{titulo}</h3>
           <p className="modal-msg">
             {tipo === "salvo"
               ? "O preço bom que o Otimizar achou passa a ser o alvo: kits, escada, Ads e o resto do app passam a usar esse preço. O riscado do anúncio não muda."
               : tipo === "voltar"
                 ? `O preço de agora (${pt(op.atual)}) volta pra ${pt(e.novo)}, que vira o preço bom. O app não sugere subir de novo por ${REGRAS_OTIMIZAR.bloqueioDias} dias.`
-                : `${pt(op.atual)} → ${pt(e.novo)}${lucroNovo != null ? ` · lucro por venda ${BRL(b.lucroEm(op.atual))} → ${BRL(lucroNovo)}` : ""}. A medição começa amanhã e decide com ${REGRAS_OTIMIZAR.leituraDias} dias e ${REGRAS_OTIMIZAR.minVendas} vendas pagas.`}
+                : `${pt(op.atual)} → ${pt(e.novo)}. A medição começa amanhã e decide com ${REGRAS_OTIMIZAR.leituraDias} dias e ${REGRAS_OTIMIZAR.minVendas} vendas pagas.`}
           </p>
           {tipo !== "salvo" && e?.novo > 0 && <PreviaPasso b={b} de={op.atual} para={e.novo} />}
           {tipo !== "salvo" && <p className="modal-msg">Na plataforma: troque só a promo (o preço cheio fica fixo). A Anunciar mostra o ↻ com a promo nova{grupo ? " em cada opção do anúncio" : ""}.</p>}
@@ -257,11 +257,18 @@ function ConfirmaOtim({ confirma, grupo, b, salvando, onCancelar, onOk }) {
   );
 }
 
-/** Linhas do "O que digitar" do anúncio num preço (produto/kit em R$, grupo em %). */
+/** Linhas do "O que digitar" do anúncio num preço (produto/kit em R$, grupo em %). Lucro pelo que o cliente PAGA. */
 function linhasNoPreco(b, preco, esc) {
   const op = b.otimizar;
   const { itens, produtos, kits, precos, concorrentes, cfgDoProduto, publicacoesCanal, anunciadoNoCanal } = esc;
   if (!(num(preco) > 0)) return [];
+  // A promo é % inteiro sobre o preço cheio fixo: o cliente paga alguns centavos a mais
+  // que o preço calculado. O lucro mostrado é o desse valor (o que entra de verdade).
+  const lucroPago = (l, cfg) => {
+    const it = itens.find((i) => i.id === l.itemId);
+    const v = num(l.clientePaga) > 0 ? num(l.clientePaga) : num(l.real);
+    return it ? lucroNoPreco(b.canal, v, num(it.custoTotal), num(it.peso), cfg) : l.lucro;
+  };
   if (b.tipo === "grupo") {
     return precosDoDegrau({ ops: b.ops || [], pct: preco, canal: b.canal, itens, produtos, kits, publicacoes: publicacoesCanal }).map((l) => ({
       itemId: `${l.idx}|${l.itemId}`,
@@ -272,55 +279,74 @@ function linhasNoPreco(b, preco, esc) {
       clientePaga: l.an?.clientePaga,
       riscadoFixo: !!l.fixo,
       acimaDoRiscado: !!l.an?.acimaDoRiscado,
-      lucro: l.lucro,
+      lucro: l.lucroEm ? l.lucroEm(num(l.an?.clientePaga) || l.real) : l.lucro,
     }));
   }
   if (b.tipo === "kit") {
     const kitItem = itens.find((i) => i.id === `k:${b.id}`);
     if (!kitItem) return [];
-    return anuncioDaRampaKit({ kitItem, canal: b.canal, preco, alvo: op.alvo, cfg: cfgDoProduto(null), itens, produtos, kits, publicacoes: publicacoesCanal }).linhas;
+    const cfg = cfgDoProduto(null);
+    return anuncioDaRampaKit({ kitItem, canal: b.canal, preco, alvo: op.alvo, cfg, itens, produtos, kits, publicacoes: publicacoesCanal }).linhas.map((l) => ({ ...l, lucro: lucroPago(l, cfg) }));
   }
-  const res = anuncioDaRampa({ produtoId: b.id, canal: b.canal, preco, alvo: op.alvo, cfg: cfgDoProduto(b.id), itens, produtos, kits, precos, precosRampa: precos, concorrentes, cfgDoProduto, publicacoes: publicacoesCanal });
+  const cfg = cfgDoProduto(b.id);
+  const res = anuncioDaRampa({ produtoId: b.id, canal: b.canal, preco, alvo: op.alvo, cfg, itens, produtos, kits, precos, precosRampa: precos, concorrentes, cfgDoProduto, publicacoes: publicacoesCanal });
   // Só o anúncio do avulso: ele e as variações anunciadas neste canal (kit de produtos diferentes é outro anúncio).
-  return res.linhas.filter((l) => l.id === "avulso" || (l.itemId?.startsWith("v:") && anunciadoNoCanal(itens.find((i) => i.id === l.itemId), b.canal)));
+  return res.linhas
+    .filter((l) => l.id === "avulso" || (l.itemId?.startsWith("v:") && anunciadoNoCanal(itens.find((i) => i.id === l.itemId), b.canal)))
+    .map((l) => ({ ...l, lucro: lucroPago(l, cfg) }));
 }
+
+const pctTxt = (v) => (v == null ? "" : `${v >= 0 ? "+" : ""}${(Math.round(v * 1000) / 10).toFixed(1).replace(".", ",")}%`);
 
 /** "De quanto pra quanto" em cada item do anúncio num passo do Otimizar. */
 export function PreviaPasso({ b, de, para }) {
   const esc = useEscada();
   const linhas = previaDoPasso(linhasNoPreco(b, de, esc), linhasNoPreco(b, para, esc));
   if (!linhas.length) return null;
-  const sobe = num(para) > num(de);
   const soma = (k) => linhas.reduce((t, l) => t + num(l[k]), 0);
+  const centavos = linhas.some((l) => l.pagaPara != null && l.para != null && Math.abs(l.pagaPara - l.para) > 0.004);
   return (
     <div className="otim-previa">
-      <div className="otim-sub">Em cada item do anúncio ({b.canal?.nome})</div>
+      <div className="otim-sub">O que muda em cada item do anúncio ({b.canal?.nome})</div>
       <div className="table-wrap">
         <table className="otim-tab">
           <thead>
-            <tr><th>Item</th><th>Preço</th><th>Na plataforma</th><th>Cliente paga</th><th>Lucro por venda</th></tr>
+            <tr>
+              <th>Item</th>
+              <th>Preço cheio<small>não mexe</small></th>
+              <th>O que você muda: a promo</th>
+              <th>Cliente paga</th>
+              <th>Seu lucro por venda</th>
+            </tr>
           </thead>
           <tbody>
-            {linhas.map((l) => (
-              <tr key={l.itemId}>
-                <td>{l.nome}</td>
-                <td>{BRL(l.de)} → <b>{BRL(l.para)}</b>{l.pct != null && <small>{l.pct >= 0 ? "+" : ""}{(Math.round(l.pct * 1000) / 10).toFixed(1).replace(".", ",")}%</small>}</td>
-                <td>
-                  {l.promoDe === l.promoPara ? `promo ${l.promoPara ?? 0}%` : <>promo {l.promoDe ?? 0}% → <b>{l.promoPara ?? 0}%</b></>} <PromoAviso canal={b.canal} promo={l.promoPara} />
-                  <small>preço cheio {BRL(l.original)}{l.fixo ? " (fixo)" : ""}</small>
-                  {l.acimaDoRiscado && <small className="otim-ruim">passa do preço cheio — precisaria subir o riscado</small>}
-                </td>
-                <td>{BRL(l.pagaDe)} → {BRL(l.pagaPara)}</td>
-                <td>{BRL(l.lucroDe)} → <b>{BRL(l.lucroPara)}</b>{l.lucroDe != null && l.lucroPara != null && <small>{l.lucroPara - l.lucroDe >= 0 ? "+" : ""}{BRL(l.lucroPara - l.lucroDe)}</small>}</td>
-              </tr>
-            ))}
+            {linhas.map((l) => {
+              const pagaPct = l.pagaDe > 0 && l.pagaPara != null ? l.pagaPara / l.pagaDe - 1 : null;
+              const dif = l.pagaPara != null && l.para != null ? l.pagaPara - l.para : 0;
+              return (
+                <tr key={l.itemId}>
+                  <td><b>{l.nome}</b></td>
+                  <td>{BRL(l.original)}{l.fixo ? <small>já anunciado (fixo)</small> : null}</td>
+                  <td>
+                    {l.promoDe === l.promoPara ? <>promo {l.promoPara ?? 0}% <small>não muda</small></> : <>promo {l.promoDe ?? 0}% → <b className="otim-destaque">{l.promoPara ?? 0}%</b></>} <PromoAviso canal={b.canal} promo={l.promoPara} />
+                    {l.acimaDoRiscado && <small className="otim-ruim">passa do preço cheio — precisaria subir o riscado</small>}
+                  </td>
+                  <td>
+                    {BRL(l.pagaDe)} → <b>{BRL(l.pagaPara)}</b>
+                    <small>{pctTxt(pagaPct)}{Math.abs(dif) > 0.004 ? ` · ${BRL(Math.abs(dif))} ${dif > 0 ? "acima" : "abaixo"} do preço do app (${BRL(l.para)})` : ""}</small>
+                  </td>
+                  <td>{BRL(l.lucroDe)} → <b>{BRL(l.lucroPara)}</b>{l.lucroDe != null && l.lucroPara != null && <small>{l.lucroPara - l.lucroDe >= 0 ? "+" : "−"}{BRL(Math.abs(l.lucroPara - l.lucroDe))} por venda</small>}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-      <div className="otim-faint otim-nota">
-        {sobe ? "Na plataforma só a promo muda; o preço cheio fica igual." : "Na plataforma só a promo aumenta; o preço cheio fica igual."}
-        {linhas.length > 1 && soma("lucroDe") > 0 ? ` Vendendo 1 de cada: lucro ${BRL(soma("lucroDe"))} → ${BRL(soma("lucroPara"))}.` : ""}
-      </div>
+      <ul className="otim-faint otim-nota">
+        <li>Na plataforma você só troca a <b>promo</b> de cada item; o preço cheio continua igual.</li>
+        {centavos && <li>A promo é um % inteiro, então o cliente paga alguns centavos a mais que o preço calculado pelo app. O lucro já está pelo que o cliente paga.</li>}
+        {linhas.length > 1 && soma("lucroDe") > 0 && <li>Vendendo 1 de cada: lucro {BRL(soma("lucroDe"))} → {BRL(soma("lucroPara"))}.</li>}
+      </ul>
     </div>
   );
 }
@@ -345,7 +371,7 @@ export function LigarOtimizarDialog({ b, salvando, onCancelar, onLigar }) {
   return (
     <Portal>
       <div className="modal-overlay" onClick={onCancelar}>
-        <div className="modal-box modal-box-larga modal-box-md" onClick={(x) => x.stopPropagation()} role="dialog" aria-modal="true">
+        <div className="modal-box modal-box-larga modal-box-xl" onClick={(x) => x.stopPropagation()} role="dialog" aria-modal="true">
           <h3>Ligar Otimizar preço — {b.item?.nome} · {b.canal?.nome}</h3>
           {abaixo ? (
             <div className="otim-agora st-borda-info">
@@ -357,7 +383,7 @@ export function LigarOtimizarDialog({ b, salvando, onCancelar, onLigar }) {
               <div className="otim-tit">↑ Dá pra subir +{Math.round(ini.passo * 100)}% agora: {pt(ini.novo)}</div>
               <div className="otim-txt">
                 {ini.v14} vendas pagas em 14 dias, ritmo estável.
-                {lucroAgora != null && lucroNovo != null ? ` Cada venda deixa ${BRL(lucroAgora)} → ${BRL(lucroNovo)}${podePerder != null ? `: dá pra vender até ${Math.floor(podePerder * 100)}% menos e ganhar o mesmo` : ""}.` : ""}
+                {podePerder != null ? ` Com o lucro maior por venda, dá pra vender até ${Math.floor(podePerder * 100)}% menos e ganhar o mesmo.` : ""}
               </div>
             </div>
           ) : (

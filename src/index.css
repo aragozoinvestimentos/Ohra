@@ -3060,3 +3060,6 @@ tr.linha-destaque > td { background: var(--st-atencao-soft); transition: backgro
 .otim-previa { margin: 10px 0; }
 .otim-previa .otim-tab td { vertical-align: top; }
 .otim-previa .otim-nota { font-size: 12px; margin-top: 6px; }
+.otim-previa .otim-tab th small { display: block; font-weight: 400; text-transform: none; color: var(--ink-faint); }
+.otim-previa .otim-destaque { color: var(--accent); }
+.otim-previa ul.otim-nota { margin: 6px 0 0; padding-left: 18px; }
