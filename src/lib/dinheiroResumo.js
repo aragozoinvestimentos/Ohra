@@ -153,3 +153,17 @@ export function partesDoTotal({ total, repor, contas }) {
   const livre = r2(num(total) - comprometido);
   return { partes, comprometido: r2(comprometido), livre, falta: livre < 0 ? r2(-livre) : 0 };
 }
+
+/**
+ * Ponte "livre no caixa × lucro" (20/11/2026 — Gustavo viu −R$ 38 no mês e
+ * R$ 391 "livre — é lucro"). O caixa tem dinheiro que não é lucro: o que ele
+ * colocou (aporte + saldo inicial − retiradas) e as contas pagas do bolso
+ * (descontam do lucro, mas não saíram do caixa da loja). O resto é diferença
+ * de tempo (caixa × competência). payoff = lib/payoff.js → payoff().
+ */
+export function livreXLucro({ livre, payoff: po, lucroAcumulado }) {
+  const colocado = r2(num(po?.doBolso) - num(po?.retiradas));
+  const doBolso = r2(num(po?.pagouBolso));
+  const lucro = r2(lucroAcumulado);
+  return { lucro, colocado, doBolso, retiradas: r2(po?.retiradas), tempo: r2(num(livre) - lucro - colocado - doBolso) };
+}

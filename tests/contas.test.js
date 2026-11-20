@@ -1424,3 +1424,13 @@ describe("Preço que atrai + preço da promoção digitado (20/11/2026)", () => 
     expect(anuncioMudou(nova, { original: 24.25, promo: 22, clientePaga: 19.0 })).toBe(true);
   });
 });
+
+import { livreXLucro } from "../src/lib/dinheiroResumo.js";
+describe("Dinheiro → livre no caixa × lucro (20/11/2026)", () => {
+  it("livre = lucro + dinheiro colocado + contas pagas do bolso + diferença de tempo", () => {
+    const p = livreXLucro({ livre: 391.58, payoff: { doBolso: 500, retiradas: 0, pagouBolso: 120 }, lucroAcumulado: -38 });
+    expect(p.colocado).toBe(500);
+    expect(p.doBolso).toBe(120);
+    expect(p.tempo).toBeCloseTo(391.58 + 38 - 500 - 120, 2);
+  });
+});

@@ -3063,3 +3063,6 @@ tr.linha-destaque > td { background: var(--st-atencao-soft); transition: backgro
 .otim-previa .otim-tab th small { display: block; font-weight: 400; text-transform: none; color: var(--ink-faint); }
 .otim-previa .otim-destaque { color: var(--accent); }
 .otim-previa ul.otim-nota { margin: 6px 0 0; padding-left: 18px; }
+.dr-ponte { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line, var(--border)); border-radius: 10px; background: var(--st-info-soft); }
+.dr-ponte-tit { font-weight: 700; margin-bottom: 6px; }
+.dr-ponte .neg { color: var(--st-resolver); }

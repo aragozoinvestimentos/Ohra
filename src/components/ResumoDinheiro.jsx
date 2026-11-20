@@ -3,7 +3,8 @@ import { BRL } from "../lib/format.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useRankingData } from "../hooks/useRankingData.js";
 import { cascataDoPeriodo } from "../lib/resumoLoja.js";
-import { reposicao, contasAte, proximosDias, partesDoTotal } from "../lib/dinheiroResumo.js";
+import { reposicao, contasAte, proximosDias, partesDoTotal, livreXLucro } from "../lib/dinheiroResumo.js";
+import { payoff } from "../lib/payoff.js";
 import { rotuloMes, somarMeses, rotuloCategoria } from "../lib/fluxoCaixa.js";
 import CanalTag from "./CanalTag.jsx";
 import Ajuda from "./Ajuda.jsx";
@@ -50,6 +51,9 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
     return out;
   }, [pedidos, cres.linhasAds, lancamentos, hoje]);
   const soma = (k) => meses.reduce((t, x) => t + (x.c[k] || 0), 0);
+  const po = useMemo(() => payoff({ lancamentos, hoje }), [lancamentos, hoje]);
+  const ponte = livreXLucro({ livre: div.livre, payoff: po, lucroAcumulado: meses.length ? soma("liquido") : 0 });
+  const mesAtual = meses.find((x) => x.parcial) || null;
 
   const carteiras = resumoCart?.carteiras || [];
   const ordem = [...carteiras].sort((a, b) => (a.plataforma ? 1 : 0) - (b.plataforma ? 1 : 0));
@@ -113,7 +117,7 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
         <h3 className="section-title h3-split">
           <span>
             Desse total, de quem é cada parte
-            <Ajuda texto="O app calcula sozinho, sem precisar separar: o que precisa voltar pro estoque (pelas vendas e pelas compras lançadas desde o início), as contas que vencem nos próximos 30 dias e os impostos. O resto é livre — é lucro, dá pra retirar ou reinvestir." />
+            <Ajuda texto="O app calcula sozinho, sem precisar separar: o que precisa voltar pro estoque (pelas vendas e pelas compras lançadas desde o início), as contas que vencem nos próximos 30 dias e os impostos. O resto é o que fica livre NO CAIXA. Atenção: não é lucro — entra aí o dinheiro que você colocou na loja e o que você pagou do seu bolso. O lucro está em “Lucro mês a mês”." />
           </span>
           <span className="faint">calculado pelas vendas e compras</span>
         </h3>
@@ -146,13 +150,56 @@ export default function ResumoDinheiro({ lancamentos, resumoCart, hoje, caixinha
             )}
             <tr className={div.livre >= 0 ? "dr-livre" : "dr-livre neg"}>
               <td>
-                <div className="dr-rot">{div.livre >= 0 ? "Livre — é lucro" : "Falta dinheiro"}</div>
-                <div className="dr-exp">{div.livre >= 0 ? "O que sobra depois de repor e pagar o que vence. Pode retirar ou reinvestir." : `Faltam ${BRL(div.falta)} pra cobrir a reposição e as contas dos próximos 30 dias.`}</div>
+                <div className="dr-rot">{div.livre >= 0 ? "Livre no caixa" : "Falta dinheiro"}</div>
+                <div className="dr-exp">{div.livre >= 0 ? "O dinheiro que sobra no caixa depois de repor e pagar o que vence. NÃO é o lucro — veja embaixo por que os dois são diferentes." : `Faltam ${BRL(div.falta)} pra cobrir a reposição e as contas dos próximos 30 dias.`}</div>
               </td>
               <td className="num">{BRL(div.livre >= 0 ? div.livre : -div.falta)}</td>
             </tr>
           </tbody>
         </table>
+        {meses.length > 0 && (
+          <div className="dr-ponte">
+            <div className="dr-ponte-tit">
+              Por que tem {BRL(div.livre)} livre no caixa{mesAtual ? ` se ${rotuloMes(mesAtual.mes).toLowerCase()} está em ${BRL(mesAtual.c.liquido || 0)}` : ""}?
+            </div>
+            <table className="dr-conta-tab">
+              <tbody>
+                <tr>
+                  <td>Lucro de verdade, somando todos os meses (tabela “Lucro mês a mês”)</td>
+                  <td className={`num${ponte.lucro < 0 ? " neg" : ""}`}>{BRL(ponte.lucro)}</td>
+                </tr>
+                <tr>
+                  <td>+ Dinheiro que você colocou na loja (aporte e saldo inicial){ponte.retiradas > 0 ? ` − o que já retirou (${BRL(ponte.retiradas)})` : ""}</td>
+                  <td className="num">{BRL(ponte.colocado)}</td>
+                </tr>
+                {ponte.doBolso > 0 && (
+                  <tr>
+                    <td>+ Contas que você pagou do seu bolso (contam no lucro, mas não saíram do caixa da loja)</td>
+                    <td className="num">{BRL(ponte.doBolso)}</td>
+                  </tr>
+                )}
+                <tr>
+                  <td>
+                    + Diferença de tempo
+                    <Ajuda texto="O lucro conta a venda e o custo no dia da venda, com o custo de hoje; o caixa conta quando o dinheiro entra e sai. Entram aqui: Ads pago por recarga (o lucro desconta o gasto dos CSVs), material comprado antes ou depois de vender, vendas ainda a liberar, contas fixas do mês que ainda não foram pagas e vendas lançadas à mão no caixa." />
+                  </td>
+                  <td className="num">{BRL(ponte.tempo)}</td>
+                </tr>
+                <tr>
+                  <td><b>= Livre no caixa</b></td>
+                  <td className="num"><b>{BRL(div.livre)}</b></td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="dr-exp">
+              {ponte.lucro < 0
+                ? `A loja ainda não deu lucro (${BRL(ponte.lucro)} somando os meses): o caixa está positivo porque tem dinheiro seu lá dentro. Retirar esse valor seria tirar o seu próprio dinheiro de volta, não lucro.`
+                : ponte.colocado + ponte.doBolso > 0
+                  ? `Dos ${BRL(div.livre)} livres, só ${BRL(Math.max(0, Math.min(div.livre, ponte.lucro)))} vieram de lucro; o resto é dinheiro seu (Dinheiro → Resultado → Seu dinheiro de volta).`
+                  : "O livre no caixa vem do lucro dos meses e das diferenças de tempo."}
+            </div>
+          </div>
+        )}
         <div className="dr-conta">
           <button type="button" className="link-btn" onClick={() => setVerConta((v) => !v)}>
             {verConta ? "esconder a conta" : "como o app chegou nesses números"}
