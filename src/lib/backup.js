@@ -4,7 +4,8 @@
 // "Gerar e baixar" no Início (Seus dados) e no consultor da Sede.
 //
 // REGRA: toda tabela NOVA (schema_vN.sql) entra em TABELAS_BACKUP — senão o
-// dado dela fica fora do backup. A lista tem o que existe hoje (v65).
+// dado dela fica fora do backup. Conferida em 22/11/2026 (até o v74): toda tabela que o app lê ou grava está aqui;
+// os dados novos sem tabela própria (anúncio limitado, meta de ticket, campanhas, testes de afiliado…) ficam em preferencias_loja.
 import { supabase } from "./supabaseClient.js";
 import { hojeSP } from "./datas.js";
 
