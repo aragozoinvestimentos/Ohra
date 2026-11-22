@@ -12,6 +12,7 @@ import { BRL } from "../lib/format.js";
 import Kpis from "./Kpis.jsx";
 import Estado from "./Estado.jsx";
 import CanalTag from "./CanalTag.jsx";
+import AnuncioLimitado from "./AnuncioLimitado.jsx";
 import RespostaTesteAfiliado from "./RespostaTesteAfiliado.jsx";
 import { mostrarTesteAfiliado } from "../lib/afiliadoTesteAcoes.js";
 
@@ -112,6 +113,7 @@ export default function VenderHoje({ dados, linhas, linhasAds, onToast }) {
         </button>
       )}
       {p.afTeste && <RespostaTesteAfiliado a={p.afTeste} onToast={onToast} />}
+      {p.limitado && <AnuncioLimitado lim={p.limitado} nome={p.limitadoNome} compacto onToast={onToast} />}
       <button
         type="button"
         className={`btn btn-mini${p.grupo !== "rotina" && !p.afTeste ? " primary" : ""}`}

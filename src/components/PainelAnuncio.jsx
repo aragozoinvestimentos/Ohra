@@ -31,6 +31,7 @@ import { CarrinhoVenda, CartaoDiagnostico, FunilQuatro } from "./Diagnostico.jsx
 import { configCalendario, proximaCampanha } from "../lib/calendario.js";
 import HistoricoAcoes from "./HistoricoAcoes.jsx";
 import SurtiuEfeito from "./SurtiuEfeito.jsx";
+import AnuncioLimitado from "./AnuncioLimitado.jsx";
 
 // Painel do anúncio (remap 21/10/2026, aprovado pela prévia): TUDO de um
 // produto (ou kit / anúncio com vários itens) NUM canal — resumo, vendas,
@@ -176,6 +177,7 @@ export default function PainelAnuncio({ onToast }) {
             {l.sku && <span className="muted-cel">{l.sku}</span>}
             {l.emRampa && l.rampa && <Estado tipo="decisao" icone={null}>em rampa · degrau {l.rampa.est.i + 1} de {l.rampa.est.degraus.length}</Estado>}
             {l.estado && <Estado tipo={l.estado.tipo} title={l.estado.motivo}>{String(l.estado.motivo || ROTULO_ESTADO[l.estado.tipo]).split(" · ")[0]}</Estado>}
+            {!l.ads?.limitado && <AnuncioLimitado lim={null} chave={`${l.ads?.item?.id || l.itemId}|${l.canal.id}`} nome={l.nome} onToast={onToast} />}
             {l.variacoes?.length > 0 && <span className="muted-cel">no mesmo anúncio: {l.variacoes.map((x) => x.nomeVariacao || x.nome).join(" · ")}</span>}
           </div>
         </div>
@@ -245,6 +247,7 @@ export default function PainelAnuncio({ onToast }) {
           nos últimos {dias} dias — fora destes números (o Ads e o funil são daquele anúncio). A página do produto soma tudo.
         </div>
       )}
+      {(l.ads?.limitado?.ativo || l.ads?.limitado?.suspeita) && <AnuncioLimitado lim={l.ads.limitado} chave={`${l.itemId}|${l.canal.id}`} nome={l.nome} onToast={onToast} />}
       <div className="pa-abas" role="tablist">
         {abas.map((a) => (
           <button key={a.k} type="button" role="tab" className={abaV === a.k ? "ativo" : ""} onClick={() => setAba(a.k)}>

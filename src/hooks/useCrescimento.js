@@ -26,6 +26,7 @@ import { useAvaliacoes } from "./useAvaliacoes.js";
 import { adsDaSemana, juntarRegistros, registrosDeAvaliacao, semanasAutomaticas } from "../lib/semanasAuto.js";
 import { efeitoDaMudanca } from "../lib/efeito.js";
 import { estadoOtimizar, decisaoInicial, lerOtimizar } from "../lib/otimizarPreco.js";
+import { avDoLimitado, estDoLimitado, estadoLimitado, gastoPorTrecho, limiteAtivo, otimizarDoLimitado, suspeitaLimitado, REGRAS_LIMITE } from "../lib/anuncioLimitado.js";
 import { anuncioDoItem } from "../lib/rampaAnuncio.js";
 import { descontoDoItem } from "../lib/escada.js";
 import { precosDoDegrau } from "../lib/grupoRampa.js";
@@ -369,6 +370,9 @@ function useCalculoCrescimento() {
   // aviso da próxima campanha da plataforma.
   const calendario = useMemo(() => configCalendario(cfgLoja), [cfgLoja]);
   const campanha = useMemo(() => proximaCampanha(calendario, hoje), [calendario, hoje]);
+  // Anúncio limitado pela plataforma (22/11/2026, lib/anuncioLimitado.js): enquanto
+  // marcado, Rampa/Otimizar/Ads não decidem nada desse anúncio.
+  const [limitadosCfg] = usePreferencia("anuncios:limitados", {});
   const linhas = useMemo(() => {
     return rampas
       .map((r) => {
@@ -382,7 +386,7 @@ function useCalculoCrescimento() {
         const sazonal = infoSazonal(quandoVendeDe(produto), calendario, hoje);
         const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null, antesDoInicio: vivo.antes?.get(r.id) || 0 };
         const regs = registros.filter((g) => g.rampa_id === r.id);
-        const est = estadoRampa(r, regs, regras, ctx, hoje);
+        const est = estDoLimitado(estadoRampa(r, regs, regras, ctx, hoje), limiteAtivo(limitadosCfg, `${item.id}|${canal.id}`, hoje));
         return { r, produto, canal, item, cfg, ctx, est, soNoGrupo: soNoGrupo.has(item.id) };
       })
       .concat(
@@ -406,13 +410,13 @@ function useCalculoCrescimento() {
             }
           }
           const ctx = { canal, custo: num(item.custoTotal), peso: num(item.peso), cfg, alvo: salvo ? num(salvo.preco) : null, funilLoja, adsAtivo, sazonal, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null, antesDoInicio: vivo.antes?.get(r.id) || 0 };
-          const est = estadoRampa(r, registros.filter((g) => g.rampa_id === r.id), regras, ctx, hoje);
+          const est = estDoLimitado(estadoRampa(r, registros.filter((g) => g.rampa_id === r.id), regras, ctx, hoje), limiteAtivo(limitadosCfg, `${item.id}|${canal.id}`, hoje));
           return { r, produto: { id: null, nome: kit.nome, sku: kit.sku || "" }, kit, ehKit: true, canal, item, cfg, ctx, est, soNoGrupo: soNoGrupo.has(item.id) };
         })
       )
       .filter(Boolean)
       .sort((a, b) => a.produto.nome.localeCompare(b.produto.nome) || a.canal.nome.localeCompare(b.canal.nome));
-  }, [rampas, rampasKit, kits, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsHv.periodos, calendario, campanha, soNoGrupo, vivo.parciais, vivo.seteDias, vivo.antes]);
+  }, [rampas, rampasKit, kits, registros, produtos, canais, itens, precos, cfgDoProduto, regras, hoje, funilLoja, adsHv.periodos, calendario, campanha, soNoGrupo, vivo.parciais, vivo.seteDias, vivo.antes, limitadosCfg]);
 
   // Rampa do ANÚNCIO com vários itens (v54, grupoRampa.js): degraus em % do
   // preço salvo de cada opção; mesma estadoRampa por dentro.
@@ -442,10 +446,12 @@ function useCalculoCrescimento() {
       const regs = registros.filter((g) => g.rampa_id === r.id);
       const g = estadoRampaGrupo({ rampa: r, registros: regs, regras, grupo, canal, itens, produtos, kits, precos, publicacoes: publicacoesCanal, cfgDoProduto, organicas: organicasVivas, hoje, sazonal, funilLoja, adsAtivo, proximaCampanha: campanha, parcial: vivo.parciais.get(r.id) || null, seteDias: vivo.seteDias?.get(r.id) || null });
       if (!g) continue;
+      const estG = estDoLimitado(g.est, limiteAtivo(limitadosCfg, `${idGrupo(grupo.id)}|${canal.id}`, hoje));
+      if (estG !== g.est) g.est = estG;
       out.push({ r, grupo, canal, produto: { id: null, nome: `Anúncio: ${grupo.nome}`, sku: "" }, item: null, ehGrupo: true, g, est: g.est, regs });
     }
     return out.sort((a, b) => a.grupo.nome.localeCompare(b.grupo.nome));
-  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, vivo.seteDias, hoje, calendario, funilLoja, adsHv.periodos, campanha, soNoGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rampasGrupo, grupos, canais, itens, produtos, kits, precos, publicacoesCanal, cfgDoProduto, registros, regras, organicasVivas, vivo.parciais, vivo.seteDias, hoje, calendario, funilLoja, adsHv.periodos, campanha, soNoGrupo, limitadosCfg]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Comissão de afiliado por item × canal (ao vivo).
   const linhasAf = useMemo(
@@ -717,15 +723,34 @@ function useCalculoCrescimento() {
     };
     // Mede um anúncio (pedidos pagos + Ads) num intervalo — usado pelo efeito e
     // pelo crescer de propósito.
+    const casaDe = (b) => {
+      if (b.tipo === "grupo") return (l) => grupoDoPedido(l)?.grupoId === b.id;
+      if (b.tipo === "kit") return (l) => l.id_item === `k:${b.id}`;
+      const ids = new Set([`p:${b.id}`, ...itens.filter((i) => i.id.startsWith("v:") && i.produtoId === b.id).map((i) => i.id)]);
+      return (l) => ids.has(l.id_item) && !grupoDoPedido(l);
+    };
+    // Anúncio limitado pela plataforma: marcação + suspeita (Ads parou de gastar,
+    // impressões caíram) + devoluções dos últimos 14 dias.
+    const limitadoDe = (b) => {
+      const chave = `${b.item.id}|${b.canal.id}`;
+      const per = periodoAtivo(b.periodos || [], hoje);
+      const ligado = per && per.item_tipo !== "loja" && !pausasDoPeriodo(per, hoje).pausado ? per : null;
+      const orc = ligado ? num(valoresAtuais(ligado).orcamento) : 0;
+      const casa = casaDe(b);
+      const de14 = somarDias(hoje, -REGRAS_LIMITE.devolucoesDias);
+      const devol = new Set();
+      for (const l of reais.linhas) if (l.canal_id === b.canal.id && /devolv/i.test(String(l.situacao || "")) && String(l.data) >= de14 && casa(l)) devol.add(l.pedido);
+      const funis = b.canal.tipo !== "shopee" ? [] : b.tipo === "grupo" ? funisDoGrupo(b.id, b.canal.id) : funisDoSku(b.item.sku);
+      const suspeita = suspeitaLimitado({ periodo: ligado, orcamento: orc, funis, devolucoes: devol.size, hoje });
+      const tr = ligado ? gastoPorTrecho(ligado).filter((t) => t.ate < hoje) : [];
+      const ult = tr[tr.length - 1];
+      const gastoHoje = ult && orc > 0 ? { ate: ult.ate, uso: ult.porDia / orc } : null;
+      const est = estadoLimitado({ cfg: limitadosCfg, chave, hoje, suspeita, gastoHoje });
+      return est ? { ...est, chave, devolucoes: devol.size } : null;
+    };
     const medidorDe = (b) => {
       const canal = b.canal;
-      let casa;
-      if (b.tipo === "grupo") casa = (l) => grupoDoPedido(l)?.grupoId === b.id;
-      else if (b.tipo === "kit") casa = (l) => l.id_item === `k:${b.id}`;
-      else {
-        const ids = new Set([`p:${b.id}`, ...itens.filter((i) => i.id.startsWith("v:") && i.produtoId === b.id).map((i) => i.id)]);
-        casa = (l) => ids.has(l.id_item) && !grupoDoPedido(l);
-      }
+      const casa = casaDe(b);
       const ls = (pedidosPorCanal.get(canal.id) || []).filter(casa);
       const medir = (de, ate) => {
         const t = { un: 0, pago: 0, lucro: 0, ads: 0, adsDesconhecido: false };
@@ -846,9 +871,14 @@ function useCalculoCrescimento() {
       const ini = () => decisaoInicial(c);
       return { estado: c.ot?.ligado ? estadoOtimizar(c) : null, ot: c.ot, atual: c.atual, alvo: c.alvo, grupo: c.grupo, rampaLinha: c.rl, inicial: ini, semRampaNoCanal: c.semRampaNoCanal, espacoRiscado: c.espacoRiscado, sazonal: c.sazonal };
     };
-    const linhasA = base.map((b) => ({ ...b, ...economiaRealAds(b.periodos, hoje, { preco: b.preco, lucro: b.lucro }), efeito: efeitoDaLinha(b), crescer: crescerDe(b), classe: classes[b.chave] || null, umaEstrela: umaEstrelaRuim(b), otimizar: otimizarDe(b) })).map((b) => ({
+    const linhasA = base.map((b) => {
+      const lim = limitadoDe(b);
+      const ot = otimizarDe(b);
+      if (lim?.ativo && ot) ot.estado = otimizarDoLimitado(ot.estado, lim);
+      return { ...b, ...economiaRealAds(b.periodos, hoje, { preco: b.preco, lucro: b.lucro }), limitado: lim, efeito: lim?.ativo ? null : efeitoDaLinha(b), crescer: crescerDe(b), classe: classes[b.chave] || null, umaEstrela: umaEstrelaRuim(b), otimizar: ot };
+    }).map((b) => ({
       ...b,
-      av: aplicarCrescer(avaliarAds({ efeito: b.efeito, preco: b.precoAds, lucro: b.lucroAds, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: (b.rampa || b.rampaGrupo)?.est.anuncio || (b.umaEstrela ? { titulo: "Uma única avaliação, e ela é de 1★", porOnde: "recriar o anúncio do zero (o Luan: \"essa avaliação mata o anúncio\")" } : null), hoje, regras: regrasA, tetoLoja: ignorarTeto?.[b.chave] ? null : teto, sazonal: b.sazonal, capacidadeDia: b.capacidadeDia, classe: classes[b.chave] || null, margemMin: num(cfgDoProduto(b.tipo === "produto" ? b.id : null)?.margemMin) || null }), b.crescer),
+      av: avDoLimitado(aplicarCrescer(avaliarAds({ efeito: b.efeito, preco: b.precoAds, lucro: b.lucroAds, lucroEm: b.lucroEm, semanas: b.semanas, periodos: b.periodos, anuncio: (b.rampa || b.rampaGrupo)?.est.anuncio || (b.umaEstrela ? { titulo: "Uma única avaliação, e ela é de 1★", porOnde: "recriar o anúncio do zero (o Luan: \"essa avaliação mata o anúncio\")" } : null), hoje, regras: regrasA, tetoLoja: ignorarTeto?.[b.chave] ? null : teto, sazonal: b.sazonal, capacidadeDia: b.capacidadeDia, classe: classes[b.chave] || null, margemMin: num(cfgDoProduto(b.tipo === "produto" ? b.id : null)?.margemMin) || null }), b.crescer), b.limitado),
       tetoIgnorado: !!ignorarTeto?.[b.chave],
     }));
     // Lembretes de virada de fase do Ads sazonal (Início): na 1ª semana de cada fase.
@@ -897,7 +927,7 @@ function useCalculoCrescimento() {
       }
     }
     return { loja, teto, sazonal, linhas: linhasA, lojaLinha, lembretesOk: lembretesH.disponivel };
-  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsHv.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos, ignorarTeto, crescerCfg, mudancasPorRampa, avalH.registros, campanha, cfgLoja]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lembretesH, lojaId, itens, canais, precos, produtos, kits, linhas, linhasGrupo, grupos, soNoGrupo, cfgDoProduto, registros, af.registros, adsHv.periodos, regrasA, hoje, calendario, organicasH.registros, publicacoesCanal, impressoras, farmConfig, reais.linhas, reais.cobertura, reais.importacoes, inicioCobertura, pedidosPorCanal, skuGrupo, desempenhos, ignorarTeto, crescerCfg, mudancasPorRampa, avalH.registros, campanha, cfgLoja, limitadosCfg]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pedidosValidos = reais.linhas;
   return useMemo(

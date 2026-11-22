@@ -3083,3 +3083,6 @@ tr.linha-destaque > td { background: var(--st-atencao-soft); transition: backgro
 .dr-giro b { font-size: 20px; font-variant-numeric: tabular-nums; }
 .dr-giro-falta > div:last-child { border-color: var(--st-resolver); background: var(--st-resolver-soft); }
 @media (max-width: 760px) { .dr-giro { grid-template-columns: 1fr; } }
+/* Anúncio limitado pela plataforma (22/11/2026) */
+.limitado-faixa { margin: 0 0 8px; }
+.limitado-faixa .acoes-linha-fixa { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }

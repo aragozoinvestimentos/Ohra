@@ -361,6 +361,41 @@ export function montarPendencias({
       add({ id: `gmv|${p.id}|${p.aviso.tipo}`, grupo: p.aviso.estado === "oportunidade" ? "oportunidade" : "rotina", ordem: 3, tom: p.aviso.estado === "oportunidade" ? "good" : "warn", titulo: `${nome}: ${p.aviso.titulo}`, texto: `Shopee · GMV Max da Loja · ${p.aviso.texto}`, ir: irLoja, rotulo: "Ver no Ads" });
     }
   }
+  // Anúncio limitado pela plataforma (22/11/2026, lib/anuncioLimitado.js decide): a
+  // pergunta quando o app desconfia, e UM aviso enquanto estiver marcado (os outros
+  // avisos do anúncio saem — o Inicio.jsx esconde).
+  for (const l of ads?.linhas || []) {
+    const lm = l.limitado;
+    if (!lm) continue;
+    const dmL = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
+    const irP = { aba: "anuncio", pedido: { itemId: l.item.id, canalId: l.canal.id, aba: "resumo" } };
+    if (lm.ativo)
+      add({
+        id: `limitado|${l.chave}|${lm.ativo.desde}`,
+        grupo: "rotina",
+        ordem: 1,
+        tom: "warn",
+        titulo: `${l.item.nome}: limitado pela plataforma desde ${dmL(lm.ativo.desde)}`,
+        texto: `${l.canal.nome} · preço e Ads em espera${lm.voltou ? " — o Ads voltou a gastar: parece que voltou ao normal" : lm.conferir ? " — já faz 7 dias: ainda está limitado?" : ""}`,
+        ir: irP,
+        rotulo: "Abrir o anúncio",
+        limitado: lm,
+        limitadoNome: l.item.nome,
+      });
+    else if (lm.suspeita)
+      add({
+        id: `limitado-suspeita|${l.chave}|${lm.suspeita.desde || ""}`,
+        grupo: "rotina",
+        ordem: 0,
+        tom: "warn",
+        titulo: `${l.item.nome}: a plataforma pode ter limitado o anúncio`,
+        texto: `${l.canal.nome} · ${lm.suspeita.texto} — foi isso?`,
+        ir: irP,
+        rotulo: "Abrir o anúncio",
+        limitado: lm,
+        limitadoNome: l.item.nome,
+      });
+  }
   // "Surtiu efeito?" (01/11/2026) — veredito de cada mudança no anúncio (lib/efeito.js decide).
   // Preço dinâmico → Otimizar preço (lib/otimizarPreco.js decide; aqui só lê).
   for (const l of ads?.linhas || []) {

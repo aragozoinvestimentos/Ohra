@@ -35,6 +35,7 @@ import { custoAmostra, padraoDoCanal, sugestoesAfiliado } from "../lib/afiliados
 import RespostaTesteAfiliado from "./RespostaTesteAfiliado.jsx";
 import { mostrarTesteAfiliado } from "../lib/afiliadoTesteAcoes.js";
 import { anunciosDaLoja, avisosComissaoLoja, linhasDaLoja, maxSeguroDoItem, minimoAfiliado, resultadoAfiliados, sugestaoComissaoLoja, vendasPorItemCanal } from "../lib/comissaoLoja.js";
+import AnuncioLimitado from "./AnuncioLimitado.jsx";
 import { agruparPorProduto, ehAvisoDeDados, montarPendencias, notaDoAviso, produtoDoAviso, situacaoDados } from "../lib/inicio.js";
 import { produtosParados } from "../lib/relatorios.js";
 import { comoEstaALoja, produtosDaSemana, variacao, variacaoSegura } from "../lib/resumoLoja.js";
@@ -402,8 +403,17 @@ export default function Inicio({ onIrPara, onToast }) {
     [linhas, rampasPausadas]
   );
   const nomesCanaisTodos = (dados.canais || []).map((c) => c.nome);
+  // Anúncio limitado pela plataforma (22/11/2026): os avisos dele saem — fica só o "limitado".
+  const anunciosLimitados = useMemo(
+    () => new Set((linhasAds?.linhas || []).filter((l) => l.limitado?.ativo).map((l) => `${String(l.item.nome || "").replace(/^Anúncio:\s*/, "").toLowerCase()}|${l.canal?.nome || ""}`)),
+    [linhasAds]
+  );
   const pausadaRampa = (p) => {
     if (p.grupo === "resolver" || p.tarefa) return false;
+    if (anunciosLimitados.size && !String(p.id).startsWith("limitado|")) {
+      const kL = produtoDoAviso(p, nomesCanaisTodos);
+      if (kL && anunciosLimitados.has(`${kL.nome.toLowerCase()}|${kL.canal || ""}`)) return true;
+    }
     if (rampasPausadas.has(p.ir?.pedido?.rampaId)) return true;
     if (!anunciosPausados.size) return false;
     const k = produtoDoAviso(p, nomesCanaisTodos);
@@ -612,6 +622,7 @@ export default function Inicio({ onIrPara, onToast }) {
           </>
         )}
         {p.afTeste && <RespostaTesteAfiliado a={p.afTeste} onToast={onToast} />}
+        {p.limitado && <AnuncioLimitado lim={p.limitado} nome={p.limitadoNome} compacto onToast={onToast} />}
         {p.ciente && (
           <button type="button" className="link-btn" onClick={() => ciente(p.ciente)} title="Esse aviso não volta mais pra esta impressora.">
             ok, ciente

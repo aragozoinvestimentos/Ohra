@@ -1397,7 +1397,6 @@ describe("Otimizar — prévia do passo por item", () => {
 });
 
 import { precoAtraente } from "../src/lib/precoAtraente.js";
-import { anuncioNoRiscado } from "../src/lib/rampaAnuncio.js";
 import { anuncioMudou } from "../src/lib/escada.js";
 describe("Preço que atrai + preço da promoção digitado (20/11/2026)", () => {
   it("+5% do anúncio da Árvore vai pros finais ,49/,90", () => {
@@ -1485,5 +1484,47 @@ describe("capital de giro (giroFuturo)", () => {
   });
   it("saldo de Ads que cobre o período não pede nada", () => {
     expect(giroFuturo({ pedidos, hoje: "2026-11-20", ads: { gastoDia: 5, saldo: 200 } }).ads).toBe(0);
+  });
+});
+
+import { suspeitaLimitado, estadoLimitado, estDoLimitado } from "../src/lib/anuncioLimitado.js";
+describe("anúncio limitado pela plataforma", () => {
+  // Ads de R$ 10/dia gastando cheio até 17/11 e quase nada depois (Kit de Natal).
+  const periodo = {
+    inicio: "2026-11-10",
+    parcial: {
+      ate: "2026-11-21",
+      gasto: 72,
+      historico: [
+        { ate: "2026-11-13", gasto: 40 },
+        { ate: "2026-11-15", gasto: 59 },
+        { ate: "2026-11-17", gasto: 69 },
+        { ate: "2026-11-19", gasto: 70 },
+      ],
+    },
+  };
+  it("desconfia quando o Ads para de gastar e conta as devoluções", () => {
+    const s = suspeitaLimitado({ periodo, orcamento: 10, devolucoes: 2, hoje: "2026-11-22" });
+    expect(s.desde).toBe("2026-11-18");
+    expect(s.ads.dias).toBe(4);
+    expect(s.texto).toMatch(/2 devoluções/);
+  });
+  it("não desconfia de Ads que sempre gastou pouco", () => {
+    const fraco = { inicio: "2026-11-10", parcial: { ate: "2026-11-21", gasto: 12, historico: [{ ate: "2026-11-15", gasto: 6 }] } };
+    expect(suspeitaLimitado({ periodo: fraco, orcamento: 10, hoje: "2026-11-22" })).toBeNull();
+  });
+  it("impressões pela metade também levantam a suspeita", () => {
+    const funis = [{ de: "2026-11-01", ate: "2026-11-07", impressoes: 2100 }, { de: "2026-11-08", ate: "2026-11-14", impressoes: 700 }];
+    expect(suspeitaLimitado({ funis, hoje: "2026-11-22" }).impressoes.depois).toBe(100);
+  });
+  it("marcado: pergunta a cada 7 dias e põe a rampa em espera", () => {
+    const cfg = { "g:1|c": { desde: "2026-11-18" } };
+    expect(estadoLimitado({ cfg, chave: "g:1|c", hoje: "2026-11-22" }).conferir).toBe(false);
+    expect(estadoLimitado({ cfg, chave: "g:1|c", hoje: "2026-11-25" }).conferir).toBe(true);
+    const est = estDoLimitado({ sugestao: { chave: "voltar" } }, cfg["g:1|c"]);
+    expect(est.sugestao.chave).toBe("segurar");
+    // "Não, é outra coisa": não pergunta por 14 dias
+    const s = { desde: "2026-11-18", texto: "x" };
+    expect(estadoLimitado({ cfg: { _nao: { "g:1|c": { em: "2026-11-20" } } }, chave: "g:1|c", hoje: "2026-11-22", suspeita: s })).toBeNull();
   });
 });
