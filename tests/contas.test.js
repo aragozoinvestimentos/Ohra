@@ -1528,3 +1528,27 @@ describe("anúncio limitado pela plataforma", () => {
     expect(estadoLimitado({ cfg: { _nao: { "g:1|c": { em: "2026-11-20" } } }, chave: "g:1|c", hoje: "2026-11-22", suspeita: s })).toBeNull();
   });
 });
+
+import { degrausDoTicket, minimosDoTicket, metaTicketDoMes } from "../src/lib/metaTicket.js";
+describe("meta de ticket do mês", () => {
+  it("degraus +10/+20/+35% de R$ 5 em 5", () => {
+    expect(degrausDoTicket(30).map((d) => d.valor)).toEqual([35, 40, 45]);
+    expect(degrausDoTicket(34).map((d) => d.valor)).toEqual([40, 45, 50]);
+    expect(minimosDoTicket(degrausDoTicket(30))).toEqual([34.9, 39.9, 44.9, 49.9]);
+  });
+  it("base = mês que fechou; congela a partir do dia 7; andamento do mês", () => {
+    const linhas = [];
+    for (let i = 0; i < 25; i++) linhas.push({ valido: true, pedido: `o${i}`, data: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`, pago: 30, lucro: 9, q: 1 });
+    for (let i = 0; i < 4; i++) linhas.push({ valido: true, pedido: `n${i}`, data: "2026-11-05", pago: 33, lucro: 10, q: 1 });
+    const m = metaTicketDoMes({ linhas, mes: "2026-11", hoje: "2026-11-22" });
+    expect(m.base).toBe(30);
+    expect(m.degraus[0].valor).toBe(35);
+    expect(m.atual.ticket).toBe(33);
+    expect(m.atual.falta).toBe(2);
+    expect(m.congelar.degraus).toEqual([35, 40, 45]);
+    // retrato guardado: não muda mais, mesmo se os pedidos mudarem
+    const g = metaTicketDoMes({ linhas: [], mes: "2026-11", hoje: "2026-11-22", guardados: { "2026-11": m.congelar } });
+    expect(g.degraus[0].valor).toBe(35);
+    expect(g.congelar).toBeNull();
+  });
+});

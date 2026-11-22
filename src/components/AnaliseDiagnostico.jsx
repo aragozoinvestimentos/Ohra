@@ -1,8 +1,10 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useEscada } from "../hooks/useEscada.js";
 import { useCrescimento } from "../hooks/useCrescimento.js";
 import { useLancamentosCaixa } from "../hooks/useLancamentosCaixa.js";
 import { useLembrado } from "../hooks/useLembrado.js";
+import { usePreferencia } from "../hooks/usePreferencia.js";
+import { historicoTicket, metaTicketDoMes, minimosDoTicket } from "../lib/metaTicket.js";
 import { abrirAnuncio, montarAnuncios } from "../lib/anuncios.js";
 import { analiseCompraMinima, lucroLiquidoDoMes, mesAnterior, pedidosAgrupados, simularTicket, variacaoSegura } from "../lib/resumoLoja.js";
 import { irParaAba } from "../lib/navegar.js";
@@ -27,8 +29,7 @@ const somarDias = (iso, n) => {
 };
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const nomeMes = (m) => MESES[Number(m.slice(5, 7)) - 1];
-const MINIMOS = [29.9, 39.9, 49.9, 59.9];
-const TICKETS = [30, 40, 50];
+const MINIMOS_PADRAO = [29.9, 39.9, 49.9, 59.9];
 const PRIORIDADES = [
   { k: "todos", rot: "Todos" },
   { k: "atencao", rot: "Pedem ação" },
@@ -55,8 +56,20 @@ export default function AnaliseDiagnostico() {
   const de90 = somarDias(hoje, -89);
   const peds = useMemo(() => pedidosAgrupados(pedidos, de90, hoje, canalCupom || null), [pedidos, de90, hoje, canalCupom]);
   const desconto = Math.max(0, Number(String(descTxt).replace(",", ".")) || 0);
-  const cm = useMemo(() => analiseCompraMinima(peds, MINIMOS, { tipo: tipoDesc, desconto: tipoDesc === "pct" ? desconto / 100 : desconto }), [peds, tipoDesc, desconto]);
-  const simT = useMemo(() => simularTicket(peds, TICKETS.filter((t) => !cm.ticket || t > cm.ticket)), [peds, cm.ticket]);
+  // Meta de ticket do mês (22/11/2026, lib/metaTicket.js): base = o mês que fechou,
+  // degraus +10/+20/+35%; o retrato do mês é gravado a partir do dia 7 e fica parado.
+  const [metasT, setMetasT] = usePreferencia("analise:meta-ticket", {});
+  const chaveT = canalCupom || "todas";
+  const guardT = useMemo(() => metasT?.[chaveT] || {}, [metasT, chaveT]);
+  const mt = useMemo(() => metaTicketDoMes({ linhas: pedidos, mes, hoje, canalId: canalCupom || null, guardados: guardT }), [pedidos, mes, hoje, canalCupom, guardT]);
+  const histT = useMemo(() => historicoTicket({ linhas: pedidos, guardados: guardT, hoje, canalId: canalCupom || null }), [pedidos, guardT, hoje, canalCupom]);
+  useEffect(() => {
+    if (!mt?.congelar) return;
+    setMetasT({ ...(metasT || {}), [chaveT]: { ...(metasT?.[chaveT] || {}), [mes]: mt.congelar } });
+  }, [mt?.congelar, chaveT, mes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const minimos = useMemo(() => (mt?.degraus?.length ? minimosDoTicket(mt.degraus) : MINIMOS_PADRAO), [mt]);
+  const cm = useMemo(() => analiseCompraMinima(peds, minimos, { tipo: tipoDesc, desconto: tipoDesc === "pct" ? desconto / 100 : desconto }), [peds, tipoDesc, desconto, minimos]);
+  const simT = useMemo(() => simularTicket(peds, (mt?.degraus || []).map((d) => d.valor)).map((x, i) => ({ ...x, degrau: mt.degraus[i] })), [peds, mt]);
   const canaisPed = useMemo(() => esc.canais.filter((c) => pedidos.some((p) => p.valido && p.canal_id === c.id)), [esc.canais, pedidos]);
 
   // ---- Diagnóstico dos anúncios ----
@@ -199,41 +212,86 @@ export default function AnaliseDiagnostico() {
         )}
       </div>
 
-      {/* 3. Ticket médio */}
-      {cm.n > 0 && simT.length > 0 && (
+      {/* 3. Ticket médio — meta do mês por degraus */}
+      {mt && (
         <div className="panel">
           <h3>
-            E se o ticket médio fosse maior? <span className="h3-contagem">projeção com os mesmos {cm.n} pedidos e a margem de hoje — não é resultado garantido</span>
+            E se o ticket médio fosse maior?{" "}
+            <span className="h3-contagem">
+              meta de {nomeMes(mes)}{canalCupom ? ` · ${canaisPed.find((c) => c.id === canalCupom)?.nome || ""}` : " · todas as plataformas"}
+            </span>{" "}
+            <Ajuda texto={`A base é o ticket médio de ${nomeMes(mesAnterior(mes))} (${mt.origem === "mes" ? `${mt.n} pedidos` : `poucos pedidos no mês — usei os 30 dias antes do dia 1º (${mt.n} pedidos)`}). Os degraus ficam ${mt.guardado ? "parados até o fim do mês" : `fixos a partir do dia 7 (até lá, os pedidos de ${nomeMes(mesAnterior(mes))} ainda podem chegar)`}. No dia 1º do mês que vem a base vira o ticket real deste mês — bateu ou não, a escada anda junto. A compra mínima do cupom (acima) mira os mesmos degraus.`} />
           </h3>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Ticket médio</th>
-                  <th className="num">Faturamento (90 dias)</th>
-                  <th className="num">Margem de contribuição</th>
-                  <th className="num">A mais que hoje</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="linha-outras">
-                  <td>Hoje: {BRL(cm.ticket)}</td>
-                  <td className="num">{BRL(cm.total)}</td>
-                  <td className="num">{BRL(cm.lucro)}</td>
-                  <td className="num">—</td>
-                </tr>
-                {simT.map((x) => (
-                  <tr key={x.ticket}>
-                    <td>{BRL(x.ticket)}</td>
-                    <td className="num">{BRL(x.faturamento)}</td>
-                    <td className="num">{BRL(x.contribuicao)}</td>
-                    <td className="num pos-forte">+ {BRL(x.dif)}</td>
-                  </tr>
+          <div className="ticket-meta">
+            <div className="ticket-meta-num">
+              <span>Ticket deste mês</span>
+              <b>{mt.atual.ticket != null ? BRL(mt.atual.ticket) : "—"}</b>
+              <small>{mt.atual.n} pedidos · base {BRL(mt.base)}</small>
+            </div>
+            <div className="ticket-meta-barra">
+              <div className="ticket-meta-trilho">
+                <i style={{ width: `${Math.round(mt.atual.pct * 100)}%` }} className={mt.atual.degrau ? "ok" : ""} />
+              </div>
+              <div className="ticket-meta-txt">
+                {mt.atual.ticket == null
+                  ? "Ainda sem pedido neste mês."
+                  : mt.atual.degrau
+                    ? `✓ ${mt.atual.degrau.rot}: passou de ${BRL(mt.atual.degrau.valor)}${mt.atual.degrau.k !== "otimo" ? ` · próximo degrau ${BRL(mt.degraus[mt.degraus.findIndex((d) => d.k === mt.atual.degrau.k) + 1].valor)}` : ""}`
+                    : `Meta do mês ${BRL(mt.degraus[0].valor)} — faltam ${BRL(mt.atual.falta)} por pedido`}
+              </div>
+              <div className="ticket-meta-degraus">
+                {mt.degraus.map((d) => (
+                  <span key={d.k} className={mt.atual.ticket != null && mt.atual.ticket >= d.valor ? "on" : ""}>
+                    {d.rot} {BRL(d.valor)} <small>+{Math.round(d.pct * 100)}%</small>
+                  </span>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
           </div>
-          <p className="hint" style={{ margin: "6px 0 0" }}>Caminhos: kit 2/kit 3 (2º Por quantidade), comprados juntos (Curva ABC), cupom com compra mínima acima do ticket.</p>
+          {cm.n > 0 && simT.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Ticket médio</th>
+                    <th className="num">Faturamento (90 dias)</th>
+                    <th className="num">Margem de contribuição</th>
+                    <th className="num">A mais que hoje</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="linha-outras">
+                    <td>Últimos 90 dias: {BRL(cm.ticket)}</td>
+                    <td className="num">{BRL(cm.total)}</td>
+                    <td className="num">{BRL(cm.lucro)}</td>
+                    <td className="num">—</td>
+                  </tr>
+                  {simT.map((x) => (
+                    <tr key={x.ticket}>
+                      <td>
+                        {x.degrau.rot}: <b>{BRL(x.ticket)}</b>
+                      </td>
+                      <td className="num">{BRL(x.faturamento)}</td>
+                      <td className="num">{BRL(x.contribuicao)}</td>
+                      <td className={`num${x.dif > 0 ? " pos-forte" : ""}`}>{x.dif > 0 ? `+ ${BRL(x.dif)}` : "já está acima"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {histT.length > 0 && (
+            <p className="hint" style={{ margin: "6px 0 0" }}>
+              Meses anteriores:{" "}
+              {histT.slice(0, 6).map((h, i) => (
+                <span key={h.mes}>
+                  {i > 0 && " · "}
+                  {nomeMes(h.mes)} meta {BRL(h.meta)} → {h.resultado != null ? BRL(h.resultado) : "—"} {h.bateu ? "✓" : ""}
+                </span>
+              ))}
+            </p>
+          )}
+          <p className="hint" style={{ margin: "6px 0 0" }}>Projeção com os pedidos dos últimos 90 dias e a margem de hoje — não é resultado garantido. Caminhos: kit 2/kit 3 (2º Por quantidade), comprados juntos (Curva ABC), cupom com compra mínima um pouco acima do ticket.</p>
         </div>
       )}
 

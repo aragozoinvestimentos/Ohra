@@ -3086,3 +3086,17 @@ tr.linha-destaque > td { background: var(--st-atencao-soft); transition: backgro
 /* Anúncio limitado pela plataforma (22/11/2026) */
 .limitado-faixa { margin: 0 0 8px; }
 .limitado-faixa .acoes-linha-fixa { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+/* Meta de ticket do mês (Análise → Diagnóstico, 22/11/2026) */
+.ticket-meta { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; }
+.ticket-meta-num { display: flex; flex-direction: column; min-width: 140px; }
+.ticket-meta-num span { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-soft); }
+.ticket-meta-num b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.ticket-meta-num small { color: var(--ink-faint); }
+.ticket-meta-barra { flex: 1; min-width: 240px; }
+.ticket-meta-trilho { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.ticket-meta-trilho i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.ticket-meta-trilho i.ok { background: var(--st-oportunidade); }
+.ticket-meta-txt { margin: 4px 0; font-size: 13px; }
+.ticket-meta-degraus { display: flex; flex-wrap: wrap; gap: 6px; }
+.ticket-meta-degraus span { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--ink-soft); }
+.ticket-meta-degraus span.on { border-color: var(--st-oportunidade); color: var(--st-oportunidade); }
